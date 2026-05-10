@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.olive"
+    namespace = "com.oakamil.olive"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.olive"
+        applicationId = "com.oakamil.olive"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

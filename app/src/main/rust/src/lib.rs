@@ -11,12 +11,31 @@ static RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static ENGINE_STOP_TX: Mutex<Option<tokio::sync::oneshot::Sender<()>>> = Mutex::new(None);
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_example_olive_MainActivity_startEngine(
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_initJni(
+    mut env: JNIEnv,
+    _class: JClass,
+    files_dir: jni::objects::JString,
+) {
+    if let Ok(dir) = env.get_string(&files_dir) {
+        if let Ok(dir_str) = dir.to_str() {
+            if let Err(e) = std::env::set_current_dir(dir_str) {
+                log::error!("Failed to set current directory to {}: {}", dir_str, e);
+            } else {
+                log::info!("Successfully set current directory to {}", dir_str);
+            }
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
     _env: JNIEnv,
     _class: JClass,
     fd: jint,
+    imu_enabled: jni::sys::jboolean,
 ) {
     let fd = fd as i32;
+    let use_imu = imu_enabled != 0;
 
     let mut runtime_lock = RUNTIME.lock().unwrap();
     if runtime_lock.is_none() {
@@ -80,10 +99,14 @@ pub extern "system" fn Java_com_example_olive_MainActivity_startEngine(
             use crate::android_imu::AndroidImu;
             use olive_engine::imu::Imu;
 
-            let mut imu_dev = AndroidImu::new();
-            let imu_arc = if imu_dev.init().is_ok() {
-                if let Ok(imu) = Imu::start(imu_dev) {
-                    Some(Arc::new(imu))
+            let imu_arc = if use_imu {
+                let mut imu_dev = AndroidImu::new();
+                if imu_dev.init().is_ok() {
+                    if let Ok(imu) = Imu::start(imu_dev) {
+                        Some(Arc::new(imu))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -112,10 +135,13 @@ pub extern "system" fn Java_com_example_olive_MainActivity_startEngine(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_example_olive_MainActivity_startNativeCameraEngine(
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngine(
     _env: JNIEnv,
     _class: JClass,
+    imu_enabled: jni::sys::jboolean,
 ) {
+    let use_imu = imu_enabled != 0;
+
     let mut runtime_lock = RUNTIME.lock().unwrap();
     if runtime_lock.is_none() {
         *runtime_lock = Some(
@@ -177,10 +203,14 @@ pub extern "system" fn Java_com_example_olive_MainActivity_startNativeCameraEngi
             use crate::android_imu::AndroidImu;
             use olive_engine::imu::Imu;
 
-            let mut imu_dev = AndroidImu::new();
-            let imu_arc = if imu_dev.init().is_ok() {
-                if let Ok(imu) = Imu::start(imu_dev) {
-                    Some(Arc::new(imu))
+            let imu_arc = if use_imu {
+                let mut imu_dev = AndroidImu::new();
+                if imu_dev.init().is_ok() {
+                    if let Ok(imu) = Imu::start(imu_dev) {
+                        Some(Arc::new(imu))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -209,7 +239,7 @@ pub extern "system" fn Java_com_example_olive_MainActivity_startNativeCameraEngi
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_example_olive_MainActivity_stopEngine(
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_stopEngine(
     _env: JNIEnv,
     _class: JClass,
 ) {
