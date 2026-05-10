@@ -14,3 +14,4 @@ tokio = { version = "1.37.0", features = ["rt-multi-thread"] }
 log = "0.4"
 ndk-sys = "0.6.0"
 openssl = { version = "0.10", features = ["vendored"] }
+nalgebra = "0.32"
