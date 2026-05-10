@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::thread;
 
 pub mod android_camera;
+pub mod android_imu;
 
 static RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static ENGINE_STOP_TX: Mutex<Option<tokio::sync::oneshot::Sender<()>>> = Mutex::new(None);
@@ -35,10 +36,10 @@ pub extern "system" fn Java_com_example_olive_MainActivity_startEngine(
 
     thread::spawn(move || {
         rt_handle.block_on(async {
-            use olive_engine::uvc_camera::Camera;
             use olive_engine::CameraTrait;
-            use olive_engine::engine::{Engine, EngineConfig};
             use olive_engine::control_server;
+            use olive_engine::engine::{Engine, EngineConfig};
+            use olive_engine::uvc_camera::Camera;
             use std::sync::Arc;
 
             // 30 FPS, MJPEG true
@@ -66,15 +67,34 @@ pub extern "system" fn Java_com_example_olive_MainActivity_startEngine(
             let server_camera = camera.clone();
             let server_client_connected = client_connected.clone();
             let server_engine_state = engine_state.clone();
-            
+
             let server_handle = tokio::spawn(async move {
-                control_server::start_server(server_camera, server_client_connected, server_engine_state).await;
+                control_server::start_server(
+                    server_camera,
+                    server_client_connected,
+                    server_engine_state,
+                )
+                .await;
             });
 
-            let mut engine = Engine::new(camera, config, client_connected, engine_state, None);
+            use crate::android_imu::AndroidImu;
+            use olive_engine::imu::Imu;
+
+            let mut imu_dev = AndroidImu::new();
+            let imu_arc = if imu_dev.init().is_ok() {
+                if let Ok(imu) = Imu::start(imu_dev) {
+                    Some(Arc::new(imu))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let mut engine = Engine::new(camera, config, client_connected, engine_state, imu_arc);
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
-            
+
             // Run engine in a separate thread since it might block
             std::thread::spawn(move || {
                 engine.start();
@@ -116,8 +136,8 @@ pub extern "system" fn Java_com_example_olive_MainActivity_startNativeCameraEngi
         rt_handle.block_on(async {
             use crate::android_camera::AndroidCamera;
             use olive_engine::CameraTrait;
-            use olive_engine::engine::{Engine, EngineConfig};
             use olive_engine::control_server;
+            use olive_engine::engine::{Engine, EngineConfig};
             use std::sync::Arc;
 
             let mut cam = AndroidCamera::new();
@@ -144,15 +164,34 @@ pub extern "system" fn Java_com_example_olive_MainActivity_startNativeCameraEngi
             let server_camera = camera.clone();
             let server_client_connected = client_connected.clone();
             let server_engine_state = engine_state.clone();
-            
+
             let server_handle = tokio::spawn(async move {
-                control_server::start_server(server_camera, server_client_connected, server_engine_state).await;
+                control_server::start_server(
+                    server_camera,
+                    server_client_connected,
+                    server_engine_state,
+                )
+                .await;
             });
 
-            let mut engine = Engine::new(camera, config, client_connected, engine_state, None);
+            use crate::android_imu::AndroidImu;
+            use olive_engine::imu::Imu;
+
+            let mut imu_dev = AndroidImu::new();
+            let imu_arc = if imu_dev.init().is_ok() {
+                if let Ok(imu) = Imu::start(imu_dev) {
+                    Some(Arc::new(imu))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let mut engine = Engine::new(camera, config, client_connected, engine_state, imu_arc);
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
-            
+
             // Run engine in a separate thread since it might block
             std::thread::spawn(move || {
                 engine.start();

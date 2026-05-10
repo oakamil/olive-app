@@ -1,9 +1,9 @@
 // Required Notice: Copyright (c) 2026 Omair Kamil
 // See LICENSE file in root directory for license terms.
 
-use olive_engine::{CameraConfig, CameraTrait, Image};
 use log::{error, info, warn};
 use ndk_sys::*;
+use olive_engine::{CameraConfig, CameraTrait, Image};
 use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::ptr;
@@ -131,7 +131,11 @@ impl CameraTrait for AndroidCamera {
         lock.clone()
     }
 
-    fn wait_for_next_capture(&self, last_timestamp: Option<SystemTime>, timeout: Option<Duration>) -> Option<Arc<Image>> {
+    fn wait_for_next_capture(
+        &self,
+        last_timestamp: Option<SystemTime>,
+        timeout: Option<Duration>,
+    ) -> Option<Arc<Image>> {
         let mut lock = self.store.image.lock().unwrap();
         loop {
             if let Some(img) = &*lock {
@@ -502,7 +506,11 @@ impl AndroidCamera {
 
         // 4. Create Capture Request (Manual Mode)
         let mut request: *mut ACaptureRequest = ptr::null_mut();
-        ACameraDevice_createCaptureRequest(device, ACameraDevice_request_template_TEMPLATE_MANUAL as u32, &mut request);
+        ACameraDevice_createCaptureRequest(
+            device,
+            ACameraDevice_request_template_TEMPLATE_MANUAL as u32,
+            &mut request,
+        );
         ACaptureRequest_addTarget(request, output);
 
         // Disable 3A routines
