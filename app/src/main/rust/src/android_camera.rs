@@ -1,7 +1,7 @@
 // Required Notice: Copyright (c) 2026 Omair Kamil
 // See LICENSE file in root directory for license terms.
 
-use log::{error, info, warn};
+use log::{info, warn};
 use ndk_sys::*;
 use olive_engine::{CameraConfig, CameraTrait, Image};
 use std::ffi::CStr;
@@ -223,6 +223,7 @@ impl AndroidCamera {
     }
 
     unsafe fn discover_and_configure_camera() -> AndroidCameraConfiguration {
+        unsafe {
         info!("Scanning Android cameras for best FOV fit...");
 
         let manager = ACameraManager_create();
@@ -241,21 +242,21 @@ impl AndroidCamera {
 
             let mut metadata: *mut ACameraMetadata = ptr::null_mut();
             if ACameraManager_getCameraCharacteristics(manager, cam_id_ptr, &mut metadata)
-                != AMEDIA_OK
+                != camera_status_t::ACAMERA_OK
             {
                 continue;
             }
 
             // 1. Ensure Back-Facing
-            let mut entry = ACameraMetadata_const_entry::default();
+            let mut entry: ACameraMetadata_const_entry = std::mem::zeroed();
             ACameraMetadata_getConstEntry(
                 metadata,
-                acamera_metadata_tag_ACAMERA_LENS_FACING as u32,
+                acamera_metadata_tag::ACAMERA_LENS_FACING.0 as u32,
                 &mut entry,
             );
             if entry.count == 0
                 || *entry.data.u8_
-                    != acamera_metadata_enum_acamera_lens_facing_ACAMERA_LENS_FACING_BACK as u8
+                    != acamera_metadata_enum_acamera_lens_facing::ACAMERA_LENS_FACING_BACK.0 as u8
             {
                 ACameraMetadata_free(metadata);
                 continue;
@@ -264,7 +265,7 @@ impl AndroidCamera {
             // 2. Physical Size & Focal Length
             ACameraMetadata_getConstEntry(
                 metadata,
-                acamera_metadata_tag_ACAMERA_SENSOR_INFO_PHYSICAL_SIZE as u32,
+                acamera_metadata_tag::ACAMERA_SENSOR_INFO_PHYSICAL_SIZE.0 as u32,
                 &mut entry,
             );
             if entry.count < 2 {
@@ -275,7 +276,7 @@ impl AndroidCamera {
 
             ACameraMetadata_getConstEntry(
                 metadata,
-                acamera_metadata_tag_ACAMERA_LENS_INFO_AVAILABLE_FOCAL_LENGTHS as u32,
+                acamera_metadata_tag::ACAMERA_LENS_INFO_AVAILABLE_FOCAL_LENGTHS.0 as u32,
                 &mut entry,
             );
             if entry.count == 0 {
@@ -287,7 +288,7 @@ impl AndroidCamera {
             // 3. Active Array
             ACameraMetadata_getConstEntry(
                 metadata,
-                acamera_metadata_tag_ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE as u32,
+                acamera_metadata_tag::ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE.0 as u32,
                 &mut entry,
             );
             if entry.count < 4 {
@@ -295,20 +296,20 @@ impl AndroidCamera {
                 continue;
             }
             let active_array = [
-                *entry.data.i32.offset(0),
-                *entry.data.i32.offset(1),
-                *entry.data.i32.offset(2),
-                *entry.data.i32.offset(3),
+                *entry.data.i32_.offset(0),
+                *entry.data.i32_.offset(1),
+                *entry.data.i32_.offset(2),
+                *entry.data.i32_.offset(3),
             ];
 
             // 4. Max Analog Gain
             ACameraMetadata_getConstEntry(
                 metadata,
-                acamera_metadata_tag_ACAMERA_SENSOR_INFO_SENSITIVITY_RANGE as u32,
+                acamera_metadata_tag::ACAMERA_SENSOR_INFO_SENSITIVITY_RANGE.0 as u32,
                 &mut entry,
             );
             let sensor_max_analog = if entry.count >= 2 {
-                *entry.data.i32.offset(1)
+                *entry.data.i32_.offset(1)
             } else {
                 800
             };
@@ -365,6 +366,7 @@ impl AndroidCamera {
             max_analog_gain: max_analog,
             fov: min_fov,
         }
+        }
     }
 
     /// The AImageReader callback, invoked by the NDK Looper when a RAW16 frame is ready.
@@ -373,7 +375,7 @@ impl AndroidCamera {
             let ctx = &*(context as *const ImageReaderContext);
             let mut image: *mut AImage = ptr::null_mut();
 
-            if AImageReader_acquireLatestImage(reader, &mut image) == AMEDIA_OK && !image.is_null()
+            if AImageReader_acquireLatestImage(reader, &mut image) == media_status_t::AMEDIA_OK && !image.is_null()
             {
                 let receive_time = std::time::Instant::now();
 
@@ -426,6 +428,7 @@ impl AndroidCamera {
         config_store: Arc<Mutex<Option<AndroidCameraConfiguration>>>,
         exposure_ref: Arc<AtomicI32>,
     ) {
+        unsafe {
         let config = config_store
             .lock()
             .unwrap()
@@ -444,7 +447,7 @@ impl AndroidCamera {
         AImageReader_new(
             config.width as i32,
             config.height as i32,
-            AIMAGE_FORMAT_RAW16 as i32,
+            AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32,
             4,
             &mut image_reader,
         );
@@ -508,26 +511,28 @@ impl AndroidCamera {
         let mut request: *mut ACaptureRequest = ptr::null_mut();
         ACameraDevice_createCaptureRequest(
             device,
-            ACameraDevice_request_template_TEMPLATE_MANUAL as u32,
+            ACameraDevice_request_template::TEMPLATE_MANUAL,
             &mut request,
         );
-        ACaptureRequest_addTarget(request, output);
+        let mut target: *mut ACameraOutputTarget = ptr::null_mut();
+        ACameraOutputTarget_create(window, &mut target);
+        ACaptureRequest_addTarget(request, target);
 
         // Disable 3A routines
-        let mode_off = acamera_metadata_enum_acamera_control_mode_ACAMERA_CONTROL_MODE_OFF as u8;
+        let mode_off = acamera_metadata_enum_acamera_control_mode::ACAMERA_CONTROL_MODE_OFF.0 as u8;
         ACaptureRequest_setEntry_u8(
             request,
-            acamera_metadata_tag_ACAMERA_CONTROL_MODE as u32,
+            acamera_metadata_tag::ACAMERA_CONTROL_MODE.0 as u32,
             1,
             &mode_off,
         );
 
         let nr_off =
-            acamera_metadata_enum_acamera_noise_reduction_mode_ACAMERA_NOISE_REDUCTION_MODE_OFF
+            acamera_metadata_enum_acamera_noise_reduction_mode::ACAMERA_NOISE_REDUCTION_MODE_OFF.0
                 as u8;
         ACaptureRequest_setEntry_u8(
             request,
-            acamera_metadata_tag_ACAMERA_NOISE_REDUCTION_MODE as u32,
+            acamera_metadata_tag::ACAMERA_NOISE_REDUCTION_MODE.0 as u32,
             1,
             &nr_off,
         );
@@ -535,7 +540,7 @@ impl AndroidCamera {
         // Hard-lock Max Analog Gain
         ACaptureRequest_setEntry_i32(
             request,
-            acamera_metadata_tag_ACAMERA_SENSOR_SENSITIVITY as u32,
+            acamera_metadata_tag::ACAMERA_SENSOR_SENSITIVITY.0 as u32,
             1,
             &config.max_analog_gain,
         );
@@ -543,7 +548,7 @@ impl AndroidCamera {
         // Apply 25-degree Crop
         ACaptureRequest_setEntry_i32(
             request,
-            acamera_metadata_tag_ACAMERA_SCALER_CROP_REGION as u32,
+            acamera_metadata_tag::ACAMERA_SCALER_CROP_REGION.0 as u32,
             4,
             config.crop_region.as_ptr(),
         );
@@ -552,7 +557,7 @@ impl AndroidCamera {
         let mut exp_ns = (target_exposure as i64) * 1000;
         ACaptureRequest_setEntry_i64(
             request,
-            acamera_metadata_tag_ACAMERA_SENSOR_EXPOSURE_TIME as u32,
+            acamera_metadata_tag::ACAMERA_SENSOR_EXPOSURE_TIME.0 as u32,
             1,
             &exp_ns,
         );
@@ -567,7 +572,7 @@ impl AndroidCamera {
 
         'capture: loop {
             // Poll Looper to drive the AImageReader callbacks
-            let looper = ALooper_forThread();
+            let _looper = ALooper_forThread();
             ALooper_pollAll(50, ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
 
             while let Ok(cmd) = rx.try_recv() {
@@ -578,7 +583,7 @@ impl AndroidCamera {
                         exp_ns = (target_exposure as i64) * 1000;
                         ACaptureRequest_setEntry_i64(
                             request,
-                            acamera_metadata_tag_ACAMERA_SENSOR_EXPOSURE_TIME as u32,
+                            acamera_metadata_tag::ACAMERA_SENSOR_EXPOSURE_TIME.0 as u32,
                             1,
                             &exp_ns,
                         );
@@ -606,6 +611,7 @@ impl AndroidCamera {
         ACameraDevice_close(device);
         AImageReader_delete(image_reader);
         ACameraManager_delete(manager);
+        }
     }
 }
 

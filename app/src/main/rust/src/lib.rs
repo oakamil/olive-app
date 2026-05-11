@@ -3,12 +3,14 @@ use jni::objects::JClass;
 use jni::sys::jint;
 use std::sync::Mutex;
 use std::thread;
+use olive_engine::imu::ImuDevice;
 
 pub mod android_camera;
 pub mod android_imu;
 
 static RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static ENGINE_STOP_TX: Mutex<Option<tokio::sync::oneshot::Sender<()>>> = Mutex::new(None);
+static ENGINE_STATE: Mutex<Option<std::sync::Arc<std::sync::RwLock<olive_engine::engine::EngineStateData>>>> = Mutex::new(None);
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_MainActivity_initJni(
@@ -62,7 +64,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
             use std::sync::Arc;
 
             // 30 FPS, MJPEG true
-            let mut cam = Camera::with_fd(30, true, Some(fd));
+            let mut cam = Camera::with_fd(30, true, None, Some(fd));
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start UVC camera: {}", e);
                 return;
@@ -86,6 +88,8 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
             let server_camera = camera.clone();
             let server_client_connected = client_connected.clone();
             let server_engine_state = engine_state.clone();
+            
+            *crate::ENGINE_STATE.lock().unwrap() = Some(engine_state.clone());
 
             let server_handle = tokio::spawn(async move {
                 control_server::start_server(
@@ -190,6 +194,8 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
             let server_camera = camera.clone();
             let server_client_connected = client_connected.clone();
             let server_engine_state = engine_state.clone();
+            
+            *crate::ENGINE_STATE.lock().unwrap() = Some(engine_state.clone());
 
             let server_handle = tokio::spawn(async move {
                 control_server::start_server(
@@ -246,4 +252,23 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_stopEngine(
     if let Some(tx) = ENGINE_STOP_TX.lock().unwrap().take() {
         let _ = tx.send(());
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_getEngineStats(
+    env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jstring {
+    let state_lock = ENGINE_STATE.lock().unwrap();
+    let json_str = if let Some(state) = state_lock.as_ref() {
+        if let Ok(guard) = state.read() {
+            serde_json::to_string(&*guard).unwrap_or_else(|_| "{}".to_string())
+        } else {
+            "{}".to_string()
+        }
+    } else {
+        "{}".to_string()
+    };
+    
+    env.new_string(json_str).unwrap().into_raw()
 }
