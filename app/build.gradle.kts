@@ -25,6 +25,15 @@ android {
         kotlinCompilerExtensionVersion = "1.5.1"
     }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
     sourceSets {
         getByName("main") {
             jniLibs.srcDir("src/main/jniLibs")
@@ -52,6 +61,9 @@ tasks.register<Exec>("cargoBuild") {
     val jniDir = file("src/main/jniLibs/\${rustArchName}")
 
     workingDir(projectDir)
+    environment("ANDROID_NDK_HOME", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358")
+    environment("CMAKE_TOOLCHAIN_FILE_aarch64_linux_android", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358/build/cmake/android.toolchain.cmake")
+    environment("CMAKE_MAKE_PROGRAM", "/opt/homebrew/bin/ninja")
     commandLine("cargo", "ndk", "-t", rustArchName, "-o", "../jniLibs", "build", "--release")
 }
 

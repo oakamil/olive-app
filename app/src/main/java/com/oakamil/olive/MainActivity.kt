@@ -77,14 +77,49 @@ class MainActivity : ComponentActivity() {
     private val isEngineRunning: Boolean
         get() = engineMode != EngineMode.STOPPED
     private var connectedDevice: UsbDevice? = null
+    private var engineStats by mutableStateOf(EngineStats())
 
     private var currentScreen by mutableStateOf("main")
+
+    // Stats
+    data class EngineStats(
+        val status: String = "Idle",
+        val ra: Double? = null,
+        val dec: Double? = null,
+        val roll: Double? = null,
+        val exposureMs: Double = 0.0,
+        val postProcessMs: Double = 0.0,
+        val extractMs: Double = 0.0,
+        val solveMs: Double = 0.0,
+        val solveRateHz: Double = 0.0
+    )
 
     // Rust JNI functions
     private external fun initJni(filesDir: String)
     private external fun startEngine(fd: Int, imuEnabled: Boolean)
     private external fun startNativeCameraEngine(imuEnabled: Boolean)
     private external fun stopEngine()
+    private external fun getEngineStats(): String
+
+    private fun updateStats() {
+        val json = getEngineStats()
+        try {
+            val obj = org.json.JSONObject(json)
+            engineStats = EngineStats(
+                status = obj.optString("status", "Idle"),
+                ra = if (obj.isNull("ra")) null else obj.optDouble("ra"),
+                dec = if (obj.isNull("dec")) null else obj.optDouble("dec"),
+                roll = if (obj.isNull("roll")) null else obj.optDouble("roll"),
+                exposureMs = obj.optDouble("exposure_us", 0.0) / 1000.0,
+                postProcessMs = obj.optDouble("post_process_ms", 0.0),
+                extractMs = obj.optDouble("extract_ms", 0.0),
+                solveMs = obj.optDouble("solve_ms", 0.0),
+                solveRateHz = obj.optDouble("solve_rate_hz", 0.0)
+            )
+        } catch (e: Exception) {
+            // Ignore parse errors
+        }
+    }
 
     init {
         System.loadLibrary("olive_jni")
@@ -242,6 +277,15 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun MainScreen() {
+        if (isEngineRunning) {
+            LaunchedEffect(Unit) {
+                while (true) {
+                    updateStats()
+                    kotlinx.coroutines.delay(500)
+                }
+            }
+        }
+
         Column(
             modifier = Modifier.fillMaxSize().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -261,16 +305,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
             
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(32.dp))
 
-            val currentModeStr = if (settingsManager.cameraSelection == "external" && isCameraConnected) "UVC Camera Selected" else "Internal Camera Selected"
-            
-            Text(
-                text = currentModeStr,
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(bottom = 16.dp),
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            if (isEngineRunning) {
+                StatsDisplay(engineStats)
+                Spacer(modifier = Modifier.weight(1f))
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
+                val currentModeStr = if (settingsManager.cameraSelection == "external" && isCameraConnected) "UVC Camera Selected" else "Internal Camera Selected"
+                
+                Text(
+                    text = currentModeStr,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+
             Button(
                 onClick = { toggleEngine() },
                 modifier = Modifier.padding(16.dp),
@@ -282,7 +333,27 @@ class MainActivity : ComponentActivity() {
                 Text(if (isEngineRunning) "Stop Engine" else "Start Engine")
             }
             
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+
+    @Composable
+    fun StatsDisplay(stats: EngineStats) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text("Engine Status: \${stats.status}", color = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("RA: \${stats.ra?.let { String.format(\"%.4f\", it) } ?: \"-\"}", color = MaterialTheme.colorScheme.onBackground)
+            Text("Dec: \${stats.dec?.let { String.format(\"%.4f\", it) } ?: \"-\"}", color = MaterialTheme.colorScheme.onBackground)
+            Text("Roll: \${stats.roll?.let { String.format(\"%.4f\", it) } ?: \"-\"}", color = MaterialTheme.colorScheme.onBackground)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Exposure: \${String.format(\"%.2f\", stats.exposureMs)} ms", color = MaterialTheme.colorScheme.onBackground)
+            Text("Post-Process: \${String.format(\"%.1f\", stats.postProcessMs)} ms", color = MaterialTheme.colorScheme.onBackground)
+            Text("Extraction: \${String.format(\"%.1f\", stats.extractMs)} ms", color = MaterialTheme.colorScheme.onBackground)
+            Text("Solve: \${String.format(\"%.1f\", stats.solveMs)} ms", color = MaterialTheme.colorScheme.onBackground)
+            Text("Solve Rate: \${String.format(\"%.2f\", stats.solveRateHz)} Hz", color = MaterialTheme.colorScheme.onBackground)
         }
     }
 
