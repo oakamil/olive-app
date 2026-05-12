@@ -343,17 +343,17 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.Start
         ) {
-            Text("Engine Status: \${stats.status}", color = MaterialTheme.colorScheme.primary)
+            Text("Engine Status: ${stats.status}", color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(8.dp))
-            Text("RA: \${stats.ra?.let { String.format(\"%.4f\", it) } ?: \"-\"}", color = MaterialTheme.colorScheme.onBackground)
-            Text("Dec: \${stats.dec?.let { String.format(\"%.4f\", it) } ?: \"-\"}", color = MaterialTheme.colorScheme.onBackground)
-            Text("Roll: \${stats.roll?.let { String.format(\"%.4f\", it) } ?: \"-\"}", color = MaterialTheme.colorScheme.onBackground)
+            Text("RA: ${stats.ra?.let { String.format("%.4f", it) } ?: "-"}", color = MaterialTheme.colorScheme.onBackground)
+            Text("Dec: ${stats.dec?.let { String.format("%.4f", it) } ?: "-"}", color = MaterialTheme.colorScheme.onBackground)
+            Text("Roll: ${stats.roll?.let { String.format("%.4f", it) } ?: "-"}", color = MaterialTheme.colorScheme.onBackground)
             Spacer(modifier = Modifier.height(8.dp))
-            Text("Exposure: \${String.format(\"%.2f\", stats.exposureMs)} ms", color = MaterialTheme.colorScheme.onBackground)
-            Text("Post-Process: \${String.format(\"%.1f\", stats.postProcessMs)} ms", color = MaterialTheme.colorScheme.onBackground)
-            Text("Extraction: \${String.format(\"%.1f\", stats.extractMs)} ms", color = MaterialTheme.colorScheme.onBackground)
-            Text("Solve: \${String.format(\"%.1f\", stats.solveMs)} ms", color = MaterialTheme.colorScheme.onBackground)
-            Text("Solve Rate: \${String.format(\"%.2f\", stats.solveRateHz)} Hz", color = MaterialTheme.colorScheme.onBackground)
+            Text("Exposure: ${String.format("%.2f", stats.exposureMs)} ms", color = MaterialTheme.colorScheme.onBackground)
+            Text("Post-Process: ${String.format("%.1f", stats.postProcessMs)} ms", color = MaterialTheme.colorScheme.onBackground)
+            Text("Extraction: ${String.format("%.1f", stats.extractMs)} ms", color = MaterialTheme.colorScheme.onBackground)
+            Text("Solve: ${String.format("%.1f", stats.solveMs)} ms", color = MaterialTheme.colorScheme.onBackground)
+            Text("Solve Rate: ${String.format("%.2f", stats.solveRateHz)} Hz", color = MaterialTheme.colorScheme.onBackground)
         }
     }
 

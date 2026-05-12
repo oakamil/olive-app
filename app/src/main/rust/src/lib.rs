@@ -18,6 +18,16 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_initJni(
     _class: JClass,
     files_dir: jni::objects::JString,
 ) {
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Info)
+            .with_tag("OliveRust"),
+    );
+
+    std::panic::set_hook(Box::new(|panic_info| {
+        log::error!("RUST PANIC: {}", panic_info);
+    }));
+
     if let Ok(dir) = env.get_string(&files_dir) {
         if let Ok(dir_str) = dir.to_str() {
             if let Err(e) = std::env::set_current_dir(dir_str) {
