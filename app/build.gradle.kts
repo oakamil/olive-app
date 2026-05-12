@@ -39,6 +39,11 @@ android {
             jniLibs.srcDir("src/main/jniLibs")
         }
     }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
 }
 
 dependencies {
@@ -64,7 +69,7 @@ tasks.register<Exec>("cargoBuild") {
     environment("ANDROID_NDK_HOME", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358")
     environment("CMAKE_TOOLCHAIN_FILE_aarch64_linux_android", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358/build/cmake/android.toolchain.cmake")
     environment("CMAKE_MAKE_PROGRAM", "/opt/homebrew/bin/ninja")
-    commandLine("cargo", "ndk", "-t", rustArchName, "-o", "../jniLibs", "build", "--release")
+    commandLine("cargo", "ndk", "-P", "24", "-t", rustArchName, "-o", "../jniLibs", "build", "--release")
 }
 
 tasks.whenTaskAdded {

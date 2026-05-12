@@ -15,7 +15,7 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
 
-const INITIAL_EXPOSURE_US: i32 = 200_000;
+const INITIAL_EXPOSURE_US: i32 = 555550_000;
 const MIN_EXPOSURE_US: i32 = 16_667;
 const MAX_EXPOSURE_US: i32 = 5_000_000;
 
@@ -36,6 +36,7 @@ enum CaptureCommand {
 #[derive(Clone)]
 pub struct AndroidCameraConfiguration {
     pub id: String,
+    pub logical_id: String,
     pub width: u32,
     pub height: u32,
     pub crop_region: [i32; 4],
@@ -224,26 +225,78 @@ impl AndroidCamera {
 
     unsafe fn discover_and_configure_camera() -> AndroidCameraConfiguration {
         unsafe {
-        info!("Scanning Android cameras for best FOV fit...");
-
         let manager = ACameraManager_create();
         let mut id_list: *mut ACameraIdList = ptr::null_mut();
         ACameraManager_getCameraIdList(manager, &mut id_list);
 
+        let mut all_cam_ids: Vec<(String, String)> = Vec::new();
+
+        let num_cameras = (*id_list).numCameras;
+        info!("Scanning Android cameras for best FOV fit...");
+        
+        for i in 0..num_cameras {
+            let cam_id_ptr = *(*id_list).cameraIds.offset(i as isize);
+            let cam_id = CStr::from_ptr(cam_id_ptr).to_string_lossy().into_owned();
+            all_cam_ids.push((cam_id.clone(), cam_id.clone()));
+
+            let mut metadata: *mut ACameraMetadata = ptr::null_mut();
+            if ACameraManager_getCameraCharacteristics(manager, cam_id_ptr, &mut metadata) == camera_status_t::ACAMERA_OK {
+                
+                // Extract physical IDs if this is a logical multi-camera
+                let mut entry: ACameraMetadata_const_entry = std::mem::zeroed();
+                if ACameraMetadata_getConstEntry(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_LOGICAL_MULTI_CAMERA_PHYSICAL_IDS.0 as u32,
+                    &mut entry,
+                ) == camera_status_t::ACAMERA_OK && entry.count > 0 {
+                    
+                    let mut start = 0;
+                    let data_slice = std::slice::from_raw_parts(entry.data.u8_, entry.count as usize);
+                    
+                    for k in 0..entry.count as usize {
+                        if data_slice[k] == 0 { // null-terminated string
+                            if let Ok(s) = std::str::from_utf8(&data_slice[start..k]) {
+                                let phys_id = s.to_string();
+                                info!("Found physical camera {} hidden in logical camera {}", phys_id, cam_id);
+                                if !all_cam_ids.iter().any(|(p, _)| *p == phys_id) {
+                                    all_cam_ids.push((phys_id, cam_id.clone()));
+                                }
+                            }
+                            start = k + 1;
+                        }
+                    }
+                }
+                ACameraMetadata_free(metadata);
+            }
+        }
+
         let mut best_id = String::new();
+        let mut best_logical_id = String::new();
         let mut min_fov = f32::MAX;
         let mut best_crop = [0, 0, 0, 0];
         let mut max_analog = 0;
         let mut best_dim = (0, 0);
 
-        for i in 0..(*id_list).numCameras {
-            let cam_id_ptr = *(*id_list).cameraIds.offset(i as isize);
-            let cam_id = CStr::from_ptr(cam_id_ptr).to_string_lossy().into_owned();
+        info!("Total unique cameras to evaluate: {}", all_cam_ids.len());
+
+        let mut c_strings = Vec::new();
+        for (phys_id, logical_id) in all_cam_ids {
+            c_strings.push((
+                std::ffi::CString::new(phys_id).unwrap(),
+                std::ffi::CString::new(logical_id).unwrap()
+            ));
+        }
+
+        for (cam_id_c, logical_id_c) in &c_strings {
+            let cam_id_ptr = cam_id_c.as_ptr();
+            let cam_id = cam_id_c.to_string_lossy().into_owned();
+            let logical_id = logical_id_c.to_string_lossy().into_owned();
 
             let mut metadata: *mut ACameraMetadata = ptr::null_mut();
             if ACameraManager_getCameraCharacteristics(manager, cam_id_ptr, &mut metadata)
                 != camera_status_t::ACAMERA_OK
             {
+                info!("Camera {}: Skipped (Failed to get characteristics)", cam_id);
                 continue;
             }
 
@@ -258,6 +311,7 @@ impl AndroidCamera {
                 || *entry.data.u8_
                     != acamera_metadata_enum_acamera_lens_facing::ACAMERA_LENS_FACING_BACK.0 as u8
             {
+                info!("Camera {}: Skipped (Not back-facing)", cam_id);
                 ACameraMetadata_free(metadata);
                 continue;
             }
@@ -269,6 +323,7 @@ impl AndroidCamera {
                 &mut entry,
             );
             if entry.count < 2 {
+                info!("Camera {}: Skipped (Missing physical size metadata)", cam_id);
                 ACameraMetadata_free(metadata);
                 continue;
             }
@@ -280,6 +335,7 @@ impl AndroidCamera {
                 &mut entry,
             );
             if entry.count == 0 {
+                info!("Camera {}: Skipped (Missing focal length metadata)", cam_id);
                 ACameraMetadata_free(metadata);
                 continue;
             }
@@ -292,6 +348,7 @@ impl AndroidCamera {
                 &mut entry,
             );
             if entry.count < 4 {
+                info!("Camera {}: Skipped (Missing active array metadata)", cam_id);
                 ACameraMetadata_free(metadata);
                 continue;
             }
@@ -318,11 +375,46 @@ impl AndroidCamera {
             let fov_rad = 2.0 * (phys_width_mm / (2.0 * focal_length_mm)).atan();
             let fov_deg = fov_rad * (180.0 / std::f32::consts::PI);
 
+            // 5. Query Available Stream Configurations for RAW16
+            let mut stream_configs_entry: ACameraMetadata_const_entry = std::mem::zeroed();
+            ACameraMetadata_getConstEntry(
+                metadata,
+                acamera_metadata_tag::ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS.0 as u32,
+                &mut stream_configs_entry,
+            );
+
+            let mut valid_raw_sizes = Vec::new();
+            // Format is [format, width, height, input/output]
+            let num_configs = stream_configs_entry.count / 4;
+            for j in 0..num_configs {
+                let offset = (j * 4) as isize;
+                let format = *stream_configs_entry.data.i32_.offset(offset);
+                let width = *stream_configs_entry.data.i32_.offset(offset + 1);
+                let height = *stream_configs_entry.data.i32_.offset(offset + 2);
+                let is_input = *stream_configs_entry.data.i32_.offset(offset + 3);
+
+                if format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32 && is_input == 0 {
+                    valid_raw_sizes.push((width as u32, height as u32));
+                }
+            }
+
+            if valid_raw_sizes.is_empty() {
+                info!("Camera {}: Skipped (Back-facing, FOV {:.1}°, but NO RAW16 stream support)", cam_id, fov_deg);
+                ACameraMetadata_free(metadata);
+                continue;
+            }
+
+            info!("Camera {}: Back-facing, FOV {:.1}°, supports RAW16. Considering...", cam_id, fov_deg);
+
             // Target smallest FOV > 10.0 degrees
             if fov_deg >= 10.0 && fov_deg < min_fov {
                 min_fov = fov_deg;
                 best_id = cam_id.clone();
+                best_logical_id = logical_id.clone();
                 max_analog = sensor_max_analog;
+
+                let target_crop_w;
+                let target_crop_h;
 
                 if fov_deg > 25.0 {
                     let target_fov_rad = 25.0_f32 * (std::f32::consts::PI / 180.0);
@@ -337,17 +429,48 @@ impl AndroidCamera {
                     let crop_y = active_array[1] + (active_array[3] - crop_h) / 2;
 
                     best_crop = [crop_x, crop_y, crop_w, crop_h];
-                    best_dim = (crop_w as u32, crop_h as u32);
-                    info!(
-                        "Camera {} selected. Native FOV: {:.1}°. Cropping to {:.1}° ({}x{})",
-                        best_id, fov_deg, 25.0, crop_w, crop_h
-                    );
+                    target_crop_w = crop_w as u32;
+                    target_crop_h = crop_h as u32;
                 } else {
                     best_crop = active_array;
-                    best_dim = (active_array[2] as u32, active_array[3] as u32);
+                    target_crop_w = active_array[2] as u32;
+                    target_crop_h = active_array[3] as u32;
+                }
+
+                // Find the smallest valid RAW16 size that is >= our target crop size.
+                // If none is larger, just pick the largest available.
+                let mut best_valid_size = valid_raw_sizes[0];
+                let mut min_diff = u32::MAX;
+                
+                // Sort to make logic simpler (largest first)
+                valid_raw_sizes.sort_by(|a, b| (b.0 * b.1).cmp(&(a.0 * a.1)));
+                
+                let mut found_larger = false;
+                for size in &valid_raw_sizes {
+                    if size.0 >= target_crop_w && size.1 >= target_crop_h {
+                        found_larger = true;
+                        let diff = (size.0 - target_crop_w) + (size.1 - target_crop_h);
+                        if diff < min_diff {
+                            min_diff = diff;
+                            best_valid_size = *size;
+                        }
+                    }
+                }
+                if !found_larger {
+                    best_valid_size = valid_raw_sizes[0]; // fallback to largest
+                }
+
+                best_dim = best_valid_size;
+
+                if fov_deg > 25.0 {
                     info!(
-                        "Camera {} selected. Native FOV: {:.1}°. Using full array ({}x{})",
-                        best_id, fov_deg, best_dim.0, best_dim.1
+                        "Camera {} selected. Native FOV: {:.1}°. Cropping to {:.1}° (Crop window: {}x{}, Stream output: {}x{})",
+                        best_id, fov_deg, 25.0, best_crop[2], best_crop[3], best_dim.0, best_dim.1
+                    );
+                } else {
+                    info!(
+                        "Camera {} selected. Native FOV: {:.1}°. Using full array (Crop window: {}x{}, Stream output: {}x{})",
+                        best_id, fov_deg, best_crop[2], best_crop[3], best_dim.0, best_dim.1
                     );
                 }
             }
@@ -355,11 +478,12 @@ impl AndroidCamera {
             ACameraMetadata_free(metadata);
         }
 
-        ACameraManager_deleteCameraIdList(id_list);
         ACameraManager_delete(manager);
+        ACameraManager_deleteCameraIdList(id_list);
 
         AndroidCameraConfiguration {
             id: best_id,
+            logical_id: best_logical_id,
             width: best_dim.0,
             height: best_dim.1,
             crop_region: best_crop,
@@ -374,9 +498,9 @@ impl AndroidCamera {
         unsafe {
             let ctx = &*(context as *const ImageReaderContext);
             let mut image: *mut AImage = ptr::null_mut();
-
             if AImageReader_acquireLatestImage(reader, &mut image) == media_status_t::AMEDIA_OK && !image.is_null()
             {
+                log::debug!("Received frame from Android camera ({}x{})", ctx.width, ctx.height);
                 let receive_time = std::time::Instant::now();
 
                 let mut data: *mut u8 = ptr::null_mut();
@@ -420,6 +544,45 @@ impl AndroidCamera {
                 AImage_delete(image);
             }
         }
+    }
+
+    extern "C" fn on_session_ready(_context: *mut c_void, _session: *mut ACameraCaptureSession) {
+        log::info!("Camera capture session READY");
+    }
+
+    extern "C" fn on_session_active(_context: *mut c_void, _session: *mut ACameraCaptureSession) {
+        log::info!("Camera capture session ACTIVE");
+    }
+
+    extern "C" fn on_capture_completed(
+        _context: *mut c_void,
+        _session: *mut ACameraCaptureSession,
+        _request: *mut ACaptureRequest,
+        _result: *const ACameraMetadata,
+    ) {
+        // Too spammy for info
+    }
+
+    extern "C" fn on_capture_failed(
+        _context: *mut c_void,
+        _session: *mut ACameraCaptureSession,
+        _request: *mut ACaptureRequest,
+        failure: *mut ACameraCaptureFailure,
+    ) {
+        unsafe {
+            let reason = (*failure).reason;
+            log::error!("Camera capture FAILED: reason {}", reason);
+        }
+    }
+
+    extern "C" fn on_capture_buffer_lost(
+        _context: *mut c_void,
+        _session: *mut ACameraCaptureSession,
+        _request: *mut ACaptureRequest,
+        _window: *mut ANativeWindow,
+        frame_number: i64,
+    ) {
+        log::warn!("Camera capture BUFFER LOST for frame {}", frame_number);
     }
 
     unsafe fn capture_loop(
@@ -468,7 +631,7 @@ impl AndroidCamera {
         // 2. Open Camera
         let manager = ACameraManager_create();
         let mut device: *mut ACameraDevice = ptr::null_mut();
-        let cam_id_c = std::ffi::CString::new(config.id.clone()).unwrap();
+        let logical_id_c = std::ffi::CString::new(config.logical_id.clone()).unwrap();
 
         let mut device_callbacks = ACameraDevice_stateCallbacks {
             context: ptr::null_mut(),
@@ -477,7 +640,7 @@ impl AndroidCamera {
         };
         ACameraManager_openCamera(
             manager,
-            cam_id_c.as_ptr(),
+            logical_id_c.as_ptr(),
             &mut device_callbacks,
             &mut device,
         );
@@ -490,15 +653,20 @@ impl AndroidCamera {
         ACaptureSessionOutputContainer_create(&mut output_container);
 
         let mut output: *mut ACaptureSessionOutput = ptr::null_mut();
-        ACaptureSessionOutput_create(window, &mut output);
+        if config.id != config.logical_id {
+            let phys_id_c = std::ffi::CString::new(config.id.clone()).unwrap();
+            ACaptureSessionPhysicalOutput_create(window, phys_id_c.as_ptr(), &mut output);
+        } else {
+            ACaptureSessionOutput_create(window, &mut output);
+        }
         ACaptureSessionOutputContainer_add(output_container, output);
 
         let mut session: *mut ACameraCaptureSession = ptr::null_mut();
         let mut session_callbacks = ACameraCaptureSession_stateCallbacks {
             context: ptr::null_mut(),
             onClosed: None,
-            onReady: None,
-            onActive: None,
+            onReady: Some(Self::on_session_ready),
+            onActive: Some(Self::on_session_active),
         };
         ACameraDevice_createCaptureSession(
             device,
@@ -519,12 +687,36 @@ impl AndroidCamera {
         ACaptureRequest_addTarget(request, target);
 
         // Disable 3A routines
-        let mode_off = acamera_metadata_enum_acamera_control_mode::ACAMERA_CONTROL_MODE_OFF.0 as u8;
+        let control_mode_off = acamera_metadata_enum_acamera_control_mode::ACAMERA_CONTROL_MODE_OFF.0 as u8;
         ACaptureRequest_setEntry_u8(
             request,
             acamera_metadata_tag::ACAMERA_CONTROL_MODE.0 as u32,
             1,
-            &mode_off,
+            &control_mode_off,
+        );
+
+        let ae_mode_off = acamera_metadata_enum_acamera_control_ae_mode::ACAMERA_CONTROL_AE_MODE_OFF.0 as u8;
+        ACaptureRequest_setEntry_u8(
+            request,
+            acamera_metadata_tag::ACAMERA_CONTROL_AE_MODE.0 as u32,
+            1,
+            &ae_mode_off,
+        );
+
+        let af_mode_off = acamera_metadata_enum_acamera_control_af_mode::ACAMERA_CONTROL_AF_MODE_OFF.0 as u8;
+        ACaptureRequest_setEntry_u8(
+            request,
+            acamera_metadata_tag::ACAMERA_CONTROL_AF_MODE.0 as u32,
+            1,
+            &af_mode_off,
+        );
+
+        let infinity = 0.0f32;
+        ACaptureRequest_setEntry_float(
+            request,
+            acamera_metadata_tag::ACAMERA_LENS_FOCUS_DISTANCE.0 as u32,
+            1,
+            &infinity,
         );
 
         let nr_off =
@@ -562,9 +754,20 @@ impl AndroidCamera {
             &exp_ns,
         );
 
+        let mut capture_callbacks = ACameraCaptureSession_captureCallbacks {
+            context: ptr::null_mut(),
+            onCaptureStarted: None,
+            onCaptureProgressed: None,
+            onCaptureCompleted: Some(Self::on_capture_completed),
+            onCaptureFailed: Some(Self::on_capture_failed),
+            onCaptureSequenceCompleted: None,
+            onCaptureSequenceAborted: None,
+            onCaptureBufferLost: Some(Self::on_capture_buffer_lost),
+        };
+
         ACameraCaptureSession_setRepeatingRequest(
             session,
-            ptr::null_mut(),
+            &mut capture_callbacks,
             1,
             &mut request,
             ptr::null_mut(),
