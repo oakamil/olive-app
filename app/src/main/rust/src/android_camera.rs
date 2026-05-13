@@ -15,7 +15,7 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
 
-const INITIAL_EXPOSURE_US: i32 = 555550_000;
+const INITIAL_EXPOSURE_US: i32 = 100_000;
 const MIN_EXPOSURE_US: i32 = 16_667;
 const MAX_EXPOSURE_US: i32 = 5_000_000;
 

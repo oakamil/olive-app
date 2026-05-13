@@ -84,7 +84,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
             let config = EngineConfig {
                 gain: None,
                 target_centroids: 20,
-                database_path: "/sdcard/Documents/default_database.npz".to_string(), // Adjust if needed
+                database_path: "default_database.npz".to_string(),
                 isp: false,
                 bg_mode: olive_engine::engine::BgMode::Line,
                 extractor_type: olive_engine::engine::Extractor::Sequential,
@@ -190,7 +190,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
             let config = EngineConfig {
                 gain: None,
                 target_centroids: 20,
-                database_path: "/sdcard/Documents/default_database.npz".to_string(), // Adjust if needed
+                database_path: "default_database.npz".to_string(),
                 isp: false,
                 bg_mode: olive_engine::engine::BgMode::Line,
                 extractor_type: olive_engine::engine::Extractor::Sequential,

@@ -17,6 +17,7 @@ ndk-sys = "0.6.0"
 openssl = { version = "0.10", features = ["vendored"] }
 nalgebra = "0.32"
 serde_json = "1.0.149"
+uvc = {git = "https://github.com/oakamil/libuvc-rs", features = ["vendor", "wrap_fd"]}
 
 [patch."https://github.com/oakamil/libuvc-rs"]
-uvc = { path = "../../../../libuvc-rs" }
+uvc = { path = "../../../../../libuvc-rs" }

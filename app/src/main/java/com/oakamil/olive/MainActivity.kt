@@ -9,11 +9,16 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.hardware.usb.UsbDeviceConnection
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -74,6 +79,7 @@ class MainActivity : ComponentActivity() {
     private var isCameraConnected by mutableStateOf(false)
     private enum class EngineMode { STOPPED, UVC, NATIVE }
     private var engineMode by mutableStateOf(EngineMode.STOPPED)
+    private var uvcConnection: UsbDeviceConnection? = null
     private val isEngineRunning: Boolean
         get() = engineMode != EngineMode.STOPPED
     private var connectedDevice: UsbDevice? = null
@@ -161,6 +167,8 @@ class MainActivity : ComponentActivity() {
                     checkForCameras()
                     if (!isCameraConnected && engineMode == EngineMode.UVC) {
                         stopEngine()
+                        uvcConnection?.close()
+                        uvcConnection = null
                         engineMode = EngineMode.STOPPED
                     }
                 }
@@ -168,9 +176,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun copyAssetDatabase() {
+        val assetName = "default_database.npz"
+        val outFile = java.io.File(filesDir, assetName)
+        if (!outFile.exists()) {
+            try {
+                assets.open(assetName).use { inputStream ->
+                    java.io.FileOutputStream(outFile).use { outputStream ->
+                        val buffer = ByteArray(1024 * 4)
+                        var read: Int
+                        while (inputStream.read(buffer).also { read = it } != -1) {
+                            outputStream.write(buffer, 0, read)
+                        }
+                        outputStream.flush()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).let { controller ->
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+
+        copyAssetDatabase()
         initJni(filesDir.absolutePath)
         
         settingsManager = SettingsManager(this)
@@ -192,6 +228,14 @@ class MainActivity : ComponentActivity() {
         checkForCameras()
 
         setContent {
+            LaunchedEffect(isEngineRunning) {
+                if (isEngineRunning) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+
             NightVisionTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -212,6 +256,8 @@ class MainActivity : ComponentActivity() {
         if (isEngineRunning) {
             stopEngine()
         }
+        uvcConnection?.close()
+        uvcConnection = null
     }
 
     private fun checkForCameras() {
@@ -241,6 +287,8 @@ class MainActivity : ComponentActivity() {
     private fun toggleEngine() {
         if (isEngineRunning) {
             stopEngine()
+            uvcConnection?.close()
+            uvcConnection = null
             engineMode = EngineMode.STOPPED
         } else {
             val useExternal = settingsManager.cameraSelection == "external" && connectedDevice != null
@@ -267,8 +315,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openDeviceAndStartEngine(device: UsbDevice) {
+        uvcConnection?.close()
         val connection = usbManager.openDevice(device)
         if (connection != null) {
+            uvcConnection = connection
             val fd = connection.fileDescriptor
             startEngine(fd, settingsManager.imuIntegration)
             engineMode = EngineMode.UVC
