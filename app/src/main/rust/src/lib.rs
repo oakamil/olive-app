@@ -1,6 +1,7 @@
 use jni::JNIEnv;
 use jni::objects::JClass;
 use jni::sys::jint;
+use std::ptr;
 use std::sync::Mutex;
 use std::thread;
 use olive_engine::imu::ImuDevice;
@@ -11,6 +12,7 @@ pub mod android_imu;
 static RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static ENGINE_STOP_TX: Mutex<Option<tokio::sync::oneshot::Sender<()>>> = Mutex::new(None);
 static ENGINE_STATE: Mutex<Option<std::sync::Arc<std::sync::RwLock<olive_engine::engine::EngineStateData>>>> = Mutex::new(None);
+static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_MainActivity_initJni(
@@ -79,7 +81,8 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
                 log::error!("Failed to start UVC camera: {}", e);
                 return;
             }
-            let camera: Arc<dyn CameraTrait> = Arc::new(cam);
+            let camera: std::sync::Arc<dyn CameraTrait> = Arc::new(cam);
+            *CAMERA.lock().unwrap() = Some(camera.clone());
 
             let config = EngineConfig {
                 gain: None,
@@ -185,7 +188,8 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
                 log::error!("Failed to start Android camera: {}", e);
                 return;
             }
-            let camera: Arc<dyn CameraTrait> = Arc::new(cam);
+            let camera: std::sync::Arc<dyn CameraTrait> = Arc::new(cam);
+            *CAMERA.lock().unwrap() = Some(camera.clone());
 
             let config = EngineConfig {
                 gain: None,
@@ -261,6 +265,119 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_stopEngine(
 ) {
     if let Some(tx) = ENGINE_STOP_TX.lock().unwrap().take() {
         let _ = tx.send(());
+    }
+    *CAMERA.lock().unwrap() = None;
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraExposure(
+    _env: JNIEnv,
+    _class: JClass,
+    exposure_us: jint,
+) {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.set_exposure(exposure_us);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraGain(
+    _env: JNIEnv,
+    _class: JClass,
+    gain: jni::sys::jfloat,
+) {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.set_gain(gain);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraFocus(
+    _env: JNIEnv,
+    _class: JClass,
+    distance: jni::sys::jfloat,
+) {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.set_focus(distance);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraNoiseReduction(
+    _env: JNIEnv,
+    _class: JClass,
+    mode: jint,
+) {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.set_noise_reduction(mode as u8);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_getMaxNativeCameraGain(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jfloat {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_max_gain()
+    } else {
+        3200.0
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_getLatestFrame(
+    env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jbyteArray {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        if let Some(img) = cam.get_last_capture() {
+            let width = img.width;
+            let height = img.height;
+            let data = &img.data;
+            
+            // Downsample by 8x for fast preview
+            let step = 8;
+            let target_width = width / step;
+            let target_height = height / step;
+            let mut downsampled = Vec::with_capacity((target_width * target_height) as usize);
+            
+            for y in 0..target_height {
+                for x in 0..target_width {
+                    let src_idx = (y * step * width) + (x * step);
+                    if (src_idx as usize) < data.len() {
+                        downsampled.push(data[src_idx as usize]);
+                    } else {
+                        downsampled.push(0);
+                    }
+                }
+            }
+
+            let mut result = Vec::with_capacity(downsampled.len() + 8);
+            result.extend_from_slice(&target_width.to_le_bytes());
+            result.extend_from_slice(&target_height.to_le_bytes());
+            result.extend_from_slice(&downsampled);
+
+            let array = env.new_byte_array(result.len() as jni::sys::jsize).unwrap();
+            unsafe {
+                env.set_byte_array_region(&array, 0, std::mem::transmute(result.as_slice()))
+                    .unwrap();
+            }
+            return array.into_raw();
+        }
+    }
+    ptr::null_mut()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_setEnginePaused(
+    _env: JNIEnv,
+    _class: JClass,
+    paused: jni::sys::jboolean,
+) {
+    if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
+        let mut state = state_arc.write().unwrap();
+        state.paused = paused != 0;
     }
 }
 
