@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.hardware.usb.UsbDeviceConnection
+import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -19,6 +21,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -106,6 +109,21 @@ class MainActivity : ComponentActivity() {
     private external fun startNativeCameraEngine(imuEnabled: Boolean)
     private external fun stopEngine()
     private external fun getEngineStats(): String
+    private external fun setNativeCameraExposure(exposureUs: Int)
+    private external fun setNativeCameraGain(gain: Float)
+    private external fun setNativeCameraFocus(distance: Float)
+    private external fun setNativeCameraNoiseReduction(mode: Int)
+    private external fun getMaxNativeCameraGain(): Float
+    private external fun getLatestFrame(): ByteArray?
+    private external fun setEnginePaused(paused: Boolean)
+
+    // Tuning state
+    private var currentExposure by mutableStateOf(100000f)
+    private var currentGain by mutableStateOf(100f)
+    private var maxAnalogGain by mutableStateOf(3200f)
+    private var currentFocus by mutableStateOf(0.0f)
+    private var noiseReductionMode by mutableStateOf(0) // 0=OFF, 1=FAST, 2=HQ
+    private var latestFrame by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
 
     private fun updateStats() {
         val json = getEngineStats()
@@ -125,6 +143,40 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             // Ignore parse errors
         }
+    }
+
+    private fun fetchLatestFrame() {
+        val bytes = getLatestFrame() ?: return
+        if (bytes.size < 8) return
+
+        val width = ((bytes[0].toInt() and 0xFF) or
+                    ((bytes[1].toInt() and 0xFF) shl 8) or
+                    ((bytes[2].toInt() and 0xFF) shl 16) or
+                    ((bytes[3].toInt() and 0xFF) shl 24))
+        
+        val height = ((bytes[4].toInt() and 0xFF) or
+                     ((bytes[5].toInt() and 0xFF) shl 8) or
+                     ((bytes[6].toInt() and 0xFF) shl 16) or
+                     ((bytes[7].toInt() and 0xFF) shl 24))
+
+        val pixelCount = width * height
+        if (bytes.size < pixelCount + 8) return
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val pixels = IntArray(pixelCount)
+        
+        var sum = 0L
+        for (i in 0 until pixelCount) {
+            val gray = bytes[i + 8].toInt() and 0xFF
+            sum += gray
+            pixels[i] = android.graphics.Color.rgb(gray, gray, gray)
+        }
+        
+        val avg = if (pixelCount > 0) sum / pixelCount else 0
+        android.util.Log.d("OliveUI", "Decoded frame ${width}x${height}, avg pixel val: $avg")
+        
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        latestFrame = bitmap.asImageBitmap()
     }
 
     init {
@@ -231,6 +283,11 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(isEngineRunning) {
                 if (isEngineRunning) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    while (true) {
+                        updateStats()
+                        fetchLatestFrame()
+                        kotlinx.coroutines.delay(500)
+                    }
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
@@ -244,6 +301,7 @@ class MainActivity : ComponentActivity() {
                     when (currentScreen) {
                         "main" -> MainScreen()
                         "settings" -> SettingsScreen()
+                        "tuner" -> TunerScreen()
                     }
                 }
             }
@@ -327,23 +385,32 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun MainScreen() {
-        if (isEngineRunning) {
-            LaunchedEffect(Unit) {
-                while (true) {
-                    updateStats()
-                    kotlinx.coroutines.delay(500)
-                }
-            }
-        }
-
         Column(
             modifier = Modifier.fillMaxSize().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                if (isEngineRunning) {
+                    Button(
+                        onClick = { 
+                            setEnginePaused(true)
+                            maxAnalogGain = getMaxNativeCameraGain()
+                            currentScreen = "tuner" 
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Camera Mode")
+                    }
+                } else {
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                
                 Button(
                     onClick = { currentScreen = "settings" },
                     colors = ButtonDefaults.buttonColors(
@@ -355,7 +422,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             if (isEngineRunning) {
                 StatsDisplay(engineStats)
@@ -384,6 +451,114 @@ class MainActivity : ComponentActivity() {
             }
             
             Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+
+    @Composable
+    fun TunerScreen() {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start
+            ) {
+                Button(
+                    onClick = { 
+                        setEnginePaused(false)
+                        currentScreen = "main" 
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text("Back")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Live Preview
+            latestFrame?.let {
+                androidx.compose.foundation.Image(
+                    bitmap = it,
+                    contentDescription = "Live Preview",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp)
+                        .padding(8.dp)
+                        .background(MaterialTheme.colorScheme.surface)
+                )
+            } ?: Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+                    .padding(8.dp)
+                    .background(MaterialTheme.colorScheme.surface),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Waiting for frame...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Tuning Sliders
+            TuningControls()
+        }
+    }
+
+    @Composable
+    fun TuningControls() {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text("Exposure: ${currentExposure.toInt()} us", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+            Slider(
+                value = currentExposure,
+                onValueChange = { 
+                    currentExposure = it
+                    setNativeCameraExposure(it.toInt())
+                },
+                valueRange = 16667f..5000000f,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Text("Gain: ${currentGain.toInt()}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+            Slider(
+                value = currentGain,
+                onValueChange = { 
+                    currentGain = it
+                    setNativeCameraGain(it)
+                },
+                valueRange = 100f..maxAnalogGain,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Text("Focus: ${String.format("%.2f", currentFocus)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+            Slider(
+                value = currentFocus,
+                onValueChange = { 
+                    currentFocus = it
+                    setNativeCameraFocus(it)
+                },
+                valueRange = 0.0f..10.0f,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Noise Reduction: ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+                val modes = listOf("OFF", "FAST", "HQ")
+                modes.forEachIndexed { index, name ->
+                    RadioButton(
+                        selected = noiseReductionMode == index,
+                        onClick = {
+                            noiseReductionMode = index
+                            setNativeCameraNoiseReduction(index)
+                        }
+                    )
+                    Text(name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.padding(end = 8.dp))
+                }
+            }
         }
     }
 

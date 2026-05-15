@@ -28,9 +28,10 @@ struct CaptureStore {
 
 enum CaptureCommand {
     SetExposure(i32),
+    SetGain(i32),
+    SetFocus(f32),
+    SetNoiseReduction(u8),
     StopCaptureThread,
-    #[allow(dead_code)]
-    SetGain(f32),
 }
 
 #[derive(Clone)]
@@ -42,6 +43,7 @@ pub struct AndroidCameraConfiguration {
     pub crop_region: [i32; 4],
     pub max_analog_gain: i32,
     pub fov: f32,
+    pub white_level: i32,
 }
 
 /// Context passed to the AImageReader C callback
@@ -50,6 +52,7 @@ struct ImageReaderContext {
     width: u32,
     height: u32,
     exposure_time_us: Arc<AtomicI32>,
+    white_level: f32,
 }
 
 pub struct AndroidCamera {
@@ -59,7 +62,9 @@ pub struct AndroidCamera {
 
     current_exposure: Arc<AtomicI32>,
     saved_exposure: Arc<AtomicI32>,
-    current_gain: Arc<AtomicU32>, // Holds the fixed max analog gain
+    current_gain: Arc<AtomicI32>,
+    current_focus: Arc<AtomicU32>, // Store f32 as u32 bits
+    current_nr: Arc<AtomicU32>,    // Store u8 as u32
 
     config: Arc<Mutex<Option<AndroidCameraConfiguration>>>,
 }
@@ -85,28 +90,33 @@ impl CameraTrait for AndroidCamera {
         let store_clone = Arc::clone(&self.store);
         let config_clone = Arc::clone(&self.config);
         let exposure_clone = Arc::clone(&self.current_exposure);
+        let gain_clone = Arc::clone(&self.current_gain);
+        let focus_clone = Arc::clone(&self.current_focus);
+        let nr_clone = Arc::clone(&self.current_nr);
 
         self.capture_thread = Some(thread::spawn(move || unsafe {
-            Self::capture_loop(rx, store_clone, config_clone, exposure_clone);
+            Self::capture_loop(rx, store_clone, config_clone, exposure_clone, gain_clone, focus_clone, nr_clone);
         }));
 
         Ok(())
     }
 
     fn get_gain(&self) -> f32 {
-        f32::from_bits(self.current_gain.load(Ordering::Relaxed))
+        self.current_gain.load(Ordering::Relaxed) as f32
     }
 
     fn get_min_gain(&self) -> f32 {
-        self.get_gain()
+        100.0
     }
 
     fn get_max_gain(&self) -> f32 {
-        self.get_gain()
+        self.config.lock().unwrap().as_ref().map(|c| c.max_analog_gain as f32).unwrap_or(3200.0)
     }
 
-    fn set_gain(&self, _gain: f32) {
-        warn!("set_gain ignored: AndroidCamera is locked to Max Analog Gain.");
+    fn set_gain(&self, gain: f32) {
+        let clamped = gain as i32;
+        self.current_gain.store(clamped, Ordering::Relaxed);
+        self.send_command(CaptureCommand::SetGain(clamped));
     }
 
     fn get_exposure(&self) -> i32 {
@@ -120,11 +130,21 @@ impl CameraTrait for AndroidCamera {
     }
 
     fn enable_hcg(&self) {
-        warn!("HCG explicitly managed by Android ISP; ignoring manual enable.");
+        // warn!("HCG explicitly managed by Android ISP; ignoring manual enable.");
     }
 
     fn disable_hcg(&self) {
         warn!("HCG explicitly managed by Android ISP; ignoring manual disable.");
+    }
+
+    fn set_focus(&self, distance: f32) {
+        self.current_focus.store(distance.to_bits(), Ordering::Relaxed);
+        self.send_command(CaptureCommand::SetFocus(distance));
+    }
+
+    fn set_noise_reduction(&self, mode: u8) {
+        self.current_nr.store(mode as u32, Ordering::Relaxed);
+        self.send_command(CaptureCommand::SetNoiseReduction(mode));
     }
 
     fn get_last_capture(&self) -> Option<Arc<Image>> {
@@ -200,11 +220,13 @@ impl AndroidCamera {
         let config = Arc::new(Mutex::new(None));
 
         let selected_config = unsafe { Self::discover_and_configure_camera() };
-        let fixed_gain = selected_config.max_analog_gain as f32;
+        let fixed_gain = selected_config.max_analog_gain;
 
         *config.lock().unwrap() = Some(selected_config);
 
-        let current_gain = Arc::new(AtomicU32::new(fixed_gain.to_bits()));
+        let current_gain = Arc::new(AtomicI32::new(fixed_gain));
+        let current_focus = Arc::new(AtomicU32::new(0.0f32.to_bits()));
+        let current_nr = Arc::new(AtomicU32::new(acamera_metadata_enum_acamera_noise_reduction_mode::ACAMERA_NOISE_REDUCTION_MODE_OFF.0 as u32));
 
         Self {
             command_tx: None,
@@ -213,6 +235,8 @@ impl AndroidCamera {
             current_gain,
             current_exposure,
             saved_exposure,
+            current_focus,
+            current_nr,
             config,
         }
     }
@@ -276,6 +300,7 @@ impl AndroidCamera {
         let mut best_crop = [0, 0, 0, 0];
         let mut max_analog = 0;
         let mut best_dim = (0, 0);
+        let mut best_white_level = 1023;
 
         info!("Total unique cameras to evaluate: {}", all_cam_ids.len());
 
@@ -362,13 +387,25 @@ impl AndroidCamera {
             // 4. Max Analog Gain
             ACameraMetadata_getConstEntry(
                 metadata,
-                acamera_metadata_tag::ACAMERA_SENSOR_INFO_SENSITIVITY_RANGE.0 as u32,
+                acamera_metadata_tag::ACAMERA_SENSOR_MAX_ANALOG_SENSITIVITY.0 as u32,
                 &mut entry,
             );
-            let sensor_max_analog = if entry.count >= 2 {
-                *entry.data.i32_.offset(1)
+            let sensor_max_analog = if entry.count >= 1 {
+                *entry.data.i32_.offset(0)
             } else {
                 800
+            };
+
+            // Query White Level
+            ACameraMetadata_getConstEntry(
+                metadata,
+                acamera_metadata_tag::ACAMERA_SENSOR_INFO_WHITE_LEVEL.0 as u32,
+                &mut entry,
+            );
+            let sensor_white_level = if entry.count >= 1 {
+                *entry.data.i32_.offset(0)
+            } else {
+                1023 // Default to 10-bit max if unknown
             };
 
             // Calculate Horizontal FOV
@@ -412,6 +449,7 @@ impl AndroidCamera {
                 best_id = cam_id.clone();
                 best_logical_id = logical_id.clone();
                 max_analog = sensor_max_analog;
+                best_white_level = sensor_white_level;
 
                 let target_crop_w;
                 let target_crop_h;
@@ -489,6 +527,7 @@ impl AndroidCamera {
             crop_region: best_crop,
             max_analog_gain: max_analog,
             fov: min_fov,
+            white_level: best_white_level,
         }
         }
     }
@@ -517,14 +556,24 @@ impl AndroidCamera {
                 image_data.set_len(width * height);
 
                 let data_slice = std::slice::from_raw_parts(data, len as usize);
+                let scale = 255.0 / ctx.white_level;
+
+                let center_x = width / 2;
+                let center_y = height / 2;
+                let center_idx = (center_y * (row_stride as usize)) + (center_x * 2);
+                let center_val = u16::from_le_bytes([data_slice[center_idx], data_slice[center_idx + 1]]);
+                
+                log::debug!("Scaling: white_level={}, scale={}, center_raw={}, center_scaled={}", ctx.white_level, scale, center_val, (center_val as f32 * scale) as i32);
 
                 for y in 0..height {
                     let src_row_start = y * (row_stride as usize);
                     let dst_row_start = y * width;
                     for x in 0..width {
-                        // Extract high byte of the 16-bit word (Little Endian)
-                        let byte_idx = src_row_start + (x * 2) + 1;
-                        image_data[dst_row_start + x] = data_slice[byte_idx];
+                        let byte_idx = src_row_start + (x * 2);
+                        let val = u16::from_le_bytes([data_slice[byte_idx], data_slice[byte_idx + 1]]);
+                        
+                        let scaled = (val as f32 * scale) as i32;
+                        image_data[dst_row_start + x] = scaled.clamp(0, 255) as u8;
                     }
                 }
 
@@ -590,6 +639,9 @@ impl AndroidCamera {
         store: Arc<CaptureStore>,
         config_store: Arc<Mutex<Option<AndroidCameraConfiguration>>>,
         exposure_ref: Arc<AtomicI32>,
+        gain_ref: Arc<AtomicI32>,
+        focus_ref: Arc<AtomicU32>,
+        nr_ref: Arc<AtomicU32>,
     ) {
         unsafe {
         let config = config_store
@@ -620,6 +672,7 @@ impl AndroidCamera {
             width: config.width,
             height: config.height,
             exposure_time_us: exposure_ref,
+            white_level: config.white_level as f32,
         });
 
         let mut listener = AImageReader_ImageListener {
@@ -711,30 +764,29 @@ impl AndroidCamera {
             &af_mode_off,
         );
 
-        let infinity = 0.0f32;
+        let mut current_focus = f32::from_bits(focus_ref.load(Ordering::Relaxed));
         ACaptureRequest_setEntry_float(
             request,
             acamera_metadata_tag::ACAMERA_LENS_FOCUS_DISTANCE.0 as u32,
             1,
-            &infinity,
+            &current_focus,
         );
 
-        let nr_off =
-            acamera_metadata_enum_acamera_noise_reduction_mode::ACAMERA_NOISE_REDUCTION_MODE_OFF.0
-                as u8;
+        let mut current_nr = nr_ref.load(Ordering::Relaxed) as u8;
         ACaptureRequest_setEntry_u8(
             request,
             acamera_metadata_tag::ACAMERA_NOISE_REDUCTION_MODE.0 as u32,
             1,
-            &nr_off,
+            &current_nr,
         );
 
-        // Hard-lock Max Analog Gain
+        // Hard-lock Analog Gain
+        let mut current_gain = gain_ref.load(Ordering::Relaxed);
         ACaptureRequest_setEntry_i32(
             request,
             acamera_metadata_tag::ACAMERA_SENSOR_SENSITIVITY.0 as u32,
             1,
-            &config.max_analog_gain,
+            &current_gain,
         );
 
         // Apply 25-degree Crop
@@ -779,7 +831,7 @@ impl AndroidCamera {
             ALooper_pollAll(50, ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
 
             while let Ok(cmd) = rx.try_recv() {
-                match cmd {
+                let changed = match cmd {
                     CaptureCommand::StopCaptureThread => break 'capture,
                     CaptureCommand::SetExposure(exp) => {
                         target_exposure = exp;
@@ -790,17 +842,49 @@ impl AndroidCamera {
                             1,
                             &exp_ns,
                         );
-
-                        // Update the repeating request
-                        ACameraCaptureSession_setRepeatingRequest(
-                            session,
-                            ptr::null_mut(),
-                            1,
-                            &mut request,
-                            ptr::null_mut(),
-                        );
+                        true
                     }
-                    CaptureCommand::SetGain(_) => {}
+                    CaptureCommand::SetGain(gain) => {
+                        current_gain = gain;
+                        ACaptureRequest_setEntry_i32(
+                            request,
+                            acamera_metadata_tag::ACAMERA_SENSOR_SENSITIVITY.0 as u32,
+                            1,
+                            &current_gain,
+                        );
+                        true
+                    }
+                    CaptureCommand::SetFocus(dist) => {
+                        current_focus = dist;
+                        ACaptureRequest_setEntry_float(
+                            request,
+                            acamera_metadata_tag::ACAMERA_LENS_FOCUS_DISTANCE.0 as u32,
+                            1,
+                            &current_focus,
+                        );
+                        true
+                    }
+                    CaptureCommand::SetNoiseReduction(mode) => {
+                        current_nr = mode;
+                        ACaptureRequest_setEntry_u8(
+                            request,
+                            acamera_metadata_tag::ACAMERA_NOISE_REDUCTION_MODE.0 as u32,
+                            1,
+                            &current_nr,
+                        );
+                        true
+                    }
+                };
+
+                if changed {
+                    // Update the repeating request
+                    ACameraCaptureSession_setRepeatingRequest(
+                        session,
+                        &mut capture_callbacks,
+                        1,
+                        &mut request,
+                        ptr::null_mut(),
+                    );
                 }
             }
         }

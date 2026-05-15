@@ -21,3 +21,6 @@ uvc = {git = "https://github.com/oakamil/libuvc-rs", features = ["vendor", "wrap
 
 [patch."https://github.com/oakamil/libuvc-rs"]
 uvc = { path = "../../../../../libuvc-rs" }
+
+[patch.crates-io]
+turbojpeg-sys = { path = "../../../../../rust-turbojpeg/turbojpeg-sys" }
