@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
         val ra: Double? = null,
         val dec: Double? = null,
         val roll: Double? = null,
+        val centroidCount: Int = 0,
         val exposureMs: Double = 0.0,
         val postProcessMs: Double = 0.0,
         val extractMs: Double = 0.0,
@@ -113,6 +114,9 @@ class MainActivity : ComponentActivity() {
     private external fun setNativeCameraGain(gain: Float)
     private external fun setNativeCameraFocus(distance: Float)
     private external fun setNativeCameraNoiseReduction(mode: Int)
+    private external fun getNativeCameraExposure(): Int
+    private external fun getNativeCameraGain(): Float
+    private external fun getMinNativeCameraGain(): Float
     private external fun getMaxNativeCameraGain(): Float
     private external fun getLatestFrame(): ByteArray?
     private external fun setEnginePaused(paused: Boolean)
@@ -120,6 +124,7 @@ class MainActivity : ComponentActivity() {
     // Tuning state
     private var currentExposure by mutableStateOf(100000f)
     private var currentGain by mutableStateOf(100f)
+    private var minAnalogGain by mutableStateOf(100f)
     private var maxAnalogGain by mutableStateOf(3200f)
     private var currentFocus by mutableStateOf(0.0f)
     private var noiseReductionMode by mutableStateOf(0) // 0=OFF, 1=FAST, 2=HQ
@@ -134,6 +139,7 @@ class MainActivity : ComponentActivity() {
                 ra = if (obj.isNull("ra")) null else obj.optDouble("ra"),
                 dec = if (obj.isNull("dec")) null else obj.optDouble("dec"),
                 roll = if (obj.isNull("roll")) null else obj.optDouble("roll"),
+                centroidCount = obj.optInt("centroids", 0),
                 exposureMs = obj.optDouble("exposure_us", 0.0) / 1000.0,
                 postProcessMs = obj.optDouble("post_process_ms", 0.0),
                 extractMs = obj.optDouble("extract_ms", 0.0),
@@ -280,13 +286,17 @@ class MainActivity : ComponentActivity() {
         checkForCameras()
 
         setContent {
-            LaunchedEffect(isEngineRunning) {
+            LaunchedEffect(isEngineRunning, currentScreen) {
                 if (isEngineRunning) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     while (true) {
                         updateStats()
-                        fetchLatestFrame()
-                        kotlinx.coroutines.delay(500)
+                        if (currentScreen == "tuner") {
+                            fetchLatestFrame()
+                            kotlinx.coroutines.delay(33) // 30 FPS for tuner
+                        } else {
+                            kotlinx.coroutines.delay(500) // 2 FPS for main screen
+                        }
                     }
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -397,7 +407,10 @@ class MainActivity : ComponentActivity() {
                     Button(
                         onClick = { 
                             setEnginePaused(true)
-                            maxAnalogGain = getMaxNativeCameraGain()
+                            minAnalogGain = getMinNativeCameraGain()
+                            maxAnalogGain = getMaxNativeCameraGain().coerceAtLeast(minAnalogGain + 1f)
+                            currentGain = getNativeCameraGain().coerceIn(minAnalogGain, maxAnalogGain)
+                            currentExposure = getNativeCameraExposure().toFloat().coerceIn(16667f, 5000000f)
                             currentScreen = "tuner" 
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -506,6 +519,10 @@ class MainActivity : ComponentActivity() {
 
             // Tuning Sliders
             TuningControls()
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text("Detected Centroids: ${engineStats.centroidCount}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         }
     }
 
@@ -530,7 +547,7 @@ class MainActivity : ComponentActivity() {
                     currentGain = it
                     setNativeCameraGain(it)
                 },
-                valueRange = 100f..maxAnalogGain,
+                valueRange = minAnalogGain..maxAnalogGain.coerceAtLeast(minAnalogGain + 1f),
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -569,6 +586,7 @@ class MainActivity : ComponentActivity() {
             horizontalAlignment = Alignment.Start
         ) {
             Text("Engine Status: ${stats.status}", color = MaterialTheme.colorScheme.primary)
+            Text("Detected Stars: ${stats.centroidCount}", color = MaterialTheme.colorScheme.onBackground)
             Spacer(modifier = Modifier.height(8.dp))
             Text("RA: ${stats.ra?.let { String.format("%.4f", it) } ?: "-"}", color = MaterialTheme.colorScheme.onBackground)
             Text("Dec: ${stats.dec?.let { String.format("%.4f", it) } ?: "-"}", color = MaterialTheme.colorScheme.onBackground)
