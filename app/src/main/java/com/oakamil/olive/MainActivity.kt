@@ -70,6 +70,18 @@ class SettingsManager(context: Context) {
     var imuIntegration: Boolean
         get() = prefs.getBoolean("imu_integration", false)
         set(value) = prefs.edit().putBoolean("imu_integration", value).apply()
+        
+    var uvcFps: Int
+        get() = prefs.getInt("uvc_fps", 20)
+        set(value) = prefs.edit().putInt("uvc_fps", value).apply()
+        
+    var extractor: String
+        get() = prefs.getString("extractor", "Olive") ?: "Olive"
+        set(value) = prefs.edit().putString("extractor", value).apply()
+        
+    var targetFov: Int
+        get() = prefs.getInt("target_fov", 20)
+        set(value) = prefs.edit().putInt("target_fov", value).apply()
 }
 
 class MainActivity : ComponentActivity() {
@@ -106,8 +118,8 @@ class MainActivity : ComponentActivity() {
 
     // Rust JNI functions
     private external fun initJni(filesDir: String)
-    private external fun startEngine(fd: Int, imuEnabled: Boolean)
-    private external fun startNativeCameraEngine(imuEnabled: Boolean)
+    private external fun startEngine(fd: Int, imuEnabled: Boolean, uvcFps: Int, extractor: String, targetFov: Int)
+    private external fun startNativeCameraEngine(imuEnabled: Boolean, extractor: String, targetFov: Int)
     private external fun stopEngine()
     private external fun getEngineStats(): String
     private external fun setNativeCameraExposure(exposureUs: Int)
@@ -192,7 +204,7 @@ class MainActivity : ComponentActivity() {
     private val requestCameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
             if (isGranted) {
-                startNativeCameraEngine(settingsManager.imuIntegration)
+                startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.targetFov)
                 engineMode = EngineMode.NATIVE
             }
         }
@@ -373,7 +385,7 @@ class MainActivity : ComponentActivity() {
                 }
             } else {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                    startNativeCameraEngine(settingsManager.imuIntegration)
+                    startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.targetFov)
                     engineMode = EngineMode.NATIVE
                 } else {
                     requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -388,7 +400,7 @@ class MainActivity : ComponentActivity() {
         if (connection != null) {
             uvcConnection = connection
             val fd = connection.fileDescriptor
-            startEngine(fd, settingsManager.imuIntegration)
+            startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, settingsManager.targetFov)
             engineMode = EngineMode.UVC
         }
     }
@@ -604,12 +616,24 @@ class MainActivity : ComponentActivity() {
     fun SettingsScreen() {
         var cameraSelection by remember { mutableStateOf(settingsManager.cameraSelection) }
         var imuIntegration by remember { mutableStateOf(settingsManager.imuIntegration) }
+        var uvcFps by remember { mutableStateOf(settingsManager.uvcFps) }
+        var extractor by remember { mutableStateOf(settingsManager.extractor) }
+        var targetFov by remember { mutableStateOf(settingsManager.targetFov) }
 
         LaunchedEffect(cameraSelection) {
             settingsManager.cameraSelection = cameraSelection
         }
         LaunchedEffect(imuIntegration) {
             settingsManager.imuIntegration = imuIntegration
+        }
+        LaunchedEffect(uvcFps) {
+            settingsManager.uvcFps = uvcFps
+        }
+        LaunchedEffect(extractor) {
+            settingsManager.extractor = extractor
+        }
+        LaunchedEffect(targetFov) {
+            settingsManager.targetFov = targetFov
         }
 
         Column(
@@ -649,6 +673,33 @@ class MainActivity : ComponentActivity() {
                 )
                 Text("Internal Camera", modifier = Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.onBackground)
             }
+
+            if (cameraSelection == "internal") {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 40.dp)) {
+                    Text("Target FOV: ", color = MaterialTheme.colorScheme.onBackground)
+                    var expanded by remember { mutableStateOf(false) }
+                    Box {
+                        TextButton(onClick = { expanded = true }) {
+                            Text("$targetFov°", color = MaterialTheme.colorScheme.primary)
+                        }
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                        ) {
+                            listOf(10, 15, 20, 25, 30).forEach { fov ->
+                                DropdownMenuItem(
+                                    text = { Text("$fov°", color = MaterialTheme.colorScheme.onSurface) },
+                                    onClick = { 
+                                        targetFov = fov
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -673,6 +724,34 @@ class MainActivity : ComponentActivity() {
                     color = if (isCameraConnected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.38f)
                 )
             }
+
+            if (cameraSelection == "external") {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 40.dp)) {
+                    Text("FPS: ", color = MaterialTheme.colorScheme.onBackground)
+                    var expandedFps by remember { mutableStateOf(false) }
+                    Box {
+                        TextButton(onClick = { expandedFps = true }) {
+                            Text("$uvcFps", color = MaterialTheme.colorScheme.primary)
+                        }
+                        DropdownMenu(
+                            expanded = expandedFps,
+                            onDismissRequest = { expandedFps = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                        ) {
+                            listOf(5, 10, 15, 20, 30).forEach { fps ->
+                                DropdownMenuItem(
+                                    text = { Text("$fps", color = MaterialTheme.colorScheme.onSurface) },
+                                    onClick = { 
+                                        uvcFps = fps
+                                        expandedFps = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             if (!isCameraConnected) {
                 Text(
                     text = "No external camera detected. Selection locked to internal.",
@@ -680,6 +759,20 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 48.dp)
                 )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text("Extractor", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                listOf("Olive", "Cedar").forEach { ext ->
+                    RadioButton(
+                        selected = extractor == ext,
+                        onClick = { extractor = ext },
+                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary, unselectedColor = MaterialTheme.colorScheme.onBackground)
+                    )
+                    Text(ext, modifier = Modifier.padding(start = 8.dp, end = 16.dp), color = MaterialTheme.colorScheme.onBackground)
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

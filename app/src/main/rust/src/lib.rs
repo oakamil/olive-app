@@ -1,16 +1,18 @@
 use jni::JNIEnv;
 use jni::objects::JClass;
 use jni::sys::jint;
+use olive_engine::imu::ImuDevice;
 use std::sync::Mutex;
 use std::thread;
-use olive_engine::imu::ImuDevice;
 
 pub mod android_camera;
 pub mod android_imu;
 
 static RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static ENGINE_STOP_TX: Mutex<Option<tokio::sync::oneshot::Sender<()>>> = Mutex::new(None);
-static ENGINE_STATE: Mutex<Option<std::sync::Arc<std::sync::RwLock<olive_engine::engine::EngineStateData>>>> = Mutex::new(None);
+static ENGINE_STATE: Mutex<
+    Option<std::sync::Arc<std::sync::RwLock<olive_engine::engine::EngineStateData>>>,
+> = Mutex::new(None);
 static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
 
 #[unsafe(no_mangle)]
@@ -42,13 +44,23 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_initJni(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
-    _env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     fd: jint,
     imu_enabled: jni::sys::jboolean,
+    uvc_fps: jint,
+    extractor: jni::objects::JString,
+    _target_fov: jint,
 ) {
     let fd = fd as i32;
     let use_imu = imu_enabled != 0;
+    let target_fps = uvc_fps as u32;
+    let extractor_str: String = env.get_string(&extractor).unwrap().into();
+    let ext_type = if extractor_str == "Cedar" {
+        olive_engine::engine::Extractor::Cedar
+    } else {
+        olive_engine::engine::Extractor::Sequential
+    };
 
     let mut runtime_lock = RUNTIME.lock().unwrap();
     if runtime_lock.is_none() {
@@ -74,8 +86,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
             use olive_engine::uvc_camera::Camera;
             use std::sync::Arc;
 
-            // 20 FPS, MJPEG true
-            let mut cam = Camera::with_fd(20, true, None, Some(fd));
+            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd));
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start UVC camera: {}", e);
                 return;
@@ -89,7 +100,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
                 database_path: "default_database.npz".to_string(),
                 isp: false,
                 bg_mode: olive_engine::engine::BgMode::Line,
-                extractor_type: olive_engine::engine::Extractor::Sequential,
+                extractor_type: ext_type,
                 crop: None,
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -100,7 +111,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
             let server_camera = camera.clone();
             let server_client_connected = client_connected.clone();
             let server_engine_state = engine_state.clone();
-            
+
             *crate::ENGINE_STATE.lock().unwrap() = Some(engine_state.clone());
 
             let server_handle = tokio::spawn(async move {
@@ -152,11 +163,20 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngine(
-    _env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     imu_enabled: jni::sys::jboolean,
+    extractor: jni::objects::JString,
+    target_fov: jint,
 ) {
     let use_imu = imu_enabled != 0;
+    let target_fov_f32 = target_fov as f32;
+    let extractor_str: String = env.get_string(&extractor).unwrap().into();
+    let ext_type = if extractor_str == "Cedar" {
+        olive_engine::engine::Extractor::Cedar
+    } else {
+        olive_engine::engine::Extractor::Sequential
+    };
 
     let mut runtime_lock = RUNTIME.lock().unwrap();
     if runtime_lock.is_none() {
@@ -182,7 +202,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
             use olive_engine::engine::{Engine, EngineConfig};
             use std::sync::Arc;
 
-            let mut cam = AndroidCamera::new();
+            let mut cam = AndroidCamera::new(target_fov_f32);
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start Android camera: {}", e);
                 return;
@@ -196,7 +216,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
                 database_path: "default_database.npz".to_string(),
                 isp: false,
                 bg_mode: olive_engine::engine::BgMode::Line,
-                extractor_type: olive_engine::engine::Extractor::Sequential,
+                extractor_type: ext_type,
                 crop: None,
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -207,7 +227,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
             let server_camera = camera.clone();
             let server_client_connected = client_connected.clone();
             let server_engine_state = engine_state.clone();
-            
+
             *crate::ENGINE_STATE.lock().unwrap() = Some(engine_state.clone());
 
             let server_handle = tokio::spawn(async move {
@@ -370,13 +390,19 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getLatestFrame(
             let width = img.width as usize;
             let height = img.height as usize;
             let data = &img.data;
-            
+
             // Downsample for preview. Target roughly 640-800 pixels width.
-            let step = if width > 1600 { 4 } else if width > 800 { 2 } else { 1 };
+            let step = if width > 1600 {
+                4
+            } else if width > 800 {
+                2
+            } else {
+                1
+            };
             let target_width = width / step;
             let target_height = height / step;
             let mut downsampled = vec![0u8; target_width * target_height];
-            
+
             for y in 0..target_height {
                 let src_y = y * step;
                 let dst_row = y * target_width;
@@ -397,7 +423,8 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getLatestFrame(
 
             let array = env.new_byte_array(result.len() as jni::sys::jsize).unwrap();
             unsafe {
-                let i8_slice = std::slice::from_raw_parts(result.as_ptr() as *const i8, result.len());
+                let i8_slice =
+                    std::slice::from_raw_parts(result.as_ptr() as *const i8, result.len());
                 env.set_byte_array_region(&array, 0, i8_slice).unwrap();
             }
             return array.into_raw();
@@ -433,6 +460,6 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getEngineStats(
     } else {
         "{}".to_string()
     };
-    
+
     env.new_string(json_str).unwrap().into_raw()
 }

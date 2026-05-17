@@ -84,9 +84,27 @@ impl ImuDevice for AndroidImu {
                 while ASensorEventQueue_getEvents(self.queue, event.as_mut_ptr(), 1) > 0 {
                     let ev = event.assume_init();
                     if ev.type_ == ASENSOR_TYPE_GYROSCOPE_UNCALIBRATED as i32 {
-                        let x = ev.__bindgen_anon_1.__bindgen_anon_1.uncalibrated_gyro.__bindgen_anon_1.__bindgen_anon_1.x_uncalib as f64;
-                        let y = ev.__bindgen_anon_1.__bindgen_anon_1.uncalibrated_gyro.__bindgen_anon_1.__bindgen_anon_1.y_uncalib as f64;
-                        let z = ev.__bindgen_anon_1.__bindgen_anon_1.uncalibrated_gyro.__bindgen_anon_1.__bindgen_anon_1.z_uncalib as f64;
+                        let x = ev
+                            .__bindgen_anon_1
+                            .__bindgen_anon_1
+                            .uncalibrated_gyro
+                            .__bindgen_anon_1
+                            .__bindgen_anon_1
+                            .x_uncalib as f64;
+                        let y = ev
+                            .__bindgen_anon_1
+                            .__bindgen_anon_1
+                            .uncalibrated_gyro
+                            .__bindgen_anon_1
+                            .__bindgen_anon_1
+                            .y_uncalib as f64;
+                        let z = ev
+                            .__bindgen_anon_1
+                            .__bindgen_anon_1
+                            .uncalibrated_gyro
+                            .__bindgen_anon_1
+                            .__bindgen_anon_1
+                            .z_uncalib as f64;
                         latest_gyro = Some(Vector3::new(x, y, z));
                     }
                 }
