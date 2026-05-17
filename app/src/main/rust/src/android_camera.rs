@@ -506,17 +506,12 @@ impl AndroidCamera {
             // Calculate target crop for target_fov if native FOV is larger, but only if native FOV is not within 10 to 30 degrees.
             let do_crop = min_fov < 10.0 || min_fov > 30.0;
             let target_crop = if do_crop && min_fov > target_fov {
-                let crop_factor =
-                    (target_fov / 2.0).to_radians().tan() / (min_fov / 2.0).to_radians().tan();
+                let crop_factor = target_fov / min_fov;
                 let cw = (best_dim.0 as f32 * crop_factor) as u32;
                 let ch = (best_dim.1 as f32 * crop_factor) as u32;
-                info!(
-                    "Camera {} selected. Native FOV: {:.1}°. Software cropping to {}x{} for {:.1}° FOV.",
-                    best_id, min_fov, cw, ch, target_fov
-                );
+                info!("Camera {} selected. Native FOV: {:.1}°. Software cropping to {}x{} for {:.1}° FOV.", best_id, min_fov, cw, ch, target_fov);
                 Some((cw, ch))
-            } else {
-                info!(
+            } else {                info!(
                     "Camera {} selected. Native FOV: {:.1}° is within target range or too small. No software cropping applied.",
                     best_id, min_fov
                 );
