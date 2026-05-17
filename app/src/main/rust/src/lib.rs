@@ -1,7 +1,6 @@
 use jni::JNIEnv;
 use jni::objects::JClass;
 use jni::sys::jint;
-use std::ptr;
 use std::sync::Mutex;
 use std::thread;
 use olive_engine::imu::ImuDevice;
@@ -75,8 +74,8 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
             use olive_engine::uvc_camera::Camera;
             use std::sync::Arc;
 
-            // 30 FPS, MJPEG true
-            let mut cam = Camera::with_fd(30, true, None, Some(fd));
+            // 20 FPS, MJPEG true
+            let mut cam = Camera::with_fd(20, true, None, Some(fd));
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start UVC camera: {}", e);
                 return;
@@ -91,8 +90,8 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
                 isp: false,
                 bg_mode: olive_engine::engine::BgMode::Line,
                 extractor_type: olive_engine::engine::Extractor::Sequential,
+                crop: None,
             };
-
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let engine_state = Arc::new(std::sync::RwLock::new(
                 olive_engine::engine::EngineStateData::default(),
@@ -198,8 +197,8 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
                 isp: false,
                 bg_mode: olive_engine::engine::BgMode::Line,
                 extractor_type: olive_engine::engine::Extractor::Sequential,
+                crop: None,
             };
-
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let engine_state = Arc::new(std::sync::RwLock::new(
                 olive_engine::engine::EngineStateData::default(),
@@ -314,6 +313,30 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraNoiseR
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_getMinNativeCameraGain(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jfloat {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_min_gain()
+    } else {
+        100.0
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraGain(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jfloat {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_gain()
+    } else {
+        100.0
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_MainActivity_getMaxNativeCameraGain(
     _env: JNIEnv,
     _class: JClass,
@@ -326,47 +349,61 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getMaxNativeCameraGai
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraExposure(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_exposure()
+    } else {
+        100_000
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_MainActivity_getLatestFrame(
     env: JNIEnv,
     _class: JClass,
 ) -> jni::sys::jbyteArray {
     if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
         if let Some(img) = cam.get_last_capture() {
-            let width = img.width;
-            let height = img.height;
+            let width = img.width as usize;
+            let height = img.height as usize;
             let data = &img.data;
             
-            // Downsample by 8x for fast preview
-            let step = 8;
+            // Downsample for preview. Target roughly 640-800 pixels width.
+            let step = if width > 1600 { 4 } else if width > 800 { 2 } else { 1 };
             let target_width = width / step;
             let target_height = height / step;
-            let mut downsampled = Vec::with_capacity((target_width * target_height) as usize);
+            let mut downsampled = vec![0u8; target_width * target_height];
             
             for y in 0..target_height {
+                let src_y = y * step;
+                let dst_row = y * target_width;
+                let src_row = src_y * width;
                 for x in 0..target_width {
-                    let src_idx = (y * step * width) + (x * step);
-                    if (src_idx as usize) < data.len() {
-                        downsampled.push(data[src_idx as usize]);
-                    } else {
-                        downsampled.push(0);
+                    let src_x = x * step;
+                    let src_idx = src_row + src_x;
+                    if src_idx < data.len() {
+                        downsampled[dst_row + x] = data[src_idx];
                     }
                 }
             }
 
             let mut result = Vec::with_capacity(downsampled.len() + 8);
-            result.extend_from_slice(&target_width.to_le_bytes());
-            result.extend_from_slice(&target_height.to_le_bytes());
+            result.extend_from_slice(&(target_width as u32).to_le_bytes());
+            result.extend_from_slice(&(target_height as u32).to_le_bytes());
             result.extend_from_slice(&downsampled);
 
             let array = env.new_byte_array(result.len() as jni::sys::jsize).unwrap();
             unsafe {
-                env.set_byte_array_region(&array, 0, std::mem::transmute(result.as_slice()))
-                    .unwrap();
+                let i8_slice = std::slice::from_raw_parts(result.as_ptr() as *const i8, result.len());
+                env.set_byte_array_region(&array, 0, i8_slice).unwrap();
             }
             return array.into_raw();
         }
     }
-    ptr::null_mut()
+    std::ptr::null_mut()
 }
 
 #[unsafe(no_mangle)]

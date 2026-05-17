@@ -40,10 +40,11 @@ pub struct AndroidCameraConfiguration {
     pub logical_id: String,
     pub width: u32,
     pub height: u32,
-    pub crop_region: [i32; 4],
+    pub target_crop: Option<(u32, u32)>,
     pub max_analog_gain: i32,
     pub fov: f32,
     pub white_level: i32,
+    pub format: i32,
 }
 
 /// Context passed to the AImageReader C callback
@@ -53,6 +54,7 @@ struct ImageReaderContext {
     height: u32,
     exposure_time_us: Arc<AtomicI32>,
     white_level: f32,
+    format: i32,
 }
 
 pub struct AndroidCamera {
@@ -76,6 +78,7 @@ impl CameraTrait for AndroidCamera {
             width: c.width,
             height: c.height,
             fps: 0,
+            crop: c.target_crop,
         })
     }
 
@@ -297,10 +300,10 @@ impl AndroidCamera {
         let mut best_id = String::new();
         let mut best_logical_id = String::new();
         let mut min_fov = f32::MAX;
-        let mut best_crop = [0, 0, 0, 0];
         let mut max_analog = 0;
         let mut best_dim = (0, 0);
         let mut best_white_level = 1023;
+        let mut best_format = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
 
         info!("Total unique cameras to evaluate: {}", all_cam_ids.len());
 
@@ -366,25 +369,7 @@ impl AndroidCamera {
             }
             let focal_length_mm = *entry.data.f.offset(0);
 
-            // 3. Active Array
-            ACameraMetadata_getConstEntry(
-                metadata,
-                acamera_metadata_tag::ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE.0 as u32,
-                &mut entry,
-            );
-            if entry.count < 4 {
-                info!("Camera {}: Skipped (Missing active array metadata)", cam_id);
-                ACameraMetadata_free(metadata);
-                continue;
-            }
-            let active_array = [
-                *entry.data.i32_.offset(0),
-                *entry.data.i32_.offset(1),
-                *entry.data.i32_.offset(2),
-                *entry.data.i32_.offset(3),
-            ];
-
-            // 4. Max Analog Gain
+            // 3. Max Analog Gain
             ACameraMetadata_getConstEntry(
                 metadata,
                 acamera_metadata_tag::ACAMERA_SENSOR_MAX_ANALOG_SENSITIVITY.0 as u32,
@@ -412,7 +397,7 @@ impl AndroidCamera {
             let fov_rad = 2.0 * (phys_width_mm / (2.0 * focal_length_mm)).atan();
             let fov_deg = fov_rad * (180.0 / std::f32::consts::PI);
 
-            // 5. Query Available Stream Configurations for RAW16
+            // 5. Query Available Stream Configurations for RAW16 or YUV_420_888
             let mut stream_configs_entry: ACameraMetadata_const_entry = std::mem::zeroed();
             ACameraMetadata_getConstEntry(
                 metadata,
@@ -421,7 +406,7 @@ impl AndroidCamera {
             );
 
             let mut valid_raw_sizes = Vec::new();
-            // Format is [format, width, height, input/output]
+            let mut valid_yuv_sizes = Vec::new();
             let num_configs = stream_configs_entry.count / 4;
             for j in 0..num_configs {
                 let offset = (j * 4) as isize;
@@ -430,87 +415,45 @@ impl AndroidCamera {
                 let height = *stream_configs_entry.data.i32_.offset(offset + 2);
                 let is_input = *stream_configs_entry.data.i32_.offset(offset + 3);
 
-                if format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32 && is_input == 0 {
-                    valid_raw_sizes.push((width as u32, height as u32));
+                if is_input == 0 {
+                    if format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32 {
+                        valid_raw_sizes.push((width as u32, height as u32));
+                    } else if format == AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32 {
+                        valid_yuv_sizes.push((width as u32, height as u32));
+                    }
                 }
             }
 
-            if valid_raw_sizes.is_empty() {
-                info!("Camera {}: Skipped (Back-facing, FOV {:.1}°, but NO RAW16 stream support)", cam_id, fov_deg);
+            let mut valid_sizes = valid_raw_sizes;
+            let mut selected_format = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
+            
+            if valid_sizes.is_empty() {
+                valid_sizes = valid_yuv_sizes;
+                selected_format = AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32;
+            }
+
+            if valid_sizes.is_empty() {
+                info!("Camera {}: Skipped (No RAW16 or YUV support)", cam_id);
                 ACameraMetadata_free(metadata);
                 continue;
             }
 
-            info!("Camera {}: Back-facing, FOV {:.1}°, supports RAW16. Considering...", cam_id, fov_deg);
+            // Always pick the largest available size for the selected format
+            valid_sizes.sort_by(|a, b| (b.0 * b.1).cmp(&(a.0 * a.1)));
+            let best_valid_size = valid_sizes[0];
 
-            // Target smallest FOV > 10.0 degrees
-            if fov_deg >= 10.0 && fov_deg < min_fov {
+            let format_str = if selected_format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32 { "RAW16" } else { "YUV_420_888" };
+            info!("Camera {}: Back-facing, FOV {:.1}°, supports {} at {}x{}. Considering...", cam_id, fov_deg, format_str, best_valid_size.0, best_valid_size.1);
+
+            // Robust selection logic: pick the camera with the lowest FOV.
+            if best_id.is_empty() || fov_deg < min_fov {
                 min_fov = fov_deg;
                 best_id = cam_id.clone();
                 best_logical_id = logical_id.clone();
                 max_analog = sensor_max_analog;
                 best_white_level = sensor_white_level;
-
-                let target_crop_w;
-                let target_crop_h;
-
-                if fov_deg > 25.0 {
-                    let target_fov_rad = 25.0_f32 * (std::f32::consts::PI / 180.0);
-                    let target_width_mm = 2.0 * focal_length_mm * (target_fov_rad / 2.0).tan();
-
-                    let crop_ratio = target_width_mm / phys_width_mm;
-
-                    let crop_w = (active_array[2] as f32 * crop_ratio) as i32;
-                    let crop_h = (active_array[3] as f32 * crop_ratio) as i32;
-
-                    let crop_x = active_array[0] + (active_array[2] - crop_w) / 2;
-                    let crop_y = active_array[1] + (active_array[3] - crop_h) / 2;
-
-                    best_crop = [crop_x, crop_y, crop_w, crop_h];
-                    target_crop_w = crop_w as u32;
-                    target_crop_h = crop_h as u32;
-                } else {
-                    best_crop = active_array;
-                    target_crop_w = active_array[2] as u32;
-                    target_crop_h = active_array[3] as u32;
-                }
-
-                // Find the smallest valid RAW16 size that is >= our target crop size.
-                // If none is larger, just pick the largest available.
-                let mut best_valid_size = valid_raw_sizes[0];
-                let mut min_diff = u32::MAX;
-                
-                // Sort to make logic simpler (largest first)
-                valid_raw_sizes.sort_by(|a, b| (b.0 * b.1).cmp(&(a.0 * a.1)));
-                
-                let mut found_larger = false;
-                for size in &valid_raw_sizes {
-                    if size.0 >= target_crop_w && size.1 >= target_crop_h {
-                        found_larger = true;
-                        let diff = (size.0 - target_crop_w) + (size.1 - target_crop_h);
-                        if diff < min_diff {
-                            min_diff = diff;
-                            best_valid_size = *size;
-                        }
-                    }
-                }
-                if !found_larger {
-                    best_valid_size = valid_raw_sizes[0]; // fallback to largest
-                }
-
                 best_dim = best_valid_size;
-
-                if fov_deg > 25.0 {
-                    info!(
-                        "Camera {} selected. Native FOV: {:.1}°. Cropping to {:.1}° (Crop window: {}x{}, Stream output: {}x{})",
-                        best_id, fov_deg, 25.0, best_crop[2], best_crop[3], best_dim.0, best_dim.1
-                    );
-                } else {
-                    info!(
-                        "Camera {} selected. Native FOV: {:.1}°. Using full array (Crop window: {}x{}, Stream output: {}x{})",
-                        best_id, fov_deg, best_crop[2], best_crop[3], best_dim.0, best_dim.1
-                    );
-                }
+                best_format = selected_format;
             }
 
             ACameraMetadata_free(metadata);
@@ -519,15 +462,33 @@ impl AndroidCamera {
         ACameraManager_delete(manager);
         ACameraManager_deleteCameraIdList(id_list);
 
+        if best_id.is_empty() {
+            panic!("No suitable back-facing camera found!");
+        }
+
+        // Calculate target crop for 20 degree FOV if native FOV is larger.
+        let target_fov = 20.0_f32;
+        let target_crop = if min_fov > target_fov {
+            let crop_factor = (target_fov / 2.0).to_radians().tan() / (min_fov / 2.0).to_radians().tan();
+            let cw = (best_dim.0 as f32 * crop_factor) as u32;
+            let ch = (best_dim.1 as f32 * crop_factor) as u32;
+            info!("Camera {} selected. Native FOV: {:.1}°. Software cropping to {}x{} for {:.1}° FOV.", best_id, min_fov, cw, ch, target_fov);
+            Some((cw, ch))
+        } else {
+            info!("Camera {} selected. Native FOV: {:.1}° is within target {:.1}°. No cropping needed.", best_id, min_fov, target_fov);
+            None
+        };
+
         AndroidCameraConfiguration {
             id: best_id,
             logical_id: best_logical_id,
             width: best_dim.0,
             height: best_dim.1,
-            crop_region: best_crop,
+            target_crop,
             max_analog_gain: max_analog,
             fov: min_fov,
             white_level: best_white_level,
+            format: best_format,
         }
         }
     }
@@ -550,30 +511,43 @@ impl AndroidCamera {
                 AImage_getPlaneRowStride(image, 0, &mut row_stride);
 
                 // RAW16 is 16-bit. Downshift to 8-bit to fit `Image` struct
+                // YUV_420_888 is 8-bit. Plane 0 is the Y-plane (grayscale).
                 let width = ctx.width as usize;
                 let height = ctx.height as usize;
                 let mut image_data = Vec::with_capacity(width * height);
                 image_data.set_len(width * height);
 
                 let data_slice = std::slice::from_raw_parts(data, len as usize);
-                let scale = 255.0 / ctx.white_level;
 
-                let center_x = width / 2;
-                let center_y = height / 2;
-                let center_idx = (center_y * (row_stride as usize)) + (center_x * 2);
-                let center_val = u16::from_le_bytes([data_slice[center_idx], data_slice[center_idx + 1]]);
-                
-                log::debug!("Scaling: white_level={}, scale={}, center_raw={}, center_scaled={}", ctx.white_level, scale, center_val, (center_val as f32 * scale) as i32);
+                if ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32 {
+                    let scale = 255.0 / ctx.white_level;
 
-                for y in 0..height {
-                    let src_row_start = y * (row_stride as usize);
-                    let dst_row_start = y * width;
-                    for x in 0..width {
-                        let byte_idx = src_row_start + (x * 2);
-                        let val = u16::from_le_bytes([data_slice[byte_idx], data_slice[byte_idx + 1]]);
-                        
-                        let scaled = (val as f32 * scale) as i32;
-                        image_data[dst_row_start + x] = scaled.clamp(0, 255) as u8;
+                    let center_x = width / 2;
+                    let center_y = height / 2;
+                    let center_idx = (center_y * (row_stride as usize)) + (center_x * 2);
+                    let center_val = u16::from_le_bytes([data_slice[center_idx], data_slice[center_idx + 1]]);
+                    
+                    log::debug!("Scaling: white_level={}, scale={}, center_raw={}, center_scaled={}", ctx.white_level, scale, center_val, (center_val as f32 * scale) as i32);
+
+                    for y in 0..height {
+                        let src_row_start = y * (row_stride as usize);
+                        let dst_row_start = y * width;
+                        for x in 0..width {
+                            let byte_idx = src_row_start + (x * 2);
+                            let val = u16::from_le_bytes([data_slice[byte_idx], data_slice[byte_idx + 1]]);
+                            
+                            let scaled = (val as f32 * scale) as i32;
+                            image_data[dst_row_start + x] = scaled.clamp(0, 255) as u8;
+                        }
+                    }
+                } else {
+                    // YUV_420_888: Copy Y-plane (grayscale) directly
+                    for y in 0..height {
+                        let src_row_start = y * (row_stride as usize);
+                        let dst_row_start = y * width;
+                        for x in 0..width {
+                            image_data[dst_row_start + x] = data_slice[src_row_start + x];
+                        }
                     }
                 }
 
@@ -657,12 +631,12 @@ impl AndroidCamera {
         // A Looper is required for AImageReader callbacks
         ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS as i32);
 
-        // 1. Initialize AImageReader targeting RAW16
+        // 1. Initialize AImageReader targeting selected format
         let mut image_reader: *mut AImageReader = ptr::null_mut();
         AImageReader_new(
             config.width as i32,
             config.height as i32,
-            AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32,
+            config.format,
             4,
             &mut image_reader,
         );
@@ -673,6 +647,7 @@ impl AndroidCamera {
             height: config.height,
             exposure_time_us: exposure_ref,
             white_level: config.white_level as f32,
+            format: config.format,
         });
 
         let mut listener = AImageReader_ImageListener {
@@ -780,6 +755,62 @@ impl AndroidCamera {
             &current_nr,
         );
 
+        let tonemap_mode_fast = acamera_metadata_enum_acamera_tonemap_mode::ACAMERA_TONEMAP_MODE_FAST.0 as u8;
+        ACaptureRequest_setEntry_u8(
+            request,
+            acamera_metadata_tag::ACAMERA_TONEMAP_MODE.0 as u32,
+            1,
+            &tonemap_mode_fast,
+        );
+
+        let edge_mode_off = acamera_metadata_enum_acamera_edge_mode::ACAMERA_EDGE_MODE_OFF.0 as u8;
+        ACaptureRequest_setEntry_u8(
+            request,
+            acamera_metadata_tag::ACAMERA_EDGE_MODE.0 as u32,
+            1,
+            &edge_mode_off,
+        );
+
+        let awb_mode_off = acamera_metadata_enum_acamera_control_awb_mode::ACAMERA_CONTROL_AWB_MODE_OFF.0 as u8;
+        ACaptureRequest_setEntry_u8(
+            request,
+            acamera_metadata_tag::ACAMERA_CONTROL_AWB_MODE.0 as u32,
+            1,
+            &awb_mode_off,
+        );
+
+        let hot_pixel_off = acamera_metadata_enum_acamera_hot_pixel_mode::ACAMERA_HOT_PIXEL_MODE_OFF.0 as u8;
+        ACaptureRequest_setEntry_u8(
+            request,
+            acamera_metadata_tag::ACAMERA_HOT_PIXEL_MODE.0 as u32,
+            1,
+            &hot_pixel_off,
+        );
+
+        let shading_off = acamera_metadata_enum_acamera_shading_mode::ACAMERA_SHADING_MODE_OFF.0 as u8;
+        ACaptureRequest_setEntry_u8(
+            request,
+            acamera_metadata_tag::ACAMERA_SHADING_MODE.0 as u32,
+            1,
+            &shading_off,
+        );
+
+        let distortion_off = acamera_metadata_enum_acamera_distortion_correction_mode::ACAMERA_DISTORTION_CORRECTION_MODE_OFF.0 as u8;
+        ACaptureRequest_setEntry_u8(
+            request,
+            acamera_metadata_tag::ACAMERA_DISTORTION_CORRECTION_MODE.0 as u32,
+            1,
+            &distortion_off,
+        );
+
+        let black_level_lock = 1u8; // true
+        ACaptureRequest_setEntry_u8(
+            request,
+            acamera_metadata_tag::ACAMERA_BLACK_LEVEL_LOCK.0 as u32,
+            1,
+            &black_level_lock,
+        );
+
         // Hard-lock Analog Gain
         let mut current_gain = gain_ref.load(Ordering::Relaxed);
         ACaptureRequest_setEntry_i32(
@@ -789,13 +820,7 @@ impl AndroidCamera {
             &current_gain,
         );
 
-        // Apply 25-degree Crop
-        ACaptureRequest_setEntry_i32(
-            request,
-            acamera_metadata_tag::ACAMERA_SCALER_CROP_REGION.0 as u32,
-            4,
-            config.crop_region.as_ptr(),
-        );
+        // Software cropping applied in engine
 
         let mut target_exposure = INITIAL_EXPOSURE_US;
         let mut exp_ns = (target_exposure as i64) * 1000;
@@ -828,7 +853,7 @@ impl AndroidCamera {
         'capture: loop {
             // Poll Looper to drive the AImageReader callbacks
             let _looper = ALooper_forThread();
-            ALooper_pollAll(50, ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
+            ALooper_pollAll(10, ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
 
             while let Ok(cmd) = rx.try_recv() {
                 let changed = match cmd {
