@@ -55,6 +55,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.graphics:graphics-shapes:1.0.0")
 }
 
 // Custom task to compile rust and copy to jniLibs
@@ -69,7 +71,7 @@ tasks.register<Exec>("cargoBuild") {
     environment("ANDROID_NDK_HOME", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358")
     environment("CMAKE_TOOLCHAIN_FILE_aarch64_linux_android", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358/build/cmake/android.toolchain.cmake")
     environment("CMAKE_MAKE_PROGRAM", "/opt/homebrew/bin/ninja")
-    commandLine("cargo", "ndk", "-P", "24", "-t", rustArchName, "-o", "../jniLibs", "build", "--release")
+    commandLine("/Users/oakamil/.cargo/bin/cargo", "ndk", "-P", "24", "-t", rustArchName, "-o", "../jniLibs", "build", "--release")
 }
 
 tasks.whenTaskAdded {

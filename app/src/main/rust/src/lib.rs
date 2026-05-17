@@ -51,6 +51,9 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
     uvc_fps: jint,
     extractor: jni::objects::JString,
     _target_fov: jint,
+    latitude: jni::sys::jdouble,
+    longitude: jni::sys::jdouble,
+    time_ms: jni::sys::jlong,
 ) {
     let fd = fd as i32;
     let use_imu = imu_enabled != 0;
@@ -104,9 +107,18 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
                 crop: None,
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let engine_state = Arc::new(std::sync::RwLock::new(
-                olive_engine::engine::EngineStateData::default(),
-            ));
+
+            let mut initial_state = olive_engine::engine::EngineStateData::default();
+            if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
+                initial_state.client_latitude = Some(latitude);
+                initial_state.client_longitude = Some(longitude);
+            }
+            if time_ms > 0 {
+                use chrono::TimeZone;
+                initial_state.client_date = chrono::Utc.timestamp_millis_opt(time_ms).single();
+            }
+
+            let engine_state = Arc::new(std::sync::RwLock::new(initial_state));
 
             let server_camera = camera.clone();
             let server_client_connected = client_connected.clone();
@@ -168,6 +180,9 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
     imu_enabled: jni::sys::jboolean,
     extractor: jni::objects::JString,
     target_fov: jint,
+    latitude: jni::sys::jdouble,
+    longitude: jni::sys::jdouble,
+    time_ms: jni::sys::jlong,
 ) {
     let use_imu = imu_enabled != 0;
     let target_fov_f32 = target_fov as f32;
@@ -220,9 +235,18 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
                 crop: None,
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let engine_state = Arc::new(std::sync::RwLock::new(
-                olive_engine::engine::EngineStateData::default(),
-            ));
+
+            let mut initial_state = olive_engine::engine::EngineStateData::default();
+            if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
+                initial_state.client_latitude = Some(latitude);
+                initial_state.client_longitude = Some(longitude);
+            }
+            if time_ms > 0 {
+                use chrono::TimeZone;
+                initial_state.client_date = chrono::Utc.timestamp_millis_opt(time_ms).single();
+            }
+
+            let engine_state = Arc::new(std::sync::RwLock::new(initial_state));
 
             let server_camera = camera.clone();
             let server_client_connected = client_connected.clone();

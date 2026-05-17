@@ -2,11 +2,13 @@ package com.oakamil.olive
 
 import android.Manifest
 import android.app.PendingIntent
+import android.app.PictureInPictureParams
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.hardware.usb.UsbDeviceConnection
@@ -14,6 +16,8 @@ import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import android.os.Build
 import android.os.Bundle
+import android.location.LocationManager
+import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,13 +28,34 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Straight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.graphics.shapes.CornerRounding
+import androidx.graphics.shapes.RoundedPolygon
+import androidx.graphics.shapes.toPath
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.Locale
 
 // Night vision theme colors
 val PureRed = Color(0xFFFF0000)
@@ -67,18 +92,22 @@ class SettingsManager(context: Context) {
         get() = prefs.getString("camera_selection", "internal") ?: "internal"
         set(value) = prefs.edit().putString("camera_selection", value).apply()
 
+    var guidanceMode: String
+        get() = prefs.getString("guidance_mode", "equatorial") ?: "equatorial"
+        set(value) = prefs.edit().putString("guidance_mode", value).apply()
+
     var imuIntegration: Boolean
         get() = prefs.getBoolean("imu_integration", false)
         set(value) = prefs.edit().putBoolean("imu_integration", value).apply()
-        
+
     var uvcFps: Int
         get() = prefs.getInt("uvc_fps", 20)
         set(value) = prefs.edit().putInt("uvc_fps", value).apply()
-        
+
     var extractor: String
         get() = prefs.getString("extractor", "Olive") ?: "Olive"
         set(value) = prefs.edit().putString("extractor", value).apply()
-        
+
     var targetFov: Int
         get() = prefs.getInt("target_fov", 20)
         set(value) = prefs.edit().putInt("target_fov", value).apply()
@@ -101,6 +130,7 @@ class MainActivity : ComponentActivity() {
     private var engineStats by mutableStateOf(EngineStats())
 
     private var currentScreen by mutableStateOf("main")
+    private var isInPipMode by mutableStateOf(false)
 
     // Stats
     data class EngineStats(
@@ -113,13 +143,18 @@ class MainActivity : ComponentActivity() {
         val postProcessMs: Double = 0.0,
         val extractMs: Double = 0.0,
         val solveMs: Double = 0.0,
-        val solveRateHz: Double = 0.0
+        val solveRateHz: Double = 0.0,
+        val offsetRa: Double? = null,
+        val offsetDec: Double? = null,
+        val offsetAz: Double? = null,
+        val offsetAlt: Double? = null,
+        val offsetAngle: Double? = null
     )
 
     // Rust JNI functions
     private external fun initJni(filesDir: String)
-    private external fun startEngine(fd: Int, imuEnabled: Boolean, uvcFps: Int, extractor: String, targetFov: Int)
-    private external fun startNativeCameraEngine(imuEnabled: Boolean, extractor: String, targetFov: Int)
+    private external fun startEngine(fd: Int, imuEnabled: Boolean, uvcFps: Int, extractor: String, targetFov: Int, lat: Double, lon: Double, timeMs: Long)
+    private external fun startNativeCameraEngine(imuEnabled: Boolean, extractor: String, targetFov: Int, lat: Double, lon: Double, timeMs: Long)
     private external fun stopEngine()
     private external fun getEngineStats(): String
     private external fun setNativeCameraExposure(exposureUs: Int)
@@ -156,7 +191,12 @@ class MainActivity : ComponentActivity() {
                 postProcessMs = obj.optDouble("post_process_ms", 0.0),
                 extractMs = obj.optDouble("extract_ms", 0.0),
                 solveMs = obj.optDouble("solve_ms", 0.0),
-                solveRateHz = obj.optDouble("solve_rate_hz", 0.0)
+                solveRateHz = obj.optDouble("solve_rate_hz", 0.0),
+                offsetRa = if (obj.isNull("offset_ra")) null else obj.optDouble("offset_ra"),
+                offsetDec = if (obj.isNull("offset_dec")) null else obj.optDouble("offset_dec"),
+                offsetAz = if (obj.isNull("offset_az")) null else obj.optDouble("offset_az"),
+                offsetAlt = if (obj.isNull("offset_alt")) null else obj.optDouble("offset_alt"),
+                offsetAngle = if (obj.isNull("offset_angle")) null else obj.optDouble("offset_angle")
             )
         } catch (e: Exception) {
             // Ignore parse errors
@@ -168,31 +208,31 @@ class MainActivity : ComponentActivity() {
         if (bytes.size < 8) return
 
         val width = ((bytes[0].toInt() and 0xFF) or
-                    ((bytes[1].toInt() and 0xFF) shl 8) or
-                    ((bytes[2].toInt() and 0xFF) shl 16) or
-                    ((bytes[3].toInt() and 0xFF) shl 24))
-        
+                ((bytes[1].toInt() and 0xFF) shl 8) or
+                ((bytes[2].toInt() and 0xFF) shl 16) or
+                ((bytes[3].toInt() and 0xFF) shl 24))
+
         val height = ((bytes[4].toInt() and 0xFF) or
-                     ((bytes[5].toInt() and 0xFF) shl 8) or
-                     ((bytes[6].toInt() and 0xFF) shl 16) or
-                     ((bytes[7].toInt() and 0xFF) shl 24))
+                ((bytes[5].toInt() and 0xFF) shl 8) or
+                ((bytes[6].toInt() and 0xFF) shl 16) or
+                ((bytes[7].toInt() and 0xFF) shl 24))
 
         val pixelCount = width * height
         if (bytes.size < pixelCount + 8) return
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val pixels = IntArray(pixelCount)
-        
+
         var sum = 0L
         for (i in 0 until pixelCount) {
             val gray = bytes[i + 8].toInt() and 0xFF
             sum += gray
             pixels[i] = android.graphics.Color.rgb(gray, gray, gray)
         }
-        
+
         val avg = if (pixelCount > 0) sum / pixelCount else 0
         android.util.Log.d("OliveUI", "Decoded frame ${width}x${height}, avg pixel val: $avg")
-        
+
         bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
         latestFrame = bitmap.asImageBitmap()
     }
@@ -201,12 +241,9 @@ class MainActivity : ComponentActivity() {
         System.loadLibrary("olive_jni")
     }
 
-    private val requestCameraPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-            if (isGranted) {
-                startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.targetFov)
-                engineMode = EngineMode.NATIVE
-            }
+    private val requestLocationAndCameraLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            executeStartEngine()
         }
 
     private val usbReceiver = object : BroadcastReceiver() {
@@ -269,16 +306,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, window.decorView).let { controller ->
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
+
+        hideSystemUI()
 
         copyAssetDatabase()
         initJni(filesDir.absolutePath)
-        
+
         settingsManager = SettingsManager(this)
         usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
 
@@ -287,7 +320,7 @@ class MainActivity : ComponentActivity() {
             addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
-        
+
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Context.RECEIVER_NOT_EXPORTED
         } else {
@@ -307,7 +340,7 @@ class MainActivity : ComponentActivity() {
                             fetchLatestFrame()
                             kotlinx.coroutines.delay(33) // 30 FPS for tuner
                         } else {
-                            kotlinx.coroutines.delay(500) // 2 FPS for main screen
+                            kotlinx.coroutines.delay(200) // Slightly increased for smoother UI updates
                         }
                     }
                 } else {
@@ -320,13 +353,60 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    when (currentScreen) {
-                        "main" -> MainScreen()
-                        "settings" -> SettingsScreen()
-                        "tuner" -> TunerScreen()
+                    if (isInPipMode) {
+                        GuidanceDisplay(engineStats, settingsManager.guidanceMode == "alt_az")
+                    } else {
+                        when (currentScreen) {
+                            "main" -> MainScreen()
+                            "settings" -> SettingsScreen()
+                            "tuner" -> TunerScreen()
+                        }
                     }
                 }
             }
+        }
+    }
+
+    // Intercepts configuration changes so we can re-apply full screen
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        hideSystemUI()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hideSystemUI()
+        }
+    }
+
+    private fun hideSystemUI() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).let { controller ->
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    private fun enterPipMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val builder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                builder.setAutoEnterEnabled(true)
+            }
+            enterPictureInPictureMode(builder.build())
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        lifecycleScope.launch {
+            delay(100)
+            isInPipMode = isInPictureInPictureMode
         }
     }
 
@@ -364,6 +444,16 @@ class MainActivity : ComponentActivity() {
         return false
     }
 
+    private fun getClientLocation(): Pair<Double, Double> {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            if (location != null) return Pair(location.latitude, location.longitude)
+        }
+        return Pair(200.0, 200.0) // 200.0 acts as invalid fallback
+    }
+
     private fun toggleEngine() {
         if (isEngineRunning) {
             stopEngine()
@@ -371,36 +461,45 @@ class MainActivity : ComponentActivity() {
             uvcConnection = null
             engineMode = EngineMode.STOPPED
         } else {
-            val useExternal = settingsManager.cameraSelection == "external" && connectedDevice != null
-            if (useExternal) {
-                val device = connectedDevice!!
-                if (usbManager.hasPermission(device)) {
-                    openDeviceAndStartEngine(device)
-                } else {
-                    val permissionIntent = PendingIntent.getBroadcast(
-                        this, 0, Intent(ACTION_USB_PERMISSION),
-                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                    )
-                    usbManager.requestPermission(device, permissionIntent)
-                }
+            val permissions = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            if (settingsManager.cameraSelection == "internal") {
+                permissions.add(Manifest.permission.CAMERA)
+            }
+
+            val denied = permissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+            if (denied.isNotEmpty()) {
+                requestLocationAndCameraLauncher.launch(denied.toTypedArray())
             } else {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                    startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.targetFov)
-                    engineMode = EngineMode.NATIVE
-                } else {
-                    requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                }
+                executeStartEngine()
             }
         }
     }
 
-    private fun openDeviceAndStartEngine(device: UsbDevice) {
+    private fun executeStartEngine() {
+        val (lat, lon) = getClientLocation()
+        val timeMs = System.currentTimeMillis()
+
+        if (settingsManager.cameraSelection == "external" && connectedDevice != null) {
+            val device = connectedDevice!!
+            if (usbManager.hasPermission(device)) {
+                openDeviceAndStartEngine(device, lat, lon, timeMs)
+            } else {
+                val intent = PendingIntent.getBroadcast(this, 0, Intent(ACTION_USB_PERMISSION), PendingIntent.FLAG_IMMUTABLE)
+                usbManager.requestPermission(device, intent)
+            }
+        } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.targetFov, lat, lon, timeMs)
+            engineMode = EngineMode.NATIVE
+        }
+    }
+
+    private fun openDeviceAndStartEngine(device: UsbDevice, lat: Double = 200.0, lon: Double = 200.0, timeMs: Long = 0L) {
         uvcConnection?.close()
         val connection = usbManager.openDevice(device)
         if (connection != null) {
             uvcConnection = connection
             val fd = connection.fileDescriptor
-            startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, settingsManager.targetFov)
+            startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, settingsManager.targetFov, lat, lon, timeMs)
             engineMode = EngineMode.UVC
         }
     }
@@ -417,13 +516,13 @@ class MainActivity : ComponentActivity() {
             ) {
                 if (isEngineRunning) {
                     Button(
-                        onClick = { 
+                        onClick = {
                             setEnginePaused(true)
                             minAnalogGain = getMinNativeCameraGain()
                             maxAnalogGain = getMaxNativeCameraGain().coerceAtLeast(minAnalogGain + 1f)
                             currentGain = getNativeCameraGain().coerceIn(minAnalogGain, maxAnalogGain)
                             currentExposure = getNativeCameraExposure().toFloat().coerceIn(16667f, 5000000f)
-                            currentScreen = "tuner" 
+                            currentScreen = "tuner"
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
@@ -435,7 +534,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     Spacer(modifier = Modifier.width(8.dp))
                 }
-                
+
                 Button(
                     onClick = { currentScreen = "settings" },
                     colors = ButtonDefaults.buttonColors(
@@ -446,22 +545,37 @@ class MainActivity : ComponentActivity() {
                     Text("Settings")
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
 
             if (isEngineRunning) {
+                Card(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        GuidanceDisplay(engineStats, settingsManager.guidanceMode == "alt_az")
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
                 StatsDisplay(engineStats)
                 Spacer(modifier = Modifier.weight(1f))
             } else {
                 Spacer(modifier = Modifier.weight(1f))
                 val currentModeStr = if (settingsManager.cameraSelection == "external" && isCameraConnected) "UVC Camera Selected" else "Internal Camera Selected"
-                
+
                 Text(
                     text = currentModeStr,
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(bottom = 16.dp),
                     color = MaterialTheme.colorScheme.onBackground
                 )
+            }
+
+            if (isEngineRunning) {
+                OutlinedButton(
+                    onClick = { enterPipMode() },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text("Picture-in-Picture Mode")
+                }
             }
 
             Button(
@@ -474,8 +588,176 @@ class MainActivity : ComponentActivity() {
             ) {
                 Text(if (isEngineRunning) "Stop Engine" else "Start Engine")
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+
+    @Composable
+    private fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            val rot = if (isAltAz) stats.offsetAz else stats.offsetRa
+            val tilt = if (isAltAz) stats.offsetAlt else stats.offsetDec
+            val angle = stats.offsetAngle
+
+            if (rot != null && tilt != null && angle != null) {
+                val offsetStyle = MaterialTheme.typography.displayLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    color = LocalContentColor.current,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 200.sp,
+                    lineHeight = TextUnit.Unspecified
+                )
+
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier.weight(1f).padding(end = 4.dp).fillMaxSize(),
+                            contentAlignment = Alignment.BottomCenter
+                        ) {
+                            Text(
+                                text = String.format(Locale.US, "%-+6.1f", tilt),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = offsetStyle
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier.weight(1f).padding(start = 4.dp).fillMaxSize(),
+                            contentAlignment = Alignment.BottomCenter
+                        ) {
+                            Text(
+                                text = String.format(Locale.US, "%+6.1f", rot),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = offsetStyle
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.weight(1.5f).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier.weight(1f).padding(4.dp).fillMaxHeight(),
+                            contentAlignment = Alignment.TopStart
+                        ) {
+                            if (isAltAz) {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    Row(modifier = Modifier.weight(2f).fillMaxWidth()) {
+                                        DirectionArrow(if (tilt > 0.0) 270 else 90, false)
+                                    }
+                                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                        Text("Alt", color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    if (tilt > 0) "North" else "South",
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier.weight(2f).fillMaxHeight(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (kotlin.math.abs(angle) >= 0.05) {
+                                TargetArrow(angle)
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier.weight(1f).padding(4.dp).fillMaxHeight(),
+                            contentAlignment = Alignment.TopEnd
+                        ) {
+                            if (isAltAz) {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    Row(modifier = Modifier.weight(2f).fillMaxWidth()) {
+                                        DirectionArrow(if (rot > 0.0) 0 else 180, true)
+                                    }
+                                    Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                                        Text(" Az", color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    if (rot > 0) " East" else " West",
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text(
+                    text = "Awaiting Target Guidance...",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun DirectionArrow(rotation: Int, alignRight: Boolean) {
+        Box(
+            modifier = Modifier.fillMaxSize().drawWithCache {
+                val radius = size.minDimension / 2.5f
+                var shapeCenterX = size.minDimension / 2
+                if (alignRight) {
+                    shapeCenterX = size.width - shapeCenterX
+                }
+                val shapeCenterY = size.minDimension / 2
+
+                val roundedPolygon = RoundedPolygon(
+                    numVertices = 3,
+                    radius = radius,
+                    centerX = shapeCenterX,
+                    centerY = shapeCenterY,
+                    rounding = CornerRounding(
+                        size.minDimension / 12.5f,
+                    )
+                )
+                val roundedPolygonPath = roundedPolygon.toPath().asComposePath()
+
+                onDrawBehind {
+                    rotate(
+                        degrees = rotation.toFloat(),
+                        pivot = Offset(shapeCenterX, shapeCenterY)
+                    ) {
+                        drawPath(roundedPolygonPath, PureRed)
+                    }
+                }
+            }
+        )
+    }
+
+    @Composable
+    private fun TargetArrow(rotation: Double) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Straight,
+                contentDescription = "Target",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(rotationZ = -rotation.toFloat()),
+                tint = PureRed
+            )
         }
     }
 
@@ -490,9 +772,9 @@ class MainActivity : ComponentActivity() {
                 horizontalArrangement = Arrangement.Start
             ) {
                 Button(
-                    onClick = { 
+                    onClick = {
                         setEnginePaused(false)
-                        currentScreen = "main" 
+                        currentScreen = "main"
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
@@ -544,7 +826,7 @@ class MainActivity : ComponentActivity() {
             Text("Exposure: ${currentExposure.toInt()} us", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
             Slider(
                 value = currentExposure,
-                onValueChange = { 
+                onValueChange = {
                     currentExposure = it
                     setNativeCameraExposure(it.toInt())
                 },
@@ -555,7 +837,7 @@ class MainActivity : ComponentActivity() {
             Text("Gain: ${currentGain.toInt()}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
             Slider(
                 value = currentGain,
-                onValueChange = { 
+                onValueChange = {
                     currentGain = it
                     setNativeCameraGain(it)
                 },
@@ -566,7 +848,7 @@ class MainActivity : ComponentActivity() {
             Text("Focus: ${String.format("%.2f", currentFocus)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
             Slider(
                 value = currentFocus,
-                onValueChange = { 
+                onValueChange = {
                     currentFocus = it
                     setNativeCameraFocus(it)
                 },
@@ -619,6 +901,7 @@ class MainActivity : ComponentActivity() {
         var uvcFps by remember { mutableStateOf(settingsManager.uvcFps) }
         var extractor by remember { mutableStateOf(settingsManager.extractor) }
         var targetFov by remember { mutableStateOf(settingsManager.targetFov) }
+        var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
 
         LaunchedEffect(cameraSelection) {
             settingsManager.cameraSelection = cameraSelection
@@ -634,6 +917,9 @@ class MainActivity : ComponentActivity() {
         }
         LaunchedEffect(targetFov) {
             settingsManager.targetFov = targetFov
+        }
+        LaunchedEffect(guidanceMode) {
+            settingsManager.guidanceMode = guidanceMode
         }
 
         Column(
@@ -655,13 +941,13 @@ class MainActivity : ComponentActivity() {
             }
 
             Spacer(modifier = Modifier.height(32.dp))
-            
+
             Text("Settings", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
-            
+
             Spacer(modifier = Modifier.height(32.dp))
 
             Text("Camera Selection", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
-            
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().clickable { cameraSelection = "internal" }.padding(vertical = 8.dp)
@@ -690,7 +976,7 @@ class MainActivity : ComponentActivity() {
                             listOf(10, 15, 20, 25, 30).forEach { fov ->
                                 DropdownMenuItem(
                                     text = { Text("$fov°", color = MaterialTheme.colorScheme.onSurface) },
-                                    onClick = { 
+                                    onClick = {
                                         targetFov = fov
                                         expanded = false
                                     }
@@ -700,7 +986,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().clickable(enabled = isCameraConnected) {
@@ -712,14 +998,14 @@ class MainActivity : ComponentActivity() {
                     onClick = { if (isCameraConnected) cameraSelection = "external" },
                     enabled = isCameraConnected,
                     colors = RadioButtonDefaults.colors(
-                        selectedColor = MaterialTheme.colorScheme.primary, 
+                        selectedColor = MaterialTheme.colorScheme.primary,
                         unselectedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                         disabledSelectedColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
                         disabledUnselectedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.38f)
                     )
                 )
                 Text(
-                    text = "External (USB/UVC) Camera", 
+                    text = "External (USB/UVC) Camera",
                     modifier = Modifier.padding(start = 8.dp),
                     color = if (isCameraConnected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.38f)
                 )
@@ -741,7 +1027,7 @@ class MainActivity : ComponentActivity() {
                             listOf(5, 10, 15, 20, 30).forEach { fps ->
                                 DropdownMenuItem(
                                     text = { Text("$fps", color = MaterialTheme.colorScheme.onSurface) },
-                                    onClick = { 
+                                    onClick = {
                                         uvcFps = fps
                                         expandedFps = false
                                     }
@@ -777,8 +1063,22 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            Text("Guidance Mode", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                listOf("equatorial" to "Equatorial", "alt_az" to "Alt-Az").forEach { (value, label) ->
+                    RadioButton(
+                        selected = guidanceMode == value,
+                        onClick = { guidanceMode = value },
+                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary, unselectedColor = MaterialTheme.colorScheme.onBackground)
+                    )
+                    Text(label, modifier = Modifier.padding(start = 8.dp, end = 16.dp), color = MaterialTheme.colorScheme.onBackground)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             Text("IMU Integration", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
-            
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
