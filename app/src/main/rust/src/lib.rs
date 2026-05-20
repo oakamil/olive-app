@@ -50,7 +50,6 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
     imu_enabled: jni::sys::jboolean,
     uvc_fps: jint,
     extractor: jni::objects::JString,
-    _target_fov: jint,
     latitude: jni::sys::jdouble,
     longitude: jni::sys::jdouble,
     time_ms: jni::sys::jlong,
@@ -105,6 +104,9 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
                 bg_mode: olive_engine::engine::BgMode::Line,
                 extractor_type: ext_type,
                 crop: None,
+                downsample: true,
+                bypass_calibration: false,
+                noise_filter: true,
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -179,13 +181,13 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
     _class: JClass,
     imu_enabled: jni::sys::jboolean,
     extractor: jni::objects::JString,
-    target_fov: jint,
+    internal_camera_id: jni::objects::JString,
     latitude: jni::sys::jdouble,
     longitude: jni::sys::jdouble,
     time_ms: jni::sys::jlong,
 ) {
     let use_imu = imu_enabled != 0;
-    let target_fov_f32 = target_fov as f32;
+    let internal_camera_id_str: String = env.get_string(&internal_camera_id).unwrap().into();
     let extractor_str: String = env.get_string(&extractor).unwrap().into();
     let ext_type = if extractor_str == "Cedar" {
         olive_engine::engine::Extractor::Cedar
@@ -217,7 +219,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
             use olive_engine::engine::{Engine, EngineConfig};
             use std::sync::Arc;
 
-            let mut cam = AndroidCamera::new(target_fov_f32);
+            let mut cam = AndroidCamera::new(Some(internal_camera_id_str));
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start Android camera: {}", e);
                 return;
@@ -233,6 +235,9 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
                 bg_mode: olive_engine::engine::BgMode::Line,
                 extractor_type: ext_type,
                 crop: None,
+                downsample: false,
+                bypass_calibration: true,
+                noise_filter: true,
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -398,9 +403,13 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraExposu
     _class: JClass,
 ) -> jint {
     if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
-        cam.get_exposure()
+        {
+            let e = cam.get_exposure();
+            log::info!("getNativeCameraExposure returning {}", e);
+            e
+        }
     } else {
-        100_000
+        1_000_000
     }
 }
 
@@ -467,6 +476,16 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setEnginePaused(
         let mut state = state_arc.write().unwrap();
         state.paused = paused != 0;
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_getAvailableInternalCameras(
+    env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jstring {
+    use crate::android_camera::AndroidCamera;
+    let json_str = AndroidCamera::get_available_cameras();
+    env.new_string(json_str).unwrap().into_raw()
 }
 
 #[unsafe(no_mangle)]
