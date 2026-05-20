@@ -108,10 +108,9 @@ class SettingsManager(context: Context) {
         get() = prefs.getString("extractor", "Olive") ?: "Olive"
         set(value) = prefs.edit().putString("extractor", value).apply()
 
-    var targetFov: Int
-        get() = prefs.getInt("target_fov", 20)
-        set(value) = prefs.edit().putInt("target_fov", value).apply()
-}
+    var internalCameraId: String
+        get() = prefs.getString("internal_camera_id", "auto") ?: "auto"
+        set(value) = prefs.edit().putString("internal_camera_id", value).apply()}
 
 class MainActivity : ComponentActivity() {
 
@@ -153,8 +152,8 @@ class MainActivity : ComponentActivity() {
 
     // Rust JNI functions
     private external fun initJni(filesDir: String)
-    private external fun startEngine(fd: Int, imuEnabled: Boolean, uvcFps: Int, extractor: String, targetFov: Int, lat: Double, lon: Double, timeMs: Long)
-    private external fun startNativeCameraEngine(imuEnabled: Boolean, extractor: String, targetFov: Int, lat: Double, lon: Double, timeMs: Long)
+    private external fun startEngine(fd: Int, imuEnabled: Boolean, uvcFps: Int, extractor: String, lat: Double, lon: Double, timeMs: Long)
+    private external fun startNativeCameraEngine(imuEnabled: Boolean, extractor: String, internalCameraId: String, lat: Double, lon: Double, timeMs: Long)
     private external fun stopEngine()
     private external fun getEngineStats(): String
     private external fun setNativeCameraExposure(exposureUs: Int)
@@ -165,6 +164,7 @@ class MainActivity : ComponentActivity() {
     private external fun getNativeCameraGain(): Float
     private external fun getMinNativeCameraGain(): Float
     private external fun getMaxNativeCameraGain(): Float
+    private external fun getAvailableInternalCameras(): String
     private external fun getLatestFrame(): ByteArray?
     private external fun setEnginePaused(paused: Boolean)
 
@@ -269,6 +269,12 @@ class MainActivity : ComponentActivity() {
                 }
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                     checkForCameras()
+                    if (isCameraConnected && engineMode == EngineMode.NATIVE) {
+                        settingsManager.cameraSelection = "external"
+                        stopEngine()
+                        engineMode = EngineMode.STOPPED
+                        executeStartEngine()
+                    }
                 }
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
                     checkForCameras()
@@ -277,6 +283,7 @@ class MainActivity : ComponentActivity() {
                         uvcConnection?.close()
                         uvcConnection = null
                         engineMode = EngineMode.STOPPED
+                        executeStartEngine()
                     }
                 }
             }
@@ -488,7 +495,7 @@ class MainActivity : ComponentActivity() {
                 usbManager.requestPermission(device, intent)
             }
         } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.targetFov, lat, lon, timeMs)
+            startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.internalCameraId, lat, lon, timeMs)
             engineMode = EngineMode.NATIVE
         }
     }
@@ -499,13 +506,15 @@ class MainActivity : ComponentActivity() {
         if (connection != null) {
             uvcConnection = connection
             val fd = connection.fileDescriptor
-            startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, settingsManager.targetFov, lat, lon, timeMs)
+            startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, lat, lon, timeMs)
             engineMode = EngineMode.UVC
         }
     }
 
     @Composable
     fun MainScreen() {
+        var mainScreenExposure by remember { mutableStateOf(1.0f) }
+
         Column(
             modifier = Modifier.fillMaxSize().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -535,14 +544,16 @@ class MainActivity : ComponentActivity() {
                     Spacer(modifier = Modifier.width(8.dp))
                 }
 
-                Button(
-                    onClick = { currentScreen = "settings" },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                ) {
-                    Text("Settings")
+                if (!isEngineRunning) {
+                    Button(
+                        onClick = { currentScreen = "settings" },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Settings")
+                    }
                 }
             }
 
@@ -570,6 +581,31 @@ class MainActivity : ComponentActivity() {
             }
 
             if (isEngineRunning) {
+                if (settingsManager.cameraSelection == "internal") {
+                    LaunchedEffect(isEngineRunning) {
+                        // Wait a moment for the camera to actually start and the JNI reference to be set
+                        kotlinx.coroutines.delay(1000)
+                        val rawExp = getNativeCameraExposure()
+                        android.util.Log.d("OliveUI", "Initial exposure from native: $rawExp")
+                        mainScreenExposure = (rawExp / 1000000f).coerceIn(0.2f, 5.0f)
+                    }
+                    
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                        Text("Exposure: ${String.format("%.1f", mainScreenExposure)} s", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+                        Slider(
+                            value = mainScreenExposure,
+                            onValueChange = { 
+                                val stepped = Math.round(it * 10.0f) / 10.0f
+                                mainScreenExposure = stepped
+                                setNativeCameraExposure((stepped * 1000000).toInt())
+                            },
+                            valueRange = 0.2f..5.0f,
+                            steps = 47,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
                 OutlinedButton(
                     onClick = { enterPipMode() },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
@@ -604,13 +640,11 @@ class MainActivity : ComponentActivity() {
             val angle = stats.offsetAngle
 
             if (rot != null && tilt != null && angle != null) {
-                val offsetStyle = MaterialTheme.typography.displayLarge.copy(
+                val offsetStyle = MaterialTheme.typography.headlineMedium.copy(
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
-                    color = LocalContentColor.current,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 200.sp,
-                    lineHeight = TextUnit.Unspecified
+                    fontSize = 48.sp,
                 )
 
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -620,19 +654,19 @@ class MainActivity : ComponentActivity() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
-                            modifier = Modifier.weight(1f).padding(end = 4.dp).fillMaxSize(),
-                            contentAlignment = Alignment.BottomCenter
+                            modifier = Modifier.weight(1f).padding(end = 4.dp).fillMaxHeight(),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = String.format(Locale.US, "%-+6.1f", tilt),
+                                text = String.format(Locale.US, "%+6.1f", tilt),
                                 color = MaterialTheme.colorScheme.primary,
                                 style = offsetStyle
                             )
                         }
 
                         Box(
-                            modifier = Modifier.weight(1f).padding(start = 4.dp).fillMaxSize(),
-                            contentAlignment = Alignment.BottomCenter
+                            modifier = Modifier.weight(1f).padding(start = 4.dp).fillMaxHeight(),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = String.format(Locale.US, "%+6.1f", rot),
@@ -900,7 +934,7 @@ class MainActivity : ComponentActivity() {
         var imuIntegration by remember { mutableStateOf(settingsManager.imuIntegration) }
         var uvcFps by remember { mutableStateOf(settingsManager.uvcFps) }
         var extractor by remember { mutableStateOf(settingsManager.extractor) }
-        var targetFov by remember { mutableStateOf(settingsManager.targetFov) }
+        var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
         var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
 
         LaunchedEffect(cameraSelection) {
@@ -915,8 +949,8 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(extractor) {
             settingsManager.extractor = extractor
         }
-        LaunchedEffect(targetFov) {
-            settingsManager.targetFov = targetFov
+        LaunchedEffect(internalCameraId) {
+            settingsManager.internalCameraId = internalCameraId
         }
         LaunchedEffect(guidanceMode) {
             settingsManager.guidanceMode = guidanceMode
@@ -961,23 +995,39 @@ class MainActivity : ComponentActivity() {
             }
 
             if (cameraSelection == "internal") {
+                val camerasJson = getAvailableInternalCameras()
+                val camerasList = mutableListOf<Pair<String, String>>()
+                camerasList.add(Pair("auto", "Auto-Select"))
+                try {
+                    val jsonArray = org.json.JSONArray(camerasJson)
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        val id = obj.getString("id")
+                        val fov = obj.getDouble("fov")
+                        camerasList.add(Pair(id, "Camera $id (${String.format("%.1f", fov)}° FOV)"))
+                    }
+                } catch (e: Exception) {
+                    // Ignore parse errors
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 40.dp)) {
-                    Text("Target FOV: ", color = MaterialTheme.colorScheme.onBackground)
+                    Text("Camera: ", color = MaterialTheme.colorScheme.onBackground)
                     var expanded by remember { mutableStateOf(false) }
                     Box {
                         TextButton(onClick = { expanded = true }) {
-                            Text("$targetFov°", color = MaterialTheme.colorScheme.primary)
+                            val currentText = camerasList.find { it.first == internalCameraId }?.second ?: "Auto-Select"
+                            Text(currentText, color = MaterialTheme.colorScheme.primary)
                         }
                         DropdownMenu(
                             expanded = expanded,
                             onDismissRequest = { expanded = false },
                             modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                         ) {
-                            listOf(10, 15, 20, 25, 30).forEach { fov ->
+                            camerasList.forEach { (id, label) ->
                                 DropdownMenuItem(
-                                    text = { Text("$fov°", color = MaterialTheme.colorScheme.onSurface) },
-                                    onClick = {
-                                        targetFov = fov
+                                    text = { Text(label, color = MaterialTheme.colorScheme.onSurface) },
+                                    onClick = { 
+                                        internalCameraId = id
                                         expanded = false
                                     }
                                 )
@@ -986,7 +1036,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().clickable(enabled = isCameraConnected) {
