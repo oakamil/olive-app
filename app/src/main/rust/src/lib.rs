@@ -9,11 +9,13 @@ pub mod android_camera;
 pub mod android_imu;
 
 static RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
+static TELESCOPE_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static ENGINE_STOP_TX: Mutex<Option<tokio::sync::oneshot::Sender<()>>> = Mutex::new(None);
 static ENGINE_STATE: Mutex<
     Option<std::sync::Arc<std::sync::RwLock<olive_engine::engine::EngineStateData>>>,
 > = Mutex::new(None);
 static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
+static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_MainActivity_initJni(
@@ -80,7 +82,12 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
 
     let rt_handle = rt.handle().clone();
 
-    thread::spawn(move || {
+    let old_thread = MAIN_ENGINE_THREAD.lock().unwrap().take();
+
+    let new_thread = thread::spawn(move || {
+        if let Some(handle) = old_thread {
+            let _ = handle.join();
+        }
         rt_handle.block_on(async {
             use olive_engine::CameraTrait;
             use olive_engine::control_server;
@@ -101,12 +108,14 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
                 target_centroids: 20,
                 database_path: "default_database.npz".to_string(),
                 isp: false,
-                bg_mode: olive_engine::engine::BgMode::Line,
+                bg_mode: olive_engine::engine::BgMode::Block,
                 extractor_type: ext_type,
                 crop: None,
                 downsample: true,
                 bypass_calibration: false,
-                noise_filter: true,
+                noise_filter: false,
+                sigma: None,
+                initial_fov: None,
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -155,24 +164,52 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
                 None
             };
 
-            let mut engine = Engine::new(camera, config, client_connected, engine_state, imu_arc);
+            let mut telescope_runtime_lock = TELESCOPE_RUNTIME.lock().unwrap();
+            if telescope_runtime_lock.is_none() {
+                *telescope_runtime_lock = Some(
+                    tokio::runtime::Builder::new_multi_thread()
+                        .worker_threads(1)
+                        .enable_all()
+                        .build()
+                        .unwrap(),
+                );
+            }
+            let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
+
+            let mut engine = Engine::new(
+                camera,
+                config,
+                client_connected,
+                engine_state,
+                imu_arc,
+                Some(telescope_rt.handle().clone()),
+            );
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
 
             // Run engine in a separate thread since it might block
-            std::thread::spawn(move || {
-                engine.start();
+            let engine_thread = std::thread::spawn(move || {
+                let handles = engine.start();
+                let _ = handles.0.join();
+                let _ = handles.1.join();
             });
 
             // Wait for stop signal
             let _ = rx.await;
             is_running_clone.store(false, std::sync::atomic::Ordering::Relaxed);
             server_handle.abort();
+            let _ = server_handle.await;
+
             if let Some(handle) = telescope_handle {
                 handle.abort();
+                let _ = handle.await;
             }
+
+            let _ = engine_thread.join();
         });
     });
+
+    *MAIN_ENGINE_THREAD.lock().unwrap() = Some(new_thread);
 }
 
 #[unsafe(no_mangle)]
@@ -211,7 +248,12 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
 
     let rt_handle = rt.handle().clone();
 
-    thread::spawn(move || {
+    let old_thread = MAIN_ENGINE_THREAD.lock().unwrap().take();
+
+    let new_thread = thread::spawn(move || {
+        if let Some(handle) = old_thread {
+            let _ = handle.join();
+        }
         rt_handle.block_on(async {
             use crate::android_camera::AndroidCamera;
             use olive_engine::CameraTrait;
@@ -227,6 +269,11 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
             let camera: std::sync::Arc<dyn CameraTrait> = Arc::new(cam);
             *CAMERA.lock().unwrap() = Some(camera.clone());
 
+            let sigma_val = if ext_type == olive_engine::engine::Extractor::Cedar {
+                Some(10.0)
+            } else {
+                Some(5.0)
+            };
             let config = EngineConfig {
                 gain: None,
                 target_centroids: 20,
@@ -238,6 +285,8 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
                 downsample: false,
                 bypass_calibration: true,
                 noise_filter: true,
+                sigma: sigma_val,
+                initial_fov: camera.get_config().and_then(|c| c.initial_fov),
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -286,24 +335,52 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
                 None
             };
 
-            let mut engine = Engine::new(camera, config, client_connected, engine_state, imu_arc);
+            let mut telescope_runtime_lock = TELESCOPE_RUNTIME.lock().unwrap();
+            if telescope_runtime_lock.is_none() {
+                *telescope_runtime_lock = Some(
+                    tokio::runtime::Builder::new_multi_thread()
+                        .worker_threads(1)
+                        .enable_all()
+                        .build()
+                        .unwrap(),
+                );
+            }
+            let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
+
+            let mut engine = Engine::new(
+                camera,
+                config,
+                client_connected,
+                engine_state,
+                imu_arc,
+                Some(telescope_rt.handle().clone()),
+            );
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
 
             // Run engine in a separate thread since it might block
-            std::thread::spawn(move || {
-                engine.start();
+            let engine_thread = std::thread::spawn(move || {
+                let handles = engine.start();
+                let _ = handles.0.join();
+                let _ = handles.1.join();
             });
 
             // Wait for stop signal
             let _ = rx.await;
             is_running_clone.store(false, std::sync::atomic::Ordering::Relaxed);
             server_handle.abort();
+            let _ = server_handle.await;
+
             if let Some(handle) = telescope_handle {
                 handle.abort();
+                let _ = handle.await;
             }
+
+            let _ = engine_thread.join();
         });
     });
+
+    *MAIN_ENGINE_THREAD.lock().unwrap() = Some(new_thread);
 }
 
 #[unsafe(no_mangle)]
@@ -314,9 +391,21 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_stopEngine(
     if let Some(tx) = ENGINE_STOP_TX.lock().unwrap().take() {
         let _ = tx.send(());
     }
-    *CAMERA.lock().unwrap() = None;
-}
 
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.stop_capture();
+    }
+
+    // Clear globals immediately so UI doesn't see old data
+    *CAMERA.lock().unwrap() = None;
+    *ENGINE_STATE.lock().unwrap() = None;
+
+    // We join here because Kotlin will now call this from a background thread.
+    // This ensures hardware is released before the USB connection is closed.
+    if let Some(handle) = MAIN_ENGINE_THREAD.lock().unwrap().take() {
+        let _ = handle.join();
+    }
+}
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraExposure(
     _env: JNIEnv,
