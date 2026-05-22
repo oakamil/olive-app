@@ -80,6 +80,7 @@ impl CameraTrait for AndroidCamera {
             height: c.height,
             fps: 0,
             crop: c.target_crop,
+            initial_fov: Some(c.fov),
         })
     }
 
@@ -111,6 +112,11 @@ impl CameraTrait for AndroidCamera {
         }));
 
         Ok(())
+    }
+
+    fn stop_capture(&self) {
+        self.send_command(CaptureCommand::StopCaptureThread);
+        self.store.cvar.notify_all();
     }
 
     fn get_gain(&self) -> f32 {
@@ -788,11 +794,6 @@ impl AndroidCamera {
                     post_process_time: receive_time.elapsed(),
                 }));
                 ctx.store.cvar.notify_all();
-                log::info!(
-                    "Frame accepted: exp={}us, target={}us",
-                    actual_exp_us,
-                    target_exp_us
-                );
 
                 AImage_delete(image);
             }

@@ -55,6 +55,8 @@ import androidx.graphics.shapes.toPath
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 // Night vision theme colors
@@ -122,6 +124,7 @@ class MainActivity : ComponentActivity() {
     private var isCameraConnected by mutableStateOf(false)
     private enum class EngineMode { STOPPED, UVC, NATIVE }
     private var engineMode by mutableStateOf(EngineMode.STOPPED)
+    private var isStopping by mutableStateOf(false)
     private var uvcConnection: UsbDeviceConnection? = null
     private val isEngineRunning: Boolean
         get() = engineMode != EngineMode.STOPPED
@@ -231,7 +234,6 @@ class MainActivity : ComponentActivity() {
         }
 
         val avg = if (pixelCount > 0) sum / pixelCount else 0
-        android.util.Log.d("OliveUI", "Decoded frame ${width}x${height}, avg pixel val: $avg")
 
         bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
         latestFrame = bitmap.asImageBitmap()
@@ -462,11 +464,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun toggleEngine() {
+        if (isStopping) return // Ignore if already stopping
+
         if (isEngineRunning) {
-            stopEngine()
-            uvcConnection?.close()
-            uvcConnection = null
-            engineMode = EngineMode.STOPPED
+            isStopping = true
+            lifecycleScope.launch {
+                withContext(Dispatchers.IO) {
+                    stopEngine()
+                }
+                uvcConnection?.close()
+                uvcConnection = null
+                engineMode = EngineMode.STOPPED
+                isStopping = false
+                engineStats = EngineStats() // Reset stats
+                latestFrame = null // Clear preview
+            }
         } else {
             val permissions = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
             if (settingsManager.cameraSelection == "internal") {
@@ -617,12 +629,19 @@ class MainActivity : ComponentActivity() {
             Button(
                 onClick = { toggleEngine() },
                 modifier = Modifier.padding(16.dp),
+                enabled = !isStopping,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
-                Text(if (isEngineRunning) "Stop Engine" else "Start Engine")
+                Text(
+                    when {
+                        isStopping -> "Stopping..."
+                        isEngineRunning -> "Stop Engine"
+                        else -> "Start Engine"
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
