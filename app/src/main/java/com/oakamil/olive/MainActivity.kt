@@ -29,6 +29,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Straight
 import androidx.compose.material3.*
@@ -175,17 +176,22 @@ class MainActivity : ComponentActivity() {
     private external fun getNativeCameraGain(): Float
     private external fun getMinNativeCameraGain(): Float
     private external fun getMaxNativeCameraGain(): Float
+    private external fun getNativeCameraBrightnessRange(): IntArray?
+    private external fun setNativeCameraBrightness(brightness: Int)
     private external fun getAvailableInternalCameras(): String
     private external fun getLatestFrameInto(buffer: ByteBuffer): Boolean
     private external fun setEnginePaused(paused: Boolean)
 
     // Tuning state
-    private var currentExposure by mutableStateOf(100000f)
+    private var currentExposure by mutableStateOf(50000f)
     private var currentGain by mutableStateOf(100f)
     private var minAnalogGain by mutableStateOf(100f)
     private var maxAnalogGain by mutableStateOf(3200f)
     private var currentFocus by mutableStateOf(0.0f)
     private var noiseReductionMode by mutableStateOf(0) // 0=OFF, 1=FAST, 2=HQ
+    private var uvcBrightnessMin by mutableStateOf(0)
+    private var uvcBrightnessMax by mutableStateOf(0)
+    private var currentUvcBrightness by mutableStateOf(0)
     private var latestFrame by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
 
     private fun updateStats() {
@@ -362,6 +368,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             LaunchedEffect(isEngineRunning, currentScreen) {
+                updateAutoPip(isEngineRunning)
                 if (isEngineRunning) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     while (true) {
@@ -439,6 +446,15 @@ class MainActivity : ComponentActivity() {
                 builder.setAutoEnterEnabled(true)
             }
             enterPictureInPictureMode(builder.build())
+        }
+    }
+
+    private fun updateAutoPip(enable: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val builder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+                .setAutoEnterEnabled(enable)
+            setPictureInPictureParams(builder.build())
         }
     }
 
@@ -588,14 +604,24 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openDeviceAndStartEngine(device: UsbDevice, lat: Double = 200.0, lon: Double = 200.0, timeMs: Long = 0L) {
-        uvcConnection?.close()
-        val connection = usbManager.openDevice(device)
-        if (connection != null) {
-            uvcConnection = connection
-            val fd = connection.fileDescriptor
-            startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, lat, lon, timeMs)
-            engineMode = EngineMode.UVC
-            startBackgroundService("UVC")
+        lifecycleScope.launch {
+            val connection = withContext(Dispatchers.IO) {
+                if (isEngineRunning) {
+                    stopEngine()
+                }
+                uvcConnection?.close()
+                val conn = usbManager.openDevice(device)
+                if (conn != null) {
+                    uvcConnection = conn
+                    val fd = conn.fileDescriptor
+                    startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, lat, lon, timeMs)
+                }
+                conn
+            }
+            if (connection != null) {
+                engineMode = EngineMode.UVC
+                startBackgroundService("UVC")
+            }
         }
     }
 
@@ -619,6 +645,15 @@ class MainActivity : ComponentActivity() {
                             maxAnalogGain = getMaxNativeCameraGain().coerceAtLeast(minAnalogGain + 1f)
                             currentGain = getNativeCameraGain().coerceIn(minAnalogGain, maxAnalogGain)
                             currentExposure = getNativeCameraExposure().toFloat().coerceIn(16667f, 5000000f)
+                            val bRange = getNativeCameraBrightnessRange()
+                            if (bRange != null && bRange.size == 3) {
+                                uvcBrightnessMin = bRange[0]
+                                uvcBrightnessMax = bRange[1]
+                                currentUvcBrightness = bRange[2]
+                            } else {
+                                uvcBrightnessMin = 0
+                                uvcBrightnessMax = 0
+                            }
                             currentScreen = "tuner"
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -742,7 +777,7 @@ class MainActivity : ComponentActivity() {
             if (tilt != null) lastTilt = tilt
             if (angle != null) lastAngle = angle
 
-            if (stats.targetRa == null && stats.targetDec == null) {
+            if (stats.targetRa == null && stats.targetDec == null && stats.status != "Solving" && stats.status != "Slewing") {
                 lastRot = null
                 lastTilt = null
                 lastAngle = null
@@ -753,7 +788,8 @@ class MainActivity : ComponentActivity() {
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.primary
                     ),
-                    softWrap = false
+                    softWrap = false,
+                    autoSize = TextAutoSize.StepBased()
                 )
                 return@Box
             }
@@ -783,8 +819,7 @@ class MainActivity : ComponentActivity() {
                 )
 
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                    val scaleFactor = minOf(maxWidth.value / 600f, maxHeight.value / 400f).coerceAtMost(1f)
-                    Column(modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scaleFactor, scaleY = scaleFactor)) {
+                    Column(modifier = Modifier.fillMaxSize()) {
                         Row(
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -797,7 +832,8 @@ class MainActivity : ComponentActivity() {
                                 BasicText(
                                     text = String.format(Locale.US, "%-+6.1f", displayTilt),
                                     style = offsetStyle,
-                                    softWrap = false
+                                    softWrap = false,
+                                    autoSize = TextAutoSize.StepBased()
                                 )
                             }
 
@@ -808,7 +844,8 @@ class MainActivity : ComponentActivity() {
                                 BasicText(
                                     text = String.format(Locale.US, "%+6.1f", displayRot),
                                     style = offsetStyle,
-                                    softWrap = false
+                                    softWrap = false,
+                                    autoSize = TextAutoSize.StepBased()
                                 )
                             }
                         }
@@ -831,7 +868,8 @@ class MainActivity : ComponentActivity() {
                                             BasicText(
                                                 text = "Alt",
                                                 style = indicatorStyle,
-                                                softWrap = false
+                                                softWrap = false,
+                                                autoSize = TextAutoSize.StepBased()
                                             )
                                         }
                                     }
@@ -839,7 +877,8 @@ class MainActivity : ComponentActivity() {
                                     BasicText(
                                         text = if (displayTilt > 0) "North" else "South",
                                         style = indicatorStyle,
-                                        softWrap = false
+                                        softWrap = false,
+                                        autoSize = TextAutoSize.StepBased()
                                     )
                                 }
                             }
@@ -848,13 +887,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.weight(2f).fillMaxHeight(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (rot == null || tilt == null) {
-                                    CircularProgressIndicator(
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(100.dp),
-                                        strokeWidth = 8.dp
-                                    )
-                                } else if (displayAngle != null && kotlin.math.abs(displayAngle) >= 0.05) {
+                                if (displayAngle != null && kotlin.math.abs(displayAngle) >= 0.05) {
                                     TargetArrow(displayAngle)
                                 }
                             }
@@ -872,7 +905,8 @@ class MainActivity : ComponentActivity() {
                                             BasicText(
                                                 text = " Az",
                                                 style = indicatorStyle,
-                                                softWrap = false
+                                                softWrap = false,
+                                                autoSize = TextAutoSize.StepBased()
                                             )
                                         }
                                     }
@@ -880,7 +914,8 @@ class MainActivity : ComponentActivity() {
                                     BasicText(
                                         text = if (displayRot > 0) " East" else " West",
                                         style = indicatorStyle,
-                                        softWrap = false
+                                        softWrap = false,
+                                        autoSize = TextAutoSize.StepBased()
                                     )
                                 }
                             }
@@ -888,15 +923,22 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             } else {
-                BasicText(
-                    text = "Awaiting Target Guidance...",
-                    style = MaterialTheme.typography.displayMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
+                if (stats.status == "Solving" || stats.status == "Slewing") {
+                    CircularProgressIndicator(
                         color = MaterialTheme.colorScheme.primary
-                    ),
-                    softWrap = false
-                )
+                    )
+                } else {
+                    BasicText(
+                        text = stats.status,
+                        style = MaterialTheme.typography.displayMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.primary
+                        ),
+                        softWrap = false,
+                        autoSize = TextAutoSize.StepBased()
+                    )
+                }
             }
         }
     }
@@ -1051,6 +1093,19 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth()
             )
 
+            if (engineMode == EngineMode.UVC && uvcBrightnessMax > uvcBrightnessMin) {
+                Text("Brightness: $currentUvcBrightness", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+                Slider(
+                    value = currentUvcBrightness.toFloat(),
+                    onValueChange = {
+                        currentUvcBrightness = it.toInt()
+                        setNativeCameraBrightness(currentUvcBrightness)
+                    },
+                    valueRange = uvcBrightnessMin.toFloat()..uvcBrightnessMax.toFloat(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             Text("Gain: ${currentGain.toInt()}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
             Slider(
                 value = currentGain,
@@ -1062,16 +1117,18 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Text("Focus: ${String.format("%.2f", currentFocus)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
-            Slider(
-                value = currentFocus,
-                onValueChange = {
-                    currentFocus = it
-                    setNativeCameraFocus(it)
-                },
-                valueRange = 0.0f..10.0f,
-                modifier = Modifier.fillMaxWidth()
-            )
+            if (engineMode != EngineMode.UVC) {
+                Text("Focus: ${String.format("%.2f", currentFocus)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+                Slider(
+                    value = currentFocus,
+                    onValueChange = {
+                        currentFocus = it
+                        setNativeCameraFocus(it)
+                    },
+                    valueRange = 0.0f..10.0f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Noise Reduction: ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
@@ -1204,7 +1261,7 @@ class MainActivity : ComponentActivity() {
                         DropdownMenu(
                             expanded = expanded,
                             onDismissRequest = { expanded = false },
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                            modifier = Modifier.background(Color.DarkGray)
                         ) {
                             camerasList.forEach { (id, label) ->
                                 DropdownMenuItem(
@@ -1254,7 +1311,7 @@ class MainActivity : ComponentActivity() {
                         DropdownMenu(
                             expanded = expandedFps,
                             onDismissRequest = { expandedFps = false },
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                            modifier = Modifier.background(Color.DarkGray)
                         ) {
                             listOf(5, 10, 15, 20, 30).forEach { fps ->
                                 DropdownMenuItem(

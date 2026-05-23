@@ -78,16 +78,19 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
     let rt = runtime_lock.as_ref().unwrap();
 
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-    *ENGINE_STOP_TX.lock().unwrap() = Some(tx);
+
+    if let Some(old_tx) = ENGINE_STOP_TX.lock().unwrap().replace(tx) {
+        let _ = old_tx.send(());
+    }
 
     let rt_handle = rt.handle().clone();
 
     let old_thread = MAIN_ENGINE_THREAD.lock().unwrap().take();
 
+    if let Some(handle) = old_thread {
+        let _ = handle.join();
+    }
     let new_thread = thread::spawn(move || {
-        if let Some(handle) = old_thread {
-            let _ = handle.join();
-        }
         rt_handle.block_on(async {
             use olive_engine::CameraTrait;
             use olive_engine::control_server;
@@ -95,7 +98,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
             use olive_engine::uvc_camera::Camera;
             use std::sync::Arc;
 
-            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd), true);
+            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd), false);
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start UVC camera: {}", e);
                 return;
@@ -244,16 +247,19 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
     let rt = runtime_lock.as_ref().unwrap();
 
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-    *ENGINE_STOP_TX.lock().unwrap() = Some(tx);
+
+    if let Some(old_tx) = ENGINE_STOP_TX.lock().unwrap().replace(tx) {
+        let _ = old_tx.send(());
+    }
 
     let rt_handle = rt.handle().clone();
 
     let old_thread = MAIN_ENGINE_THREAD.lock().unwrap().take();
 
+    if let Some(handle) = old_thread {
+        let _ = handle.join();
+    }
     let new_thread = thread::spawn(move || {
-        if let Some(handle) = old_thread {
-            let _ = handle.join();
-        }
         rt_handle.block_on(async {
             use crate::android_camera::AndroidCamera;
             use olive_engine::CameraTrait;
@@ -447,6 +453,40 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraNoiseR
 ) {
     if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
         cam.set_noise_reduction(mode as u8);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraBrightnessRange<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass,
+) -> jni::sys::jintArray {
+    let result = if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_brightness_range()
+    } else {
+        None
+    };
+
+    if let Some((min, max, current)) = result {
+        let arr = env.new_int_array(3).unwrap();
+        env.set_int_array_region(&arr, 0, &[min, max, current])
+            .unwrap();
+        arr.into_raw()
+    } else {
+        std::ptr::null_mut()
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraBrightness(
+    _env: JNIEnv,
+    _class: JClass,
+    brightness: jint,
+) {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.set_brightness(brightness);
     }
 }
 
