@@ -95,7 +95,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
             use olive_engine::uvc_camera::Camera;
             use std::sync::Arc;
 
-            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd), false);
+            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd), true);
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start UVC camera: {}", e);
                 return;
