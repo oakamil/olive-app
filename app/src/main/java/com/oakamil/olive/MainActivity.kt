@@ -36,6 +36,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposePath
@@ -58,6 +61,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import java.nio.ByteBuffer
 
 // Night vision theme colors
 val PureRed = Color(0xFFFF0000)
@@ -122,6 +126,7 @@ class MainActivity : ComponentActivity() {
 
     // State variables for Jetpack Compose
     private var isCameraConnected by mutableStateOf(false)
+    private var activeCameraSelection by mutableStateOf("internal")
     private enum class EngineMode { STOPPED, UVC, NATIVE }
     private var engineMode by mutableStateOf(EngineMode.STOPPED)
     private var isStopping by mutableStateOf(false)
@@ -150,7 +155,10 @@ class MainActivity : ComponentActivity() {
         val offsetDec: Double? = null,
         val offsetAz: Double? = null,
         val offsetAlt: Double? = null,
-        val offsetAngle: Double? = null
+        val offsetAngle: Double? = null,
+        val hfr: Double = 0.0,
+        val targetRa: Double? = null,
+        val targetDec: Double? = null
     )
 
     // Rust JNI functions
@@ -168,7 +176,7 @@ class MainActivity : ComponentActivity() {
     private external fun getMinNativeCameraGain(): Float
     private external fun getMaxNativeCameraGain(): Float
     private external fun getAvailableInternalCameras(): String
-    private external fun getLatestFrame(): ByteArray?
+    private external fun getLatestFrameInto(buffer: ByteBuffer): Boolean
     private external fun setEnginePaused(paused: Boolean)
 
     // Tuning state
@@ -199,17 +207,32 @@ class MainActivity : ComponentActivity() {
                 offsetDec = if (obj.isNull("offset_dec")) null else obj.optDouble("offset_dec"),
                 offsetAz = if (obj.isNull("offset_az")) null else obj.optDouble("offset_az"),
                 offsetAlt = if (obj.isNull("offset_alt")) null else obj.optDouble("offset_alt"),
-                offsetAngle = if (obj.isNull("offset_angle")) null else obj.optDouble("offset_angle")
+                offsetAngle = if (obj.isNull("offset_angle")) null else obj.optDouble("offset_angle"),
+                hfr = obj.optDouble("hfr", 0.0),
+                targetRa = if (obj.isNull("target_ra")) null else obj.optDouble("target_ra"),
+                targetDec = if (obj.isNull("target_dec")) null else obj.optDouble("target_dec")
             )
         } catch (e: Exception) {
             // Ignore parse errors
         }
     }
 
-    private fun fetchLatestFrame() {
-        val bytes = getLatestFrame() ?: return
-        if (bytes.size < 8) return
+    private var frameBuffer: ByteBuffer? = null
 
+    private fun fetchLatestFrame() {
+        if (frameBuffer == null) {
+            // Allocate 100MB direct buffer (can hold up to ~25MP ARGB image)
+            frameBuffer = ByteBuffer.allocateDirect(100 * 1024 * 1024)
+        }
+        val buffer = frameBuffer ?: return
+        buffer.clear()
+        
+        if (!getLatestFrameInto(buffer)) return
+        
+        buffer.position(0)
+        val bytes = ByteArray(8)
+        buffer.get(bytes)
+        
         val width = ((bytes[0].toInt() and 0xFF) or
                 ((bytes[1].toInt() and 0xFF) shl 8) or
                 ((bytes[2].toInt() and 0xFF) shl 16) or
@@ -221,21 +244,12 @@ class MainActivity : ComponentActivity() {
                 ((bytes[7].toInt() and 0xFF) shl 24))
 
         val pixelCount = width * height
-        if (bytes.size < pixelCount + 8) return
-
+        if (pixelCount <= 0 || pixelCount > 25000000) return
+        
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val pixels = IntArray(pixelCount)
-
-        var sum = 0L
-        for (i in 0 until pixelCount) {
-            val gray = bytes[i + 8].toInt() and 0xFF
-            sum += gray
-            pixels[i] = android.graphics.Color.rgb(gray, gray, gray)
-        }
-
-        val avg = if (pixelCount > 0) sum / pixelCount else 0
-
-        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        // copyPixelsFromBuffer reads from the current position.
+        // we already read 8 bytes, so position is 8.
+        bitmap.copyPixelsFromBuffer(buffer)
         latestFrame = bitmap.asImageBitmap()
     }
 
@@ -271,21 +285,27 @@ class MainActivity : ComponentActivity() {
                 }
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                     checkForCameras()
-                    if (isCameraConnected && engineMode == EngineMode.NATIVE) {
-                        settingsManager.cameraSelection = "external"
-                        stopEngine()
-                        engineMode = EngineMode.STOPPED
-                        executeStartEngine()
+                    if (isCameraConnected && !isEngineRunning) {
+                        updateCameraSelection("external")
                     }
                 }
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                    val device: UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                    }
+                    android.util.Log.d("OliveUI", "USB Device Detached: ${device?.deviceName}")
+                    
+                    val wasActiveDevice = engineMode == EngineMode.UVC && (device == null || connectedDevice == null || device.deviceName == connectedDevice?.deviceName)
+                    
                     checkForCameras()
-                    if (!isCameraConnected && engineMode == EngineMode.UVC) {
-                        stopEngine()
-                        uvcConnection?.close()
-                        uvcConnection = null
-                        engineMode = EngineMode.STOPPED
-                        executeStartEngine()
+                    if (wasActiveDevice) {
+                        android.util.Log.w("OliveUI", "Active UVC camera detached! Stopping engine.")
+                        if (!isStopping) {
+                            toggleEngine()
+                        }
                     }
                 }
             }
@@ -322,6 +342,7 @@ class MainActivity : ComponentActivity() {
         initJni(filesDir.absolutePath)
 
         settingsManager = SettingsManager(this)
+        activeCameraSelection = settingsManager.cameraSelection
         usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
 
         val filter = IntentFilter().apply {
@@ -344,12 +365,17 @@ class MainActivity : ComponentActivity() {
                 if (isEngineRunning) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     while (true) {
-                        updateStats()
-                        if (currentScreen == "tuner") {
-                            fetchLatestFrame()
-                            kotlinx.coroutines.delay(33) // 30 FPS for tuner
-                        } else {
-                            kotlinx.coroutines.delay(200) // Slightly increased for smoother UI updates
+                        try {
+                            updateStats()
+                            if (currentScreen == "tuner") {
+                                fetchLatestFrame()
+                                kotlinx.coroutines.delay(33) // 30 FPS for tuner
+                            } else {
+                                kotlinx.coroutines.delay(200) // Slightly increased for smoother UI updates
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("OliveUI", "Loop error", e)
+                            kotlinx.coroutines.delay(1000)
                         }
                     }
                 } else {
@@ -373,6 +399,14 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Re-dispatch USB intents to our receiver if the OS brings us to front
+        if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+            usbReceiver.onReceive(this, intent)
         }
     }
 
@@ -419,27 +453,43 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    
+    override fun onResume() {
+        super.onResume()
+        if (isEngineRunning && !isStopping) {
+            // Ensure engine is actually alive or restart if needed
+            // For now just logged, but we could add auto-restart logic here
+            android.util.Log.d("OliveUI", "App resumed, engine running mode: $engineMode")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(usbReceiver)
         if (isEngineRunning) {
             stopEngine()
+            stopBackgroundService()
         }
         uvcConnection?.close()
         uvcConnection = null
     }
 
+    private fun updateCameraSelection(selection: String) {
+        settingsManager.cameraSelection = selection
+        activeCameraSelection = selection
+    }
+
     private fun checkForCameras() {
         val deviceList: HashMap<String, UsbDevice> = usbManager.deviceList
-        val camera = deviceList.values.firstOrNull { isUvcDevice(it) } ?: deviceList.values.firstOrNull()
+        val camera = deviceList.values.firstOrNull { isUvcDevice(it) }
         if (camera != null) {
             isCameraConnected = true
             connectedDevice = camera
         } else {
             isCameraConnected = false
             connectedDevice = null
-            if (settingsManager.cameraSelection == "external") {
-                settingsManager.cameraSelection = "internal"
+            if (activeCameraSelection == "external") {
+                updateCameraSelection("internal")
             }
         }
     }
@@ -463,11 +513,24 @@ class MainActivity : ComponentActivity() {
         return Pair(200.0, 200.0) // 200.0 acts as invalid fallback
     }
 
+    private fun startBackgroundService(mode: String) {
+        val serviceIntent = Intent(this, OliveService::class.java).apply {
+            putExtra("ENGINE_MODE", mode)
+        }
+        ContextCompat.startForegroundService(this, serviceIntent)
+    }
+
+    private fun stopBackgroundService() {
+        val serviceIntent = Intent(this, OliveService::class.java)
+        stopService(serviceIntent)
+    }
+
     private fun toggleEngine() {
         if (isStopping) return // Ignore if already stopping
 
         if (isEngineRunning) {
             isStopping = true
+            currentScreen = "main"
             lifecycleScope.launch {
                 withContext(Dispatchers.IO) {
                     stopEngine()
@@ -475,13 +538,14 @@ class MainActivity : ComponentActivity() {
                 uvcConnection?.close()
                 uvcConnection = null
                 engineMode = EngineMode.STOPPED
+                stopBackgroundService()
                 isStopping = false
                 engineStats = EngineStats() // Reset stats
                 latestFrame = null // Clear preview
             }
         } else {
             val permissions = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            if (settingsManager.cameraSelection == "internal") {
+            if (activeCameraSelection == "internal") {
                 permissions.add(Manifest.permission.CAMERA)
             }
 
@@ -498,17 +562,28 @@ class MainActivity : ComponentActivity() {
         val (lat, lon) = getClientLocation()
         val timeMs = System.currentTimeMillis()
 
-        if (settingsManager.cameraSelection == "external" && connectedDevice != null) {
-            val device = connectedDevice!!
-            if (usbManager.hasPermission(device)) {
-                openDeviceAndStartEngine(device, lat, lon, timeMs)
+        if (activeCameraSelection == "external") {
+            checkForCameras() // Ensure connectedDevice is up to date
+            val device = connectedDevice
+            if (device != null) {
+                if (usbManager.hasPermission(device)) {
+                    openDeviceAndStartEngine(device, lat, lon, timeMs)
+                } else {
+                    val intent = PendingIntent.getBroadcast(this, 0, Intent(ACTION_USB_PERMISSION), PendingIntent.FLAG_IMMUTABLE)
+                    usbManager.requestPermission(device, intent)
+                }
             } else {
-                val intent = PendingIntent.getBroadcast(this, 0, Intent(ACTION_USB_PERMISSION), PendingIntent.FLAG_IMMUTABLE)
-                usbManager.requestPermission(device, intent)
+                android.util.Log.e("OliveUI", "UVC camera selected but none connected!")
+                engineMode = EngineMode.STOPPED
             }
         } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.internalCameraId, lat, lon, timeMs)
-            engineMode = EngineMode.NATIVE
+            lifecycleScope.launch(Dispatchers.IO) {
+                startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.internalCameraId, lat, lon, timeMs)
+                withContext(Dispatchers.Main) {
+                    engineMode = EngineMode.NATIVE
+                    startBackgroundService("NATIVE")
+                }
+            }
         }
     }
 
@@ -520,6 +595,7 @@ class MainActivity : ComponentActivity() {
             val fd = connection.fileDescriptor
             startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, lat, lon, timeMs)
             engineMode = EngineMode.UVC
+            startBackgroundService("UVC")
         }
     }
 
@@ -582,7 +658,7 @@ class MainActivity : ComponentActivity() {
                 Spacer(modifier = Modifier.weight(1f))
             } else {
                 Spacer(modifier = Modifier.weight(1f))
-                val currentModeStr = if (settingsManager.cameraSelection == "external" && isCameraConnected) "UVC Camera Selected" else "Internal Camera Selected"
+                val currentModeStr = if (activeCameraSelection == "external" && isCameraConnected) "UVC Camera Selected" else "Internal Camera Selected"
 
                 Text(
                     text = currentModeStr,
@@ -593,7 +669,7 @@ class MainActivity : ComponentActivity() {
             }
 
             if (isEngineRunning) {
-                if (settingsManager.cameraSelection == "internal") {
+                if (activeCameraSelection == "internal") {
                     LaunchedEffect(isEngineRunning) {
                         // Wait a moment for the camera to actually start and the JNI reference to be set
                         kotlinx.coroutines.delay(1000)
@@ -611,8 +687,8 @@ class MainActivity : ComponentActivity() {
                                 mainScreenExposure = stepped
                                 setNativeCameraExposure((stepped * 1000000).toInt())
                             },
-                            valueRange = 0.2f..5.0f,
-                            steps = 47,
+                            valueRange = 0.2f..3.0f,
+                            steps = 27,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -658,106 +734,168 @@ class MainActivity : ComponentActivity() {
             val tilt = if (isAltAz) stats.offsetAlt else stats.offsetDec
             val angle = stats.offsetAngle
 
-            if (rot != null && tilt != null && angle != null) {
-                val offsetStyle = MaterialTheme.typography.headlineMedium.copy(
+            var lastRot by remember { mutableStateOf<Double?>(null) }
+            var lastTilt by remember { mutableStateOf<Double?>(null) }
+            var lastAngle by remember { mutableStateOf<Double?>(null) }
+
+            if (rot != null) lastRot = rot
+            if (tilt != null) lastTilt = tilt
+            if (angle != null) lastAngle = angle
+
+            if (stats.targetRa == null && stats.targetDec == null) {
+                lastRot = null
+                lastTilt = null
+                lastAngle = null
+                BasicText(
+                    text = "No Target",
+                    style = MaterialTheme.typography.displayMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.primary
+                    ),
+                    softWrap = false
+                )
+                return@Box
+            }
+
+            val displayRot = lastRot
+            val displayTilt = lastTilt
+            val displayAngle = lastAngle
+
+            if (displayRot != null && displayTilt != null) {
+                val offsetStyle = MaterialTheme.typography.displayLarge.copy(
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.primary,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 48.sp,
+                    fontSize = 200.sp,
+                    lineHeight = TextUnit.Unspecified
                 )
 
-                Column(modifier = Modifier.fillMaxSize()) {
-                    Row(
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier.weight(1f).padding(end = 4.dp).fillMaxHeight(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = String.format(Locale.US, "%+6.1f", tilt),
-                                color = MaterialTheme.colorScheme.primary,
-                                style = offsetStyle
-                            )
-                        }
+                val indicatorStyle = MaterialTheme.typography.displayMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontStyle = FontStyle.Italic,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 200.sp,
+                    lineHeight = TextUnit.Unspecified
+                )
 
-                        Box(
-                            modifier = Modifier.weight(1f).padding(start = 4.dp).fillMaxHeight(),
-                            contentAlignment = Alignment.Center
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val scaleFactor = minOf(maxWidth.value / 600f, maxHeight.value / 400f).coerceAtMost(1f)
+                    Column(modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scaleFactor, scaleY = scaleFactor)) {
+                        Row(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = String.format(Locale.US, "%+6.1f", rot),
-                                color = MaterialTheme.colorScheme.primary,
-                                style = offsetStyle
-                            )
-                        }
-                    }
+                            Box(
+                                modifier = Modifier.weight(1f).padding(end = 4.dp).fillMaxSize(),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                BasicText(
+                                    text = String.format(Locale.US, "%-+6.1f", displayTilt),
+                                    style = offsetStyle,
+                                    softWrap = false
+                                )
+                            }
 
-                    Row(
-                        modifier = Modifier.weight(1.5f).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier.weight(1f).padding(4.dp).fillMaxHeight(),
-                            contentAlignment = Alignment.TopStart
-                        ) {
-                            if (isAltAz) {
-                                Column(modifier = Modifier.fillMaxSize()) {
-                                    Row(modifier = Modifier.weight(2f).fillMaxWidth()) {
-                                        DirectionArrow(if (tilt > 0.0) 270 else 90, false)
-                                    }
-                                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                                        Text("Alt", color = MaterialTheme.colorScheme.primary)
-                                    }
-                                }
-                            } else {
-                                Text(
-                                    if (tilt > 0) "North" else "South",
-                                    color = MaterialTheme.colorScheme.primary
+                            Box(
+                                modifier = Modifier.weight(1f).padding(start = 4.dp).fillMaxSize(),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                BasicText(
+                                    text = String.format(Locale.US, "%+6.1f", displayRot),
+                                    style = offsetStyle,
+                                    softWrap = false
                                 )
                             }
                         }
 
-                        Box(
-                            modifier = Modifier.weight(2f).fillMaxHeight(),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.weight(1.5f).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (kotlin.math.abs(angle) >= 0.05) {
-                                TargetArrow(angle)
-                            }
-                        }
-
-                        Box(
-                            modifier = Modifier.weight(1f).padding(4.dp).fillMaxHeight(),
-                            contentAlignment = Alignment.TopEnd
-                        ) {
-                            if (isAltAz) {
-                                Column(modifier = Modifier.fillMaxSize()) {
-                                    Row(modifier = Modifier.weight(2f).fillMaxWidth()) {
-                                        DirectionArrow(if (rot > 0.0) 0 else 180, true)
+                            Box(
+                                modifier = Modifier.weight(1f).padding(4.dp).fillMaxHeight(),
+                                contentAlignment = Alignment.TopStart
+                            ) {
+                                if (isAltAz) {
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        Row(modifier = Modifier.weight(2f).fillMaxWidth()) {
+                                            DirectionArrow(if (displayTilt > 0.0) 270 else 90, false)
+                                        }
+                                        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                            BasicText(
+                                                text = "Alt",
+                                                style = indicatorStyle,
+                                                softWrap = false
+                                            )
+                                        }
                                     }
-                                    Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                                        Text(" Az", color = MaterialTheme.colorScheme.primary)
-                                    }
+                                } else {
+                                    BasicText(
+                                        text = if (displayTilt > 0) "North" else "South",
+                                        style = indicatorStyle,
+                                        softWrap = false
+                                    )
                                 }
-                            } else {
-                                Text(
-                                    if (rot > 0) " East" else " West",
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                            }
+
+                            Box(
+                                modifier = Modifier.weight(2f).fillMaxHeight(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (rot == null || tilt == null) {
+                                    CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(100.dp),
+                                        strokeWidth = 8.dp
+                                    )
+                                } else if (displayAngle != null && kotlin.math.abs(displayAngle) >= 0.05) {
+                                    TargetArrow(displayAngle)
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier.weight(1f).padding(4.dp).fillMaxHeight(),
+                                contentAlignment = Alignment.TopEnd
+                            ) {
+                                if (isAltAz) {
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        Row(modifier = Modifier.weight(2f).fillMaxWidth()) {
+                                            DirectionArrow(if (displayRot > 0.0) 0 else 180, true)
+                                        }
+                                        Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                                            BasicText(
+                                                text = " Az",
+                                                style = indicatorStyle,
+                                                softWrap = false
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    BasicText(
+                                        text = if (displayRot > 0) " East" else " West",
+                                        style = indicatorStyle,
+                                        softWrap = false
+                                    )
+                                }
                             }
                         }
                     }
                 }
             } else {
-                Text(
+                BasicText(
                     text = "Awaiting Target Guidance...",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.displayMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.primary
+                    ),
+                    softWrap = false
                 )
             }
         }
@@ -816,6 +954,9 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun TunerScreen() {
+        var scale by remember { mutableStateOf(1f) }
+        var offset by remember { mutableStateOf(Offset.Zero) }
+
         Column(
             modifier = Modifier.fillMaxSize().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -840,17 +981,39 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Live Preview
+            // Live Preview with Pan/Zoom
             latestFrame?.let {
-                androidx.compose.foundation.Image(
-                    bitmap = it,
-                    contentDescription = "Live Preview",
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(240.dp)
                         .padding(8.dp)
                         .background(MaterialTheme.colorScheme.surface)
-                )
+                        .clipToBounds()
+                        .transformable(
+                            state = rememberTransformableState { zoomChange, panChange, _ ->
+                                scale = (scale * zoomChange).coerceIn(1f, 10f)
+                                val maxOffset = (scale - 1) * 300f // Approximate bound, fine for preview
+                                offset = Offset(
+                                    x = (offset.x + panChange.x * scale).coerceIn(-maxOffset, maxOffset),
+                                    y = (offset.y + panChange.y * scale).coerceIn(-maxOffset, maxOffset)
+                                )
+                            }
+                        )
+                ) {
+                    androidx.compose.foundation.Image(
+                        bitmap = it,
+                        contentDescription = "Live Preview",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offset.x,
+                                translationY = offset.y
+                            )
+                    )
+                }
             } ?: Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -870,6 +1033,7 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Text("Detected Centroids: ${engineStats.centroidCount}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text("HFR: ${String.format(Locale.US, "%.2f", engineStats.hfr)}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         }
     }
 
@@ -949,7 +1113,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun SettingsScreen() {
-        var cameraSelection by remember { mutableStateOf(settingsManager.cameraSelection) }
+        var cameraSelection by remember { mutableStateOf(activeCameraSelection) }
         var imuIntegration by remember { mutableStateOf(settingsManager.imuIntegration) }
         var uvcFps by remember { mutableStateOf(settingsManager.uvcFps) }
         var extractor by remember { mutableStateOf(settingsManager.extractor) }
@@ -957,7 +1121,7 @@ class MainActivity : ComponentActivity() {
         var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
 
         LaunchedEffect(cameraSelection) {
-            settingsManager.cameraSelection = cameraSelection
+            updateCameraSelection(cameraSelection)
         }
         LaunchedEffect(imuIntegration) {
             settingsManager.imuIntegration = imuIntegration

@@ -95,7 +95,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
             use olive_engine::uvc_camera::Camera;
             use std::sync::Arc;
 
-            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd));
+            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd), false);
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start UVC camera: {}", e);
                 return;
@@ -503,56 +503,48 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraExposu
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_getLatestFrame(
-    env: JNIEnv,
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_getLatestFrameInto(
+    mut env: JNIEnv,
     _class: JClass,
-) -> jni::sys::jbyteArray {
+    buffer: jni::objects::JByteBuffer,
+) -> jni::sys::jboolean {
     if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
         if let Some(img) = cam.get_last_capture() {
             let width = img.width as usize;
             let height = img.height as usize;
             let data = &img.data;
 
-            // Downsample for preview. Target roughly 640-800 pixels width.
-            let step = if width > 1600 {
-                4
-            } else if width > 800 {
-                2
-            } else {
-                1
-            };
-            let target_width = width / step;
-            let target_height = height / step;
-            let mut downsampled = vec![0u8; target_width * target_height];
+            // ARGB requires 4 bytes per pixel + 8 bytes header
+            let req_len = (width * height * 4) + 8;
+            if let Ok(capacity) = env.get_direct_buffer_capacity(&buffer) {
+                if capacity >= req_len {
+                    if let Ok(buf_ptr) = env.get_direct_buffer_address(&buffer) {
+                        let slice =
+                            unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, capacity) };
+                        slice[0..4].copy_from_slice(&(width as u32).to_le_bytes());
+                        slice[4..8].copy_from_slice(&(height as u32).to_le_bytes());
 
-            for y in 0..target_height {
-                let src_y = y * step;
-                let dst_row = y * target_width;
-                let src_row = src_y * width;
-                for x in 0..target_width {
-                    let src_x = x * step;
-                    let src_idx = src_row + src_x;
-                    if src_idx < data.len() {
-                        downsampled[dst_row + x] = data[src_idx];
+                        let mut dest_idx = 8;
+                        for &gray in data {
+                            slice[dest_idx] = gray; // R
+                            slice[dest_idx + 1] = gray; // G
+                            slice[dest_idx + 2] = gray; // B
+                            slice[dest_idx + 3] = 255; // A
+                            dest_idx += 4;
+                        }
+                        return 1;
                     }
+                } else {
+                    log::error!(
+                        "Provided ByteBuffer is too small. Need {}, got {}",
+                        req_len,
+                        capacity
+                    );
                 }
             }
-
-            let mut result = Vec::with_capacity(downsampled.len() + 8);
-            result.extend_from_slice(&(target_width as u32).to_le_bytes());
-            result.extend_from_slice(&(target_height as u32).to_le_bytes());
-            result.extend_from_slice(&downsampled);
-
-            let array = env.new_byte_array(result.len() as jni::sys::jsize).unwrap();
-            unsafe {
-                let i8_slice =
-                    std::slice::from_raw_parts(result.as_ptr() as *const i8, result.len());
-                env.set_byte_array_region(&array, 0, i8_slice).unwrap();
-            }
-            return array.into_raw();
         }
     }
-    std::ptr::null_mut()
+    0
 }
 
 #[unsafe(no_mangle)]
