@@ -123,17 +123,15 @@ impl CameraTrait for AndroidCamera {
         self.current_gain.load(Ordering::Relaxed) as f32
     }
 
-    fn get_min_gain(&self) -> f32 {
-        100.0
-    }
-
-    fn get_max_gain(&self) -> f32 {
-        self.config
+    fn get_gain_range(&self) -> (f32, f32) {
+        let max = self
+            .config
             .lock()
             .unwrap()
             .as_ref()
             .map(|c| c.max_analog_gain as f32)
-            .unwrap_or(3200.0)
+            .unwrap_or(3200.0);
+        (100.0, max)
     }
 
     fn set_gain(&self, gain: f32) {

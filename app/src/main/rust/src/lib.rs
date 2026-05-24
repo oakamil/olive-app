@@ -115,7 +115,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
                 extractor_type: ext_type,
                 crop: None,
                 downsample: true,
-                bypass_calibration: false,
+                bypass_calibration: true,
                 noise_filter: false,
                 sigma: None,
                 initial_fov: None,
@@ -460,7 +460,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraNoiseR
 pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraBrightnessRange<
     'local,
 >(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass,
 ) -> jni::sys::jintArray {
     let result = if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
@@ -491,15 +491,19 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraBright
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_getMinNativeCameraGain(
-    _env: JNIEnv,
+pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraGainRange(
+    env: JNIEnv,
     _class: JClass,
-) -> jni::sys::jfloat {
-    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
-        cam.get_min_gain()
+) -> jni::sys::jfloatArray {
+    let (min, max) = if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_gain_range()
     } else {
-        100.0
-    }
+        (100.0, 3200.0)
+    };
+
+    let array = env.new_float_array(2).unwrap();
+    env.set_float_array_region(&array, 0, &[min, max]).unwrap();
+    array.into_raw()
 }
 
 #[unsafe(no_mangle)]
@@ -511,18 +515,6 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraGain(
         cam.get_gain()
     } else {
         100.0
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_getMaxNativeCameraGain(
-    _env: JNIEnv,
-    _class: JClass,
-) -> jni::sys::jfloat {
-    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
-        cam.get_max_gain()
-    } else {
-        3200.0
     }
 }
 
@@ -544,7 +536,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraExposu
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_MainActivity_getLatestFrameInto(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     buffer: jni::objects::JByteBuffer,
 ) -> jni::sys::jboolean {
