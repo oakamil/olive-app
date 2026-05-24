@@ -63,7 +63,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 dec = if (obj.isNull("dec")) null else obj.getDouble("dec"),
                 roll = if (obj.isNull("roll")) null else obj.getDouble("roll"),
                 centroidCount = obj.optInt("centroid_count", 0),
-                exposureMs = obj.optDouble("exposure_ms", 0.0),
+                exposureMs = obj.optDouble("exposure_us", 0.0) / 1000.0,
                 postProcessMs = obj.optDouble("post_process_ms", 0.0),
                 extractMs = obj.optDouble("extract_ms", 0.0),
                 solveMs = obj.optDouble("solve_ms", 0.0),
