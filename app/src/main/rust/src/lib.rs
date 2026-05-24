@@ -18,7 +18,7 @@ static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mu
 static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_initJni(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_initJni(
     mut env: JNIEnv,
     _class: JClass,
     files_dir: jni::objects::JString,
@@ -45,7 +45,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_initJni(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     mut env: JNIEnv,
     _class: JClass,
     fd: jint,
@@ -216,7 +216,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startEngine(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngine(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngine(
     mut env: JNIEnv,
     _class: JClass,
     imu_enabled: jni::sys::jboolean,
@@ -390,10 +390,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_startNativeCameraEngi
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_stopEngine(
-    _env: JNIEnv,
-    _class: JClass,
-) {
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_stopEngine(_env: JNIEnv, _class: JClass) {
     if let Some(tx) = ENGINE_STOP_TX.lock().unwrap().take() {
         let _ = tx.send(());
     }
@@ -413,7 +410,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_stopEngine(
     }
 }
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraExposure(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraExposure(
     _env: JNIEnv,
     _class: JClass,
     exposure_us: jint,
@@ -424,7 +421,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraExposu
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraGain(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraGain(
     _env: JNIEnv,
     _class: JClass,
     gain: jni::sys::jfloat,
@@ -435,7 +432,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraGain(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraFocus(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraFocus(
     _env: JNIEnv,
     _class: JClass,
     distance: jni::sys::jfloat,
@@ -446,7 +443,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraFocus(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraNoiseReduction(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraNoiseReduction(
     _env: JNIEnv,
     _class: JClass,
     mode: jint,
@@ -457,9 +454,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraNoiseR
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraBrightnessRange<
-    'local,
->(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraBrightnessRange<'local>(
     env: JNIEnv<'local>,
     _class: JClass,
 ) -> jni::sys::jintArray {
@@ -480,7 +475,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraBright
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraBrightness(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraBrightness(
     _env: JNIEnv,
     _class: JClass,
     brightness: jint,
@@ -491,7 +486,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setNativeCameraBright
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraGainRange(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraGainRange(
     env: JNIEnv,
     _class: JClass,
 ) -> jni::sys::jfloatArray {
@@ -507,7 +502,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraGainRa
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraGain(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraGain(
     _env: JNIEnv,
     _class: JClass,
 ) -> jni::sys::jfloat {
@@ -519,7 +514,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraGain(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraExposure(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraExposure(
     _env: JNIEnv,
     _class: JClass,
 ) -> jint {
@@ -535,7 +530,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getNativeCameraExposu
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_getLatestFrameInto(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getLatestFrameInto(
     env: JNIEnv,
     _class: JClass,
     buffer: jni::objects::JByteBuffer,
@@ -580,7 +575,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getLatestFrameInto(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_setEnginePaused(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEnginePaused(
     _env: JNIEnv,
     _class: JClass,
     paused: jni::sys::jboolean,
@@ -592,7 +587,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_setEnginePaused(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_getAvailableInternalCameras(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getAvailableInternalCameras(
     env: JNIEnv,
     _class: JClass,
 ) -> jni::sys::jstring {
@@ -602,7 +597,7 @@ pub extern "system" fn Java_com_oakamil_olive_MainActivity_getAvailableInternalC
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_MainActivity_getEngineStats(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getEngineStats(
     env: JNIEnv,
     _class: JClass,
 ) -> jni::sys::jstring {
