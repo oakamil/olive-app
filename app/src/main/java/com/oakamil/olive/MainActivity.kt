@@ -174,8 +174,7 @@ class MainActivity : ComponentActivity() {
     private external fun setNativeCameraNoiseReduction(mode: Int)
     private external fun getNativeCameraExposure(): Int
     private external fun getNativeCameraGain(): Float
-    private external fun getMinNativeCameraGain(): Float
-    private external fun getMaxNativeCameraGain(): Float
+    private external fun getNativeCameraGainRange(): FloatArray?
     private external fun getNativeCameraBrightnessRange(): IntArray?
     private external fun setNativeCameraBrightness(brightness: Int)
     private external fun getAvailableInternalCameras(): String
@@ -365,6 +364,10 @@ class MainActivity : ComponentActivity() {
         registerReceiver(usbReceiver, filter, flags)
 
         checkForCameras()
+        
+        if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED && isCameraConnected) {
+            updateCameraSelection("external")
+        }
 
         setContent {
             LaunchedEffect(isEngineRunning, currentScreen) {
@@ -641,8 +644,14 @@ class MainActivity : ComponentActivity() {
                     Button(
                         onClick = {
                             setEnginePaused(true)
-                            minAnalogGain = getMinNativeCameraGain()
-                            maxAnalogGain = getMaxNativeCameraGain().coerceAtLeast(minAnalogGain + 1f)
+                            val range = getNativeCameraGainRange()
+                            if (range != null && range.size >= 2) {
+                                minAnalogGain = range[0]
+                                maxAnalogGain = range[1].coerceAtLeast(minAnalogGain + 1f)
+                            } else {
+                                minAnalogGain = 100f
+                                maxAnalogGain = 3200f
+                            }
                             currentGain = getNativeCameraGain().coerceIn(minAnalogGain, maxAnalogGain)
                             currentExposure = getNativeCameraExposure().toFloat().coerceIn(16667f, 5000000f)
                             val bRange = getNativeCameraBrightnessRange()
@@ -887,7 +896,13 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.weight(2f).fillMaxHeight(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (displayAngle != null && kotlin.math.abs(displayAngle) >= 0.05) {
+                                if (stats.offsetAngle == null && (stats.status == "Solving" || stats.status == "Slewing")) {
+                                    androidx.compose.material3.CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(100.dp),
+                                        strokeWidth = 8.dp
+                                    )
+                                } else if (displayAngle != null && kotlin.math.abs(displayAngle) >= 0.05) {
                                     TargetArrow(displayAngle)
                                 }
                             }
