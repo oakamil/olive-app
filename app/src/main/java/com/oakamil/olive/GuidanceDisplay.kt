@@ -69,16 +69,7 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
 
         if (stats.targetRa == null && stats.targetDec == null && stats.status != "Solving" && stats.status != "Slewing") {
 
-            BasicText(
-                text = "No Target",
-                style = MaterialTheme.typography.displayMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.primary
-                ),
-                softWrap = false,
-                autoSize = TextAutoSize.StepBased()
-            )
+
             return@Box
         }
 
