@@ -11,7 +11,7 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit { putString("camera_selection", value) }
 
     var guidanceMode: String
-        get() = prefs.getString("guidance_mode", "equatorial") ?: "equatorial"
+        get() = prefs.getString("guidance_mode", "alt_az") ?: "alt_az"
         set(value) = prefs.edit { putString("guidance_mode", value) }
 
     var imuIntegration: Boolean
@@ -29,4 +29,8 @@ class SettingsManager(context: Context) {
     var internalCameraId: String
         get() = prefs.getString("internal_camera_id", "auto") ?: "auto"
         set(value) = prefs.edit { putString("internal_camera_id", value) }
+
+    fun getString(key: String): String? = prefs.getString(key, null)
+    fun setString(key: String, value: String) = prefs.edit { putString(key, value) }
+    fun removeString(key: String) = prefs.edit { remove(key) }
 }

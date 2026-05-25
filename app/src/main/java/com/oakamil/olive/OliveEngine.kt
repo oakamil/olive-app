@@ -8,8 +8,8 @@ object OliveEngine {
     }
 
     external fun initJni(filesDir: String)
-    external fun startEngine(fd: Int, imuEnabled: Boolean, uvcFps: Int, extractor: String, lat: Double, lon: Double, timeMs: Long)
-    external fun startNativeCameraEngine(imuEnabled: Boolean, extractor: String, internalCameraId: String, lat: Double, lon: Double, timeMs: Long)
+    external fun startEngine(fd: Int, imuEnabled: Boolean, uvcFps: Int, extractor: String, lat: Double, lon: Double, timeMs: Long, settingsManager: SettingsManager)
+    external fun startNativeCameraEngine(imuEnabled: Boolean, extractor: String, internalCameraId: String, lat: Double, lon: Double, timeMs: Long, settingsManager: SettingsManager)
     external fun stopEngine()
     external fun getEngineStats(): String
     external fun setNativeCameraExposure(exposureUs: Int)
