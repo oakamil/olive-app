@@ -30,7 +30,13 @@ class SettingsManager(context: Context) {
         get() = prefs.getString("internal_camera_id", "auto") ?: "auto"
         set(value) = prefs.edit { putString("internal_camera_id", value) }
 
+    /* These are used from the native layer. */
+    @androidx.annotation.Keep
     fun getString(key: String): String? = prefs.getString(key, null)
+
+    @androidx.annotation.Keep
     fun setString(key: String, value: String) = prefs.edit { putString(key, value) }
+
+    @androidx.annotation.Keep
     fun removeString(key: String) = prefs.edit { remove(key) }
 }
