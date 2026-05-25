@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Straight
@@ -56,7 +55,7 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
         var lastAngle by remember { mutableStateOf<Double?>(null) }
 
         LaunchedEffect(rot, tilt, angle, stats.targetRa, stats.targetDec, stats.status) {
-            if (stats.targetRa == null && stats.targetDec == null && stats.status != "Solving" && stats.status != "Slewing") {
+            if (stats.targetRa == null && stats.targetDec == null) {
                 lastRot = null
                 lastTilt = null
                 lastAngle = null
@@ -166,14 +165,14 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
                             modifier = Modifier.weight(2f).fillMaxHeight(),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (stats.offsetAngle == null && (stats.status == "Solving" || stats.status == "Slewing")) {
+                            if (stats.offsetAngle == null && displayAngle != null && (stats.status == "Solving" || stats.status == "Slewing")) {
                                 CircularProgressIndicator(
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(100.dp),
+                                    modifier = Modifier.fillMaxSize(0.5f),
                                     strokeWidth = 8.dp
                                 )
-                            } else if (displayAngle != null && kotlin.math.abs(displayAngle) >= 0.05) {
-                                TargetArrow(displayAngle)
+                            } else if (stats.offsetAngle != null && kotlin.math.abs(stats.offsetAngle) >= 0.05) {
+                                TargetArrow(stats.offsetAngle)
                             }
                         }
 
