@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private var isInPipMode by mutableStateOf(false)
 
     private val viewModel: MainViewModel by viewModels()
+    private var cachedLocation: Pair<Double, Double>? = null
 
 
     init {
@@ -165,6 +166,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             copyAssetDatabase()
             OliveEngine.initJni(filesDir.absolutePath)
+        }
+
+        lifecycleScope.launch {
+            val loc = getClientLocation()
+            if (loc.first != MainViewModel.INVALID_COORD) {
+                cachedLocation = loc
+            }
         }
 
         settingsManager = SettingsManager(this.applicationContext)
@@ -363,36 +371,38 @@ class MainActivity : ComponentActivity() {
             if (ContextCompat.checkSelfPermission(
                     this,
                     Manifest.permission.ACCESS_FINE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
                 val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+                val lastGps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                val lastNetwork =
+                    locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+
+                val bestLoc = if (lastGps != null && lastNetwork != null) {
+                    if (lastGps.time > lastNetwork.time) lastGps else lastNetwork
+                } else {
+                    lastGps ?: lastNetwork
+                }
+
+                if (bestLoc != null) {
+                    cont.resume(Pair(bestLoc.latitude, bestLoc.longitude))
+                    return@suspendCancellableCoroutine
+                }
+
                 val executor = ContextCompat.getMainExecutor(this)
                 androidx.core.location.LocationManagerCompat.getCurrentLocation(
                     locationManager,
-                    LocationManager.GPS_PROVIDER,
+                    LocationManager.NETWORK_PROVIDER,
                     null as androidx.core.os.CancellationSignal?,
                     executor
                 ) { location: android.location.Location? ->
                     if (location != null) {
                         cont.resume(Pair(location.latitude, location.longitude))
                     } else {
-                        androidx.core.location.LocationManagerCompat.getCurrentLocation(
-                            locationManager,
-                            LocationManager.NETWORK_PROVIDER,
-                            null as androidx.core.os.CancellationSignal?,
-                            executor
-                        ) { loc2: android.location.Location? ->
-                            if (loc2 != null) {
-                                cont.resume(Pair(loc2.latitude, loc2.longitude))
-                            } else {
-                                cont.resume(
-                                    Pair(
-                                        MainViewModel.INVALID_COORD,
-                                        MainViewModel.INVALID_COORD
-                                    )
-                                )
-                            }
-                        }
+                        cont.resume(Pair(MainViewModel.INVALID_COORD, MainViewModel.INVALID_COORD))
                     }
                 }
             } else {
@@ -453,7 +463,17 @@ class MainActivity : ComponentActivity() {
 
     private fun executeStartEngine() {
         lifecycleScope.launch {
-            val (lat, lon) = getClientLocation()
+            val loc = if (cachedLocation == null || cachedLocation == Pair(
+                    MainViewModel.INVALID_COORD,
+                    MainViewModel.INVALID_COORD
+                )
+            ) {
+                getClientLocation()
+            } else {
+                cachedLocation!!
+            }
+            val lat = loc.first
+            val lon = loc.second
             val timeMs = System.currentTimeMillis()
             var engineStarted = false
 
