@@ -20,8 +20,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+//import androidx.compose.material3.Switch
+//import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -208,7 +208,7 @@ fun SettingsScreen(
 
         if (!isCameraConnected) {
             Text(
-                text = "No external camera detected. Selection locked to internal.",
+                text = "No external camera detected.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 48.dp)
@@ -233,7 +233,7 @@ fun SettingsScreen(
 
         Text("Guidance Mode", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            listOf("equatorial" to "Equatorial", "alt_az" to "Alt-Az").forEach { (value, label) ->
+            listOf("alt_az" to "Alt-Az", "equatorial" to "Equatorial").forEach { (value, label) ->
                 RadioButton(
                     selected = guidanceMode == value,
                     onClick = { guidanceMode = value },
@@ -242,6 +242,8 @@ fun SettingsScreen(
                 Text(label, modifier = Modifier.padding(start = 8.dp, end = 16.dp), color = MaterialTheme.colorScheme.onBackground)
             }
         }
+
+        /* Disable IMU integration for now
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -263,5 +265,6 @@ fun SettingsScreen(
                 )
             )
         }
+         */
     }
 }

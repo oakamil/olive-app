@@ -171,7 +171,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun executeStartEngine(lat: Double = INVALID_COORD, lon: Double = INVALID_COORD, timeMs: Long = 0L) {
         viewModelScope.launch(Dispatchers.IO) {
-            OliveEngine.startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.internalCameraId, lat, lon, timeMs)
+            OliveEngine.startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.internalCameraId, lat, lon, timeMs, settingsManager)
             
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.NATIVE
@@ -192,7 +192,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 OliveEngine.stopEngine()
             }
             
-            OliveEngine.startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, lat, lon, timeMs)
+            OliveEngine.startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, lat, lon, timeMs, settingsManager)
                 
                 launch(Dispatchers.Main) {
                     engineMode = EngineMode.UVC

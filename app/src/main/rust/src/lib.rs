@@ -17,6 +17,59 @@ static ENGINE_STATE: Mutex<
 static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
 static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 
+struct JniStorage {
+    jvm: jni::JavaVM,
+    settings_mgr: jni::objects::GlobalRef,
+}
+
+impl olive_engine::storage::PersistentStorage for JniStorage {
+    fn get(&self, key: &str) -> Option<String> {
+        if let Ok(mut env) = self.jvm.attach_current_thread() {
+            if let Ok(jkey) = env.new_string(key) {
+                if let Ok(result) = env.call_method(
+                    &self.settings_mgr,
+                    "getString",
+                    "(Ljava/lang/String;)Ljava/lang/String;",
+                    &[(&jkey).into()],
+                ) {
+                    if let Ok(jstr) = result.l() {
+                        if !jstr.is_null() {
+                            return env.get_string(&jni::objects::JString::from(jstr)).ok().map(|s| s.into());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn set(&self, key: &str, value: &str) {
+        if let Ok(mut env) = self.jvm.attach_current_thread() {
+            if let (Ok(jkey), Ok(jval)) = (env.new_string(key), env.new_string(value)) {
+                let _ = env.call_method(
+                    &self.settings_mgr,
+                    "setString",
+                    "(Ljava/lang/String;Ljava/lang/String;)V",
+                    &[(&jkey).into(), (&jval).into()],
+                );
+            }
+        }
+    }
+
+    fn remove(&self, key: &str) {
+        if let Ok(mut env) = self.jvm.attach_current_thread() {
+            if let Ok(jkey) = env.new_string(key) {
+                let _ = env.call_method(
+                    &self.settings_mgr,
+                    "removeString",
+                    "(Ljava/lang/String;)V",
+                    &[(&jkey).into()],
+                );
+            }
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_initJni(
     mut env: JNIEnv,
@@ -55,7 +108,12 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     latitude: jni::sys::jdouble,
     longitude: jni::sys::jdouble,
     time_ms: jni::sys::jlong,
+    settings_manager: jni::objects::JObject,
 ) {
+    let jvm = env.get_java_vm().unwrap();
+    let settings_mgr = env.new_global_ref(settings_manager).unwrap();
+    let storage: Option<std::sync::Arc<dyn olive_engine::storage::PersistentStorage>> = Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
+
     let fd = fd as i32;
     let use_imu = imu_enabled != 0;
     let target_fps = uvc_fps as u32;
@@ -155,7 +213,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             let imu_arc = if use_imu {
                 let mut imu_dev = AndroidImu::new();
                 if imu_dev.init().is_ok() {
-                    if let Ok(imu) = Imu::start(imu_dev) {
+                    if let Ok(imu) = Imu::start(imu_dev, storage.clone()) {
                         Some(Arc::new(imu))
                     } else {
                         None
@@ -186,6 +244,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 engine_state,
                 imu_arc,
                 Some(telescope_rt.handle().clone()),
+                storage,
             );
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
@@ -225,7 +284,12 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     latitude: jni::sys::jdouble,
     longitude: jni::sys::jdouble,
     time_ms: jni::sys::jlong,
+    settings_manager: jni::objects::JObject,
 ) {
+    let jvm = env.get_java_vm().unwrap();
+    let settings_mgr = env.new_global_ref(settings_manager).unwrap();
+    let storage: Option<std::sync::Arc<dyn olive_engine::storage::PersistentStorage>> = Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
+
     let use_imu = imu_enabled != 0;
     let internal_camera_id_str: String = env.get_string(&internal_camera_id).unwrap().into();
     let extractor_str: String = env.get_string(&extractor).unwrap().into();
@@ -329,7 +393,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             let imu_arc = if use_imu {
                 let mut imu_dev = AndroidImu::new();
                 if imu_dev.init().is_ok() {
-                    if let Ok(imu) = Imu::start(imu_dev) {
+                    if let Ok(imu) = Imu::start(imu_dev, storage.clone()) {
                         Some(Arc::new(imu))
                     } else {
                         None
@@ -360,6 +424,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 engine_state,
                 imu_arc,
                 Some(telescope_rt.handle().clone()),
+                storage,
             );
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
