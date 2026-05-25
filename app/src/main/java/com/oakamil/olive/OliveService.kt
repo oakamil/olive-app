@@ -70,7 +70,10 @@ class OliveService : Service() {
     private fun acquireWakeLock() {
         if (wakeLock == null) {
             val powerManager = getSystemService(POWER_SERVICE) as PowerManager
-            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "OliveAstro::EngineWakeLock")
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "OliveAstro::EngineWakeLock"
+            )
             wakeLock?.acquire(4 * 60 * 60 * 1000L) // 4 hours timeout
         }
     }

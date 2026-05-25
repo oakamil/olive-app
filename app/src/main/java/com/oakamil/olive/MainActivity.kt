@@ -53,9 +53,8 @@ class MainActivity : ComponentActivity() {
 
     private var currentScreen by mutableStateOf("main")
     private var isInPipMode by mutableStateOf(false)
-    
-    private val viewModel: MainViewModel by viewModels()
 
+    private val viewModel: MainViewModel by viewModels()
 
 
     init {
@@ -77,12 +76,16 @@ class MainActivity : ComponentActivity() {
             when (intent.action) {
                 ACTION_USB_PERMISSION -> {
                     synchronized(this) {
-                        val device: UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                        }
+                        val device: UsbDevice? =
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                intent.getParcelableExtra(
+                                    UsbManager.EXTRA_DEVICE,
+                                    UsbDevice::class.java
+                                )
+                            } else {
+                                @Suppress("DEPRECATION")
+                                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                            }
 
                         if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
                             device?.apply {
@@ -94,26 +97,36 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                     checkForCameras()
                     if (isCameraConnected && !viewModel.isEngineRunning) {
                         updateCameraSelection("external")
                     }
                 }
+
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                    val device: UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                    }
+                    val device: UsbDevice? =
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(
+                                UsbManager.EXTRA_DEVICE,
+                                UsbDevice::class.java
+                            )
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                        }
                     android.util.Log.d("OliveUI", "USB Device Detached: ${device?.deviceName}")
-                    
-                    val wasActiveDevice = viewModel.engineMode == MainViewModel.EngineMode.UVC && (device == null || connectedDevice == null || device.deviceName == connectedDevice?.deviceName)
-                    
+
+                    val wasActiveDevice =
+                        viewModel.engineMode == MainViewModel.EngineMode.UVC && (device == null || connectedDevice == null || device.deviceName == connectedDevice?.deviceName)
+
                     checkForCameras()
                     if (wasActiveDevice) {
-                        android.util.Log.w("OliveUI", "Active UVC camera detached! Stopping engine.")
+                        android.util.Log.w(
+                            "OliveUI",
+                            "Active UVC camera detached! Stopping engine."
+                        )
                         if (!isStopping) {
                             toggleEngine()
                         }
@@ -164,10 +177,15 @@ class MainActivity : ComponentActivity() {
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
 
-        ContextCompat.registerReceiver(this, usbReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(
+            this,
+            usbReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         checkForCameras()
-        
+
         if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED && isCameraConnected) {
             updateCameraSelection("external")
         }
@@ -189,7 +207,10 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     if (isInPipMode) {
-                        GuidanceDisplay(viewModel.engineStats, settingsManager.guidanceMode == "alt_az")
+                        GuidanceDisplay(
+                            viewModel.engineStats,
+                            settingsManager.guidanceMode == "alt_az"
+                        )
                     } else {
                         when (currentScreen) {
                             "main" -> MainScreen(
@@ -199,19 +220,12 @@ class MainActivity : ComponentActivity() {
                                 activeCameraSelection = activeCameraSelection,
                                 isStopping = isStopping,
                                 isStarting = isStarting,
-                                onNavigateToSettings = { currentScreen = "settings" },
+                                onCameraSelectionChanged = { updateCameraSelection(it) },
                                 onNavigateToTuner = { currentScreen = "tuner" },
                                 onEnterPipMode = { enterPipMode() },
                                 onToggleEngine = { toggleEngine() }
                             )
-                            "settings" -> SettingsScreen(
-                                viewModel = viewModel,
-                                settingsManager = settingsManager,
-                                isCameraConnected = isCameraConnected,
-                                activeCameraSelection = activeCameraSelection,
-                                onCameraSelectionChanged = { updateCameraSelection(it) },
-                                onBack = { currentScreen = "main" }
-                            )
+
                             "tuner" -> TunerScreen(
                                 viewModel = viewModel,
                                 onBack = { currentScreen = "main" }
@@ -248,7 +262,8 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).let { controller ->
             controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
 
@@ -283,13 +298,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    
+
     override fun onResume() {
         super.onResume()
         if (viewModel.isEngineRunning && !isStopping) {
             // Ensure engine is actually alive or restart if needed
             // For now just logged, but we could add auto-restart logic here
-            android.util.Log.d("OliveUI", "App resumed, engine running mode: ${viewModel.engineMode}")
+            android.util.Log.d(
+                "OliveUI",
+                "App resumed, engine running mode: ${viewModel.engineMode}"
+            )
         }
     }
 
@@ -340,42 +358,47 @@ class MainActivity : ComponentActivity() {
 
     @Suppress("DEPRECATION")
     @android.annotation.SuppressLint("MissingPermission")
-    private suspend fun getClientLocation(): Pair<Double, Double> = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
-            val executor = ContextCompat.getMainExecutor(this)
-            androidx.core.location.LocationManagerCompat.getCurrentLocation(
-                locationManager,
-                LocationManager.GPS_PROVIDER,
-                null as androidx.core.os.CancellationSignal?,
-                executor
-            ) { location: android.location.Location? ->
-                if (location != null) {
-                    cont.resume(Pair(location.latitude, location.longitude))
-                } else {
-                    androidx.core.location.LocationManagerCompat.getCurrentLocation(
-                        locationManager,
-                        LocationManager.NETWORK_PROVIDER,
-                        null as androidx.core.os.CancellationSignal?,
-                        executor
-                    ) { loc2: android.location.Location? ->
-                        if (loc2 != null) {
-                            cont.resume(Pair(loc2.latitude, loc2.longitude))
-                        } else {
-                            cont.resume(
-                                Pair(
-                                    MainViewModel.INVALID_COORD,
-                                    MainViewModel.INVALID_COORD
+    private suspend fun getClientLocation(): Pair<Double, Double> =
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+                val executor = ContextCompat.getMainExecutor(this)
+                androidx.core.location.LocationManagerCompat.getCurrentLocation(
+                    locationManager,
+                    LocationManager.GPS_PROVIDER,
+                    null as androidx.core.os.CancellationSignal?,
+                    executor
+                ) { location: android.location.Location? ->
+                    if (location != null) {
+                        cont.resume(Pair(location.latitude, location.longitude))
+                    } else {
+                        androidx.core.location.LocationManagerCompat.getCurrentLocation(
+                            locationManager,
+                            LocationManager.NETWORK_PROVIDER,
+                            null as androidx.core.os.CancellationSignal?,
+                            executor
+                        ) { loc2: android.location.Location? ->
+                            if (loc2 != null) {
+                                cont.resume(Pair(loc2.latitude, loc2.longitude))
+                            } else {
+                                cont.resume(
+                                    Pair(
+                                        MainViewModel.INVALID_COORD,
+                                        MainViewModel.INVALID_COORD
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }
+            } else {
+                cont.resume(Pair(MainViewModel.INVALID_COORD, MainViewModel.INVALID_COORD))
             }
-        } else {
-            cont.resume(Pair(MainViewModel.INVALID_COORD, MainViewModel.INVALID_COORD))
         }
-    }
 
     private fun startBackgroundService(mode: String) {
         val serviceIntent = Intent(this, OliveService::class.java).apply {
@@ -406,12 +429,20 @@ class MainActivity : ComponentActivity() {
             }
         } else {
             isStarting = true
-            val permissions = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            val permissions = mutableListOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
             if (activeCameraSelection == "internal") {
                 permissions.add(Manifest.permission.CAMERA)
             }
 
-            val denied = permissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+            val denied = permissions.filter {
+                ContextCompat.checkSelfPermission(
+                    this,
+                    it
+                ) != PackageManager.PERMISSION_GRANTED
+            }
             if (denied.isNotEmpty()) {
                 requestLocationAndCameraLauncher.launch(denied.toTypedArray())
             } else {
@@ -447,19 +478,28 @@ class MainActivity : ComponentActivity() {
                     android.util.Log.e("OliveUI", "UVC camera selected but none connected!")
                     viewModel.stopEngineSync()
                 }
-            } else if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            } else if (ContextCompat.checkSelfPermission(
+                    this@MainActivity,
+                    Manifest.permission.CAMERA
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
                 viewModel.executeStartEngine(lat, lon, timeMs)
                 startBackgroundService("NATIVE")
                 engineStarted = true
             }
-            
+
             if (!engineStarted) {
                 isStarting = false
             }
         }
     }
 
-    private fun startUvcCameraEngine(device: UsbDevice, lat: Double = MainViewModel.INVALID_COORD, lon: Double = MainViewModel.INVALID_COORD, timeMs: Long = 0L) {
+    private fun startUvcCameraEngine(
+        device: UsbDevice,
+        lat: Double = MainViewModel.INVALID_COORD,
+        lon: Double = MainViewModel.INVALID_COORD,
+        timeMs: Long = 0L
+    ) {
         lifecycleScope.launch {
             val connection = withContext(Dispatchers.IO) {
                 if (viewModel.isEngineRunning) {

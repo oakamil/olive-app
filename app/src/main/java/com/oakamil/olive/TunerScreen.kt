@@ -43,7 +43,10 @@ fun TunerScreen(
     var offset by remember { mutableStateOf(Offset.Zero) }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -78,9 +81,13 @@ fun TunerScreen(
                     .transformable(
                         state = rememberTransformableState { zoomChange, panChange, _ ->
                             scale = (scale * zoomChange).coerceIn(1f, 10f)
-                            val maxOffset = (scale - 1) * 300f // Approximate bound, fine for preview
+                            val maxOffset =
+                                (scale - 1) * 300f // Approximate bound, fine for preview
                             offset = Offset(
-                                x = (offset.x + panChange.x * scale).coerceIn(-maxOffset, maxOffset),
+                                x = (offset.x + panChange.x * scale).coerceIn(
+                                    -maxOffset,
+                                    maxOffset
+                                ),
                                 y = (offset.y + panChange.y * scale).coerceIn(-maxOffset, maxOffset)
                             )
                         }
@@ -117,15 +124,27 @@ fun TunerScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("Detected Centroids: ${viewModel.engineStats.centroidCount}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-        Text("HFR: ${String.format(Locale.US, "%.2f", viewModel.engineStats.hfr)}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Text(
+            "Detected Centroids: ${viewModel.engineStats.centroidCount}",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            "HFR: ${String.format(Locale.US, "%.2f", viewModel.engineStats.hfr)}",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
     }
 }
 
 @Composable
 fun TuningControls(viewModel: MainViewModel) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text("Exposure: ${viewModel.currentExposure.toInt()} us", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            "Exposure: ${viewModel.currentExposure.toInt()} us",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onBackground
+        )
         Slider(
             value = viewModel.currentExposure,
             onValueChange = {
@@ -136,7 +155,11 @@ fun TuningControls(viewModel: MainViewModel) {
         )
 
         if (viewModel.engineMode == MainViewModel.EngineMode.UVC && viewModel.uvcBrightnessMax > viewModel.uvcBrightnessMin) {
-            Text("Brightness: ${viewModel.currentUvcBrightness}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+            Text(
+                "Brightness: ${viewModel.currentUvcBrightness}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
             Slider(
                 value = viewModel.currentUvcBrightness.toFloat(),
                 onValueChange = {
@@ -147,7 +170,11 @@ fun TuningControls(viewModel: MainViewModel) {
             )
         }
 
-        Text("Gain: ${viewModel.currentGain.toInt()}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            "Gain: ${viewModel.currentGain.toInt()}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onBackground
+        )
         Slider(
             value = viewModel.currentGain,
             onValueChange = {
@@ -158,7 +185,11 @@ fun TuningControls(viewModel: MainViewModel) {
         )
 
         if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
-            Text("Focus: ${String.format(Locale.US, "%.2f", viewModel.currentFocus)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+            Text(
+                "Focus: ${String.format(Locale.US, "%.2f", viewModel.currentFocus)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
             Slider(
                 value = viewModel.currentFocus,
                 onValueChange = {
@@ -170,7 +201,11 @@ fun TuningControls(viewModel: MainViewModel) {
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Noise Reduction: ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
+            Text(
+                "Noise Reduction: ",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
             val modes = listOf("OFF", "FAST", "HQ")
             modes.forEachIndexed { index, name ->
                 RadioButton(
@@ -179,7 +214,12 @@ fun TuningControls(viewModel: MainViewModel) {
                         viewModel.setNoiseReduction(index)
                     }
                 )
-                Text(name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.padding(end = 8.dp))
+                Text(
+                    name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
             }
         }
     }
@@ -192,16 +232,37 @@ fun StatsDisplay(stats: EngineStats) {
         horizontalAlignment = Alignment.Start
     ) {
         Text("Engine Status: ${stats.status}", color = MaterialTheme.colorScheme.primary)
-        Text("Detected Stars: ${stats.centroidCount}", color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            "Detected Stars: ${stats.centroidCount}",
+            color = MaterialTheme.colorScheme.onBackground
+        )
         Spacer(modifier = Modifier.height(8.dp))
-        Text("RA: ${stats.ra?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}", color = MaterialTheme.colorScheme.onBackground)
-        Text("Dec: ${stats.dec?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}", color = MaterialTheme.colorScheme.onBackground)
-        Text("Roll: ${stats.roll?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}", color = MaterialTheme.colorScheme.onBackground)
+        Text("RA: ${stats.ra?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}",
+            color = MaterialTheme.colorScheme.onBackground)
+        Text("Dec: ${stats.dec?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}",
+            color = MaterialTheme.colorScheme.onBackground)
+        Text("Roll: ${stats.roll?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}",
+            color = MaterialTheme.colorScheme.onBackground)
         Spacer(modifier = Modifier.height(16.dp))
-        Text("Exposure: ${String.format(Locale.US, "%.2f", stats.exposureMs)} ms", color = MaterialTheme.colorScheme.onBackground)
-        Text("Post-Process: ${String.format(Locale.US, "%.1f", stats.postProcessMs)} ms", color = MaterialTheme.colorScheme.onBackground)
-        Text("Extraction: ${String.format(Locale.US, "%.1f", stats.extractMs)} ms", color = MaterialTheme.colorScheme.onBackground)
-        Text("Solve: ${String.format(Locale.US, "%.1f", stats.solveMs)} ms", color = MaterialTheme.colorScheme.onBackground)
-        Text("Solve Rate: ${String.format(Locale.US, "%.2f", stats.solveRateHz)} Hz", color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            "Exposure: ${String.format(Locale.US, "%.2f", stats.exposureMs)} ms",
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            "Post-Process: ${String.format(Locale.US, "%.1f", stats.postProcessMs)} ms",
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            "Extraction: ${String.format(Locale.US, "%.1f", stats.extractMs)} ms",
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            "Solve: ${String.format(Locale.US, "%.1f", stats.solveMs)} ms",
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            "Solve Rate: ${String.format(Locale.US, "%.2f", stats.solveRateHz)} Hz",
+            color = MaterialTheme.colorScheme.onBackground
+        )
     }
 }

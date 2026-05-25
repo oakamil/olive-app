@@ -22,7 +22,7 @@ import androidx.core.graphics.createBitmap
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     enum class EngineMode { STOPPED, UVC, NATIVE }
-    
+
     var engineMode by mutableStateOf(EngineMode.STOPPED)
         private set
 
@@ -77,7 +77,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 targetRa = if (obj.isNull("target_ra")) null else obj.getDouble("target_ra"),
                 targetDec = if (obj.isNull("target_dec")) null else obj.getDouble("target_dec")
             )
-            
+
             // Sync tuning sliders with actual engine values if native
             if (engineMode == EngineMode.NATIVE) {
                 currentExposure = OliveEngine.getNativeCameraExposure().toFloat()
@@ -99,14 +99,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val buffer = frameBuffer ?: return
         buffer.clear()
-        
+
         if (!OliveEngine.getLatestFrameInto(buffer)) return
-        
+
         buffer.position(0)
         buffer.get(frameHeaderBytes)
-        
+
         val bytes = frameHeaderBytes
-        
+
         val width = ((bytes[0].toInt() and 0xFF) or
                 ((bytes[1].toInt() and 0xFF) shl 8) or
                 ((bytes[2].toInt() and 0xFF) shl 16) or
@@ -119,11 +119,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val pixelCount = width * height
         if (pixelCount !in 1..25000000) return
-        
+
         val tmp = backBitmap
         backBitmap = frontBitmap
         frontBitmap = tmp
-        
+
         var bitmap = backBitmap
         if (bitmap == null || bitmap.width != width || bitmap.height != height) {
             bitmap = createBitmap(width, height)
@@ -140,7 +140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startPolling() {
         statsJob?.cancel()
         frameJob?.cancel()
-        
+
         statsJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 try {
@@ -151,7 +151,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(200) // 5Hz stats
             }
         }
-        
+
         frameJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 try {
@@ -169,13 +169,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         frameJob?.cancel()
     }
 
-    fun executeStartEngine(lat: Double = INVALID_COORD, lon: Double = INVALID_COORD, timeMs: Long = 0L) {
+    fun executeStartEngine(
+        lat: Double = INVALID_COORD,
+        lon: Double = INVALID_COORD,
+        timeMs: Long = 0L
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
-            OliveEngine.startNativeCameraEngine(settingsManager.imuIntegration, settingsManager.extractor, settingsManager.internalCameraId, lat, lon, timeMs, settingsManager)
-            
+            OliveEngine.startNativeCameraEngine(
+                settingsManager.imuIntegration,
+                settingsManager.extractor,
+                settingsManager.internalCameraId,
+                lat,
+                lon,
+                timeMs,
+                settingsManager
+            )
+
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.NATIVE
-                
+
                 val gainRange = OliveEngine.getNativeCameraGainRange()
                 if (gainRange != null && gainRange.size == 2) {
                     minAnalogGain = gainRange[0]
@@ -191,20 +203,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (isEngineRunning) {
                 OliveEngine.stopEngine()
             }
-            
-            OliveEngine.startEngine(fd, settingsManager.imuIntegration, settingsManager.uvcFps, settingsManager.extractor, lat, lon, timeMs, settingsManager)
-                
-                launch(Dispatchers.Main) {
-                    engineMode = EngineMode.UVC
-                    
-                    val brightRange = OliveEngine.getNativeCameraBrightnessRange()
-                    if (brightRange != null && brightRange.size == 2) {
-                        uvcBrightnessMin = brightRange[0]
-                        uvcBrightnessMax = brightRange[1]
-                        currentUvcBrightness = brightRange[0] // Approximation
-                    }
-                    startPolling()
+
+            OliveEngine.startEngine(
+                fd,
+                settingsManager.imuIntegration,
+                settingsManager.uvcFps,
+                settingsManager.extractor,
+                lat,
+                lon,
+                timeMs,
+                settingsManager
+            )
+
+            launch(Dispatchers.Main) {
+                engineMode = EngineMode.UVC
+
+                val brightRange = OliveEngine.getNativeCameraBrightnessRange()
+                if (brightRange != null && brightRange.size == 2) {
+                    uvcBrightnessMin = brightRange[0]
+                    uvcBrightnessMax = brightRange[1]
+                    currentUvcBrightness = brightRange[0] // Approximation
                 }
+                startPolling()
+            }
         }
     }
 

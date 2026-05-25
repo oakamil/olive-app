@@ -99,12 +99,17 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     Row(
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
-                            modifier = Modifier.weight(1f).padding(end = 4.dp).fillMaxSize(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 4.dp)
+                                .fillMaxSize(),
                             contentAlignment = Alignment.BottomCenter
                         ) {
                             BasicText(
@@ -116,7 +121,10 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
                         }
 
                         Box(
-                            modifier = Modifier.weight(1f).padding(start = 4.dp).fillMaxSize(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 4.dp)
+                                .fillMaxSize(),
                             contentAlignment = Alignment.BottomCenter
                         ) {
                             BasicText(
@@ -129,20 +137,29 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
                     }
 
                     Row(
-                        modifier = Modifier.weight(1.5f).fillMaxWidth(),
+                        modifier = Modifier
+                            .weight(1.5f)
+                            .fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
-                            modifier = Modifier.weight(1f).padding(4.dp).fillMaxHeight(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(4.dp)
+                                .fillMaxHeight(),
                             contentAlignment = Alignment.TopStart
                         ) {
                             if (isAltAz) {
                                 Column(modifier = Modifier.fillMaxSize()) {
-                                    Row(modifier = Modifier.weight(2f).fillMaxWidth()) {
+                                    Row(modifier = Modifier
+                                        .weight(2f)
+                                        .fillMaxWidth()) {
                                         DirectionArrow(if (displayTilt > 0.0) 270 else 90, false)
                                     }
-                                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                    Row(modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth()) {
                                         BasicText(
                                             text = "Alt",
                                             style = indicatorStyle,
@@ -162,7 +179,9 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
                         }
 
                         Box(
-                            modifier = Modifier.weight(2f).fillMaxHeight(),
+                            modifier = Modifier
+                                .weight(2f)
+                                .fillMaxHeight(),
                             contentAlignment = Alignment.Center
                         ) {
                             if (stats.offsetAngle == null && displayAngle != null && (stats.status == "Solving" || stats.status == "Slewing")) {
@@ -177,15 +196,25 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
                         }
 
                         Box(
-                            modifier = Modifier.weight(1f).padding(4.dp).fillMaxHeight(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(4.dp)
+                                .fillMaxHeight(),
                             contentAlignment = Alignment.TopEnd
                         ) {
                             if (isAltAz) {
                                 Column(modifier = Modifier.fillMaxSize()) {
-                                    Row(modifier = Modifier.weight(2f).fillMaxWidth()) {
+                                    Row(modifier = Modifier
+                                        .weight(2f)
+                                        .fillMaxWidth()) {
                                         DirectionArrow(if (displayRot > 0.0) 0 else 180, true)
                                     }
-                                    Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
                                         BasicText(
                                             text = " Az",
                                             style = indicatorStyle,
@@ -230,34 +259,36 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
 @Composable
 fun DirectionArrow(rotation: Int, alignRight: Boolean) {
     Box(
-        modifier = Modifier.fillMaxSize().drawWithCache {
-            val radius = size.minDimension / 2.5f
-            var shapeCenterX = size.minDimension / 2
-            if (alignRight) {
-                shapeCenterX = size.width - shapeCenterX
-            }
-            val shapeCenterY = size.minDimension / 2
+        modifier = Modifier
+            .fillMaxSize()
+            .drawWithCache {
+                val radius = size.minDimension / 2.5f
+                var shapeCenterX = size.minDimension / 2
+                if (alignRight) {
+                    shapeCenterX = size.width - shapeCenterX
+                }
+                val shapeCenterY = size.minDimension / 2
 
-            val roundedPolygon = RoundedPolygon(
-                numVertices = 3,
-                radius = radius,
-                centerX = shapeCenterX,
-                centerY = shapeCenterY,
-                rounding = CornerRounding(
-                    size.minDimension / 12.5f,
+                val roundedPolygon = RoundedPolygon(
+                    numVertices = 3,
+                    radius = radius,
+                    centerX = shapeCenterX,
+                    centerY = shapeCenterY,
+                    rounding = CornerRounding(
+                        size.minDimension / 12.5f,
+                    )
                 )
-            )
-            val roundedPolygonPath = roundedPolygon.toPath().asComposePath()
+                val roundedPolygonPath = roundedPolygon.toPath().asComposePath()
 
-            onDrawBehind {
-                rotate(
-                    degrees = rotation.toFloat(),
-                    pivot = Offset(shapeCenterX, shapeCenterY)
-                ) {
-                    drawPath(roundedPolygonPath, PureRed)
+                onDrawBehind {
+                    rotate(
+                        degrees = rotation.toFloat(),
+                        pivot = Offset(shapeCenterX, shapeCenterY)
+                    ) {
+                        drawPath(roundedPolygonPath, PureRed)
+                    }
                 }
             }
-        }
     )
 }
 
