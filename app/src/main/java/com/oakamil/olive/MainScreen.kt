@@ -34,6 +34,7 @@ fun MainScreen(
     isCameraConnected: Boolean,
     activeCameraSelection: String,
     isStopping: Boolean,
+    isStarting: Boolean,
     onNavigateToSettings: () -> Unit,
     onNavigateToTuner: () -> Unit,
     onEnterPipMode: () -> Unit,
@@ -158,7 +159,7 @@ fun MainScreen(
         Button(
             onClick = onToggleEngine,
             modifier = Modifier.padding(16.dp),
-            enabled = !isStopping,
+            enabled = !isStopping && !isStarting,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
@@ -167,6 +168,7 @@ fun MainScreen(
             Text(
                 when {
                     isStopping -> "Stopping..."
+                    isStarting -> "Starting..."
                     viewModel.isEngineRunning -> "Stop Engine"
                     else -> "Start Engine"
                 }
