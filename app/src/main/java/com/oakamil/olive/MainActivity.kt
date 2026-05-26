@@ -16,6 +16,7 @@ import android.hardware.usb.UsbDeviceConnection
 import android.os.Build
 import android.os.Bundle
 import android.location.LocationManager
+import java.net.InetAddress
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private var cachedLocation: Pair<Double, Double>? = null
+    private var detectedIpAddress by mutableStateOf("127.0.0.1")
     private var showPermissionDialog by mutableStateOf(false)
 
 
@@ -206,6 +208,15 @@ class MainActivity : ComponentActivity() {
                 if (viewModel.isEngineRunning) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     isStarting = false
+
+                    try {
+                        while (viewModel.isEngineRunning) {
+                            detectedIpAddress = getDeviceIpAddress()
+                            delay(10000)
+                        }
+                    } finally {
+                        // Cleanup if needed
+                    }
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
@@ -256,6 +267,7 @@ class MainActivity : ComponentActivity() {
                                 activeCameraSelection = activeCameraSelection,
                                 isStopping = isStopping,
                                 isStarting = isStarting,
+                                detectedIpAddress = detectedIpAddress,
                                 onCameraSelectionChanged = { updateCameraSelection(it) },
                                 onNavigateToTuner = { currentScreen = "tuner" },
                                 onEnterPipMode = { enterPipMode() },
@@ -437,6 +449,27 @@ class MainActivity : ComponentActivity() {
                 cont.resume(Pair(MainViewModel.INVALID_COORD, MainViewModel.INVALID_COORD))
             }
         }
+
+    private fun getDeviceIpAddress(): String {
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            for (intf in java.util.Collections.list(interfaces)) {
+                if (intf.isLoopback || !intf.isUp) continue
+                val name = intf.name.lowercase()
+                if (name.contains("rmnet") || name.contains("ccmni") || name.contains("tun")) continue
+
+                val addrs = intf.inetAddresses
+                for (addr in java.util.Collections.list(addrs)) {
+                    if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                        return addr.hostAddress ?: "127.0.0.1"
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Ignore
+        }
+        return "127.0.0.1"
+    }
 
     private fun startBackgroundService(mode: String) {
         val serviceIntent = Intent(this, OliveService::class.java).apply {

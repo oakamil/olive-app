@@ -50,6 +50,7 @@ fun MainScreen(
     activeCameraSelection: String,
     isStopping: Boolean,
     isStarting: Boolean,
+    detectedIpAddress: String,
     onCameraSelectionChanged: (String) -> Unit,
     onNavigateToTuner: () -> Unit,
     onEnterPipMode: () -> Unit,
@@ -161,6 +162,16 @@ fun MainScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
             StatsDisplay(viewModel.engineStats)
+            Spacer(modifier = Modifier.height(16.dp))
+            if (viewModel.isEngineRunning) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "IP Address: $detectedIpAddress Port: 4030",
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             Spacer(modifier = Modifier.weight(1f))
 
             if (activeCameraSelection == "internal") {
