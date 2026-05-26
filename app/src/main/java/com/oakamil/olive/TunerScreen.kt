@@ -241,8 +241,6 @@ fun StatsDisplay(stats: EngineStats) {
             color = MaterialTheme.colorScheme.onBackground)
         Text("Dec: ${stats.dec?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}",
             color = MaterialTheme.colorScheme.onBackground)
-        Text("Roll: ${stats.roll?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}",
-            color = MaterialTheme.colorScheme.onBackground)
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             "Exposure: ${String.format(Locale.US, "%.2f", stats.exposureMs)} ms",

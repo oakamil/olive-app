@@ -16,7 +16,6 @@ import android.hardware.usb.UsbDeviceConnection
 import android.os.Build
 import android.os.Bundle
 import android.location.LocationManager
-import java.net.InetAddress
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
