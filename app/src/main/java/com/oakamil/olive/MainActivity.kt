@@ -37,6 +37,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
+import androidx.core.content.edit
 
 class MainActivity : ComponentActivity() {
 
@@ -56,6 +57,7 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private var cachedLocation: Pair<Double, Double>? = null
+    private var showPermissionDialog by mutableStateOf(false)
 
 
     init {
@@ -214,6 +216,32 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    if (showPermissionDialog) {
+                        AlertDialog(
+                            onDismissRequest = {
+                                showPermissionDialog = false
+                                isStarting = false
+                            },
+                            title = { Text("Permissions Required") },
+                            text = { Text("Olive Finder needs Location and Camera permissions to operate the telescope engine.") },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    handlePermissionRequest()
+                                }) {
+                                    Text("Continue")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    showPermissionDialog = false
+                                    isStarting = false
+                                }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
+                    }
+
                     if (isInPipMode) {
                         GuidanceDisplay(
                             viewModel.engineStats,
@@ -454,10 +482,42 @@ class MainActivity : ComponentActivity() {
                 ) != PackageManager.PERMISSION_GRANTED
             }
             if (denied.isNotEmpty()) {
-                requestLocationAndCameraLauncher.launch(denied.toTypedArray())
+                isStarting = false
+                showPermissionDialog = true
             } else {
                 executeStartEngine()
             }
+        }
+    }
+
+    private fun handlePermissionRequest() {
+        val permissions = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        if (activeCameraSelection == "internal") {
+            permissions.add(Manifest.permission.CAMERA)
+        }
+        val denied = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        val shouldShowRationale = denied.any {
+            androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+        }
+        val prefs = getPreferences(MODE_PRIVATE)
+        val isFirstRun = prefs.getBoolean("first_run_permissions", true)
+
+        if (shouldShowRationale || isFirstRun) {
+            prefs.edit { putBoolean("first_run_permissions", false) }
+            showPermissionDialog = false
+            requestLocationAndCameraLauncher.launch(permissions.toTypedArray())
+        } else {
+            showPermissionDialog = false
+            val intent =
+                Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = android.net.Uri.fromParts("package", packageName, null)
+                }
+            startActivity(intent)
         }
     }
 
