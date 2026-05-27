@@ -233,7 +233,7 @@ class MainActivity : ComponentActivity() {
                                 isStarting = false
                             },
                             title = { Text("Permissions Required") },
-                            text = { Text("Olive Finder needs Location and Camera permissions to operate the telescope engine.") },
+                            text = { Text("Olive Finder needs Location, Camera, and Local Network permissions to operate the telescope engine and allow other devices to connect.") },
                             confirmButton = {
                                 TextButton(onClick = {
                                     handlePermissionRequest()
@@ -502,7 +502,12 @@ class MainActivity : ComponentActivity() {
             val permissions = mutableListOf(
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.ACCESS_COARSE_LOCATION
-            )
+            ).apply {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    add(Manifest.permission.NEARBY_WIFI_DEVICES)
+                }
+                add("android.permission.ACCESS_LOCAL_NETWORK")
+            }
             if (activeCameraSelection == "internal") {
                 permissions.add(Manifest.permission.CAMERA)
             }
@@ -526,7 +531,12 @@ class MainActivity : ComponentActivity() {
         val permissions = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
-        )
+        ).apply {
+            if (Build.VERSION.SDK_INT >= 33) {
+                add(Manifest.permission.NEARBY_WIFI_DEVICES)
+            }
+            add("android.permission.ACCESS_LOCAL_NETWORK")
+        }
         if (activeCameraSelection == "internal") {
             permissions.add(Manifest.permission.CAMERA)
         }
