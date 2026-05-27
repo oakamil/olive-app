@@ -27,7 +27,10 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit { putString("extractor", value) }
 
     var internalCameraId: String
-        get() = prefs.getString("internal_camera_id", "auto") ?: "auto"
+        get() {
+            val v = prefs.getString("internal_camera_id", "0") ?: "0"
+            return if (v == "auto") "0" else v
+        }
         set(value) = prefs.edit { putString("internal_camera_id", value) }
 
     /* These are used from the native layer. */

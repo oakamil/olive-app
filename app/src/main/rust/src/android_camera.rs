@@ -416,7 +416,7 @@ impl AndroidCamera {
             let mut all_cam_ids: Vec<(String, String)> = Vec::new();
 
             let num_cameras = (*id_list).numCameras;
-            info!("Scanning Android cameras for best FOV fit...");
+            info!("Scanning Android cameras ...");
 
             for i in 0..num_cameras {
                 let cam_id_ptr = *(*id_list).cameraIds.offset(i as isize);
@@ -622,32 +622,14 @@ impl AndroidCamera {
                 );
 
                 // Robust selection logic
-                let is_auto = requested_id.as_deref().unwrap_or("auto") == "auto";
-                let is_requested = !is_auto
-                    && (requested_id.as_deref() == Some(&cam_id)
-                        || requested_id.as_deref() == Some(&logical_id));
+                let is_requested = requested_id.as_deref() == Some(&cam_id)
+                        || requested_id.as_deref() == Some(&logical_id);
 
                 let is_first = best_id.is_empty();
 
                 let mut should_pick = false;
                 if is_requested {
                     should_pick = true;
-                } else if is_auto {
-                    if is_first {
-                        should_pick = true;
-                    } else if fov_deg >= 10.0 {
-                        if min_fov >= 10.0 {
-                            should_pick = fov_deg < min_fov;
-                        } else {
-                            should_pick = true;
-                        }
-                    } else {
-                        if min_fov >= 10.0 {
-                            should_pick = false;
-                        } else {
-                            should_pick = fov_deg > min_fov;
-                        }
-                    }
                 } else if is_first {
                     // Fallback if the requested camera is not found
                     should_pick = true;
@@ -702,11 +684,6 @@ impl AndroidCamera {
             if AImageReader_acquireLatestImage(reader, &mut image) == media_status_t::AMEDIA_OK
                 && !image.is_null()
             {
-                log::debug!(
-                    "Received frame from Android camera ({}x{})",
-                    ctx.width,
-                    ctx.height
-                );
                 let receive_time = std::time::Instant::now();
 
                 let mut data: *mut u8 = ptr::null_mut();
@@ -727,20 +704,6 @@ impl AndroidCamera {
 
                 if ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32 {
                     let scale = 255.0 / ctx.white_level;
-
-                    let center_x = width / 2;
-                    let center_y = height / 2;
-                    let center_idx = (center_y * (row_stride as usize)) + (center_x * 2);
-                    let center_val =
-                        u16::from_le_bytes([data_slice[center_idx], data_slice[center_idx + 1]]);
-
-                    log::debug!(
-                        "Scaling: white_level={}, scale={}, center_raw={}, center_scaled={}",
-                        ctx.white_level,
-                        scale,
-                        center_val,
-                        (center_val as f32 * scale) as i32
-                    );
 
                     for y in 0..height {
                         let src_row_start = y * (row_stride as usize);

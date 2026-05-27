@@ -584,13 +584,9 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraExposur
     _class: JClass,
 ) -> jint {
     if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
-        {
-            let e = cam.get_exposure();
-            log::info!("getNativeCameraExposure returning {}", e);
-            e
-        }
+        cam.get_exposure()
     } else {
-        1_000_000
+        500_000
     }
 }
 

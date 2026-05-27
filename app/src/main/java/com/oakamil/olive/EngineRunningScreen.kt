@@ -1,5 +1,7 @@
 package com.oakamil.olive
 
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,6 +44,9 @@ fun EngineRunningScreen(
 ) {
     var mainScreenExposure by remember { mutableFloatStateOf(1.0f) }
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -63,7 +68,7 @@ fun EngineRunningScreen(
 
         Card(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(if (isLandscape) 0.5f else 1f)
                 .aspectRatio(16f / 9f)
         ) {
             Column(modifier = Modifier.padding(8.dp)) {
