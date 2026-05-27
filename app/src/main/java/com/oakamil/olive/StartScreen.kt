@@ -1,5 +1,6 @@
 package com.oakamil.olive
 
+import android.content.res.Configuration
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -48,6 +50,9 @@ fun StartScreen(
     onCameraSelectionChanged: (String) -> Unit,
     onToggleEngine: () -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     var cameraSelection by remember { mutableStateOf(activeCameraSelection) }
     var uvcFps by remember { mutableIntStateOf(settingsManager.uvcFps) }
     var extractor by remember { mutableStateOf(settingsManager.extractor) }
@@ -98,7 +103,7 @@ fun StartScreen(
         Spacer(modifier = Modifier.height(32.dp))
 
         // Configuration mode
-        Column(modifier = Modifier.fillMaxWidth()) {
+        val cameraSelectionContent: @Composable () -> Unit = {
             Text(
                 "Camera Selection",
                 style = MaterialTheme.typography.titleMedium,
@@ -131,21 +136,27 @@ fun StartScreen(
                 val camerasList = remember {
                     val camerasJson = viewModel.getAvailableInternalCameras()
                     val list = mutableListOf<Pair<String, String>>()
-                    list.add(Pair("auto", "Auto-Select"))
                     try {
                         val jsonArray = JSONArray(camerasJson)
+                        val tempCameras = mutableListOf<Pair<String, Double>>()
                         for (i in 0 until jsonArray.length()) {
                             val obj = jsonArray.getJSONObject(i)
                             val id = obj.getString("id")
                             val fov = obj.getDouble("fov")
+                            if (fov >= 10.0) {
+                                tempCameras.add(Pair(id, fov))
+                            }
+                        }
+                        tempCameras.sortBy { it.first.toIntOrNull() ?: Int.MAX_VALUE }
+                        for (cam in tempCameras) {
                             list.add(
                                 Pair(
-                                    id,
-                                    "Camera $id (${
+                                    cam.first,
+                                    "Camera ${cam.first} (${
                                         String.format(
                                             java.util.Locale.US,
                                             "%.1f",
-                                            fov
+                                            cam.second
                                         )
                                     }° FOV)"
                                 )
@@ -174,7 +185,7 @@ fun StartScreen(
                         TextButton(onClick = { expanded = true }) {
                             val currentText =
                                 camerasList.find { it.first == internalCameraId }?.second
-                                    ?: "Auto-Select"
+                                    ?: camerasList.firstOrNull()?.second ?: "Camera 0"
                             Text(currentText, color = MaterialTheme.colorScheme.primary)
                         }
                         DropdownMenu(
@@ -292,8 +303,9 @@ fun StartScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+        }
 
+        val otherSettingsContent: @Composable () -> Unit = {
             Text(
                 "Extractor",
                 style = MaterialTheme.typography.titleMedium,
@@ -353,6 +365,19 @@ fun StartScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                 }
+            }
+        }
+
+        if (isLandscape) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(modifier = Modifier.weight(1f)) { cameraSelectionContent() }
+                Column(modifier = Modifier.weight(1f)) { otherSettingsContent() }
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                cameraSelectionContent()
+                Spacer(modifier = Modifier.height(24.dp))
+                otherSettingsContent()
             }
         }
 
