@@ -43,6 +43,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var uvcBrightnessMax by mutableIntStateOf(0)
     var currentUvcBrightness by mutableIntStateOf(0)
     var latestFrame by mutableStateOf<ImageBitmap?>(null)
+    var starSensitivity by mutableFloatStateOf(50f)
+
+    val currentSigma: Float
+        get() {
+            val s = starSensitivity / 100f // 0.0 to 1.0
+            return if (settingsManager.extractor == "Cedar") {
+                15.0f - (s * 14.0f)
+            } else {
+                5.0f - (s * 3.0f)
+            }
+        }
 
     private var statsJob: Job? = null
     private var frameJob: Job? = null
@@ -62,7 +73,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ra = if (obj.isNull("ra")) null else obj.getDouble("ra"),
                 dec = if (obj.isNull("dec")) null else obj.getDouble("dec"),
                 roll = if (obj.isNull("roll")) null else obj.getDouble("roll"),
-                centroidCount = obj.optInt("centroid_count", 0),
+                centroidCount = obj.optInt("centroids", 0),
                 exposureMs = obj.optInt("exposure_us", 0).toDouble() / 1000.0,
                 postProcessMs = obj.optDouble("post_process_ms", 0.0),
                 extractMs = obj.optDouble("extract_ms", 0.0),
@@ -184,6 +195,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 timeMs,
                 settingsManager
             )
+            OliveEngine.setEngineSigma(currentSigma)
 
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.NATIVE
@@ -214,6 +226,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 timeMs,
                 settingsManager
             )
+            OliveEngine.setEngineSigma(currentSigma)
 
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.UVC
@@ -233,6 +246,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         currentExposure = us
         viewModelScope.launch(Dispatchers.IO) {
             OliveEngine.setNativeCameraExposure(us.toInt())
+        }
+    }
+
+    fun updateStarSensitivity(s: Float) {
+        starSensitivity = s
+        val sigma = currentSigma
+        viewModelScope.launch(Dispatchers.IO) {
+            OliveEngine.setEngineSigma(sigma)
         }
     }
 

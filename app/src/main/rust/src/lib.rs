@@ -34,7 +34,10 @@ impl olive_engine::storage::PersistentStorage for JniStorage {
                 ) {
                     if let Ok(jstr) = result.l() {
                         if !jstr.is_null() {
-                            return env.get_string(&jni::objects::JString::from(jstr)).ok().map(|s| s.into());
+                            return env
+                                .get_string(&jni::objects::JString::from(jstr))
+                                .ok()
+                                .map(|s| s.into());
                         }
                     }
                 }
@@ -112,7 +115,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
 ) {
     let jvm = env.get_java_vm().unwrap();
     let settings_mgr = env.new_global_ref(settings_manager).unwrap();
-    let storage: Option<std::sync::Arc<dyn olive_engine::storage::PersistentStorage>> = Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
+    let storage: Option<std::sync::Arc<dyn olive_engine::storage::PersistentStorage>> =
+        Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
 
     let fd = fd as i32;
     let use_imu = imu_enabled != 0;
@@ -175,7 +179,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 downsample: true,
                 bypass_calibration: true,
                 noise_filter: false,
-                sigma: None,
                 initial_fov: None,
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -288,7 +291,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
 ) {
     let jvm = env.get_java_vm().unwrap();
     let settings_mgr = env.new_global_ref(settings_manager).unwrap();
-    let storage: Option<std::sync::Arc<dyn olive_engine::storage::PersistentStorage>> = Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
+    let storage: Option<std::sync::Arc<dyn olive_engine::storage::PersistentStorage>> =
+        Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
 
     let use_imu = imu_enabled != 0;
     let internal_camera_id_str: String = env.get_string(&internal_camera_id).unwrap().into();
@@ -339,11 +343,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             let camera: std::sync::Arc<dyn CameraTrait> = Arc::new(cam);
             *CAMERA.lock().unwrap() = Some(camera.clone());
 
-            let sigma_val = if ext_type == olive_engine::engine::Extractor::Cedar {
-                Some(10.0)
-            } else {
-                Some(5.0)
-            };
             let config = EngineConfig {
                 gain: None,
                 target_centroids: 20,
@@ -355,7 +354,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 downsample: false,
                 bypass_calibration: true,
                 noise_filter: true,
-                sigma: sigma_val,
                 initial_fov: camera.get_config().and_then(|c| c.initial_fov),
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -674,4 +672,17 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getEngineStats(
     };
 
     env.new_string(json_str).unwrap().into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEngineSigma(
+    _env: JNIEnv,
+    _class: JClass,
+    sigma: jni::sys::jfloat,
+) {
+    if let Some(engine_state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
+        if let Ok(mut state) = engine_state_arc.write() {
+            state.current_sigma = Some(sigma as f32);
+        }
+    }
 }

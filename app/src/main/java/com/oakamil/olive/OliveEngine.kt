@@ -43,4 +43,5 @@ object OliveEngine {
     external fun getAvailableInternalCameras(): String
     external fun getLatestFrameInto(buffer: ByteBuffer): Boolean
     external fun setEnginePaused(paused: Boolean)
+    external fun setEngineSigma(sigma: Float)
 }

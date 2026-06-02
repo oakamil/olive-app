@@ -141,6 +141,20 @@ fun TunerScreen(
 fun TuningControls(viewModel: MainViewModel) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
+            "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Slider(
+            value = viewModel.starSensitivity,
+            onValueChange = {
+                viewModel.updateStarSensitivity(it)
+            },
+            valueRange = 1f..100f,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text(
             "Exposure: ${viewModel.currentExposure.toInt()} us",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onBackground

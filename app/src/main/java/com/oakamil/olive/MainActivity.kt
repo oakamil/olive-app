@@ -506,7 +506,9 @@ class MainActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= 33) {
                     add(Manifest.permission.NEARBY_WIFI_DEVICES)
                 }
-                add("android.permission.ACCESS_LOCAL_NETWORK")
+                if (Build.VERSION.SDK_INT >= 37) {
+                    add("android.permission.ACCESS_LOCAL_NETWORK")
+                }
             }
             if (activeCameraSelection == "internal") {
                 permissions.add(Manifest.permission.CAMERA)
@@ -535,7 +537,9 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= 33) {
                 add(Manifest.permission.NEARBY_WIFI_DEVICES)
             }
-            add("android.permission.ACCESS_LOCAL_NETWORK")
+            if (Build.VERSION.SDK_INT >= 37) {
+                add("android.permission.ACCESS_LOCAL_NETWORK")
+            }
         }
         if (activeCameraSelection == "internal") {
             permissions.add(Manifest.permission.CAMERA)
