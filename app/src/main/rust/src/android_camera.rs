@@ -42,6 +42,7 @@ pub struct AndroidCameraConfiguration {
     pub height: u32,
     pub target_crop: Option<(u32, u32)>,
     pub max_analog_gain: i32,
+    pub hyperfocal_distance: f32,
     pub fov: f32,
     pub white_level: i32,
     pub format: i32,
@@ -464,7 +465,8 @@ impl AndroidCamera {
             let mut best_id = String::new();
             let mut best_logical_id = String::new();
             let mut min_fov = f32::MAX;
-            let mut max_analog = 0;
+            let mut max_analog = 800;
+            let mut hyperfocal = 0.0;
             let mut best_dim = (0, 0);
             let mut best_white_level = 1023;
             let mut best_format = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
@@ -549,6 +551,18 @@ impl AndroidCamera {
                     800
                 };
 
+                // Query Hyperfocal Distance
+                ACameraMetadata_getConstEntry(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_LENS_INFO_HYPERFOCAL_DISTANCE.0 as u32,
+                    &mut entry,
+                );
+                let sensor_hyperfocal = if entry.count >= 1 {
+                    *entry.data.f.offset(0)
+                } else {
+                    0.0
+                };
+
                 // Query White Level
                 ACameraMetadata_getConstEntry(
                     metadata,
@@ -592,12 +606,12 @@ impl AndroidCamera {
                     }
                 }
 
-                let mut valid_sizes = valid_raw_sizes;
-                let mut selected_format = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
+                let mut valid_sizes = valid_yuv_sizes;
+                let mut selected_format = AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32;
 
                 if valid_sizes.is_empty() {
-                    valid_sizes = valid_yuv_sizes;
-                    selected_format = AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32;
+                    valid_sizes = valid_raw_sizes;
+                    selected_format = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
                 }
 
                 if valid_sizes.is_empty() {
@@ -606,7 +620,41 @@ impl AndroidCamera {
                     continue;
                 }
 
-                // Always pick the largest available size for the selected format
+                // Query the active array size to find the hardware-binned sensor dimensions
+                let mut active_array_entry: ACameraMetadata_const_entry = std::mem::zeroed();
+                let has_active_array = ACameraMetadata_getConstEntry(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE.0 as u32,
+                    &mut active_array_entry,
+                ) == camera_status_t::ACAMERA_OK;
+
+                let mut max_binned_pixels = 13_000_000;
+                if has_active_array && active_array_entry.count >= 4 {
+                    // ACTIVE_ARRAY_SIZE format is [xmin, ymin, width, height]
+                    let width = *active_array_entry.data.i32_.offset(2);
+                    let height = *active_array_entry.data.i32_.offset(3);
+                    max_binned_pixels = (width * height) as u32;
+                    info!(
+                        "Camera {}: Active array size {}x{} ({} pixels)",
+                        cam_id, width, height, max_binned_pixels
+                    );
+                } else {
+                    info!(
+                        "Camera {}: Could not read active array size, defaulting to 13MP cap",
+                        cam_id
+                    );
+                }
+
+                // Filter out unbinned maximum resolutions (e.g., 50MP, 108MP)
+                valid_sizes.retain(|&(w, h)| (w * h) <= max_binned_pixels);
+
+                if valid_sizes.is_empty() {
+                    // Safety fallback if no sizes fit (extremely unlikely)
+                    log::warn!("No resolutions found under 13MP, falling back to 1920x1080");
+                    valid_sizes.push((1920, 1080));
+                }
+
+                // Sort the remaining sizes to grab the largest hardware-binned output (typically 12.5MP)
                 valid_sizes.sort_by(|a, b| (b.0 * b.1).cmp(&(a.0 * a.1)));
                 let best_valid_size = valid_sizes[0];
 
@@ -621,9 +669,20 @@ impl AndroidCamera {
                     cam_id, fov_deg, format_str, best_valid_size.0, best_valid_size.1
                 );
 
+                // Query Exposure Range
+                let mut max_exposure_ns = 0i64;
+                ACameraMetadata_getConstEntry(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_EXPOSURE_TIME_RANGE.0 as u32,
+                    &mut entry,
+                );
+                if entry.count >= 2 {
+                    max_exposure_ns = *entry.data.i64_.offset(1);
+                }
+
                 // Robust selection logic
                 let is_requested = requested_id.as_deref() == Some(&cam_id)
-                        || requested_id.as_deref() == Some(&logical_id);
+                    || requested_id.as_deref() == Some(&logical_id);
 
                 let is_first = best_id.is_empty();
 
@@ -636,10 +695,16 @@ impl AndroidCamera {
                 }
 
                 if should_pick {
+                    info!(
+                        "Camera {} selected. Max Exposure Time: {} ms",
+                        cam_id,
+                        max_exposure_ns / 1_000_000
+                    );
                     min_fov = fov_deg;
                     best_id = cam_id.clone();
                     best_logical_id = logical_id.clone();
                     max_analog = sensor_max_analog;
+                    hyperfocal = sensor_hyperfocal;
                     best_white_level = sensor_white_level;
                     best_dim = best_valid_size;
                     best_format = selected_format;
@@ -669,6 +734,7 @@ impl AndroidCamera {
                 height: best_dim.1,
                 target_crop,
                 max_analog_gain: max_analog,
+                hyperfocal_distance: hyperfocal,
                 fov: min_fov,
                 white_level: best_white_level,
                 format: best_format,
@@ -878,7 +944,7 @@ impl AndroidCamera {
                 store: Arc::clone(&store),
                 width: config.width,
                 height: config.height,
-                exposure_time_us: exposure_ref,
+                exposure_time_us: exposure_ref.clone(),
                 white_level: config.white_level as f32,
                 format: config.format,
                 frame_exposures: Arc::clone(&frame_exposures),
@@ -976,6 +1042,24 @@ impl AndroidCamera {
                 &af_mode_off,
             );
 
+            let ois_mode_off =
+                acamera_metadata_enum_acamera_lens_optical_stabilization_mode::ACAMERA_LENS_OPTICAL_STABILIZATION_MODE_OFF.0 as u8;
+            ACaptureRequest_setEntry_u8(
+                request,
+                acamera_metadata_tag::ACAMERA_LENS_OPTICAL_STABILIZATION_MODE.0 as u32,
+                1,
+                &ois_mode_off,
+            );
+
+            let video_stab_off =
+                acamera_metadata_enum_acamera_control_video_stabilization_mode::ACAMERA_CONTROL_VIDEO_STABILIZATION_MODE_OFF.0 as u8;
+            ACaptureRequest_setEntry_u8(
+                request,
+                acamera_metadata_tag::ACAMERA_CONTROL_VIDEO_STABILIZATION_MODE.0 as u32,
+                1,
+                &video_stab_off,
+            );
+
             let mut current_focus = f32::from_bits(focus_ref.load(Ordering::Relaxed));
             ACaptureRequest_setEntry_float(
                 request,
@@ -1065,13 +1149,22 @@ impl AndroidCamera {
 
             // Software cropping applied in engine
 
-            let mut target_exposure = INITIAL_EXPOSURE_US;
+            let mut target_exposure = exposure_ref.load(Ordering::Relaxed);
             let mut exp_ns = (target_exposure as i64) * 1000;
             ACaptureRequest_setEntry_i64(
                 request,
                 acamera_metadata_tag::ACAMERA_SENSOR_EXPOSURE_TIME.0 as u32,
                 1,
                 &exp_ns,
+            );
+
+            // Frame duration must be >= exposure time, otherwise exposure is clamped
+            let frame_duration_ns = exp_ns + 5_000_000; // Add 5ms margin
+            ACaptureRequest_setEntry_i64(
+                request,
+                acamera_metadata_tag::ACAMERA_SENSOR_FRAME_DURATION.0 as u32,
+                1,
+                &frame_duration_ns,
             );
 
             let mut capture_callbacks = ACameraCaptureSession_captureCallbacks {
@@ -1109,6 +1202,14 @@ impl AndroidCamera {
                                 acamera_metadata_tag::ACAMERA_SENSOR_EXPOSURE_TIME.0 as u32,
                                 1,
                                 &exp_ns,
+                            );
+
+                            let frame_duration_ns = exp_ns + 5_000_000; // Add 5ms margin
+                            ACaptureRequest_setEntry_i64(
+                                request,
+                                acamera_metadata_tag::ACAMERA_SENSOR_FRAME_DURATION.0 as u32,
+                                1,
+                                &frame_duration_ns,
                             );
                             true
                         }

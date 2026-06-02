@@ -87,20 +87,34 @@ fun EngineRunningScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        if (activeCameraSelection == "internal") {
-            LaunchedEffect(viewModel.isEngineRunning) {
-                // Wait a moment for the camera to actually start and the JNI reference to be set
-                kotlinx.coroutines.delay(1000)
-                val rawExp = OliveEngine.getNativeCameraExposure()
-                android.util.Log.d("OliveUI", "Initial exposure from native: $rawExp")
-                mainScreenExposure = (rawExp / 1000000f).coerceIn(0.2f, 5.0f)
-            }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            Text(
+                "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Slider(
+                value = viewModel.starSensitivity,
+                onValueChange = {
+                    viewModel.updateStarSensitivity(it)
+                },
+                valueRange = 1f..100f,
+                modifier = Modifier.fillMaxWidth()
+            )
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) {
+            if (activeCameraSelection == "internal") {
+                LaunchedEffect(viewModel.isEngineRunning) {
+                    // Wait a moment for the camera to actually start and the JNI reference to be set
+                    kotlinx.coroutines.delay(1000)
+                    val rawExp = OliveEngine.getNativeCameraExposure()
+                    android.util.Log.d("OliveUI", "Initial exposure from native: $rawExp")
+                    mainScreenExposure = (rawExp / 1000000f).coerceIn(0.2f, 5.0f)
+                }
+
                 Text(
                     "Exposure: ${
                         String.format(
