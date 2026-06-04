@@ -16,6 +16,7 @@ static ENGINE_STATE: Mutex<
 > = Mutex::new(None);
 static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
 static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
+static LX200_FD_TX: Mutex<Option<tokio::sync::mpsc::UnboundedSender<i32>>> = Mutex::new(None);
 
 struct JniStorage {
     jvm: jni::JavaVM,
@@ -240,6 +241,9 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             }
             let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
 
+            let (fd_tx, fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            *LX200_FD_TX.lock().unwrap() = Some(fd_tx);
+
             let mut engine = Engine::new(
                 camera,
                 config,
@@ -248,6 +252,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 imu_arc,
                 Some(telescope_rt.handle().clone()),
                 storage,
+                Some(fd_rx),
             );
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
@@ -415,6 +420,9 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             }
             let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
 
+            let (fd_tx, fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            *LX200_FD_TX.lock().unwrap() = Some(fd_tx);
+
             let mut engine = Engine::new(
                 camera,
                 config,
@@ -423,6 +431,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 imu_arc,
                 Some(telescope_rt.handle().clone()),
                 storage,
+                Some(fd_rx),
             );
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
@@ -705,6 +714,22 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEngineSigma(
     if let Some(engine_state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
         if let Ok(mut state) = engine_state_arc.write() {
             state.current_sigma = Some(sigma as f32);
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleTelescopeConnection(
+    _env: JNIEnv,
+    _class: JClass,
+    fd: jint,
+) {
+    if let Some(tx) = LX200_FD_TX.lock().unwrap().as_ref() {
+        let _ = tx.send(fd);
+    } else {
+        unsafe {
+            use std::os::unix::io::FromRawFd;
+            drop(std::fs::File::from_raw_fd(fd));
         }
     }
 }
