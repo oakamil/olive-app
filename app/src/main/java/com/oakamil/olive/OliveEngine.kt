@@ -32,6 +32,7 @@ object OliveEngine {
     external fun stopEngine()
     external fun getEngineStats(): String
     external fun setNativeCameraExposure(exposureUs: Int)
+    external fun setNativeCameraStacking(count: Int)
     external fun setNativeCameraGain(gain: Float)
     external fun setNativeCameraFocus(distance: Float)
     external fun setNativeCameraNoiseReduction(mode: Int)
@@ -44,4 +45,5 @@ object OliveEngine {
     external fun getLatestFrameInto(buffer: ByteBuffer): Boolean
     external fun setEnginePaused(paused: Boolean)
     external fun setEngineSigma(sigma: Float)
+    external fun updateUvcStacking(frames: Int)
 }
