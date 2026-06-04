@@ -19,6 +19,7 @@ class OliveService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        startTelescopeServer()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -52,6 +53,7 @@ class OliveService : Service() {
 
     override fun onDestroy() {
         releaseWakeLock()
+        stopTelescopeServer()
         super.onDestroy()
     }
 
@@ -89,5 +91,48 @@ class OliveService : Service() {
             }
         }
         wakeLock = null
+    }
+
+    private var serverThread: Thread? = null
+    private var serverSocket: java.net.ServerSocket? = null
+
+    private fun startTelescopeServer() {
+        serverThread = Thread {
+            try {
+                serverSocket = java.net.ServerSocket(4030)
+                while (!Thread.currentThread().isInterrupted) {
+                    val client = serverSocket?.accept() ?: break
+                    try {
+                        val pfd = android.os.ParcelFileDescriptor.fromSocket(client)
+                        val fd = pfd.detachFd()
+                        OliveEngine.handleTelescopeConnection(fd)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        try {
+                            client.close()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                if (!Thread.currentThread().isInterrupted) {
+                    e.printStackTrace()
+                }
+            }
+        }
+        serverThread?.start()
+    }
+
+    private fun stopTelescopeServer() {
+        serverThread?.interrupt()
+        try {
+            serverSocket?.close()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        serverThread = null
+        serverSocket = null
     }
 }
