@@ -19,7 +19,7 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit { putBoolean("imu_integration", value) }
 
     var uvcFps: Int
-        get() = prefs.getInt("uvc_fps", 20)
+        get() = prefs.getInt("uvc_fps", 30)
         set(value) = prefs.edit { putInt("uvc_fps", value) }
 
     var extractor: String

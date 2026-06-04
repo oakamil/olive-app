@@ -137,6 +137,21 @@ fun EngineRunningScreen(
                     steps = 27,
                     modifier = Modifier.fillMaxWidth()
                 )
+            } else if (activeCameraSelection == "uvc" || viewModel.engineMode.name == "UVC") {
+                Text(
+                    "Stacking (Frames): ${viewModel.uvcStacking}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Slider(
+                    value = viewModel.uvcStacking.toFloat(),
+                    onValueChange = {
+                        viewModel.updateUvcStacking(it.toInt())
+                    },
+                    valueRange = 1f..10f,
+                    steps = 8,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 

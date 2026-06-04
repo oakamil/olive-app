@@ -124,6 +124,14 @@ fun TunerScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        if (viewModel.engineMode == MainViewModel.EngineMode.UVC) {
+            Text(
+                "Exposure: ${String.format(Locale.US, "%.2f", viewModel.engineStats.exposureMs)} s",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
         Text(
             "Detected Centroids: ${viewModel.engineStats.centroidCount}",
             style = MaterialTheme.typography.titleMedium,
@@ -154,19 +162,36 @@ fun TuningControls(viewModel: MainViewModel) {
             modifier = Modifier.fillMaxWidth()
         )
 
-        Text(
-            "Exposure: ${viewModel.currentExposure.toInt()} us",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Slider(
-            value = viewModel.currentExposure,
-            onValueChange = {
-                viewModel.setExposure(it)
-            },
-            valueRange = 16667f..5000000f,
-            modifier = Modifier.fillMaxWidth()
-        )
+        if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
+            Text(
+                "Exposure: ${viewModel.currentExposure.toInt()} us",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Slider(
+                value = viewModel.currentExposure,
+                onValueChange = {
+                    viewModel.setExposure(it)
+                },
+                valueRange = 16667f..5000000f,
+                modifier = Modifier.fillMaxWidth()
+            )
+        } else {
+            Text(
+                "Stacking (Frames): ${viewModel.uvcStacking}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Slider(
+                value = viewModel.uvcStacking.toFloat(),
+                onValueChange = {
+                    viewModel.updateUvcStacking(it.toInt())
+                },
+                valueRange = 1f..10f,
+                steps = 8,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         if (viewModel.engineMode == MainViewModel.EngineMode.UVC && viewModel.uvcBrightnessMax > viewModel.uvcBrightnessMin) {
             Text(
@@ -214,26 +239,28 @@ fun TuningControls(viewModel: MainViewModel) {
             )
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "Noise Reduction: ",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            val modes = listOf("OFF", "FAST", "HQ")
-            modes.forEachIndexed { index, name ->
-                RadioButton(
-                    selected = viewModel.noiseReductionMode == index,
-                    onClick = {
-                        viewModel.setNoiseReduction(index)
-                    }
-                )
+        if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    name,
+                    "Noise Reduction: ",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(end = 8.dp)
+                    color = MaterialTheme.colorScheme.onBackground
                 )
+                val modes = listOf("OFF", "FAST", "HQ")
+                modes.forEachIndexed { index, name ->
+                    RadioButton(
+                        selected = viewModel.noiseReductionMode == index,
+                        onClick = {
+                            viewModel.setNoiseReduction(index)
+                        }
+                    )
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
             }
         }
     }

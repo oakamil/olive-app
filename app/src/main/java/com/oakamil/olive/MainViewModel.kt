@@ -44,6 +44,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var currentUvcBrightness by mutableIntStateOf(0)
     var latestFrame by mutableStateOf<ImageBitmap?>(null)
     var starSensitivity by mutableFloatStateOf(50f)
+    var uvcStacking by mutableIntStateOf(1)
 
     val currentSigma: Float
         get() {
@@ -287,6 +288,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setEnginePaused(paused: Boolean) {
         OliveEngine.setEnginePaused(paused)
+    }
+
+    fun updateUvcStacking(frames: Int) {
+        uvcStacking = frames.coerceIn(1, 10)
+        OliveEngine.updateUvcStacking(uvcStacking)
     }
 
     fun stopEngineSync() {
