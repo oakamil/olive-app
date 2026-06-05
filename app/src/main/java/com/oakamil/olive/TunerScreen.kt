@@ -1,9 +1,15 @@
 package com.oakamil.olive
 
+import android.content.Context
+import android.content.res.Configuration
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.view.Surface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,24 +37,53 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
 @Composable
 fun TunerScreen(
     viewModel: MainViewModel,
+    settingsManager: SettingsManager,
     onBack: () -> Unit
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val context = LocalContext.current
+    val view = LocalView.current
+    val displayRotation = view.display?.rotation ?: Surface.ROTATION_0
+
+    val sensorOrientation = remember(viewModel.engineMode, settingsManager.internalCameraId) {
+        if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) {
+            try {
+                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                val characteristics = cameraManager.getCameraCharacteristics(settingsManager.internalCameraId)
+                characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+            } catch (_: Exception) {
+                90
+            }
+        } else {
+            0
+        }
+    }
+
+    val displayRotationDegrees = when (displayRotation) {
+        Surface.ROTATION_0 -> 0
+        Surface.ROTATION_90 -> 90
+        Surface.ROTATION_180 -> 180
+        Surface.ROTATION_270 -> 270
+        else -> 0
+    }
+
+    val imageRotation = ((sensorOrientation - displayRotationDegrees + 360) % 360).toFloat()
+
+    @Composable
+    fun CameraFeedContent() {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Start
@@ -71,10 +106,10 @@ fun TunerScreen(
 
         // Live Preview with Pan/Zoom
         viewModel.latestFrame?.let {
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(240.dp)
+                    .height(360.dp)
                     .padding(8.dp)
                     .background(MaterialTheme.colorScheme.surface)
                     .clipToBounds()
@@ -93,33 +128,49 @@ fun TunerScreen(
                         }
                     )
             ) {
+                val cW = maxWidth.value
+                val cH = maxHeight.value
+                val bW = it.width.toFloat()
+                val bH = it.height.toFloat()
+                
+                val fitScale = minOf(cW / bW, cH / bH)
+                val drawnWidth = bW * fitScale
+                val drawnHeight = bH * fitScale
+
+                val baseScale = if (imageRotation % 180f != 0f) {
+                    minOf(cW / drawnHeight, cH / drawnWidth)
+                } else {
+                    1f
+                }
+
                 androidx.compose.foundation.Image(
                     bitmap = it,
                     contentDescription = "Live Preview",
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer(
-                            scaleX = scale,
-                            scaleY = scale,
+                            scaleX = scale * baseScale,
+                            scaleY = scale * baseScale,
                             translationX = offset.x,
-                            translationY = offset.y
+                            translationY = offset.y,
+                            rotationZ = imageRotation
                         )
                 )
             }
         } ?: Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(240.dp)
+                .height(360.dp)
                 .padding(8.dp)
                 .background(MaterialTheme.colorScheme.surface),
             contentAlignment = Alignment.Center
         ) {
             Text("Waiting for frame...", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Tuning Sliders
+    @Composable
+    fun TuningContent() {
         TuningControls(viewModel)
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -143,6 +194,42 @@ fun TunerScreen(
             color = MaterialTheme.colorScheme.primary
         )
     }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (isLandscape) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    CameraFeedContent()
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    TuningContent()
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                CameraFeedContent()
+                Spacer(modifier = Modifier.height(16.dp))
+                TuningContent()
+            }
+        }
+    }
+
 }
 
 @Composable

@@ -288,6 +288,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     _class: JClass,
     imu_enabled: jni::sys::jboolean,
     extractor: jni::objects::JString,
+    sensor_mode: jni::objects::JString,
     internal_camera_id: jni::objects::JString,
     latitude: jni::sys::jdouble,
     longitude: jni::sys::jdouble,
@@ -301,6 +302,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
 
     let use_imu = imu_enabled != 0;
     let internal_camera_id_str: String = env.get_string(&internal_camera_id).unwrap().into();
+    let sensor_mode_str: String = env.get_string(&sensor_mode).unwrap().into();
     let extractor_str: String = env.get_string(&extractor).unwrap().into();
     let ext_type = if extractor_str == "Cedar" {
         olive_engine::engine::Extractor::Cedar
@@ -340,7 +342,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             use olive_engine::engine::{Engine, EngineConfig};
             use std::sync::Arc;
 
-            let mut cam = AndroidCamera::new(Some(internal_camera_id_str));
+            let mut cam = AndroidCamera::new(Some(internal_camera_id_str), Some(sensor_mode_str));
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start Android camera: {}", e);
                 return;

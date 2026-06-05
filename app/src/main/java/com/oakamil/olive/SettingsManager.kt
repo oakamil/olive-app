@@ -26,6 +26,10 @@ class SettingsManager(context: Context) {
         get() = prefs.getString("extractor", "Olive") ?: "Olive"
         set(value) = prefs.edit { putString("extractor", value) }
 
+    var sensorMode: String
+        get() = prefs.getString("sensor_mode", "Raw") ?: "Raw"
+        set(value) = prefs.edit { putString("sensor_mode", value) }
+
     var internalCameraId: String
         get() {
             val v = prefs.getString("internal_camera_id", "0") ?: "0"

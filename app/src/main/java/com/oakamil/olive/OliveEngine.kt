@@ -22,6 +22,7 @@ object OliveEngine {
     external fun startNativeCameraEngine(
         imuEnabled: Boolean,
         extractor: String,
+        sensorMode: String,
         internalCameraId: String,
         lat: Double,
         lon: Double,
@@ -32,7 +33,6 @@ object OliveEngine {
     external fun stopEngine()
     external fun getEngineStats(): String
     external fun setNativeCameraExposure(exposureUs: Int)
-    external fun setNativeCameraStacking(count: Int)
     external fun setNativeCameraGain(gain: Float)
     external fun setNativeCameraFocus(distance: Float)
     external fun setNativeCameraNoiseReduction(mode: Int)

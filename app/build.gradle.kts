@@ -14,7 +14,7 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "0.1"
     }
 
     buildFeatures {
@@ -62,10 +62,8 @@ dependencies {
 // Custom task to compile rust and copy to jniLibs
 tasks.register<Exec>("cargoBuild") {
     // Only target arm64 for now to keep things simple
-    val rustTarget = "aarch64-linux-android"
     val rustArchName = "arm64-v8a"
     val projectDir = file("src/main/rust")
-    val jniDir = file("src/main/jniLibs/\${rustArchName}")
 
     workingDir(projectDir)
     environment("ANDROID_NDK_HOME", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358")

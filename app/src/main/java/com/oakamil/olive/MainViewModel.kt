@@ -190,6 +190,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             OliveEngine.startNativeCameraEngine(
                 settingsManager.imuIntegration,
                 settingsManager.extractor,
+                settingsManager.sensorMode,
                 settingsManager.internalCameraId,
                 lat,
                 lon,

@@ -46,6 +46,7 @@ pub struct AndroidCameraConfiguration {
     pub fov: f32,
     pub white_level: i32,
     pub format: i32,
+    pub supports_contrast_curve: bool,
 }
 
 /// Context passed to the AImageReader C callback
@@ -238,6 +239,7 @@ pub struct CameraInfo {
     pub id: String,
     pub logical_id: String,
     pub fov: f32,
+    pub supports_raw: bool,
 }
 
 impl AndroidCamera {
@@ -349,10 +351,57 @@ impl AndroidCamera {
                 let fov_rad = 2.0 * (phys_width_mm / (2.0 * focal_length_mm)).atan();
                 let fov_deg = fov_rad * (180.0 / std::f32::consts::PI);
 
+                let mut stream_configs_entry: ACameraMetadata_const_entry = std::mem::zeroed();
+                ACameraMetadata_getConstEntry(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS.0 as u32,
+                    &mut stream_configs_entry,
+                );
+
+                let mut supports_raw = false;
+
+                // Method 1: Check stream configs for RAW formats
+                let num_configs = stream_configs_entry.count / 4;
+                for j in 0..num_configs {
+                    let offset = (j * 4) as isize;
+                    let format = *stream_configs_entry.data.i32_.offset(offset);
+                    let is_input = *stream_configs_entry.data.i32_.offset(offset + 3);
+
+                    let is_raw_format = format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32
+                        || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32
+                        || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32;
+
+                    if is_input == 0 && is_raw_format {
+                        supports_raw = true;
+                        break;
+                    }
+                }
+
+                // Method 2: Check capabilities
+                if !supports_raw {
+                    let mut caps_entry: ACameraMetadata_const_entry = std::mem::zeroed();
+                    let has_caps = ACameraMetadata_getConstEntry(
+                        metadata,
+                        acamera_metadata_tag::ACAMERA_REQUEST_AVAILABLE_CAPABILITIES.0 as u32,
+                        &mut caps_entry,
+                    ) == camera_status_t::ACAMERA_OK;
+
+                    if has_caps {
+                        for j in 0..caps_entry.count {
+                            let cap = *caps_entry.data.u8_.offset(j as isize);
+                            if cap == acamera_metadata_enum_android_request_available_capabilities_t::ACAMERA_REQUEST_AVAILABLE_CAPABILITIES_RAW.0 as u8 {
+                                supports_raw = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 cameras.push(CameraInfo {
                     id: cam_id,
                     logical_id,
                     fov: fov_deg,
+                    supports_raw,
                 });
 
                 ACameraMetadata_free(metadata);
@@ -365,7 +414,7 @@ impl AndroidCamera {
         }
     }
 
-    pub fn new(requested_id: Option<String>) -> Self {
+    pub fn new(requested_id: Option<String>, sensor_mode: Option<String>) -> Self {
         let store = Arc::new(CaptureStore {
             image: Mutex::new(None),
             cvar: Condvar::new(),
@@ -375,7 +424,8 @@ impl AndroidCamera {
         let saved_exposure = Arc::new(AtomicI32::new(INITIAL_EXPOSURE_US));
         let config = Arc::new(Mutex::new(None));
 
-        let selected_config = unsafe { Self::discover_and_configure_camera(requested_id) };
+        let selected_config =
+            unsafe { Self::discover_and_configure_camera(requested_id, sensor_mode) };
         let fixed_gain = selected_config.max_analog_gain;
 
         *config.lock().unwrap() = Some(selected_config);
@@ -408,6 +458,7 @@ impl AndroidCamera {
 
     unsafe fn discover_and_configure_camera(
         requested_id: Option<String>,
+        sensor_mode: Option<String>,
     ) -> AndroidCameraConfiguration {
         unsafe {
             let manager = ACameraManager_create();
@@ -468,8 +519,9 @@ impl AndroidCamera {
             let mut max_analog = 800;
             let mut hyperfocal = 0.0;
             let mut best_dim = (0, 0);
-            let mut best_white_level = 1023;
             let mut best_format = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
+            let mut best_white_level = 1023;
+            let mut best_supports_contrast_curve = false;
 
             info!("Total unique cameras to evaluate: {}", all_cam_ids.len());
 
@@ -588,6 +640,7 @@ impl AndroidCamera {
                 );
 
                 let mut valid_raw_sizes = Vec::new();
+                let mut raw_format_selected = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
                 let mut valid_yuv_sizes = Vec::new();
                 let num_configs = stream_configs_entry.count / 4;
                 for j in 0..num_configs {
@@ -598,20 +651,36 @@ impl AndroidCamera {
                     let is_input = *stream_configs_entry.data.i32_.offset(offset + 3);
 
                     if is_input == 0 {
-                        if format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32 {
+                        if format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32
+                            || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32
+                            || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32
+                        {
                             valid_raw_sizes.push((width as u32, height as u32));
+                            raw_format_selected = format;
                         } else if format == AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32 {
                             valid_yuv_sizes.push((width as u32, height as u32));
                         }
                     }
                 }
 
-                let mut valid_sizes = valid_yuv_sizes;
-                let mut selected_format = AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32;
+                let mut valid_sizes = valid_raw_sizes.clone();
+                let mut selected_format = raw_format_selected;
+
+                if let Some(ref mode) = sensor_mode {
+                    if mode == "Processed" {
+                        valid_sizes = valid_yuv_sizes.clone();
+                        selected_format = AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32;
+                    }
+                }
 
                 if valid_sizes.is_empty() {
-                    valid_sizes = valid_raw_sizes;
-                    selected_format = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
+                    if selected_format == raw_format_selected {
+                        valid_sizes = valid_yuv_sizes.clone();
+                        selected_format = AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32;
+                    } else {
+                        valid_sizes = valid_raw_sizes.clone();
+                        selected_format = raw_format_selected;
+                    }
                 }
 
                 if valid_sizes.is_empty() {
@@ -620,30 +689,24 @@ impl AndroidCamera {
                     continue;
                 }
 
-                // Query the active array size to find the hardware-binned sensor dimensions
-                let mut active_array_entry: ACameraMetadata_const_entry = std::mem::zeroed();
-                let has_active_array = ACameraMetadata_getConstEntry(
+                let mut supports_contrast_curve = false;
+                let mut tonemap_modes_entry: ACameraMetadata_const_entry = std::mem::zeroed();
+                if ACameraMetadata_getConstEntry(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE.0 as u32,
-                    &mut active_array_entry,
-                ) == camera_status_t::ACAMERA_OK;
-
-                let mut max_binned_pixels = 13_000_000;
-                if has_active_array && active_array_entry.count >= 4 {
-                    // ACTIVE_ARRAY_SIZE format is [xmin, ymin, width, height]
-                    let width = *active_array_entry.data.i32_.offset(2);
-                    let height = *active_array_entry.data.i32_.offset(3);
-                    max_binned_pixels = (width * height) as u32;
-                    info!(
-                        "Camera {}: Active array size {}x{} ({} pixels)",
-                        cam_id, width, height, max_binned_pixels
-                    );
-                } else {
-                    info!(
-                        "Camera {}: Could not read active array size, defaulting to 13MP cap",
-                        cam_id
-                    );
+                    acamera_metadata_tag::ACAMERA_TONEMAP_AVAILABLE_TONE_MAP_MODES.0 as u32,
+                    &mut tonemap_modes_entry,
+                ) == camera_status_t::ACAMERA_OK
+                {
+                    for j in 0..tonemap_modes_entry.count {
+                        let mode = *tonemap_modes_entry.data.u8_.offset(j as isize);
+                        if mode == acamera_metadata_enum_acamera_tonemap_mode::ACAMERA_TONEMAP_MODE_CONTRAST_CURVE.0 as u8 {
+                            supports_contrast_curve = true;
+                            break;
+                        }
+                    }
                 }
+
+                let max_binned_pixels: u32 = 13_000_000;
 
                 // Filter out unbinned maximum resolutions (e.g., 50MP, 108MP)
                 valid_sizes.retain(|&(w, h)| (w * h) <= max_binned_pixels);
@@ -661,6 +724,10 @@ impl AndroidCamera {
                 let format_str = if selected_format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32
                 {
                     "RAW16"
+                } else if selected_format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32 {
+                    "RAW10"
+                } else if selected_format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32 {
+                    "RAW12"
                 } else {
                     "YUV_420_888"
                 };
@@ -708,6 +775,7 @@ impl AndroidCamera {
                     best_white_level = sensor_white_level;
                     best_dim = best_valid_size;
                     best_format = selected_format;
+                    best_supports_contrast_curve = supports_contrast_curve;
                 }
 
                 ACameraMetadata_free(metadata);
@@ -738,6 +806,7 @@ impl AndroidCamera {
                 fov: min_fov,
                 white_level: best_white_level,
                 format: best_format,
+                supports_contrast_curve: best_supports_contrast_curve,
             }
         }
     }
@@ -768,8 +837,13 @@ impl AndroidCamera {
 
                 let data_slice = std::slice::from_raw_parts(data, len as usize);
 
-                if ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32 {
-                    let scale = 255.0 / ctx.white_level;
+                if ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32
+                    || ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32
+                    || ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32
+                {
+                    let white_level_int = ctx.white_level as u32;
+                    let bit_depth = 32 - white_level_int.leading_zeros();
+                    let shift = bit_depth.saturating_sub(8);
 
                     for y in 0..height {
                         let src_row_start = y * (row_stride as usize);
@@ -781,8 +855,7 @@ impl AndroidCamera {
                                 data_slice[byte_idx + 1],
                             ]);
 
-                            let scaled = (val as f32 * scale) as i32;
-                            image_data[dst_row_start + x] = scaled.clamp(0, 255) as u8;
+                            image_data[dst_row_start + x] = (val >> shift) as u8;
                         }
                     }
                 } else {
@@ -1076,14 +1149,46 @@ impl AndroidCamera {
                 &current_nr,
             );
 
-            let tonemap_mode_fast =
-                acamera_metadata_enum_acamera_tonemap_mode::ACAMERA_TONEMAP_MODE_FAST.0 as u8;
-            ACaptureRequest_setEntry_u8(
-                request,
-                acamera_metadata_tag::ACAMERA_TONEMAP_MODE.0 as u32,
-                1,
-                &tonemap_mode_fast,
-            );
+            if config.supports_contrast_curve {
+                let tonemap_mode_curve =
+                    acamera_metadata_enum_acamera_tonemap_mode::ACAMERA_TONEMAP_MODE_CONTRAST_CURVE
+                        .0 as u8;
+                ACaptureRequest_setEntry_u8(
+                    request,
+                    acamera_metadata_tag::ACAMERA_TONEMAP_MODE.0 as u32,
+                    1,
+                    &tonemap_mode_curve,
+                );
+
+                let linear_curve: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
+                ACaptureRequest_setEntry_float(
+                    request,
+                    acamera_metadata_tag::ACAMERA_TONEMAP_CURVE_RED.0 as u32,
+                    4,
+                    linear_curve.as_ptr(),
+                );
+                ACaptureRequest_setEntry_float(
+                    request,
+                    acamera_metadata_tag::ACAMERA_TONEMAP_CURVE_GREEN.0 as u32,
+                    4,
+                    linear_curve.as_ptr(),
+                );
+                ACaptureRequest_setEntry_float(
+                    request,
+                    acamera_metadata_tag::ACAMERA_TONEMAP_CURVE_BLUE.0 as u32,
+                    4,
+                    linear_curve.as_ptr(),
+                );
+            } else {
+                let tonemap_mode_fast =
+                    acamera_metadata_enum_acamera_tonemap_mode::ACAMERA_TONEMAP_MODE_FAST.0 as u8;
+                ACaptureRequest_setEntry_u8(
+                    request,
+                    acamera_metadata_tag::ACAMERA_TONEMAP_MODE.0 as u32,
+                    1,
+                    &tonemap_mode_fast,
+                );
+            }
 
             let edge_mode_off =
                 acamera_metadata_enum_acamera_edge_mode::ACAMERA_EDGE_MODE_OFF.0 as u8;
