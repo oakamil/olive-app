@@ -56,8 +56,11 @@ fun StartScreen(
     var cameraSelection by remember { mutableStateOf(activeCameraSelection) }
     var uvcFps by remember { mutableIntStateOf(settingsManager.uvcFps) }
     var extractor by remember { mutableStateOf(settingsManager.extractor) }
+    var sensorMode by remember { mutableStateOf(settingsManager.sensorMode) }
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
     var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
+
+    val supportsRawMap = remember { mutableMapOf<String, Boolean>() }
 
     val currentOnCameraSelectionChanged by rememberUpdatedState(onCameraSelectionChanged)
     LaunchedEffect(cameraSelection) {
@@ -69,8 +72,16 @@ fun StartScreen(
     LaunchedEffect(extractor) {
         settingsManager.extractor = extractor
     }
+    LaunchedEffect(sensorMode) {
+        settingsManager.sensorMode = sensorMode
+    }
     LaunchedEffect(internalCameraId) {
         settingsManager.internalCameraId = internalCameraId
+        if (sensorMode == "Raw" && supportsRawMap.isNotEmpty()) {
+            if (supportsRawMap[internalCameraId] != true) {
+                sensorMode = "Processed"
+            }
+        }
     }
     LaunchedEffect(guidanceMode) {
         settingsManager.guidanceMode = guidanceMode
@@ -138,17 +149,20 @@ fun StartScreen(
                     val list = mutableListOf<Pair<String, String>>()
                     try {
                         val jsonArray = JSONArray(camerasJson)
-                        val tempCameras = mutableListOf<Pair<String, Double>>()
+                        val tempCameras = mutableListOf<Triple<String, Double, Boolean>>()
                         for (i in 0 until jsonArray.length()) {
                             val obj = jsonArray.getJSONObject(i)
                             val id = obj.getString("id")
                             val fov = obj.getDouble("fov")
+                            val supportsRaw =
+                                if (obj.has("supports_raw")) obj.getBoolean("supports_raw") else false
                             if (fov >= 10.0) {
-                                tempCameras.add(Pair(id, fov))
+                                tempCameras.add(Triple(id, fov, supportsRaw))
                             }
                         }
                         tempCameras.sortBy { it.first.toIntOrNull() ?: Int.MAX_VALUE }
                         for (cam in tempCameras) {
+                            supportsRawMap[cam.first] = cam.third
                             list.add(
                                 Pair(
                                     cam.first,
@@ -306,6 +320,42 @@ fun StartScreen(
         }
 
         val otherSettingsContent: @Composable () -> Unit = {
+            if (cameraSelection == "internal") {
+                Text(
+                    "Sensor Mode",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                val isRawSupported = supportsRawMap[internalCameraId] ?: false
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    listOf("Raw", "Processed").forEach { mode ->
+                        val enabled = mode == "Processed" || isRawSupported
+                        RadioButton(
+                            selected = sensorMode == mode,
+                            onClick = { sensorMode = mode },
+                            enabled = enabled,
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.onBackground
+                            )
+                        )
+                        Text(
+                            mode,
+                            modifier = Modifier.padding(start = 8.dp, end = 16.dp),
+                            color = if (enabled) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(
+                                alpha = 0.5f
+                            )
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
             Text(
                 "Extractor",
                 style = MaterialTheme.typography.titleMedium,
@@ -369,7 +419,10 @@ fun StartScreen(
         }
 
         if (isLandscape) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 Column(modifier = Modifier.weight(1f)) { cameraSelectionContent() }
                 Column(modifier = Modifier.weight(1f)) { otherSettingsContent() }
             }

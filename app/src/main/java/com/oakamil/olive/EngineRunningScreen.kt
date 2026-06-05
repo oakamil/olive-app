@@ -50,8 +50,7 @@ fun EngineRunningScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -66,162 +65,195 @@ fun EngineRunningScreen(
         }
         Spacer(modifier = Modifier.height(24.dp))
 
-        Card(
-            modifier = Modifier
-                .fillMaxWidth(if (isLandscape) 0.5f else 1f)
-                .aspectRatio(16f / 9f)
-        ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                GuidanceDisplay(viewModel.engineStats, settingsManager.guidanceMode == "alt_az")
+        @Composable
+        fun GuidanceContent() {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    GuidanceDisplay(viewModel.engineStats, settingsManager.guidanceMode == "alt_az")
+                }
             }
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        StatsDisplay(viewModel.engineStats)
 
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            "IP Address: $detectedIpAddress Port: 4030",
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.fillMaxWidth()
-        )
+        @Composable
+        fun OtherContent() {
+            StatsDisplay(viewModel.engineStats)
 
-        Spacer(modifier = Modifier.weight(1f))
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-        ) {
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Slider(
-                value = viewModel.starSensitivity,
-                onValueChange = {
-                    viewModel.updateStarSensitivity(it)
-                },
-                valueRange = 1f..100f,
+                "IP Address: $detectedIpAddress Port: 4030",
+                color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            if (activeCameraSelection == "internal") {
-                LaunchedEffect(viewModel.isEngineRunning) {
-                    // Wait a moment for the camera to actually start and the JNI reference to be set
-                    kotlinx.coroutines.delay(1000)
-                    val rawExp = OliveEngine.getNativeCameraExposure()
-                    android.util.Log.d("OliveUI", "Initial exposure from native: $rawExp")
-                    mainScreenExposure = (rawExp / 1000000f).coerceIn(0.2f, 5.0f)
-                }
+            Spacer(modifier = Modifier.height(24.dp))
 
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
                 Text(
-                    "Exposure: ${
-                        String.format(
-                            java.util.Locale.US,
-                            "%.1f",
-                            mainScreenExposure
-                        )
-                    } s",
+                    "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Slider(
-                    value = mainScreenExposure,
+                    value = viewModel.starSensitivity,
                     onValueChange = {
-                        val stepped = kotlin.math.round(it * 10.0f) / 10.0f
-                        mainScreenExposure = stepped
-                        viewModel.setExposure(stepped * 1000000)
+                        viewModel.updateStarSensitivity(it)
                     },
-                    valueRange = 0.2f..3.0f,
-                    steps = 27,
+                    valueRange = 1f..100f,
                     modifier = Modifier.fillMaxWidth()
                 )
-            } else if (activeCameraSelection == "uvc" || viewModel.engineMode.name == "UVC") {
+
+                if (activeCameraSelection == "internal") {
+                    LaunchedEffect(viewModel.isEngineRunning) {
+                        // Wait a moment for the camera to actually start and the JNI reference to be set
+                        kotlinx.coroutines.delay(1000)
+                        val rawExp = OliveEngine.getNativeCameraExposure()
+                        android.util.Log.d("OliveUI", "Initial exposure from native: $rawExp")
+                        mainScreenExposure = (rawExp / 1000000f).coerceIn(0.2f, 5.0f)
+                    }
+
+                    Text(
+                        "Exposure: ${
+                            String.format(
+                                java.util.Locale.US,
+                                "%.1f",
+                                mainScreenExposure
+                            )
+                        } s",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Slider(
+                        value = mainScreenExposure,
+                        onValueChange = {
+                            val stepped = kotlin.math.round(it * 10.0f) / 10.0f
+                            mainScreenExposure = stepped
+                            viewModel.setExposure(stepped * 1000000)
+                        },
+                        valueRange = 0.2f..3.0f,
+                        steps = 27,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else if (activeCameraSelection == "uvc" || viewModel.engineMode.name == "UVC") {
+                    Text(
+                        "Stacking (Frames): ${viewModel.uvcStacking}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Slider(
+                        value = viewModel.uvcStacking.toFloat(),
+                        onValueChange = {
+                            viewModel.updateUvcStacking(it.toInt())
+                        },
+                        valueRange = 1f..10f,
+                        steps = 8,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            Button(
+                onClick = {
+                    viewModel.setEnginePaused(true)
+                    val range = OliveEngine.getNativeCameraGainRange()
+                    if (range != null && range.size >= 2) {
+                        viewModel.minAnalogGain = range[0]
+                        viewModel.maxAnalogGain =
+                            range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
+                    } else {
+                        viewModel.minAnalogGain = 100f
+                        viewModel.maxAnalogGain = 3200f
+                    }
+                    viewModel.currentGain = OliveEngine.getNativeCameraGain()
+                        .coerceIn(viewModel.minAnalogGain, viewModel.maxAnalogGain)
+                    viewModel.currentExposure = OliveEngine.getNativeCameraExposure().toFloat()
+                        .coerceIn(16667f, 5000000f)
+                    val bRange = OliveEngine.getNativeCameraBrightnessRange()
+                    if (bRange != null && bRange.size >= 3) {
+                        viewModel.uvcBrightnessMin = bRange[0]
+                        viewModel.uvcBrightnessMax = bRange[1]
+                        viewModel.currentUvcBrightness = bRange[2]
+                    } else {
+                        viewModel.uvcBrightnessMin = 0
+                        viewModel.uvcBrightnessMax = 0
+                    }
+                    onNavigateToTuner()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Text("Camera Mode")
+            }
+
+            OutlinedButton(
+                onClick = onEnterPipMode,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("Picture-in-Picture Mode")
+            }
+
+            Button(
+                onClick = onToggleEngine,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .fillMaxWidth(),
+                enabled = !isStopping && !isStarting,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
                 Text(
-                    "Stacking (Frames): ${viewModel.uvcStacking}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Slider(
-                    value = viewModel.uvcStacking.toFloat(),
-                    onValueChange = {
-                        viewModel.updateUvcStacking(it.toInt())
-                    },
-                    valueRange = 1f..10f,
-                    steps = 8,
-                    modifier = Modifier.fillMaxWidth()
+                    when {
+                        isStopping -> "Stopping..."
+                        isStarting -> "Starting..."
+                        else -> "Stop Engine"
+                    }
                 )
             }
+
         }
 
-        Button(
-            onClick = {
-                viewModel.setEnginePaused(true)
-                val range = OliveEngine.getNativeCameraGainRange()
-                if (range != null && range.size >= 2) {
-                    viewModel.minAnalogGain = range[0]
-                    viewModel.maxAnalogGain =
-                        range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
-                } else {
-                    viewModel.minAnalogGain = 100f
-                    viewModel.maxAnalogGain = 3200f
+        if (isLandscape) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    GuidanceContent()
                 }
-                viewModel.currentGain = OliveEngine.getNativeCameraGain()
-                    .coerceIn(viewModel.minAnalogGain, viewModel.maxAnalogGain)
-                viewModel.currentExposure = OliveEngine.getNativeCameraExposure().toFloat()
-                    .coerceIn(16667f, 5000000f)
-                val bRange = OliveEngine.getNativeCameraBrightnessRange()
-                if (bRange != null && bRange.size >= 3) {
-                    viewModel.uvcBrightnessMin = bRange[0]
-                    viewModel.uvcBrightnessMax = bRange[1]
-                    viewModel.currentUvcBrightness = bRange[2]
-                } else {
-                    viewModel.uvcBrightnessMin = 0
-                    viewModel.uvcBrightnessMax = 0
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    OtherContent()
                 }
-                onNavigateToTuner()
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            )
-        ) {
-            Text("Camera Mode")
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                GuidanceContent()
+                Spacer(modifier = Modifier.height(16.dp))
+                OtherContent()
+            }
         }
-
-        OutlinedButton(
-            onClick = onEnterPipMode,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Text("Picture-in-Picture Mode")
-        }
-
-        Button(
-            onClick = onToggleEngine,
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .fillMaxWidth(),
-            enabled = !isStopping && !isStarting,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            )
-        ) {
-            Text(
-                when {
-                    isStopping -> "Stopping..."
-                    isStarting -> "Starting..."
-                    else -> "Stop Engine"
-                }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
     }
 }

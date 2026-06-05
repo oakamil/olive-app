@@ -275,6 +275,7 @@ class MainActivity : ComponentActivity() {
 
                             "tuner" -> TunerScreen(
                                 viewModel = viewModel,
+                                settingsManager = settingsManager,
                                 onBack = { currentScreen = "main" }
                             )
                         }
