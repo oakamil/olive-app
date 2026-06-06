@@ -294,3 +294,55 @@ fun EngineRunningScreen(
         }
     }
 }
+
+@Composable
+fun StatsDisplay(stats: EngineStats) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Left Column: Status, Stars, RA, Dec
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text("Status: ${stats.status}", color = MaterialTheme.colorScheme.primary)
+            Text(
+                "Star Count: ${stats.centroidCount}",
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("RA: ${stats.ra?.let { String.format(java.util.Locale.US, "%.4f", it) } ?: "-"}",
+                color = MaterialTheme.colorScheme.onBackground)
+            Text("Dec: ${stats.dec?.let { String.format(java.util.Locale.US, "%.4f", it) } ?: "-"}",
+                color = MaterialTheme.colorScheme.onBackground)
+        }
+
+        // Right Column: Performance metrics
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                "Exposure: ${String.format(java.util.Locale.US, "%.2f", stats.exposureMs)} ms",
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                "Post-Process: ${String.format(java.util.Locale.US, "%.1f", stats.postProcessMs)} ms",
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                "Extraction: ${String.format(java.util.Locale.US, "%.1f", stats.extractMs)} ms",
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                "Solve: ${String.format(java.util.Locale.US, "%.1f", stats.solveMs)} ms",
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                "Solve Rate: ${String.format(java.util.Locale.US, "%.2f", stats.solveRateHz)} Hz",
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+    }
+}
