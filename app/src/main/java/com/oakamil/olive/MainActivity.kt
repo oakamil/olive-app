@@ -386,6 +386,7 @@ class MainActivity : ComponentActivity() {
         if (camera != null) {
             isCameraConnected = true
             connectedDevice = camera
+            updateCameraSelection("external")
         } else {
             isCameraConnected = false
             connectedDevice = null

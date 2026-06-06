@@ -61,8 +61,10 @@ fun TunerScreen(
     val sensorOrientation = remember(viewModel.engineMode, settingsManager.internalCameraId) {
         if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) {
             try {
-                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                val characteristics = cameraManager.getCameraCharacteristics(settingsManager.internalCameraId)
+                val cameraManager =
+                    context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                val characteristics =
+                    cameraManager.getCameraCharacteristics(settingsManager.internalCameraId)
                 characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
             } catch (_: Exception) {
                 90
@@ -132,7 +134,7 @@ fun TunerScreen(
                 val cH = maxHeight.value
                 val bW = it.width.toFloat()
                 val bH = it.height.toFloat()
-                
+
                 val fitScale = minOf(cW / bW, cH / bH)
                 val drawnWidth = bW * fitScale
                 val drawnHeight = bH * fitScale
@@ -171,7 +173,7 @@ fun TunerScreen(
 
     @Composable
     fun TuningContent() {
-        TuningControls(viewModel)
+        TuningControls(viewModel, settingsManager)
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -233,7 +235,7 @@ fun TunerScreen(
 }
 
 @Composable
-fun TuningControls(viewModel: MainViewModel) {
+fun TuningControls(viewModel: MainViewModel, settingsManager: SettingsManager) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
@@ -248,6 +250,44 @@ fun TuningControls(viewModel: MainViewModel) {
             valueRange = 1f..100f,
             modifier = Modifier.fillMaxWidth()
         )
+
+        val maxZoom = remember {
+            var mZ = 1f
+            try {
+                if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE && settingsManager.sensorMode == "Processed") {
+                    val jsonArray = org.json.JSONArray(viewModel.getAvailableInternalCameras())
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        if (obj.getString("id") == settingsManager.internalCameraId) {
+                            mZ =
+                                if (obj.has("max_zoom")) obj.getDouble("max_zoom").toFloat() else 1f
+                            break
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            mZ
+        }
+
+        if (maxZoom > 1f) {
+            var zoomRatio by remember { mutableFloatStateOf(settingsManager.zoomRatio) }
+            Text(
+                "Zoom: ${String.format(Locale.US, "%.1fx", zoomRatio)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Slider(
+                value = zoomRatio,
+                onValueChange = {
+                    zoomRatio = it
+                    settingsManager.zoomRatio = it
+                    OliveEngine.setNativeCameraZoomRatio(it)
+                },
+                valueRange = 1f..5f,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
             Text(

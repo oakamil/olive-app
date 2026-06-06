@@ -153,6 +153,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     if let Some(handle) = old_thread {
         let _ = handle.join();
     }
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
     let new_thread = thread::spawn(move || {
         rt_handle.block_on(async {
             use olive_engine::CameraTrait;
@@ -168,6 +169,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             }
             let camera: std::sync::Arc<dyn CameraTrait> = Arc::new(cam);
             *CAMERA.lock().unwrap() = Some(camera.clone());
+            let _ = ready_tx.send(());
 
             let config = EngineConfig {
                 gain: None,
@@ -279,6 +281,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
         });
     });
 
+    let _ = ready_rx.recv();
     *MAIN_ENGINE_THREAD.lock().unwrap() = Some(new_thread);
 }
 
@@ -295,6 +298,21 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     time_ms: jni::sys::jlong,
     settings_manager: jni::objects::JObject,
 ) {
+    let zoom_ratio_method = env
+        .get_method_id("com/oakamil/olive/SettingsManager", "getZoomRatio", "()F")
+        .unwrap();
+    let _zoom_ratio_val = unsafe {
+        env.call_method_unchecked(
+            &settings_manager,
+            zoom_ratio_method,
+            jni::signature::ReturnType::Primitive(jni::signature::Primitive::Float),
+            &[],
+        )
+        .unwrap()
+        .f()
+        .unwrap()
+    };
+
     let jvm = env.get_java_vm().unwrap();
     let settings_mgr = env.new_global_ref(settings_manager).unwrap();
     let storage: Option<std::sync::Arc<dyn olive_engine::storage::PersistentStorage>> =
@@ -334,6 +352,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     if let Some(handle) = old_thread {
         let _ = handle.join();
     }
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+
     let new_thread = thread::spawn(move || {
         rt_handle.block_on(async {
             use crate::android_camera::AndroidCamera;
@@ -342,16 +362,21 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             use olive_engine::engine::{Engine, EngineConfig};
             use std::sync::Arc;
 
-            let mut cam = AndroidCamera::new(Some(internal_camera_id_str), Some(sensor_mode_str));
+            let mut cam = AndroidCamera::new(
+                Some(internal_camera_id_str),
+                Some(sensor_mode_str),
+                Some(1.0f32),
+            );
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start Android camera: {}", e);
                 return;
             }
             let camera: std::sync::Arc<dyn CameraTrait> = Arc::new(cam);
             *CAMERA.lock().unwrap() = Some(camera.clone());
+            let _ = ready_tx.send(());
 
             let config = EngineConfig {
-                gain: None,
+                gain: Some(camera.get_gain()),
                 target_centroids: 20,
                 database_path: "default_database.npz".to_string(),
                 isp: false,
@@ -460,6 +485,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
         });
     });
 
+    let _ = ready_rx.recv();
     *MAIN_ENGINE_THREAD.lock().unwrap() = Some(new_thread);
 }
 
@@ -578,6 +604,17 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraBrightn
 ) {
     if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
         cam.set_brightness(brightness);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraZoomRatio(
+    _env: JNIEnv,
+    _class: JClass,
+    zoom: jni::sys::jfloat,
+) {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.set_zoom(zoom);
     }
 }
 

@@ -37,10 +37,10 @@ object OliveEngine {
     external fun setNativeCameraFocus(distance: Float)
     external fun setNativeCameraNoiseReduction(mode: Int)
     external fun getNativeCameraExposure(): Int
-    external fun getNativeCameraGain(): Float
     external fun getNativeCameraGainRange(): FloatArray?
     external fun getNativeCameraBrightnessRange(): IntArray?
     external fun setNativeCameraBrightness(brightness: Int)
+    external fun setNativeCameraZoomRatio(zoom: Float)
     external fun getAvailableInternalCameras(): String
     external fun getLatestFrameInto(buffer: ByteBuffer): Boolean
     external fun setEnginePaused(paused: Boolean)

@@ -31,6 +31,7 @@ enum CaptureCommand {
     SetGain(i32),
     SetFocus(f32),
     SetNoiseReduction(u8),
+    SetZoom(f32),
     StopCaptureThread,
 }
 
@@ -40,13 +41,16 @@ pub struct AndroidCameraConfiguration {
     pub logical_id: String,
     pub width: u32,
     pub height: u32,
-    pub target_crop: Option<(u32, u32)>,
+    pub active_array_size: [i32; 4],
+    pub supports_zoom_ratio: bool,
     pub max_analog_gain: i32,
     pub hyperfocal_distance: f32,
     pub fov: f32,
     pub white_level: i32,
+    pub black_level: f32,
     pub format: i32,
     pub supports_contrast_curve: bool,
+    pub zoom_ratio: Option<f32>,
 }
 
 /// Context passed to the AImageReader C callback
@@ -56,6 +60,7 @@ struct ImageReaderContext {
     height: u32,
     exposure_time_us: Arc<AtomicI32>,
     white_level: f32,
+    black_level: f32,
     format: i32,
     frame_exposures: Arc<Mutex<std::collections::VecDeque<(i64, i32)>>>,
 }
@@ -81,7 +86,7 @@ impl CameraTrait for AndroidCamera {
             width: c.width,
             height: c.height,
             fps: 0,
-            crop: c.target_crop,
+            crop: None,
             initial_fov: Some(c.fov),
         })
     }
@@ -171,6 +176,10 @@ impl CameraTrait for AndroidCamera {
         self.send_command(CaptureCommand::SetNoiseReduction(mode));
     }
 
+    fn set_zoom(&self, zoom: f32) {
+        self.send_command(CaptureCommand::SetZoom(zoom));
+    }
+
     fn get_last_capture(&self) -> Option<Arc<Image>> {
         let lock = self.store.image.lock().unwrap();
         lock.clone()
@@ -239,6 +248,7 @@ pub struct CameraInfo {
     pub id: String,
     pub logical_id: String,
     pub fov: f32,
+    pub max_zoom: f32,
     pub supports_raw: bool,
 }
 
@@ -397,10 +407,32 @@ impl AndroidCamera {
                     }
                 }
 
+                // Query Max Zoom
+                let mut max_zoom = 1.0f32;
+                let mut zoom_entry: ACameraMetadata_const_entry = std::mem::zeroed();
+                if ACameraMetadata_getConstEntry(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO_RANGE.0 as u32,
+                    &mut zoom_entry,
+                ) == camera_status_t::ACAMERA_OK
+                    && zoom_entry.count >= 2
+                {
+                    max_zoom = *zoom_entry.data.f.offset(1);
+                } else if ACameraMetadata_getConstEntry(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_SCALER_AVAILABLE_MAX_DIGITAL_ZOOM.0 as u32,
+                    &mut zoom_entry,
+                ) == camera_status_t::ACAMERA_OK
+                    && zoom_entry.count >= 1
+                {
+                    max_zoom = *zoom_entry.data.f.offset(0);
+                }
+
                 cameras.push(CameraInfo {
                     id: cam_id,
                     logical_id,
                     fov: fov_deg,
+                    max_zoom,
                     supports_raw,
                 });
 
@@ -414,7 +446,11 @@ impl AndroidCamera {
         }
     }
 
-    pub fn new(requested_id: Option<String>, sensor_mode: Option<String>) -> Self {
+    pub fn new(
+        requested_id: Option<String>,
+        sensor_mode: Option<String>,
+        zoom_ratio: Option<f32>,
+    ) -> Self {
         let store = Arc::new(CaptureStore {
             image: Mutex::new(None),
             cvar: Condvar::new(),
@@ -424,9 +460,18 @@ impl AndroidCamera {
         let saved_exposure = Arc::new(AtomicI32::new(INITIAL_EXPOSURE_US));
         let config = Arc::new(Mutex::new(None));
 
-        let selected_config =
-            unsafe { Self::discover_and_configure_camera(requested_id, sensor_mode) };
-        let fixed_gain = selected_config.max_analog_gain;
+        let selected_config = unsafe {
+            Self::discover_and_configure_camera(requested_id, sensor_mode.clone(), zoom_ratio)
+        };
+        let fixed_gain = if let Some(mode) = &sensor_mode {
+            if mode == "Processed" {
+                selected_config.max_analog_gain
+            } else {
+                std::cmp::min(selected_config.max_analog_gain, 3200)
+            }
+        } else {
+            std::cmp::min(selected_config.max_analog_gain, 3200)
+        };
 
         *config.lock().unwrap() = Some(selected_config);
 
@@ -459,6 +504,7 @@ impl AndroidCamera {
     unsafe fn discover_and_configure_camera(
         requested_id: Option<String>,
         sensor_mode: Option<String>,
+        zoom_ratio: Option<f32>,
     ) -> AndroidCameraConfiguration {
         unsafe {
             let manager = ACameraManager_create();
@@ -521,7 +567,10 @@ impl AndroidCamera {
             let mut best_dim = (0, 0);
             let mut best_format = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
             let mut best_white_level = 1023;
+            let mut best_black_level = 0.0;
             let mut best_supports_contrast_curve = false;
+            let mut best_active_array = [0; 4];
+            let mut best_supports_zoom = false;
 
             info!("Total unique cameras to evaluate: {}", all_cam_ids.len());
 
@@ -591,13 +640,24 @@ impl AndroidCamera {
                 }
                 let focal_length_mm = *entry.data.f.offset(0);
 
-                // 3. Max Analog Gain
+                // 3. Max Analog and Digital Gain
+                ACameraMetadata_getConstEntry(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_SENSITIVITY_RANGE.0 as u32,
+                    &mut entry,
+                );
+                let sensor_max_total_gain = if entry.count >= 2 {
+                    *entry.data.i32_.offset(1)
+                } else {
+                    800
+                };
+
                 ACameraMetadata_getConstEntry(
                     metadata,
                     acamera_metadata_tag::ACAMERA_SENSOR_MAX_ANALOG_SENSITIVITY.0 as u32,
                     &mut entry,
                 );
-                let sensor_max_analog = if entry.count >= 1 {
+                let sensor_max_analog_gain = if entry.count >= 1 {
                     *entry.data.i32_.offset(0)
                 } else {
                     800
@@ -625,6 +685,22 @@ impl AndroidCamera {
                     *entry.data.i32_.offset(0)
                 } else {
                     1023 // Default to 10-bit max if unknown
+                };
+
+                // Query Black Level Pattern
+                ACameraMetadata_getConstEntry(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_SENSOR_BLACK_LEVEL_PATTERN.0 as u32,
+                    &mut entry,
+                );
+                let sensor_black_level = if entry.count >= 4 {
+                    let b1 = *entry.data.i32_.offset(0) as f32;
+                    let b2 = *entry.data.i32_.offset(1) as f32;
+                    let b3 = *entry.data.i32_.offset(2) as f32;
+                    let b4 = *entry.data.i32_.offset(3) as f32;
+                    (b1 + b2 + b3 + b4) / 4.0
+                } else {
+                    0.0
                 };
 
                 // Calculate Horizontal FOV
@@ -770,12 +846,50 @@ impl AndroidCamera {
                     min_fov = fov_deg;
                     best_id = cam_id.clone();
                     best_logical_id = logical_id.clone();
-                    max_analog = sensor_max_analog;
+
+                    let mut active_array_size = [0; 4];
+                    if ACameraMetadata_getConstEntry(
+                        metadata,
+                        acamera_metadata_tag::ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE.0 as u32,
+                        &mut entry,
+                    ) == camera_status_t::ACAMERA_OK
+                        && entry.count >= 4
+                    {
+                        active_array_size = [
+                            *entry.data.i32_.offset(0),
+                            *entry.data.i32_.offset(1),
+                            *entry.data.i32_.offset(2),
+                            *entry.data.i32_.offset(3),
+                        ];
+                    }
+
+                    let mut supports_zoom_ratio = false;
+                    if ACameraMetadata_getConstEntry(
+                        metadata,
+                        acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO_RANGE.0 as u32,
+                        &mut entry,
+                    ) == camera_status_t::ACAMERA_OK
+                    {
+                        supports_zoom_ratio = true;
+                    }
+
+                    if selected_format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32
+                        || selected_format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32
+                        || selected_format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32
+                    {
+                        max_analog = sensor_max_analog_gain;
+                    } else {
+                        max_analog = sensor_max_total_gain;
+                    }
+
                     hyperfocal = sensor_hyperfocal;
                     best_white_level = sensor_white_level;
+                    best_black_level = sensor_black_level;
                     best_dim = best_valid_size;
                     best_format = selected_format;
                     best_supports_contrast_curve = supports_contrast_curve;
+                    best_active_array = active_array_size;
+                    best_supports_zoom = supports_zoom_ratio;
                 }
 
                 ACameraMetadata_free(metadata);
@@ -789,7 +903,6 @@ impl AndroidCamera {
             }
 
             // No software cropping applied
-            let target_crop = None;
             info!(
                 "Camera {} selected. Native FOV: {:.1}°. Streaming at {}x{}. No software cropping applied.",
                 best_id, min_fov, best_dim.0, best_dim.1
@@ -800,13 +913,16 @@ impl AndroidCamera {
                 logical_id: best_logical_id,
                 width: best_dim.0,
                 height: best_dim.1,
-                target_crop,
+                active_array_size: best_active_array,
+                supports_zoom_ratio: best_supports_zoom,
                 max_analog_gain: max_analog,
                 hyperfocal_distance: hyperfocal,
                 fov: min_fov,
                 white_level: best_white_level,
+                black_level: best_black_level,
                 format: best_format,
                 supports_contrast_curve: best_supports_contrast_curve,
+                zoom_ratio,
             }
         }
     }
@@ -841,9 +957,18 @@ impl AndroidCamera {
                     || ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32
                     || ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32
                 {
-                    let white_level_int = ctx.white_level as u32;
-                    let bit_depth = 32 - white_level_int.leading_zeros();
-                    let shift = bit_depth.saturating_sub(8);
+                    let black_floor = ctx.black_level;
+                    let white_ceiling = ctx.white_level;
+                    let range = white_ceiling - black_floor;
+                    let scale = if range > 0.0 { 255.0 / range } else { 0.0 };
+
+                    // Build LUT for 16-bit to 8-bit dynamic scaling
+                    let mut lut = vec![0u8; 65536];
+                    for (i, val) in lut.iter_mut().enumerate() {
+                        let f_val = i as f32;
+                        let adjusted = f_val - black_floor;
+                        *val = (adjusted * scale).clamp(0.0, 255.0) as u8;
+                    }
 
                     for y in 0..height {
                         let src_row_start = y * (row_stride as usize);
@@ -855,7 +980,7 @@ impl AndroidCamera {
                                 data_slice[byte_idx + 1],
                             ]);
 
-                            image_data[dst_row_start + x] = (val >> shift) as u8;
+                            image_data[dst_row_start + x] = lut[val as usize];
                         }
                     }
                 } else {
@@ -1019,6 +1144,7 @@ impl AndroidCamera {
                 height: config.height,
                 exposure_time_us: exposure_ref.clone(),
                 white_level: config.white_level as f32,
+                black_level: config.black_level,
                 format: config.format,
                 frame_exposures: Arc::clone(&frame_exposures),
             });
@@ -1227,6 +1353,25 @@ impl AndroidCamera {
                 &shading_off,
             );
 
+            if let Some(zoom) = config.zoom_ratio {
+                if config.supports_zoom_ratio {
+                    ACaptureRequest_setEntry_float(
+                        request,
+                        acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO.0 as u32,
+                        1,
+                        &zoom,
+                    );
+                } else {
+                    let rect = calculate_zoom_rect(&config.active_array_size, zoom);
+                    ACaptureRequest_setEntry_i32(
+                        request,
+                        acamera_metadata_tag::ACAMERA_SCALER_CROP_REGION.0 as u32,
+                        4,
+                        rect.as_ptr(),
+                    );
+                }
+            }
+
             let distortion_off = acamera_metadata_enum_acamera_distortion_correction_mode::ACAMERA_DISTORTION_CORRECTION_MODE_OFF.0 as u8;
             ACaptureRequest_setEntry_u8(
                 request,
@@ -1348,6 +1493,25 @@ impl AndroidCamera {
                             );
                             true
                         }
+                        CaptureCommand::SetZoom(zoom) => {
+                            if config.supports_zoom_ratio {
+                                ACaptureRequest_setEntry_float(
+                                    request,
+                                    acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO.0 as u32,
+                                    1,
+                                    &zoom,
+                                );
+                            } else {
+                                let rect = calculate_zoom_rect(&config.active_array_size, zoom);
+                                ACaptureRequest_setEntry_i32(
+                                    request,
+                                    acamera_metadata_tag::ACAMERA_SCALER_CROP_REGION.0 as u32,
+                                    4,
+                                    rect.as_ptr(),
+                                );
+                            }
+                            true
+                        }
                     };
 
                     if changed {
@@ -1383,4 +1547,25 @@ impl Drop for AndroidCamera {
             let _ = handle.join();
         }
     }
+}
+
+fn calculate_zoom_rect(active_array: &[i32; 4], zoom: f32) -> [i32; 4] {
+    let sensor_w = active_array[2] as f32;
+    let sensor_h = active_array[3] as f32;
+
+    let crop_w = sensor_w / zoom;
+    let crop_h = sensor_h / zoom;
+
+    let center_x = active_array[0] as f32 + sensor_w / 2.0;
+    let center_y = active_array[1] as f32 + sensor_h / 2.0;
+
+    let crop_left = center_x - crop_w / 2.0;
+    let crop_top = center_y - crop_h / 2.0;
+
+    [
+        crop_left as i32,
+        crop_top as i32,
+        crop_w as i32,
+        crop_h as i32,
+    ]
 }
