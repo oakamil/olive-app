@@ -110,6 +110,45 @@ fun EngineRunningScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                val maxZoom = remember {
+                    var mZ = 1f
+                    try {
+                        if (activeCameraSelection == "internal" && settingsManager.sensorMode == "Processed") {
+                            val jsonArray =
+                                org.json.JSONArray(viewModel.getAvailableInternalCameras())
+                            for (i in 0 until jsonArray.length()) {
+                                val obj = jsonArray.getJSONObject(i)
+                                if (obj.getString("id") == settingsManager.internalCameraId) {
+                                    mZ = if (obj.has("max_zoom")) obj.getDouble("max_zoom")
+                                        .toFloat() else 1f
+                                    break
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {
+                    }
+                    mZ
+                }
+
+                if (maxZoom > 1f) {
+                    var zoomRatio by remember { mutableFloatStateOf(settingsManager.zoomRatio) }
+                    Text(
+                        "Zoom: ${String.format(java.util.Locale.US, "%.1fx", zoomRatio)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Slider(
+                        value = zoomRatio,
+                        onValueChange = {
+                            zoomRatio = it
+                            settingsManager.zoomRatio = it
+                            OliveEngine.setNativeCameraZoomRatio(it)
+                        },
+                        valueRange = 1f..5f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 if (activeCameraSelection == "internal") {
                     LaunchedEffect(viewModel.isEngineRunning) {
                         // Wait a moment for the camera to actually start and the JNI reference to be set
@@ -171,8 +210,6 @@ fun EngineRunningScreen(
                         viewModel.minAnalogGain = 100f
                         viewModel.maxAnalogGain = 3200f
                     }
-                    viewModel.currentGain = OliveEngine.getNativeCameraGain()
-                        .coerceIn(viewModel.minAnalogGain, viewModel.maxAnalogGain)
                     viewModel.currentExposure = OliveEngine.getNativeCameraExposure().toFloat()
                         .coerceIn(16667f, 5000000f)
                     val bRange = OliveEngine.getNativeCameraBrightnessRange()

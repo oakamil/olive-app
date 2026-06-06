@@ -90,11 +90,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 targetDec = if (obj.isNull("target_dec")) null else obj.getDouble("target_dec")
             )
 
-            // Sync tuning sliders with actual engine values if native
-            if (engineMode == EngineMode.NATIVE) {
-                currentExposure = OliveEngine.getNativeCameraExposure().toFloat()
-                currentGain = OliveEngine.getNativeCameraGain()
-            }
+            // Removed syncing tuning sliders here to allow them to reflect user-selected values
         } catch (_: Exception) {
             // Ignore parse errors, engine might be returning empty string
         }
@@ -206,6 +202,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (gainRange != null && gainRange.size == 2) {
                     minAnalogGain = gainRange[0]
                     maxAnalogGain = gainRange[1]
+                    val defaultGain = if (settingsManager.sensorMode == "Processed") {
+                        maxAnalogGain
+                    } else {
+                        kotlin.math.min(maxAnalogGain, 3200f)
+                    }
+                    setGain(defaultGain)
+
+                    settingsManager.zoomRatio = 1f
+                    OliveEngine.setNativeCameraZoomRatio(1f)
                 }
                 startPolling()
             }
