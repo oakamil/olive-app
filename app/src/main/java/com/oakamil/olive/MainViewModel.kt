@@ -199,14 +199,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 engineMode = EngineMode.NATIVE
 
                 val gainRange = OliveEngine.getNativeCameraGainRange()
-                if (gainRange != null && gainRange.size == 2) {
+                if (gainRange != null && gainRange.size >= 3) {
                     minAnalogGain = gainRange[0]
                     maxAnalogGain = gainRange[1]
-                    val defaultGain = if (settingsManager.sensorMode == "Processed") {
-                        maxAnalogGain
-                    } else {
-                        kotlin.math.min(maxAnalogGain, 3200f)
-                    }
+                    val defaultGain = gainRange[2]
                     setGain(defaultGain)
 
                     settingsManager.zoomRatio = 1f

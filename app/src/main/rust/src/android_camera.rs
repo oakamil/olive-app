@@ -44,6 +44,7 @@ pub struct AndroidCameraConfiguration {
     pub active_array_size: [i32; 4],
     pub supports_zoom_ratio: bool,
     pub max_analog_gain: i32,
+    pub true_max_analog_gain: i32,
     pub hyperfocal_distance: f32,
     pub fov: f32,
     pub white_level: i32,
@@ -130,15 +131,18 @@ impl CameraTrait for AndroidCamera {
         self.current_gain.load(Ordering::Relaxed) as f32
     }
 
-    fn get_gain_range(&self) -> (f32, f32) {
-        let max = self
-            .config
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|c| c.max_analog_gain as f32)
-            .unwrap_or(3200.0);
-        (100.0, max)
+    fn get_gain_range(&self) -> (f32, f32, f32) {
+        if let Some(config) = self.config.lock().unwrap().as_ref() {
+            let default_gain =
+                if config.format == ndk_sys::AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32 {
+                    config.true_max_analog_gain as f32
+                } else {
+                    std::cmp::min(config.max_analog_gain, 3200) as f32
+                };
+            (100.0, config.max_analog_gain as f32, default_gain)
+        } else {
+            (100.0, 3200.0, 3200.0)
+        }
     }
 
     fn set_gain(&self, gain: f32) {
@@ -465,7 +469,7 @@ impl AndroidCamera {
         };
         let fixed_gain = if let Some(mode) = &sensor_mode {
             if mode == "Processed" {
-                selected_config.max_analog_gain
+                selected_config.true_max_analog_gain
             } else {
                 std::cmp::min(selected_config.max_analog_gain, 3200)
             }
@@ -563,6 +567,7 @@ impl AndroidCamera {
             let mut best_logical_id = String::new();
             let mut min_fov = f32::MAX;
             let mut max_analog = 800;
+            let mut true_max_analog = 800;
             let mut hyperfocal = 0.0;
             let mut best_dim = (0, 0);
             let mut best_format = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
@@ -881,6 +886,7 @@ impl AndroidCamera {
                     } else {
                         max_analog = sensor_max_total_gain;
                     }
+                    true_max_analog = sensor_max_analog_gain;
 
                     hyperfocal = sensor_hyperfocal;
                     best_white_level = sensor_white_level;
@@ -916,6 +922,7 @@ impl AndroidCamera {
                 active_array_size: best_active_array,
                 supports_zoom_ratio: best_supports_zoom,
                 max_analog_gain: max_analog,
+                true_max_analog_gain: true_max_analog,
                 hyperfocal_distance: hyperfocal,
                 fov: min_fov,
                 white_level: best_white_level,

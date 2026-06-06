@@ -623,14 +623,15 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraGainRan
     env: JNIEnv,
     _class: JClass,
 ) -> jni::sys::jfloatArray {
-    let (min, max) = if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+    let (min, max, default_val) = if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
         cam.get_gain_range()
     } else {
-        (100.0, 3200.0)
+        (100.0, 3200.0, 3200.0)
     };
 
-    let array = env.new_float_array(2).unwrap();
-    env.set_float_array_region(&array, 0, &[min, max]).unwrap();
+    let array = env.new_float_array(3).unwrap();
+    env.set_float_array_region(&array, 0, &[min, max, default_val])
+        .unwrap();
     array.into_raw()
 }
 
