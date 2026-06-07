@@ -8,8 +8,13 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.os.PowerManager
+import android.system.Os
+import android.system.OsConstants
 import androidx.core.app.NotificationCompat
+import java.net.InetAddress
+import java.net.InetSocketAddress
 
 class OliveService : Service() {
 
@@ -37,11 +42,7 @@ class OliveService : Service() {
             } else {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(1, notification, type)
-            } else {
-                startForeground(1, notification)
-            }
+            startForeground(1, notification, type)
         } else {
             startForeground(1, notification)
         }
@@ -62,15 +63,13 @@ class OliveService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(
-                CHANNEL_ID,
-                "Olive Engine Service Channel",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(serviceChannel)
-        }
+        val serviceChannel = NotificationChannel(
+            CHANNEL_ID,
+            "Olive Engine Service Channel",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.createNotificationChannel(serviceChannel)
     }
 
     private fun acquireWakeLock() {
@@ -94,23 +93,28 @@ class OliveService : Service() {
     }
 
     private var serverThread: Thread? = null
-    private var serverSocket: java.net.ServerSocket? = null
+    private var serverFd: java.io.FileDescriptor? = null
 
     private fun startTelescopeServer() {
         serverThread = Thread {
             try {
-                serverSocket = java.net.ServerSocket(4030)
+                serverFd = Os.socket(OsConstants.AF_INET6, OsConstants.SOCK_STREAM, 0)
+                val fd = serverFd ?: return@Thread
+                Os.setsockoptInt(fd, OsConstants.SOL_SOCKET, OsConstants.SO_REUSEADDR, 1)
+                Os.bind(fd, InetSocketAddress(InetAddress.getByName("::"), 4030))
+                Os.listen(fd, 50)
+
                 while (!Thread.currentThread().isInterrupted) {
-                    val client = serverSocket?.accept() ?: break
+                    val clientFd = Os.accept(fd, null)
                     try {
-                        val pfd = android.os.ParcelFileDescriptor.fromSocket(client)
-                        val fd = pfd.detachFd()
-                        OliveEngine.handleTelescopeConnection(fd)
+                        val pfd = ParcelFileDescriptor.dup(clientFd)
+                        val nativeFd = pfd.detachFd()
+                        OliveEngine.handleTelescopeConnection(nativeFd)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     } finally {
                         try {
-                            client.close()
+                            Os.close(clientFd)
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
@@ -128,11 +132,11 @@ class OliveService : Service() {
     private fun stopTelescopeServer() {
         serverThread?.interrupt()
         try {
-            serverSocket?.close()
+            serverFd?.let { Os.close(it) }
         } catch (e: Exception) {
             e.printStackTrace()
         }
         serverThread = null
-        serverSocket = null
+        serverFd = null
     }
 }
