@@ -977,17 +977,60 @@ impl AndroidCamera {
                         *val = (adjusted * scale).clamp(0.0, 255.0) as u8;
                     }
 
-                    for y in 0..height {
-                        let src_row_start = y * (row_stride as usize);
-                        let dst_row_start = y * width;
-                        for x in 0..width {
-                            let byte_idx = src_row_start + (x * 2);
-                            let val = u16::from_le_bytes([
-                                data_slice[byte_idx],
-                                data_slice[byte_idx + 1],
-                            ]);
+                    if ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32 {
+                        for y in 0..height {
+                            let src_row_start = y * (row_stride as usize);
+                            let dst_row_start = y * width;
+                            for x in 0..width {
+                                let byte_idx = src_row_start + (x * 2);
+                                let val = u16::from_le_bytes([
+                                    data_slice[byte_idx],
+                                    data_slice[byte_idx + 1],
+                                ]);
+                                image_data[dst_row_start + x] = lut[val as usize];
+                            }
+                        }
+                    } else if ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32 {
+                        for y in 0..height {
+                            let src_row_start = y * (row_stride as usize);
+                            let dst_row_start = y * width;
+                            for (x, pix_chunk) in image_data[dst_row_start..dst_row_start + width]
+                                .chunks_exact_mut(4)
+                                .enumerate()
+                            {
+                                let byte_idx = src_row_start + x * 5;
+                                let b = &data_slice[byte_idx..byte_idx + 5];
+                                let lsb = b[4] as u16;
 
-                            image_data[dst_row_start + x] = lut[val as usize];
+                                let val0 = ((b[0] as u16) << 2) | (lsb & 0x3);
+                                let val1 = ((b[1] as u16) << 2) | ((lsb >> 2) & 0x3);
+                                let val2 = ((b[2] as u16) << 2) | ((lsb >> 4) & 0x3);
+                                let val3 = ((b[3] as u16) << 2) | ((lsb >> 6) & 0x3);
+
+                                pix_chunk[0] = lut[val0 as usize];
+                                pix_chunk[1] = lut[val1 as usize];
+                                pix_chunk[2] = lut[val2 as usize];
+                                pix_chunk[3] = lut[val3 as usize];
+                            }
+                        }
+                    } else if ctx.format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32 {
+                        for y in 0..height {
+                            let src_row_start = y * (row_stride as usize);
+                            let dst_row_start = y * width;
+                            for (x, pix_chunk) in image_data[dst_row_start..dst_row_start + width]
+                                .chunks_exact_mut(2)
+                                .enumerate()
+                            {
+                                let byte_idx = src_row_start + x * 3;
+                                let b = &data_slice[byte_idx..byte_idx + 3];
+                                let lsb = b[2] as u16;
+
+                                let val0 = ((b[0] as u16) << 4) | (lsb & 0xF);
+                                let val1 = ((b[1] as u16) << 4) | ((lsb >> 4) & 0xF);
+
+                                pix_chunk[0] = lut[val0 as usize];
+                                pix_chunk[1] = lut[val1 as usize];
+                            }
                         }
                     }
                 } else {
