@@ -8,23 +8,30 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.system.Os
 import android.system.OsConstants
 import androidx.core.app.NotificationCompat
+import android.net.wifi.WifiManager
 import java.net.InetAddress
 import java.net.InetSocketAddress
 
 class OliveService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
     private val CHANNEL_ID = "OliveServiceChannel"
 
     override fun onCreate() {
         super.onCreate()
+
+        val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+        multicastLock = wifiManager.createMulticastLock("OliveAlpacaMulticastLock")
+        multicastLock?.setReferenceCounted(true)
+        multicastLock?.acquire()
+
         createNotificationChannel()
-        startTelescopeServer()
+        startServers()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -53,8 +60,9 @@ class OliveService : Service() {
     }
 
     override fun onDestroy() {
+        multicastLock?.release()
         releaseWakeLock()
-        stopTelescopeServer()
+        stopServers()
         super.onDestroy()
     }
 
@@ -92,51 +100,152 @@ class OliveService : Service() {
         wakeLock = null
     }
 
-    private var serverThread: Thread? = null
-    private var serverFd: java.io.FileDescriptor? = null
+    private var lx200Thread: Thread? = null
+    private var lx200Fd: java.io.FileDescriptor? = null
 
-    private fun startTelescopeServer() {
-        serverThread = Thread {
+    private var alpacaThread: Thread? = null
+    private var alpacaThreadV6: Thread? = null
+    private var alpacaFd: java.io.FileDescriptor? = null
+    private var alpacaFdV6: java.io.FileDescriptor? = null
+
+    private fun startServers() {
+        lx200Thread = Thread {
             try {
-                serverFd = Os.socket(OsConstants.AF_INET6, OsConstants.SOCK_STREAM, 0)
-                val fd = serverFd ?: return@Thread
+                lx200Fd = Os.socket(OsConstants.AF_INET, OsConstants.SOCK_STREAM, 0)
+                val fd = lx200Fd!!
                 Os.setsockoptInt(fd, OsConstants.SOL_SOCKET, OsConstants.SO_REUSEADDR, 1)
-                Os.bind(fd, InetSocketAddress(InetAddress.getByName("::"), 4030))
+                Os.bind(fd, InetSocketAddress(InetAddress.getByName("0.0.0.0"), 4030))
                 Os.listen(fd, 50)
 
                 while (!Thread.currentThread().isInterrupted) {
-                    val clientFd = Os.accept(fd, null)
                     try {
-                        val pfd = ParcelFileDescriptor.dup(clientFd)
-                        val nativeFd = pfd.detachFd()
-                        OliveEngine.handleTelescopeConnection(nativeFd)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    } finally {
+                        android.util.Log.e("OliveService", "LX200 waiting for accept...")
+                        val clientFd = Os.accept(fd, null)
+                        android.util.Log.e("OliveService", "LX200 accepted socket!")
                         try {
-                            Os.close(clientFd)
+                            val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
+                            val nativeFd = pfd.detachFd()
+                            android.util.Log.e(
+                                "OliveService",
+                                "LX200 handing off nativeFd $nativeFd"
+                            )
+                            OliveEngine.handleTelescopeConnection(nativeFd)
                         } catch (e: Exception) {
-                            e.printStackTrace()
+                            android.util.Log.e("OliveService", "LX200 error during handoff", e)
+                        } finally {
+                            // Do NOT close clientFd here!
                         }
+                    } catch (e: Exception) {
+                        android.util.Log.e("OliveService", "LX200 error during accept", e)
                     }
                 }
             } catch (e: Exception) {
                 if (!Thread.currentThread().isInterrupted) {
-                    e.printStackTrace()
+                    android.util.Log.e("OliveService", "LX200 server FATAL error", e)
                 }
             }
         }
-        serverThread?.start()
+        lx200Thread?.start()
+
+        alpacaThread = Thread {
+            try {
+                alpacaFd = Os.socket(OsConstants.AF_INET, OsConstants.SOCK_STREAM, 0)
+                val fd = alpacaFd!!
+                Os.setsockoptInt(fd, OsConstants.SOL_SOCKET, OsConstants.SO_REUSEADDR, 1)
+                Os.bind(fd, InetSocketAddress(InetAddress.getByName("0.0.0.0"), 11111))
+                Os.listen(fd, 50)
+
+                while (!Thread.currentThread().isInterrupted) {
+                    try {
+                        android.util.Log.e("OliveService", "Alpaca V4 waiting for accept...")
+                        val clientFd = Os.accept(fd, null)
+                        android.util.Log.e("OliveService", "Alpaca V4 accepted socket!")
+                        try {
+                            val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
+                            val nativeFd = pfd.detachFd()
+                            android.util.Log.e(
+                                "OliveService",
+                                "Alpaca V4 handing off nativeFd \$nativeFd"
+                            )
+                            OliveEngine.handleAlpacaConnection(nativeFd)
+                        } catch (e: Exception) {
+                            android.util.Log.e("OliveService", "Alpaca V4 error during handoff", e)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("OliveService", "Alpaca V4 error during accept", e)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("OliveService", "Alpaca V4 server FATAL error", e)
+            }
+        }
+        alpacaThread?.start()
+
+        alpacaThreadV6 = Thread {
+            try {
+                alpacaFdV6 = Os.socket(OsConstants.AF_INET6, OsConstants.SOCK_STREAM, 0)
+                val fd = alpacaFdV6!!
+                Os.setsockoptInt(fd, OsConstants.SOL_SOCKET, OsConstants.SO_REUSEADDR, 1)
+                try {
+                    Os.setsockoptInt(fd, OsConstants.IPPROTO_IPV6, OsConstants.IPV6_V6ONLY, 1)
+                } catch (e: Exception) {
+                    android.util.Log.e("OliveService", "Could not set IPV6_V6ONLY", e)
+                }
+                Os.bind(fd, InetSocketAddress(InetAddress.getByName("::"), 11111))
+                Os.listen(fd, 50)
+
+                while (!Thread.currentThread().isInterrupted) {
+                    try {
+                        android.util.Log.e("OliveService", "Alpaca V6 waiting for accept...")
+                        val clientFd = Os.accept(fd, null)
+                        android.util.Log.e("OliveService", "Alpaca V6 accepted socket!")
+                        try {
+                            val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
+                            val nativeFd = pfd.detachFd()
+                            android.util.Log.e(
+                                "OliveService",
+                                "Alpaca V6 handing off nativeFd $nativeFd"
+                            )
+                            OliveEngine.handleAlpacaConnection(nativeFd)
+                        } catch (e: Exception) {
+                            android.util.Log.e("OliveService", "Alpaca V6 error during handoff", e)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("OliveService", "Alpaca V6 error during accept", e)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("OliveService", "Alpaca V6 server FATAL error", e)
+            }
+        }
+        alpacaThreadV6?.start()
+        // UDP Discovery is now handled directly by Rust to avoid startup race conditions.
     }
 
-    private fun stopTelescopeServer() {
-        serverThread?.interrupt()
+    private fun stopServers() {
+        lx200Thread?.interrupt()
+        alpacaThread?.interrupt()
+        alpacaThreadV6?.interrupt()
         try {
-            serverFd?.let { Os.close(it) }
+            lx200Fd?.let { Os.close(it) }
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        serverThread = null
-        serverFd = null
+        try {
+            alpacaFd?.let { Os.close(it) }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            alpacaFdV6?.let { Os.close(it) }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        lx200Thread = null
+        alpacaThread = null
+        alpacaThreadV6 = null
+        lx200Fd = null
+        alpacaFd = null
+        alpacaFdV6 = null
     }
 }
