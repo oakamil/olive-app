@@ -33,7 +33,7 @@ class SettingsManager(context: Context) {
     var internalCameraId: String
         get() {
             val v = prefs.getString("internal_camera_id", "0") ?: "0"
-            return if (v == "auto") "0" else v
+            return if (v == "auto" || v == "demo") "0" else v
         }
         set(value) = prefs.edit { putString("internal_camera_id", value) }
 

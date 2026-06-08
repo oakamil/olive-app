@@ -47,6 +47,7 @@ import java.util.Locale
 fun TunerScreen(
     viewModel: MainViewModel,
     settingsManager: SettingsManager,
+    activeCameraSelection: String,
     onBack: () -> Unit
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
@@ -173,7 +174,7 @@ fun TunerScreen(
 
     @Composable
     fun TuningContent() {
-        TuningControls(viewModel, settingsManager)
+        TuningControls(viewModel, settingsManager, activeCameraSelection)
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -235,7 +236,11 @@ fun TunerScreen(
 }
 
 @Composable
-fun TuningControls(viewModel: MainViewModel, settingsManager: SettingsManager) {
+fun TuningControls(
+    viewModel: MainViewModel,
+    settingsManager: SettingsManager,
+    activeCameraSelection: String
+) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
@@ -251,142 +256,147 @@ fun TuningControls(viewModel: MainViewModel, settingsManager: SettingsManager) {
             modifier = Modifier.fillMaxWidth()
         )
 
-        val maxZoom = remember {
-            var mZ = 1f
-            try {
-                if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE && settingsManager.sensorMode == "Processed") {
-                    val jsonArray = org.json.JSONArray(viewModel.getAvailableInternalCameras())
-                    for (i in 0 until jsonArray.length()) {
-                        val obj = jsonArray.getJSONObject(i)
-                        if (obj.getString("id") == settingsManager.internalCameraId) {
-                            mZ =
-                                if (obj.has("max_zoom")) obj.getDouble("max_zoom").toFloat() else 1f
-                            break
+        if (activeCameraSelection != "demo") {
+            val maxZoom = remember {
+                var mZ = 1f
+                try {
+                    if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE && settingsManager.sensorMode == "Processed") {
+                        val jsonArray = org.json.JSONArray(viewModel.getAvailableInternalCameras())
+                        for (i in 0 until jsonArray.length()) {
+                            val obj = jsonArray.getJSONObject(i)
+                            if (obj.getString("id") == settingsManager.internalCameraId) {
+                                mZ =
+                                    if (obj.has("max_zoom")) obj.getDouble("max_zoom")
+                                        .toFloat() else 1f
+                                break
+                            }
                         }
                     }
+                } catch (_: Exception) {
                 }
-            } catch (_: Exception) {
+                mZ
             }
-            mZ
-        }
 
-        if (maxZoom > 1f) {
-            var zoomRatio by remember { mutableFloatStateOf(settingsManager.zoomRatio) }
-            Text(
-                "Zoom: ${String.format(Locale.US, "%.1fx", zoomRatio)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Slider(
-                value = zoomRatio,
-                onValueChange = {
-                    zoomRatio = it
-                    settingsManager.zoomRatio = it
-                    OliveEngine.setNativeCameraZoomRatio(it)
-                },
-                valueRange = 1f..5f,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
-            Text(
-                "Exposure: ${viewModel.currentExposure.toInt()} us",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Slider(
-                value = viewModel.currentExposure,
-                onValueChange = {
-                    viewModel.setExposure(it)
-                },
-                valueRange = 16667f..5000000f,
-                modifier = Modifier.fillMaxWidth()
-            )
-        } else {
-            Text(
-                "Stacking (Frames): ${viewModel.uvcStacking}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Slider(
-                value = viewModel.uvcStacking.toFloat(),
-                onValueChange = {
-                    viewModel.updateUvcStacking(it.toInt())
-                },
-                valueRange = 1f..10f,
-                steps = 8,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        if (viewModel.engineMode == MainViewModel.EngineMode.UVC && viewModel.uvcBrightnessMax > viewModel.uvcBrightnessMin) {
-            Text(
-                "Brightness: ${viewModel.currentUvcBrightness}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Slider(
-                value = viewModel.currentUvcBrightness.toFloat(),
-                onValueChange = {
-                    viewModel.setUvcBrightness(it.toInt())
-                },
-                valueRange = viewModel.uvcBrightnessMin.toFloat()..viewModel.uvcBrightnessMax.toFloat(),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        Text(
-            "Gain: ${viewModel.currentGain.toInt()}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Slider(
-            value = viewModel.currentGain,
-            onValueChange = {
-                viewModel.setGain(it)
-            },
-            valueRange = viewModel.minAnalogGain..viewModel.maxAnalogGain.coerceAtLeast(viewModel.minAnalogGain + 1f),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
-            Text(
-                "Focus: ${String.format(Locale.US, "%.2f", viewModel.currentFocus)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Slider(
-                value = viewModel.currentFocus,
-                onValueChange = {
-                    viewModel.setFocus(it)
-                },
-                valueRange = 0.0f..10.0f,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (maxZoom > 1f) {
+                var zoomRatio by remember { mutableFloatStateOf(settingsManager.zoomRatio) }
                 Text(
-                    "Noise Reduction: ",
+                    "Zoom: ${String.format(Locale.US, "%.1fx", zoomRatio)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onBackground
                 )
-                val modes = listOf("OFF", "FAST", "HQ")
-                modes.forEachIndexed { index, name ->
-                    RadioButton(
-                        selected = viewModel.noiseReductionMode == index,
-                        onClick = {
-                            viewModel.setNoiseReduction(index)
-                        }
-                    )
+                Slider(
+                    value = zoomRatio,
+                    onValueChange = {
+                        zoomRatio = it
+                        settingsManager.zoomRatio = it
+                        OliveEngine.setNativeCameraZoomRatio(it)
+                    },
+                    valueRange = 1f..5f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
+                Text(
+                    "Exposure: ${viewModel.currentExposure.toInt()} us",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Slider(
+                    value = viewModel.currentExposure,
+                    onValueChange = {
+                        viewModel.setExposure(it)
+                    },
+                    valueRange = 16667f..5000000f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                Text(
+                    "Stacking (Frames): ${viewModel.uvcStacking}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Slider(
+                    value = viewModel.uvcStacking.toFloat(),
+                    onValueChange = {
+                        viewModel.updateUvcStacking(it.toInt())
+                    },
+                    valueRange = 1f..10f,
+                    steps = 8,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (viewModel.engineMode == MainViewModel.EngineMode.UVC && viewModel.uvcBrightnessMax > viewModel.uvcBrightnessMin) {
+                Text(
+                    "Brightness: ${viewModel.currentUvcBrightness}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Slider(
+                    value = viewModel.currentUvcBrightness.toFloat(),
+                    onValueChange = {
+                        viewModel.setUvcBrightness(it.toInt())
+                    },
+                    valueRange = viewModel.uvcBrightnessMin.toFloat()..viewModel.uvcBrightnessMax.toFloat(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            Text(
+                "Gain: ${viewModel.currentGain.toInt()}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Slider(
+                value = viewModel.currentGain,
+                onValueChange = {
+                    viewModel.setGain(it)
+                },
+                valueRange = viewModel.minAnalogGain..viewModel.maxAnalogGain.coerceAtLeast(
+                    viewModel.minAnalogGain + 1f
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
+                Text(
+                    "Focus: ${String.format(Locale.US, "%.2f", viewModel.currentFocus)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Slider(
+                    value = viewModel.currentFocus,
+                    onValueChange = {
+                        viewModel.setFocus(it)
+                    },
+                    valueRange = 0.0f..10.0f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        name,
+                        "Noise Reduction: ",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(end = 8.dp)
+                        color = MaterialTheme.colorScheme.onBackground
                     )
+                    val modes = listOf("OFF", "FAST", "HQ")
+                    modes.forEachIndexed { index, name ->
+                        RadioButton(
+                            selected = viewModel.noiseReductionMode == index,
+                            onClick = {
+                                viewModel.setNoiseReduction(index)
+                            }
+                        )
+                        Text(
+                            name,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
                 }
             }
         }
