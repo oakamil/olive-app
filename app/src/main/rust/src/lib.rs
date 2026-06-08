@@ -372,16 +372,26 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             use olive_engine::engine::{Engine, EngineConfig};
             use std::sync::Arc;
 
-            let mut cam = AndroidCamera::new(
-                Some(internal_camera_id_str),
-                Some(sensor_mode_str),
-                Some(1.0f32),
-            );
-            if let Err(e) = cam.start_capture() {
-                log::error!("Failed to start Android camera: {}", e);
-                return;
-            }
-            let camera: std::sync::Arc<dyn CameraTrait> = Arc::new(cam);
+            let camera: std::sync::Arc<dyn CameraTrait> = if internal_camera_id_str == "demo" {
+                use olive_engine::dummy_camera::DummyCamera;
+                let mut cam = DummyCamera::new();
+                if let Err(e) = cam.start_capture() {
+                    log::error!("Failed to start demo camera: {}", e);
+                    return;
+                }
+                Arc::new(cam)
+            } else {
+                let mut cam = AndroidCamera::new(
+                    Some(internal_camera_id_str.clone()),
+                    Some(sensor_mode_str.clone()),
+                    Some(1.0f32),
+                );
+                if let Err(e) = cam.start_capture() {
+                    log::error!("Failed to start Android camera: {}", e);
+                    return;
+                }
+                Arc::new(cam)
+            };
             *CAMERA.lock().unwrap() = Some(camera.clone());
             let _ = ready_tx.send(());
 
@@ -390,7 +400,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 target_centroids: 20,
                 database_path: "default_database.npz".to_string(),
                 isp: false,
-                bg_mode: olive_engine::engine::BgMode::Line,
+                bg_mode: olive_engine::engine::BgMode::Block,
                 extractor_type: ext_type,
                 crop: None,
                 downsample: false,

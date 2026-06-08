@@ -29,6 +29,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.activity.viewModels
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
@@ -253,10 +254,16 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (isInPipMode) {
-                        GuidanceDisplay(
-                            viewModel.engineStats,
-                            settingsManager.guidanceMode == "alt_az"
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(2.dp)
+                        ) {
+                            GuidanceDisplay(
+                                viewModel.engineStats,
+                                settingsManager.guidanceMode == "alt_az"
+                            )
+                        }
                     } else {
                         when (currentScreen) {
                             "main" -> MainScreen(
@@ -276,6 +283,7 @@ class MainActivity : ComponentActivity() {
                             "tuner" -> TunerScreen(
                                 viewModel = viewModel,
                                 settingsManager = settingsManager,
+                                activeCameraSelection = activeCameraSelection,
                                 onBack = { currentScreen = "main" }
                             )
                         }
@@ -316,13 +324,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun enterPipMode() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val builder = PictureInPictureParams.Builder()
-                .setAspectRatio(Rational(16, 9))
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                builder.setAutoEnterEnabled(true)
-            }
-            enterPictureInPictureMode(builder.build())
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(true)
         }
     }
 
@@ -606,12 +611,19 @@ class MainActivity : ComponentActivity() {
                     android.util.Log.e("OliveUI", "UVC camera selected but none connected!")
                     viewModel.stopEngineSync()
                 }
-            } else if (ContextCompat.checkSelfPermission(
+            } else if (activeCameraSelection == "demo" || ContextCompat.checkSelfPermission(
                     this@MainActivity,
                     Manifest.permission.CAMERA
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                viewModel.executeStartEngine(lat, lon, timeMs)
+                if (activeCameraSelection == "demo") {
+                    viewModel.updateStarSensitivity(100f)
+                } else {
+                    viewModel.updateStarSensitivity(50f)
+                }
+                val camId =
+                    if (activeCameraSelection == "demo") "demo" else settingsManager.internalCameraId
+                viewModel.executeStartEngine(camId, lat, lon, timeMs)
                 startBackgroundService("NATIVE")
                 engineStarted = true
             }

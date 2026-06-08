@@ -185,7 +185,7 @@ fun StartScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 40.dp)
+                        .padding(start = 56.dp)
                 ) {
                     Text("Camera: ", color = MaterialTheme.colorScheme.onBackground)
                     var expanded by remember { mutableStateOf(false) }
@@ -261,12 +261,43 @@ fun StartScreen(
                 )
             }
 
+            if (!isCameraConnected) {
+                Text(
+                    text = "No external camera detected.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 56.dp)
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { cameraSelection = "demo" }
+                    .padding(vertical = 8.dp)
+            ) {
+                RadioButton(
+                    selected = cameraSelection == "demo",
+                    onClick = { cameraSelection = "demo" },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                    )
+                )
+                Text(
+                    text = "Demo Camera",
+                    modifier = Modifier.padding(start = 8.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+
             if (cameraSelection == "external") {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 40.dp)
+                        .padding(start = 56.dp)
                 ) {
                     Text("FPS: ", color = MaterialTheme.colorScheme.onBackground)
                     var expandedFps by remember { mutableStateOf(false) }
@@ -308,14 +339,6 @@ fun StartScreen(
                 }
             }
 
-            if (!isCameraConnected) {
-                Text(
-                    text = "No external camera detected.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 48.dp)
-                )
-            }
 
         }
 

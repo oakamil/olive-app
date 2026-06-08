@@ -178,6 +178,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun executeStartEngine(
+        cameraId: String,
         lat: Double = INVALID_COORD,
         lon: Double = INVALID_COORD,
         timeMs: Long = 0L
@@ -187,7 +188,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 settingsManager.imuIntegration,
                 settingsManager.extractor,
                 settingsManager.sensorMode,
-                settingsManager.internalCameraId,
+                cameraId,
                 lat,
                 lon,
                 timeMs,
@@ -207,6 +208,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     settingsManager.zoomRatio = 1f
                     OliveEngine.setNativeCameraZoomRatio(1f)
+
+                    setFocus(0.0f)
+                    val defExp = OliveEngine.getNativeCameraExposure()
+                    setExposure(defExp.toFloat())
+                    setNoiseReduction(0)
+                    updateUvcStacking(1)
                 }
                 startPolling()
             }
@@ -235,11 +242,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 engineMode = EngineMode.UVC
 
                 val brightRange = OliveEngine.getNativeCameraBrightnessRange()
-                if (brightRange != null && brightRange.size == 2) {
+                if (brightRange != null && brightRange.size >= 3) {
                     uvcBrightnessMin = brightRange[0]
                     uvcBrightnessMax = brightRange[1]
-                    currentUvcBrightness = brightRange[0] // Approximation
+                    val defaultBrightness = brightRange[2]
+                    currentUvcBrightness = defaultBrightness
+                    OliveEngine.setNativeCameraBrightness(defaultBrightness)
                 }
+                updateUvcStacking(1)
                 startPolling()
             }
         }
