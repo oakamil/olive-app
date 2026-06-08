@@ -47,4 +47,6 @@ object OliveEngine {
     external fun setEngineSigma(sigma: Float)
     external fun updateUvcStacking(frames: Int)
     external fun handleTelescopeConnection(fd: Int)
+    external fun handleAlpacaConnection(fd: Int)
+    external fun handleAlpacaConnectionV6(fd: Int)
 }

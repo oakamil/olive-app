@@ -17,6 +17,8 @@ static ENGINE_STATE: Mutex<
 static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
 static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 static LX200_FD_TX: Mutex<Option<tokio::sync::mpsc::UnboundedSender<i32>>> = Mutex::new(None);
+static ALPACA_FD_TX: Mutex<Option<tokio::sync::mpsc::UnboundedSender<i32>>> = Mutex::new(None);
+static ALPACA_V6_FD_TX: Mutex<Option<tokio::sync::mpsc::UnboundedSender<i32>>> = Mutex::new(None);
 
 struct JniStorage {
     jvm: jni::JavaVM,
@@ -246,6 +248,12 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             let (fd_tx, fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
             *LX200_FD_TX.lock().unwrap() = Some(fd_tx);
 
+            let (alpaca_fd_tx, alpaca_fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            *ALPACA_FD_TX.lock().unwrap() = Some(alpaca_fd_tx);
+
+            let (alpaca_v6_fd_tx, alpaca_v6_fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            *ALPACA_V6_FD_TX.lock().unwrap() = Some(alpaca_v6_fd_tx);
+
             let mut engine = Engine::new(
                 camera,
                 config,
@@ -255,6 +263,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 Some(telescope_rt.handle().clone()),
                 storage,
                 Some(fd_rx),
+                Some(alpaca_fd_rx),
+                Some(alpaca_v6_fd_rx),
             );
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
@@ -450,6 +460,12 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             let (fd_tx, fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
             *LX200_FD_TX.lock().unwrap() = Some(fd_tx);
 
+            let (alpaca_fd_tx, alpaca_fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            *ALPACA_FD_TX.lock().unwrap() = Some(alpaca_fd_tx);
+
+            let (alpaca_v6_fd_tx, alpaca_v6_fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            *ALPACA_V6_FD_TX.lock().unwrap() = Some(alpaca_v6_fd_tx);
+
             let mut engine = Engine::new(
                 camera,
                 config,
@@ -459,6 +475,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 Some(telescope_rt.handle().clone()),
                 storage,
                 Some(fd_rx),
+                Some(alpaca_fd_rx),
+                Some(alpaca_v6_fd_rx),
             );
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
@@ -765,7 +783,54 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleTelescopeConnect
     fd: jint,
 ) {
     if let Some(tx) = LX200_FD_TX.lock().unwrap().as_ref() {
-        let _ = tx.send(fd);
+        if tx.send(fd).is_err() {
+            unsafe {
+                use std::os::unix::io::FromRawFd;
+                drop(std::fs::File::from_raw_fd(fd));
+            }
+        }
+    } else {
+        unsafe {
+            use std::os::unix::io::FromRawFd;
+            drop(std::fs::File::from_raw_fd(fd));
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnection(
+    _env: JNIEnv,
+    _class: JClass,
+    fd: jint,
+) {
+    if let Some(tx) = ALPACA_FD_TX.lock().unwrap().as_ref() {
+        if tx.send(fd).is_err() {
+            unsafe {
+                use std::os::unix::io::FromRawFd;
+                drop(std::fs::File::from_raw_fd(fd));
+            }
+        }
+    } else {
+        unsafe {
+            use std::os::unix::io::FromRawFd;
+            drop(std::fs::File::from_raw_fd(fd));
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnectionV6(
+    _env: JNIEnv,
+    _class: JClass,
+    fd: jint,
+) {
+    if let Some(tx) = ALPACA_V6_FD_TX.lock().unwrap().as_ref() {
+        if tx.send(fd).is_err() {
+            unsafe {
+                use std::os::unix::io::FromRawFd;
+                drop(std::fs::File::from_raw_fd(fd));
+            }
+        }
     } else {
         unsafe {
             use std::os::unix::io::FromRawFd;
