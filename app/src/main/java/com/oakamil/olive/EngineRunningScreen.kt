@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -23,9 +25,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -43,6 +49,8 @@ fun EngineRunningScreen(
     onToggleEngine: () -> Unit
 ) {
     var mainScreenExposure by remember { mutableFloatStateOf(1.0f) }
+    var isEnteringPip by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -79,7 +87,7 @@ fun EngineRunningScreen(
         }
 
         @Composable
-        fun OtherContent() {
+        fun StatsContent() {
             StatsDisplay(viewModel.engineStats)
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -88,9 +96,10 @@ fun EngineRunningScreen(
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.fillMaxWidth()
             )
+        }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
+        @Composable
+        fun SlidersContent() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -197,72 +206,86 @@ fun EngineRunningScreen(
                     )
                 }
             }
+        }
 
-            Button(
-                onClick = {
-                    viewModel.setEnginePaused(true)
-                    val range = OliveEngine.getNativeCameraGainRange()
-                    if (range != null && range.size >= 2) {
-                        viewModel.minAnalogGain = range[0]
-                        viewModel.maxAnalogGain =
-                            range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
-                    } else {
-                        viewModel.minAnalogGain = 100f
-                        viewModel.maxAnalogGain = 3200f
-                    }
-                    viewModel.currentExposure = OliveEngine.getNativeCameraExposure().toFloat()
-                        .coerceIn(16667f, 5000000f)
-                    val bRange = OliveEngine.getNativeCameraBrightnessRange()
-                    if (bRange != null && bRange.size >= 3) {
-                        viewModel.uvcBrightnessMin = bRange[0]
-                        viewModel.uvcBrightnessMax = bRange[1]
-                        viewModel.currentUvcBrightness = bRange[2]
-                    } else {
-                        viewModel.uvcBrightnessMin = 0
-                        viewModel.uvcBrightnessMax = 0
-                    }
-                    onNavigateToTuner()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
+        @Composable
+        fun ActionButtons() {
+            Column(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Camera Mode")
-            }
+                Button(
+                    onClick = {
+                        viewModel.setEnginePaused(true)
+                        val range = OliveEngine.getNativeCameraGainRange()
+                        if (range != null && range.size >= 2) {
+                            viewModel.minAnalogGain = range[0]
+                            viewModel.maxAnalogGain =
+                                range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
+                        } else {
+                            viewModel.minAnalogGain = 100f
+                            viewModel.maxAnalogGain = 3200f
+                        }
+                        viewModel.currentExposure = OliveEngine.getNativeCameraExposure().toFloat()
+                            .coerceIn(16667f, 5000000f)
+                        val bRange = OliveEngine.getNativeCameraBrightnessRange()
+                        if (bRange != null && bRange.size >= 3) {
+                            viewModel.uvcBrightnessMin = bRange[0]
+                            viewModel.uvcBrightnessMax = bRange[1]
+                            viewModel.currentUvcBrightness = bRange[2]
+                        } else {
+                            viewModel.uvcBrightnessMin = 0
+                            viewModel.uvcBrightnessMax = 0
+                        }
+                        onNavigateToTuner()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text("Camera Mode")
+                }
 
-            OutlinedButton(
-                onClick = onEnterPipMode,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text("Picture-in-Picture Mode")
-            }
+                OutlinedButton(
+                    onClick = {
+                        isEnteringPip = true
+                        onEnterPipMode()
+                        coroutineScope.launch {
+                            delay(1000)
+                            isEnteringPip = false
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    enabled = !isEnteringPip
+                ) {
+                    Text(if (isEnteringPip) "Entering PIP..." else "Picture-in-Picture Mode")
+                }
 
-            Button(
-                onClick = onToggleEngine,
-                modifier = Modifier
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .fillMaxWidth(),
-                enabled = !isStopping && !isStarting,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            ) {
-                Text(
-                    when {
-                        isStopping -> "Stopping..."
-                        isStarting -> "Starting..."
-                        else -> "Stop Engine"
-                    }
-                )
+                Button(
+                    onClick = onToggleEngine,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .fillMaxWidth(),
+                    enabled = !isStopping && !isStarting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text(
+                        when {
+                            isStopping -> "Stopping..."
+                            isStarting -> "Starting..."
+                            else -> "Stop Engine"
+                        }
+                    )
+                }
             }
-
         }
 
         if (isLandscape) {
@@ -274,22 +297,56 @@ fun EngineRunningScreen(
                     GuidanceContent()
                 }
                 Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
+                    modifier = Modifier.weight(1f)
                 ) {
-                    OtherContent()
+                    BoxWithConstraints(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .defaultMinSize(minHeight = maxHeight),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                StatsContent()
+                            }
+                            Column {
+                                Spacer(modifier = Modifier.height(24.dp))
+                                SlidersContent()
+                            }
+                        }
+                    }
+                    ActionButtons()
                 }
             }
         } else {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                modifier = Modifier.fillMaxSize()
             ) {
-                GuidanceContent()
-                Spacer(modifier = Modifier.height(16.dp))
-                OtherContent()
+                BoxWithConstraints(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .defaultMinSize(minHeight = maxHeight),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            GuidanceContent()
+                            Spacer(modifier = Modifier.height(16.dp))
+                            StatsContent()
+                        }
+                        Column {
+                            Spacer(modifier = Modifier.height(24.dp))
+                            SlidersContent()
+                        }
+                    }
+                }
+                ActionButtons()
             }
         }
     }
