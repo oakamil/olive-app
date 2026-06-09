@@ -329,6 +329,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setAutoEnterEnabled(true)
         }
+        enterPictureInPictureMode(builder.build())
     }
 
     private fun updateAutoPip(enable: Boolean) {

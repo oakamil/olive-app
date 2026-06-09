@@ -171,7 +171,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             }
             let camera: std::sync::Arc<dyn CameraTrait> = Arc::new(cam);
             *CAMERA.lock().unwrap() = Some(camera.clone());
-            let _ = ready_tx.send(());
 
             let config = EngineConfig {
                 gain: None,
@@ -275,6 +274,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 let _ = handles.0.join();
                 let _ = handles.1.join();
             });
+
+            let _ = ready_tx.send(());
 
             // Wait for stop signal
             let _ = rx.await;
@@ -393,7 +394,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 Arc::new(cam)
             };
             *CAMERA.lock().unwrap() = Some(camera.clone());
-            let _ = ready_tx.send(());
 
             let config = EngineConfig {
                 gain: Some(camera.get_gain()),
@@ -497,6 +497,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 let _ = handles.0.join();
                 let _ = handles.1.join();
             });
+
+            let _ = ready_tx.send(());
 
             // Wait for stop signal
             let _ = rx.await;

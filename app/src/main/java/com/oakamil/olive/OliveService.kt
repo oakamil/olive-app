@@ -11,6 +11,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.system.Os
 import android.system.OsConstants
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import android.net.wifi.WifiManager
 import java.net.InetAddress
@@ -119,29 +120,33 @@ class OliveService : Service() {
 
                 while (!Thread.currentThread().isInterrupted) {
                     try {
-                        android.util.Log.e("OliveService", "LX200 waiting for accept...")
+                        Log.d("OliveService", "LX200 waiting for accept...")
                         val clientFd = Os.accept(fd, null)
-                        android.util.Log.e("OliveService", "LX200 accepted socket!")
+                        Log.d("OliveService", "LX200 accepted socket!")
                         try {
                             val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
                             val nativeFd = pfd.detachFd()
-                            android.util.Log.e(
+                            Log.d(
                                 "OliveService",
                                 "LX200 handing off nativeFd $nativeFd"
                             )
                             OliveEngine.handleTelescopeConnection(nativeFd)
                         } catch (e: Exception) {
-                            android.util.Log.e("OliveService", "LX200 error during handoff", e)
+                            Log.e("OliveService", "LX200 error during handoff", e)
                         } finally {
-                            // Do NOT close clientFd here!
+                            try {
+                                Os.close(clientFd)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
                         }
                     } catch (e: Exception) {
-                        android.util.Log.e("OliveService", "LX200 error during accept", e)
+                        Log.e("OliveService", "LX200 error during accept", e)
                     }
                 }
             } catch (e: Exception) {
                 if (!Thread.currentThread().isInterrupted) {
-                    android.util.Log.e("OliveService", "LX200 server FATAL error", e)
+                    Log.e("OliveService", "LX200 server FATAL error", e)
                 }
             }
         }
@@ -157,26 +162,32 @@ class OliveService : Service() {
 
                 while (!Thread.currentThread().isInterrupted) {
                     try {
-                        android.util.Log.e("OliveService", "Alpaca V4 waiting for accept...")
+                        Log.d("OliveService", "Alpaca V4 waiting for accept...")
                         val clientFd = Os.accept(fd, null)
-                        android.util.Log.e("OliveService", "Alpaca V4 accepted socket!")
+                        Log.d("OliveService", "Alpaca V4 accepted socket!")
                         try {
                             val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
                             val nativeFd = pfd.detachFd()
-                            android.util.Log.e(
+                            Log.d(
                                 "OliveService",
-                                "Alpaca V4 handing off nativeFd \$nativeFd"
+                                "Alpaca V4 handing off nativeFd $nativeFd"
                             )
                             OliveEngine.handleAlpacaConnection(nativeFd)
                         } catch (e: Exception) {
-                            android.util.Log.e("OliveService", "Alpaca V4 error during handoff", e)
+                            Log.e("OliveService", "Alpaca V4 error during handoff", e)
+                        } finally {
+                            try {
+                                Os.close(clientFd)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
                         }
                     } catch (e: Exception) {
-                        android.util.Log.e("OliveService", "Alpaca V4 error during accept", e)
+                        Log.e("OliveService", "Alpaca V4 error during accept", e)
                     }
                 }
             } catch (e: Exception) {
-                android.util.Log.e("OliveService", "Alpaca V4 server FATAL error", e)
+                Log.e("OliveService", "Alpaca V4 server FATAL error", e)
             }
         }
         alpacaThread?.start()
@@ -189,33 +200,39 @@ class OliveService : Service() {
                 try {
                     Os.setsockoptInt(fd, OsConstants.IPPROTO_IPV6, OsConstants.IPV6_V6ONLY, 1)
                 } catch (e: Exception) {
-                    android.util.Log.e("OliveService", "Could not set IPV6_V6ONLY", e)
+                    Log.e("OliveService", "Could not set IPV6_V6ONLY", e)
                 }
                 Os.bind(fd, InetSocketAddress(InetAddress.getByName("::"), 11111))
                 Os.listen(fd, 50)
 
                 while (!Thread.currentThread().isInterrupted) {
                     try {
-                        android.util.Log.e("OliveService", "Alpaca V6 waiting for accept...")
+                        Log.d("OliveService", "Alpaca V6 waiting for accept...")
                         val clientFd = Os.accept(fd, null)
-                        android.util.Log.e("OliveService", "Alpaca V6 accepted socket!")
+                        Log.d("OliveService", "Alpaca V6 accepted socket!")
                         try {
                             val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
                             val nativeFd = pfd.detachFd()
-                            android.util.Log.e(
+                            Log.d(
                                 "OliveService",
                                 "Alpaca V6 handing off nativeFd $nativeFd"
                             )
                             OliveEngine.handleAlpacaConnection(nativeFd)
                         } catch (e: Exception) {
-                            android.util.Log.e("OliveService", "Alpaca V6 error during handoff", e)
+                            Log.e("OliveService", "Alpaca V6 error during handoff", e)
+                        } finally {
+                            try {
+                                Os.close(clientFd)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
                         }
                     } catch (e: Exception) {
-                        android.util.Log.e("OliveService", "Alpaca V6 error during accept", e)
+                        Log.e("OliveService", "Alpaca V6 error during accept", e)
                     }
                 }
             } catch (e: Exception) {
-                android.util.Log.e("OliveService", "Alpaca V6 server FATAL error", e)
+                Log.e("OliveService", "Alpaca V6 server FATAL error", e)
             }
         }
         alpacaThreadV6?.start()
