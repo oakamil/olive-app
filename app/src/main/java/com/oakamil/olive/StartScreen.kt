@@ -270,28 +270,6 @@ fun StartScreen(
                 )
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { cameraSelection = "demo" }
-                    .padding(vertical = 8.dp)
-            ) {
-                RadioButton(
-                    selected = cameraSelection == "demo",
-                    onClick = { cameraSelection = "demo" },
-                    colors = RadioButtonDefaults.colors(
-                        selectedColor = MaterialTheme.colorScheme.primary,
-                        unselectedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                    )
-                )
-                Text(
-                    text = "Demo Camera",
-                    modifier = Modifier.padding(start = 8.dp),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
-
             if (cameraSelection == "external") {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -338,6 +316,29 @@ fun StartScreen(
                     }
                 }
             }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { cameraSelection = "demo" }
+                    .padding(vertical = 8.dp)
+            ) {
+                RadioButton(
+                    selected = cameraSelection == "demo",
+                    onClick = { cameraSelection = "demo" },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                    )
+                )
+                Text(
+                    text = "Demo Camera",
+                    modifier = Modifier.padding(start = 8.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+
 
 
         }
