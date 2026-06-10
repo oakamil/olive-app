@@ -241,7 +241,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.UVC
 
-                val brightRange = OliveEngine.getNativeCameraBrightnessRange()
+                var brightRange = OliveEngine.getNativeCameraBrightnessRange()
+                var gainRange = OliveEngine.getNativeCameraGainRange()
+                var retries = 0
+
+                // Wait up to 2 seconds for UVC ranges to be populated
+                while ((brightRange == null || brightRange.size < 3 || brightRange[1] == 100) &&
+                       (gainRange == null || gainRange.size < 3 || gainRange[1] == 100f) &&
+                       retries < 20) {
+                    delay(100)
+                    brightRange = OliveEngine.getNativeCameraBrightnessRange()
+                    gainRange = OliveEngine.getNativeCameraGainRange()
+                    retries++
+                }
+
                 if (brightRange != null && brightRange.size >= 3) {
                     uvcBrightnessMin = brightRange[0]
                     uvcBrightnessMax = brightRange[1]
@@ -249,6 +262,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     currentUvcBrightness = defaultBrightness
                     OliveEngine.setNativeCameraBrightness(defaultBrightness)
                 }
+
+                if (gainRange != null && gainRange.size >= 3) {
+                    minAnalogGain = gainRange[0]
+                    maxAnalogGain = gainRange[1]
+                    val defaultGain = gainRange[2]
+                    setGain(defaultGain)
+                }
+
                 updateUvcStacking(1)
                 startPolling()
             }

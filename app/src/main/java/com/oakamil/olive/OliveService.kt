@@ -244,17 +244,26 @@ class OliveService : Service() {
         alpacaThread?.interrupt()
         alpacaThreadV6?.interrupt()
         try {
-            lx200Fd?.let { Os.close(it) }
+            lx200Fd?.let {
+                try { Os.shutdown(it, OsConstants.SHUT_RDWR) } catch (e: Exception) {}
+                Os.close(it)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
         try {
-            alpacaFd?.let { Os.close(it) }
+            alpacaFd?.let {
+                try { Os.shutdown(it, OsConstants.SHUT_RDWR) } catch (e: Exception) {}
+                Os.close(it)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
         try {
-            alpacaFdV6?.let { Os.close(it) }
+            alpacaFdV6?.let {
+                try { Os.shutdown(it, OsConstants.SHUT_RDWR) } catch (e: Exception) {}
+                Os.close(it)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
