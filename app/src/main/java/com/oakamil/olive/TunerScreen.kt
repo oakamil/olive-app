@@ -113,33 +113,34 @@ fun TunerScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // Live Preview with Pan/Zoom
-        viewModel.latestFrame?.let {
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(360.dp)
-                    .padding(8.dp)
-                    .background(MaterialTheme.colorScheme.surface)
-                    .clipToBounds()
-                    .transformable(
-                        state = rememberTransformableState { zoomChange, panChange, _ ->
-                            scale = (scale * zoomChange).coerceIn(1f, 10f)
-                            val maxOffset =
-                                (scale - 1) * 300f // Approximate bound, fine for preview
-                            offset = Offset(
-                                x = (offset.x + panChange.x * scale).coerceIn(
-                                    -maxOffset,
-                                    maxOffset
-                                ),
-                                y = (offset.y + panChange.y * scale).coerceIn(-maxOffset, maxOffset)
-                            )
-                        }
-                    )
-            ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(360.dp)
+                .padding(8.dp)
+                .background(MaterialTheme.colorScheme.surface)
+                .clipToBounds()
+                .transformable(
+                    state = rememberTransformableState { zoomChange, panChange, _ ->
+                        scale = (scale * zoomChange).coerceIn(1f, 10f)
+                        val maxOffset =
+                            (scale - 1) * 300f // Approximate bound, fine for preview
+                        offset = Offset(
+                            x = (offset.x + panChange.x * scale).coerceIn(
+                                -maxOffset,
+                                maxOffset
+                            ),
+                            y = (offset.y + panChange.y * scale).coerceIn(-maxOffset, maxOffset)
+                        )
+                    }
+                )
+        ) {
+            val frame = viewModel.latestFrame
+            if (frame != null) {
                 val cW = maxWidth.value
                 val cH = maxHeight.value
-                val bW = it.width.toFloat()
-                val bH = it.height.toFloat()
+                val bW = frame.width.toFloat()
+                val bH = frame.height.toFloat()
 
                 val fitScale = minOf(cW / bW, cH / bH)
                 val drawnWidth = bW * fitScale
@@ -152,7 +153,7 @@ fun TunerScreen(
                 }
 
                 androidx.compose.foundation.Image(
-                    bitmap = it,
+                    bitmap = frame,
                     contentDescription = "Live Preview",
                     modifier = Modifier
                         .fillMaxSize()
@@ -164,16 +165,14 @@ fun TunerScreen(
                             rotationZ = imageRotation
                         )
                 )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Waiting for frame...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-        } ?: Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(360.dp)
-                .padding(8.dp)
-                .background(MaterialTheme.colorScheme.surface),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("Waiting for frame...", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 
@@ -348,7 +347,8 @@ fun TuningControls(
                 )
             }
 
-            val gainLabel = if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) "ISO" else "Gain"
+            val gainLabel =
+                if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) "ISO" else "Gain"
             Text(
                 "$gainLabel: ${viewModel.currentGain.toInt()}",
                 style = MaterialTheme.typography.labelSmall,
@@ -424,7 +424,9 @@ fun TuningControls(
                         Text(
                             name,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isSupported) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.38f),
+                            color = if (isSupported) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(
+                                alpha = 0.38f
+                            ),
                             modifier = Modifier.padding(end = 8.dp)
                         )
                     }
