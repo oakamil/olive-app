@@ -1,12 +1,15 @@
-use nalgebra::Vector3;
+use nalgebra::{UnitQuaternion, Vector3};
 use ndk_sys::*;
 use olive_engine::imu::ImuDevice;
 use std::ptr;
+use std::time::Instant;
 
 pub struct AndroidImu {
     manager: *mut ASensorManager,
     queue: *mut ASensorEventQueue,
     sensor: *const ASensor,
+    last_engine_poll_time: Option<Instant>,
+    last_hardware_timestamp: Option<i64>,
 }
 
 unsafe impl Send for AndroidImu {}
@@ -18,6 +21,8 @@ impl AndroidImu {
             manager: ptr::null_mut(),
             queue: ptr::null_mut(),
             sensor: ptr::null(),
+            last_engine_poll_time: None,
+            last_hardware_timestamp: None,
         }
     }
 }
@@ -39,12 +44,10 @@ impl ImuDevice for AndroidImu {
                 return Err("Failed to get ASensorManager".to_string());
             }
 
-            self.sensor = ASensorManager_getDefaultSensor(
-                self.manager,
-                ASENSOR_TYPE_GYROSCOPE_UNCALIBRATED as i32,
-            );
+            self.sensor =
+                ASensorManager_getDefaultSensor(self.manager, ASENSOR_TYPE_GYROSCOPE as i32);
             if self.sensor.is_null() {
-                return Err("Failed to get ASENSOR_TYPE_GYROSCOPE_UNCALIBRATED".to_string());
+                return Err("Failed to get ASENSOR_TYPE_GYROSCOPE".to_string());
             }
 
             self.queue =
@@ -78,38 +81,72 @@ impl ImuDevice for AndroidImu {
 
             if ident >= 0 {
                 let mut event = std::mem::MaybeUninit::<ASensorEvent>::zeroed();
-                // Read all available events, keeping the latest one
-                let mut latest_gyro: Option<Vector3<f64>> = None;
+
+                let mut accumulated_q = UnitQuaternion::identity();
+                let mut processed_events = 0;
+                let mut last_gyro: Option<Vector3<f64>> = None;
 
                 while ASensorEventQueue_getEvents(self.queue, event.as_mut_ptr(), 1) > 0 {
                     let ev = event.assume_init();
-                    if ev.type_ == ASENSOR_TYPE_GYROSCOPE_UNCALIBRATED as i32 {
+                    if ev.type_ == ASENSOR_TYPE_GYROSCOPE as i32 {
                         let x = ev
                             .__bindgen_anon_1
                             .__bindgen_anon_1
-                            .uncalibrated_gyro
+                            .vector
                             .__bindgen_anon_1
                             .__bindgen_anon_1
-                            .x_uncalib as f64;
+                            .x as f64;
                         let y = ev
                             .__bindgen_anon_1
                             .__bindgen_anon_1
-                            .uncalibrated_gyro
+                            .vector
                             .__bindgen_anon_1
                             .__bindgen_anon_1
-                            .y_uncalib as f64;
+                            .y as f64;
                         let z = ev
                             .__bindgen_anon_1
                             .__bindgen_anon_1
-                            .uncalibrated_gyro
+                            .vector
                             .__bindgen_anon_1
                             .__bindgen_anon_1
-                            .z_uncalib as f64;
-                        latest_gyro = Some(Vector3::new(x, y, z));
+                            .z as f64;
+                        let gyro_vec = Vector3::new(x, y, z);
+                        last_gyro = Some(gyro_vec);
+
+                        if let Some(last_ts) = self.last_hardware_timestamp {
+                            let dt_hw = (ev.timestamp - last_ts) as f64 / 1_000_000_000.0;
+                            // Guard against weird backwards or zero timestamps
+                            if dt_hw > 0.0 && dt_hw < 1.0 {
+                                let delta_q = UnitQuaternion::new(gyro_vec * dt_hw);
+                                accumulated_q *= delta_q;
+                            }
+                        }
+                        self.last_hardware_timestamp = Some(ev.timestamp);
+                        processed_events += 1;
                     }
                 }
-                if latest_gyro.is_some() {
-                    return Ok(latest_gyro);
+
+                if processed_events > 0 {
+                    let now = Instant::now();
+                    if let Some(last_engine_time) = self.last_engine_poll_time {
+                        let dt_engine = now.duration_since(last_engine_time).as_secs_f64();
+                        self.last_engine_poll_time = Some(now);
+
+                        if dt_engine > 0.0001 {
+                            let angle = accumulated_q.angle();
+                            if angle > 1e-8 {
+                                if let Some(axis) = accumulated_q.axis() {
+                                    let equivalent_velocity =
+                                        axis.into_inner() * (angle / dt_engine);
+                                    return Ok(Some(equivalent_velocity));
+                                }
+                            }
+                        }
+                    } else {
+                        self.last_engine_poll_time = Some(now);
+                    }
+                    // Return the last instantaneous reading if angle was tiny or first poll
+                    return Ok(last_gyro);
                 }
             }
         }

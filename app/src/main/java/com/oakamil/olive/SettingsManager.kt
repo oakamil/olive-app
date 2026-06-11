@@ -27,8 +27,12 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit { putString("extractor", value) }
 
     var sensorMode: String
-        get() = prefs.getString("sensor_mode", "Raw") ?: "Raw"
+        get() = prefs.getString("sensor_mode", "Processed") ?: "Processed"
         set(value) = prefs.edit { putString("sensor_mode", value) }
+
+    var downsampling: Int
+        get() = prefs.getInt("downsampling", 0)
+        set(value) = prefs.edit { putInt("downsampling", value) }
 
     var internalCameraId: String
         get() {

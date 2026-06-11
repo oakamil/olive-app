@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -58,6 +59,10 @@ fun TunerScreen(
     val context = LocalContext.current
     val view = LocalView.current
     val displayRotation = view.display?.rotation ?: Surface.ROTATION_0
+
+    LaunchedEffect(Unit) {
+        viewModel.fetchRealtimeSettings()
+    }
 
     val sensorOrientation = remember(viewModel.engineMode, settingsManager.internalCameraId) {
         if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) {
@@ -343,8 +348,9 @@ fun TuningControls(
                 )
             }
 
+            val gainLabel = if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) "ISO" else "Gain"
             Text(
-                "Gain: ${viewModel.currentGain.toInt()}",
+                "$gainLabel: ${viewModel.currentGain.toInt()}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -375,7 +381,7 @@ fun TuningControls(
                 )
             }
 
-            if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
+            if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE && settingsManager.sensorMode == "Processed") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Noise Reduction: ",
@@ -394,6 +400,31 @@ fun TuningControls(
                             name,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Hot Pixel Mode: ",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    val modes = listOf("OFF", "FAST", "HQ")
+                    modes.forEachIndexed { index, name ->
+                        val isSupported = viewModel.supportedHotPixelModes.contains(index)
+                        RadioButton(
+                            selected = viewModel.hotPixelMode == index,
+                            onClick = {
+                                viewModel.updateHotPixelMode(index)
+                            },
+                            enabled = isSupported
+                        )
+                        Text(
+                            name,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSupported) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.38f),
                             modifier = Modifier.padding(end = 8.dp)
                         )
                     }
