@@ -1,6 +1,7 @@
 package com.oakamil.olive
 
 import android.content.res.Configuration
+import android.util.Log
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 
 @Composable
 fun EngineRunningScreen(
@@ -142,7 +144,7 @@ fun EngineRunningScreen(
                 if (maxZoom > 1f) {
                     var zoomRatio by remember { mutableFloatStateOf(settingsManager.zoomRatio) }
                     Text(
-                        "Zoom: ${String.format(java.util.Locale.US, "%.1fx", zoomRatio)}",
+                        "Zoom: ${String.format(Locale.US, "%.1fx", zoomRatio)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onBackground
                     )
@@ -161,16 +163,16 @@ fun EngineRunningScreen(
                 if (activeCameraSelection == "internal") {
                     LaunchedEffect(viewModel.isEngineRunning) {
                         // Wait a moment for the camera to actually start and the JNI reference to be set
-                        kotlinx.coroutines.delay(1000)
+                        delay(1000)
                         val rawExp = OliveEngine.getNativeCameraExposure()
-                        android.util.Log.d("OliveUI", "Initial exposure from native: $rawExp")
+                        Log.d("OliveUI", "Initial exposure from native: $rawExp")
                         mainScreenExposure = (rawExp / 1000000f).coerceIn(0.2f, 5.0f)
                     }
 
                     Text(
                         "Exposure: ${
                             String.format(
-                                java.util.Locale.US,
+                                Locale.US,
                                 "%.1f",
                                 mainScreenExposure
                             )
@@ -369,9 +371,20 @@ fun StatsDisplay(stats: EngineStats) {
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Text("RA: ${stats.ra?.let { String.format(java.util.Locale.US, "%.4f", it) } ?: "-"}",
+            Text("RA: ${stats.ra?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}",
                 color = MaterialTheme.colorScheme.onBackground)
-            Text("Dec: ${stats.dec?.let { String.format(java.util.Locale.US, "%.4f", it) } ?: "-"}",
+            Text("Dec: ${stats.dec?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}",
+                color = MaterialTheme.colorScheme.onBackground)
+            Text(
+                "FOV: ${
+                    stats.fov?.let {
+                        String.format(
+                            Locale.US,
+                            "%.2f°",
+                            it
+                        )
+                    } ?: "-"
+                }",
                 color = MaterialTheme.colorScheme.onBackground)
         }
 
@@ -381,23 +394,29 @@ fun StatsDisplay(stats: EngineStats) {
             horizontalAlignment = Alignment.Start
         ) {
             Text(
-                "Exposure: ${String.format(java.util.Locale.US, "%.2f", stats.exposureMs)} ms",
+                "Exposure: ${String.format(Locale.US, "%.2f", stats.exposureMs)} ms",
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                "Post-Process: ${String.format(java.util.Locale.US, "%.1f", stats.postProcessMs)} ms",
+                "Post-Process: ${
+                    String.format(
+                        Locale.US,
+                        "%.1f",
+                        stats.postProcessMs
+                    )
+                } ms",
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                "Extraction: ${String.format(java.util.Locale.US, "%.1f", stats.extractMs)} ms",
+                "Extraction: ${String.format(Locale.US, "%.1f", stats.extractMs)} ms",
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                "Solve: ${String.format(java.util.Locale.US, "%.1f", stats.solveMs)} ms",
+                "Solve: ${String.format(Locale.US, "%.1f", stats.solveMs)} ms",
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                "Solve Rate: ${String.format(java.util.Locale.US, "%.2f", stats.solveRateHz)} Hz",
+                "Solve Rate: ${String.format(Locale.US, "%.2f", stats.solveRateHz)} Hz",
                 color = MaterialTheme.colorScheme.onBackground
             )
         }

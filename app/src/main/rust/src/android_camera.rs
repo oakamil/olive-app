@@ -19,6 +19,10 @@ const INITIAL_EXPOSURE_US: i32 = 500_000;
 const MIN_EXPOSURE_US: i32 = 16_667;
 const MAX_EXPOSURE_US: i32 = 5_000_000;
 
+pub static CURRENT_HOT_PIXEL_MODE: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
+pub static SUPPORTED_HOT_PIXEL_MODES: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+
 // --- Data Structures ---
 
 struct CaptureStore {
@@ -679,6 +683,18 @@ impl AndroidCamera {
                 } else {
                     0.0
                 };
+
+                ACameraMetadata_getConstEntry(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_HOT_PIXEL_AVAILABLE_HOT_PIXEL_MODES.0 as u32,
+                    &mut entry,
+                );
+                if entry.count > 0 {
+                    let modes = std::slice::from_raw_parts(entry.data.u8_, entry.count as usize);
+                    let mut global_modes = SUPPORTED_HOT_PIXEL_MODES.lock().unwrap();
+                    global_modes.clear();
+                    global_modes.extend_from_slice(modes);
+                }
 
                 // Query White Level
                 ACameraMetadata_getConstEntry(
@@ -1385,22 +1401,22 @@ impl AndroidCamera {
                 &awb_mode_off,
             );
 
-            let hot_pixel_off =
-                acamera_metadata_enum_acamera_hot_pixel_mode::ACAMERA_HOT_PIXEL_MODE_OFF.0 as u8;
+            let mut current_hot_pixel = CURRENT_HOT_PIXEL_MODE.load(Ordering::Relaxed) as u8;
             ACaptureRequest_setEntry_u8(
                 request,
                 acamera_metadata_tag::ACAMERA_HOT_PIXEL_MODE.0 as u32,
                 1,
-                &hot_pixel_off,
+                &current_hot_pixel,
             );
 
-            let shading_off =
-                acamera_metadata_enum_acamera_shading_mode::ACAMERA_SHADING_MODE_OFF.0 as u8;
+            let shading_hq =
+                acamera_metadata_enum_acamera_shading_mode::ACAMERA_SHADING_MODE_HIGH_QUALITY.0
+                    as u8;
             ACaptureRequest_setEntry_u8(
                 request,
                 acamera_metadata_tag::ACAMERA_SHADING_MODE.0 as u32,
                 1,
-                &shading_off,
+                &shading_hq,
             );
 
             if let Some(zoom) = config.zoom_ratio {
@@ -1422,12 +1438,28 @@ impl AndroidCamera {
                 }
             }
 
-            let distortion_off = acamera_metadata_enum_acamera_distortion_correction_mode::ACAMERA_DISTORTION_CORRECTION_MODE_OFF.0 as u8;
+            let distortion_hq = acamera_metadata_enum_acamera_distortion_correction_mode::ACAMERA_DISTORTION_CORRECTION_MODE_HIGH_QUALITY.0 as u8;
             ACaptureRequest_setEntry_u8(
                 request,
                 acamera_metadata_tag::ACAMERA_DISTORTION_CORRECTION_MODE.0 as u32,
                 1,
-                &distortion_off,
+                &distortion_hq,
+            );
+
+            let aberration_off = acamera_metadata_enum_acamera_color_correction_aberration_mode::ACAMERA_COLOR_CORRECTION_ABERRATION_MODE_OFF.0 as u8;
+            ACaptureRequest_setEntry_u8(
+                request,
+                acamera_metadata_tag::ACAMERA_COLOR_CORRECTION_ABERRATION_MODE.0 as u32,
+                1,
+                &aberration_off,
+            );
+
+            let color_correction_hq = acamera_metadata_enum_acamera_color_correction_mode::ACAMERA_COLOR_CORRECTION_MODE_HIGH_QUALITY.0 as u8;
+            ACaptureRequest_setEntry_u8(
+                request,
+                acamera_metadata_tag::ACAMERA_COLOR_CORRECTION_MODE.0 as u32,
+                1,
+                &color_correction_hq,
             );
 
             let black_level_lock = 1u8; // true
@@ -1490,6 +1522,20 @@ impl AndroidCamera {
                 // Poll Looper to drive the AImageReader callbacks
                 let _looper = ALooper_forThread();
                 ALooper_pollAll(10, ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
+
+                let mut request_changed = false;
+
+                let new_hot_pixel = CURRENT_HOT_PIXEL_MODE.load(Ordering::Relaxed) as u8;
+                if new_hot_pixel != current_hot_pixel {
+                    current_hot_pixel = new_hot_pixel;
+                    ACaptureRequest_setEntry_u8(
+                        request,
+                        acamera_metadata_tag::ACAMERA_HOT_PIXEL_MODE.0 as u32,
+                        1,
+                        &current_hot_pixel,
+                    );
+                    request_changed = true;
+                }
 
                 while let Ok(cmd) = rx.try_recv() {
                     let changed = match cmd {
@@ -1573,7 +1619,18 @@ impl AndroidCamera {
                             &mut request,
                             ptr::null_mut(),
                         );
+                        request_changed = false; // Reset to avoid double apply
                     }
+                }
+
+                if request_changed {
+                    ACameraCaptureSession_setRepeatingRequest(
+                        session,
+                        &mut capture_callbacks,
+                        1,
+                        &mut request,
+                        ptr::null_mut(),
+                    );
                 }
             }
 

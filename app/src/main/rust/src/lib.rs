@@ -16,9 +16,9 @@ static ENGINE_STATE: Mutex<
 > = Mutex::new(None);
 static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
 static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
-static LX200_FD_TX: Mutex<Option<tokio::sync::mpsc::UnboundedSender<i32>>> = Mutex::new(None);
-static ALPACA_FD_TX: Mutex<Option<tokio::sync::mpsc::UnboundedSender<i32>>> = Mutex::new(None);
-static ALPACA_V6_FD_TX: Mutex<Option<tokio::sync::mpsc::UnboundedSender<i32>>> = Mutex::new(None);
+static LX200_FD_TX: Mutex<Option<tokio::sync::mpsc::Sender<i32>>> = Mutex::new(None);
+static ALPACA_FD_TX: Mutex<Option<tokio::sync::mpsc::Sender<i32>>> = Mutex::new(None);
+static ALPACA_V6_FD_TX: Mutex<Option<tokio::sync::mpsc::Sender<i32>>> = Mutex::new(None);
 
 struct JniStorage {
     jvm: jni::JavaVM,
@@ -111,6 +111,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     imu_enabled: jni::sys::jboolean,
     uvc_fps: jint,
     extractor: jni::objects::JString,
+    downsample_mode: jint,
     latitude: jni::sys::jdouble,
     longitude: jni::sys::jdouble,
     time_ms: jni::sys::jlong,
@@ -164,7 +165,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             use olive_engine::uvc_camera::Camera;
             use std::sync::Arc;
 
-            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd), false);
+            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd), false, None);
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start UVC camera: {}", e);
                 return;
@@ -180,7 +181,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 bg_mode: olive_engine::engine::BgMode::Block,
                 extractor_type: ext_type,
                 crop: None,
-                downsample: true,
+                downsample: downsample_mode as u8,
                 bypass_calibration: true,
                 noise_filter: false,
                 initial_fov: None,
@@ -236,7 +237,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             if telescope_runtime_lock.is_none() {
                 *telescope_runtime_lock = Some(
                     tokio::runtime::Builder::new_multi_thread()
-                        .worker_threads(1)
                         .enable_all()
                         .build()
                         .unwrap(),
@@ -244,13 +244,13 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             }
             let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
 
-            let (fd_tx, fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            let (fd_tx, fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
             *LX200_FD_TX.lock().unwrap() = Some(fd_tx);
 
-            let (alpaca_fd_tx, alpaca_fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            let (alpaca_fd_tx, alpaca_fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
             *ALPACA_FD_TX.lock().unwrap() = Some(alpaca_fd_tx);
 
-            let (alpaca_v6_fd_tx, alpaca_v6_fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            let (alpaca_v6_fd_tx, alpaca_v6_fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
             *ALPACA_V6_FD_TX.lock().unwrap() = Some(alpaca_v6_fd_tx);
 
             let mut engine = Engine::new(
@@ -304,6 +304,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     extractor: jni::objects::JString,
     sensor_mode: jni::objects::JString,
     internal_camera_id: jni::objects::JString,
+    downsample_mode: jni::sys::jint,
     latitude: jni::sys::jdouble,
     longitude: jni::sys::jdouble,
     time_ms: jni::sys::jlong,
@@ -403,7 +404,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 bg_mode: olive_engine::engine::BgMode::Block,
                 extractor_type: ext_type,
                 crop: None,
-                downsample: false,
+                downsample: downsample_mode as u8,
                 bypass_calibration: true,
                 noise_filter: true,
                 initial_fov: camera.get_config().and_then(|c| c.initial_fov),
@@ -459,7 +460,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             if telescope_runtime_lock.is_none() {
                 *telescope_runtime_lock = Some(
                     tokio::runtime::Builder::new_multi_thread()
-                        .worker_threads(1)
                         .enable_all()
                         .build()
                         .unwrap(),
@@ -467,13 +467,13 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             }
             let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
 
-            let (fd_tx, fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            let (fd_tx, fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
             *LX200_FD_TX.lock().unwrap() = Some(fd_tx);
 
-            let (alpaca_fd_tx, alpaca_fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            let (alpaca_fd_tx, alpaca_fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
             *ALPACA_FD_TX.lock().unwrap() = Some(alpaca_fd_tx);
 
-            let (alpaca_v6_fd_tx, alpaca_v6_fd_rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+            let (alpaca_v6_fd_tx, alpaca_v6_fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
             *ALPACA_V6_FD_TX.lock().unwrap() = Some(alpaca_v6_fd_tx);
 
             let mut engine = Engine::new(
@@ -795,7 +795,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleTelescopeConnect
     fd: jint,
 ) {
     if let Some(tx) = LX200_FD_TX.lock().unwrap().as_ref() {
-        if tx.send(fd).is_err() {
+        if tx.try_send(fd).is_err() {
             unsafe {
                 use std::os::unix::io::FromRawFd;
                 drop(std::fs::File::from_raw_fd(fd));
@@ -816,7 +816,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnection
     fd: jint,
 ) {
     if let Some(tx) = ALPACA_FD_TX.lock().unwrap().as_ref() {
-        if tx.send(fd).is_err() {
+        if tx.try_send(fd).is_err() {
             unsafe {
                 use std::os::unix::io::FromRawFd;
                 drop(std::fs::File::from_raw_fd(fd));
@@ -837,7 +837,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnection
     fd: jint,
 ) {
     if let Some(tx) = ALPACA_V6_FD_TX.lock().unwrap().as_ref() {
-        if tx.send(fd).is_err() {
+        if tx.try_send(fd).is_err() {
             unsafe {
                 use std::os::unix::io::FromRawFd;
                 drop(std::fs::File::from_raw_fd(fd));
@@ -849,4 +849,77 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnection
             drop(std::fs::File::from_raw_fd(fd));
         }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraBrightness(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+) -> jni::sys::jint {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_brightness().unwrap_or(0)
+    } else {
+        0
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraZoomRatio(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+) -> jni::sys::jfloat {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_zoom().unwrap_or(1.0)
+    } else {
+        1.0
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraFocus(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+) -> jni::sys::jfloat {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_focus().unwrap_or(0.0)
+    } else {
+        0.0
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraSupportedHotPixelModes<
+    'local,
+>(
+    env: jni::JNIEnv<'local>,
+    _class: jni::objects::JClass<'local>,
+) -> jni::sys::jintArray {
+    let modes = crate::android_camera::SUPPORTED_HOT_PIXEL_MODES
+        .lock()
+        .unwrap();
+    let modes_i32: Vec<i32> = modes.iter().map(|&x| x as i32).collect();
+    let array = env.new_int_array(modes_i32.len() as i32).unwrap();
+    if !modes_i32.is_empty() {
+        env.set_int_array_region(&array, 0, &modes_i32).unwrap();
+    }
+    array.into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraHotPixelMode(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    mode: jni::sys::jint,
+) {
+    crate::android_camera::CURRENT_HOT_PIXEL_MODE
+        .store(mode as u32, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraHotPixelMode(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+) -> jni::sys::jint {
+    crate::android_camera::CURRENT_HOT_PIXEL_MODE.load(std::sync::atomic::Ordering::Relaxed)
+        as jni::sys::jint
 }

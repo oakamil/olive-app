@@ -59,6 +59,7 @@ fun StartScreen(
     var sensorMode by remember { mutableStateOf(settingsManager.sensorMode) }
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
     var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
+    var imuIntegration by remember { mutableStateOf(settingsManager.imuIntegration) }
 
     val supportsRawMap = remember { mutableMapOf<String, Boolean>() }
 
@@ -66,15 +67,26 @@ fun StartScreen(
     LaunchedEffect(cameraSelection) {
         currentOnCameraSelectionChanged(cameraSelection)
     }
-    LaunchedEffect(uvcFps) {
+
+    // Update settings manager when local state changes
+    LaunchedEffect(
+        cameraSelection,
+        uvcFps,
+        extractor,
+        sensorMode,
+        internalCameraId,
+        guidanceMode,
+        imuIntegration
+    ) {
+        settingsManager.cameraSelection = cameraSelection
         settingsManager.uvcFps = uvcFps
-    }
-    LaunchedEffect(extractor) {
         settingsManager.extractor = extractor
-    }
-    LaunchedEffect(sensorMode) {
         settingsManager.sensorMode = sensorMode
+        settingsManager.internalCameraId = internalCameraId
+        settingsManager.guidanceMode = guidanceMode
+        settingsManager.imuIntegration = imuIntegration
     }
+
     LaunchedEffect(internalCameraId) {
         settingsManager.internalCameraId = internalCameraId
         if (sensorMode == "Raw" && supportsRawMap.isNotEmpty()) {
@@ -357,7 +369,7 @@ fun StartScreen(
                         .fillMaxWidth()
                         .padding(vertical = 8.dp)
                 ) {
-                    listOf("Raw", "Processed").forEach { mode ->
+                    listOf("Processed", "Raw").forEach { mode ->
                         val enabled = mode == "Processed" || isRawSupported
                         RadioButton(
                             selected = sensorMode == mode,
@@ -374,6 +386,45 @@ fun StartScreen(
                             color = if (enabled) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(
                                 alpha = 0.5f
                             )
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            if (cameraSelection != "demo") {
+                Text(
+                    "Downsampling",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    listOf(
+                        0 to "Off",
+                        2 to "2x2",
+                        4 to "4x4"
+                    ).forEach { (value, label) ->
+                        RadioButton(
+                            selected = downsampling == value,
+                            onClick = {
+                                downsampling = value
+                                settingsManager.downsampling = value
+                            },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.onBackground
+                            )
+                        )
+                        Text(
+                            label,
+                            modifier = Modifier.padding(start = 8.dp, end = 16.dp),
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                     }
                 }
@@ -440,6 +491,53 @@ fun StartScreen(
                     )
                 }
             }
+
+            /*Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                "Motion Sensor",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                listOf(
+                    false to "Off",
+                    true to "On"
+                ).forEach { (value, label) ->
+                    RadioButton(
+                        selected = imuIntegration == value,
+                        onClick = { imuIntegration = value },
+                        colors = RadioButtonDefaults.colors(
+                            selectedColor = MaterialTheme.colorScheme.primary,
+                            unselectedColor = MaterialTheme.colorScheme.onBackground
+                        )
+                    )
+                    Text(
+                        label,
+                        modifier = Modifier.padding(start = 8.dp, end = 16.dp),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+
+            if (imuIntegration) {
+                var hasCalibration by remember { mutableStateOf(settingsManager.getString("imu_calibration.txt") != null) }
+                Button(
+                    onClick = {
+                        settingsManager.removeString("imu_calibration.txt")
+                        hasCalibration = false
+                    },
+                    enabled = hasCalibration,
+                    modifier = Modifier.padding(start = 8.dp)
+                ) {
+                    Text("Reset Calibration")
+                }
+            }*/
         }
 
         if (isLandscape) {

@@ -5,6 +5,7 @@ data class EngineStats(
     val ra: Double? = null,
     val dec: Double? = null,
     val roll: Double? = null,
+    val fov: Double? = null,
     val centroidCount: Int = 0,
     val exposureMs: Double = 0.0,
     val postProcessMs: Double = 0.0,

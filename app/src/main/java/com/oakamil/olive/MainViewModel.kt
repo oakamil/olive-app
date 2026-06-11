@@ -39,6 +39,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var maxAnalogGain by mutableFloatStateOf(3200f)
     var currentFocus by mutableFloatStateOf(0.0f)
     var noiseReductionMode by mutableIntStateOf(0)
+    var hotPixelMode by mutableIntStateOf(0)
+    var supportedHotPixelModes by mutableStateOf<List<Int>>(emptyList())
     var uvcBrightnessMin by mutableIntStateOf(0)
     var uvcBrightnessMax by mutableIntStateOf(0)
     var currentUvcBrightness by mutableIntStateOf(0)
@@ -74,6 +76,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ra = if (obj.isNull("ra")) null else obj.getDouble("ra"),
                 dec = if (obj.isNull("dec")) null else obj.getDouble("dec"),
                 roll = if (obj.isNull("roll")) null else obj.getDouble("roll"),
+                fov = if (obj.isNull("fov")) null else obj.getDouble("fov"),
                 centroidCount = obj.optInt("centroids", 0),
                 exposureMs = obj.optInt("exposure_us", 0).toDouble() / 1000.0,
                 postProcessMs = obj.optDouble("post_process_ms", 0.0),
@@ -189,6 +192,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 settingsManager.extractor,
                 settingsManager.sensorMode,
                 cameraId,
+                settingsManager.downsampling,
                 lat,
                 lon,
                 timeMs,
@@ -213,6 +217,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val defExp = OliveEngine.getNativeCameraExposure()
                     setExposure(defExp.toFloat())
                     setNoiseReduction(0)
+                    val hpModes = OliveEngine.getNativeCameraSupportedHotPixelModes()
+                    supportedHotPixelModes = hpModes.toList()
+                    updateHotPixelMode(0)
                     updateUvcStacking(1)
                 }
                 startPolling()
@@ -231,6 +238,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 settingsManager.imuIntegration,
                 settingsManager.uvcFps,
                 settingsManager.extractor,
+                settingsManager.downsampling,
                 lat,
                 lon,
                 timeMs,
@@ -247,8 +255,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Wait up to 2 seconds for UVC ranges to be populated
                 while ((brightRange == null || brightRange.size < 3 || brightRange[1] == 100) &&
-                       (gainRange == null || gainRange.size < 3 || gainRange[1] == 100f) &&
-                       retries < 20) {
+                    (gainRange == null || gainRange.size < 3 || gainRange[1] == 100f) &&
+                    retries < 20
+                ) {
                     delay(100)
                     brightRange = OliveEngine.getNativeCameraBrightnessRange()
                     gainRange = OliveEngine.getNativeCameraGainRange()
@@ -266,8 +275,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (gainRange != null && gainRange.size >= 3) {
                     minAnalogGain = gainRange[0]
                     maxAnalogGain = gainRange[1]
-                    val defaultGain = gainRange[2]
-                    setGain(defaultGain)
+                    val realGain = OliveEngine.getNativeCameraGain()
+                    currentGain = if (!realGain.isNaN() && realGain > 0) {
+                        realGain
+                    } else {
+                        gainRange[2]
+                    }
                 }
 
                 updateUvcStacking(1)
@@ -291,6 +304,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun fetchRealtimeSettings() {
+        if (engineMode == EngineMode.NATIVE || engineMode == EngineMode.UVC) {
+            val gain = OliveEngine.getNativeCameraGain()
+            if (!gain.isNaN() && gain > 0) {
+                currentGain = gain
+            }
+            val brightness = OliveEngine.getNativeCameraBrightness()
+            if (brightness != 0) { // Assuming 0 is a default/uninitialized, or we can just set it
+                currentUvcBrightness = brightness
+            }
+            if (engineMode == EngineMode.NATIVE) {
+                val focus = OliveEngine.getNativeCameraFocus()
+                if (!focus.isNaN() && focus >= 0f) {
+                    currentFocus = focus
+                }
+                val zoom = OliveEngine.getNativeCameraZoomRatio()
+                if (!zoom.isNaN() && zoom > 0f) {
+                    settingsManager.zoomRatio = zoom
+                }
+                hotPixelMode = OliveEngine.getNativeCameraHotPixelMode()
+            }
+        }
+    }
+
     fun setGain(gain: Float) {
         currentGain = gain
         viewModelScope.launch(Dispatchers.IO) {
@@ -309,6 +346,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         noiseReductionMode = mode
         viewModelScope.launch(Dispatchers.IO) {
             OliveEngine.setNativeCameraNoiseReduction(mode)
+        }
+    }
+
+    fun updateHotPixelMode(mode: Int) {
+        hotPixelMode = mode
+        viewModelScope.launch(Dispatchers.IO) {
+            OliveEngine.setNativeCameraHotPixelMode(mode)
         }
     }
 

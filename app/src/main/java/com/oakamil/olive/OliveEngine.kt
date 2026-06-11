@@ -13,6 +13,7 @@ object OliveEngine {
         imuEnabled: Boolean,
         uvcFps: Int,
         extractor: String,
+        downsampleMode: Int,
         lat: Double,
         lon: Double,
         timeMs: Long,
@@ -24,6 +25,7 @@ object OliveEngine {
         extractor: String,
         sensorMode: String,
         internalCameraId: String,
+        downsampleMode: Int,
         lat: Double,
         lon: Double,
         timeMs: Long,
@@ -38,9 +40,16 @@ object OliveEngine {
     external fun setNativeCameraNoiseReduction(mode: Int)
     external fun getNativeCameraExposure(): Int
     external fun getNativeCameraGainRange(): FloatArray?
+    external fun getNativeCameraGain(): Float
     external fun getNativeCameraBrightnessRange(): IntArray?
+    external fun getNativeCameraBrightness(): Int
     external fun setNativeCameraBrightness(brightness: Int)
     external fun setNativeCameraZoomRatio(zoom: Float)
+    external fun getNativeCameraZoomRatio(): Float
+    external fun getNativeCameraFocus(): Float
+    external fun getNativeCameraSupportedHotPixelModes(): IntArray
+    external fun setNativeCameraHotPixelMode(mode: Int)
+    external fun getNativeCameraHotPixelMode(): Int
     external fun getAvailableInternalCameras(): String
     external fun getLatestFrameInto(buffer: ByteBuffer): Boolean
     external fun setEnginePaused(paused: Boolean)
@@ -48,5 +57,4 @@ object OliveEngine {
     external fun updateUvcStacking(frames: Int)
     external fun handleTelescopeConnection(fd: Int)
     external fun handleAlpacaConnection(fd: Int)
-    external fun handleAlpacaConnectionV6(fd: Int)
 }
