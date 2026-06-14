@@ -10,6 +10,7 @@ object OliveEngine {
     external fun initJni(filesDir: String)
     external fun startEngine(
         fd: Int,
+        rawDescriptors: ByteArray,
         imuEnabled: Boolean,
         uvcFps: Int,
         extractor: String,

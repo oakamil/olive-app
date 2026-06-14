@@ -518,9 +518,7 @@ class MainActivity : ComponentActivity() {
                     add("android.permission.ACCESS_LOCAL_NETWORK")
                 }
             }
-            if (activeCameraSelection == "internal") {
-                permissions.add(Manifest.permission.CAMERA)
-            }
+            permissions.add(Manifest.permission.CAMERA)
 
             val denied = permissions.filter {
                 ContextCompat.checkSelfPermission(
@@ -549,9 +547,7 @@ class MainActivity : ComponentActivity() {
                 add("android.permission.ACCESS_LOCAL_NETWORK")
             }
         }
-        if (activeCameraSelection == "internal") {
-            permissions.add(Manifest.permission.CAMERA)
-        }
+        permissions.add(Manifest.permission.CAMERA)
         val denied = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
@@ -654,7 +650,8 @@ class MainActivity : ComponentActivity() {
                     }
                     uvcConnection = conn
                     val fd = conn.fileDescriptor
-                    viewModel.startUvcEngine(fd, lat, lon, timeMs)
+                    val rawDesc = conn.rawDescriptors
+                    viewModel.startUvcEngine(fd, rawDesc, lat, lon, timeMs)
                 }
                 conn
             }
