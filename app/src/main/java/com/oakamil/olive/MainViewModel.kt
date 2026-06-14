@@ -227,7 +227,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startUvcEngine(fd: Int, lat: Double = 200.0, lon: Double = 200.0, timeMs: Long = 0L) {
+    fun startUvcEngine(fd: Int, rawDescriptors: ByteArray, lat: Double = 200.0, lon: Double = 200.0, timeMs: Long = 0L) {
         viewModelScope.launch(Dispatchers.IO) {
             if (isEngineRunning) {
                 OliveEngine.stopEngine()
@@ -235,6 +235,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             OliveEngine.startEngine(
                 fd,
+                rawDescriptors,
                 settingsManager.imuIntegration,
                 settingsManager.uvcFps,
                 settingsManager.extractor,

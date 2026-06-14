@@ -108,6 +108,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     mut env: JNIEnv,
     _class: JClass,
     fd: jint,
+    raw_descriptors: jni::objects::JByteArray,
     imu_enabled: jni::sys::jboolean,
     uvc_fps: jint,
     extractor: jni::objects::JString,
@@ -123,6 +124,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
         Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
 
     let fd = fd as i32;
+    let raw_desc_bytes = env.convert_byte_array(&raw_descriptors).ok();
     let use_imu = imu_enabled != 0;
     let target_fps = uvc_fps as u32;
     let extractor_str: String = env.get_string(&extractor).unwrap().into();
@@ -165,7 +167,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             use olive_engine::uvc_camera::Camera;
             use std::sync::Arc;
 
-            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd), false, None);
+            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd), raw_desc_bytes, false, None);
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start UVC camera: {}", e);
                 return;
