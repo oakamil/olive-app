@@ -580,6 +580,7 @@ impl AndroidCamera {
             let mut best_supports_contrast_curve = false;
             let mut best_active_array = [0; 4];
             let mut best_supports_zoom = false;
+            let mut exact_match_found = false;
 
             info!("Total unique cameras to evaluate: {}", all_cam_ids.len());
 
@@ -845,15 +846,18 @@ impl AndroidCamera {
                 }
 
                 // Robust selection logic
-                let is_requested = requested_id.as_deref() == Some(&cam_id)
-                    || requested_id.as_deref() == Some(&logical_id);
+                let is_exact_match = requested_id.as_deref() == Some(&cam_id);
+                let is_logical_match = requested_id.as_deref() == Some(&logical_id);
 
                 let is_first = best_id.is_empty();
 
                 let mut should_pick = false;
-                if is_requested {
+                if is_exact_match {
                     should_pick = true;
-                } else if is_first {
+                    exact_match_found = true;
+                } else if is_logical_match && !exact_match_found {
+                    should_pick = true;
+                } else if is_first && !exact_match_found {
                     // Fallback if the requested camera is not found
                     should_pick = true;
                 }

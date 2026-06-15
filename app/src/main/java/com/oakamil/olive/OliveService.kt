@@ -103,6 +103,7 @@ class OliveService : Service() {
 
     private var lx200Thread: Thread? = null
     private var lx200Fd: java.io.FileDescriptor? = null
+    private var lastLx200DisconnectTime: Long = 0
 
     private var alpacaThread: Thread? = null
     private var alpacaThreadV6: Thread? = null
@@ -123,17 +124,35 @@ class OliveService : Service() {
                         Log.d("OliveService", "LX200 waiting for accept...")
                         val clientFd = Os.accept(fd, null)
                         Log.d("OliveService", "LX200 accepted socket!")
+
+                        val now = System.currentTimeMillis()
+                        if (now - lastLx200DisconnectTime > 5000) {
+                            OliveEngine.resetTelescopeServer()
+                        }
+
                         try {
                             val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
-                            val nativeFd = pfd.detachFd()
-                            Log.d(
-                                "OliveService",
-                                "LX200 handing off nativeFd $nativeFd"
-                            )
-                            OliveEngine.handleTelescopeConnection(nativeFd)
+                            val inputStream =
+                                android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
+                            val outputStream = java.io.FileOutputStream(clientFd)
+
+                            val buffer = ByteArray(1024)
+                            while (!Thread.currentThread().isInterrupted) {
+                                val bytesRead = inputStream.read(buffer)
+                                if (bytesRead == -1) break
+                                if (bytesRead > 0) {
+                                    val data = buffer.copyOfRange(0, bytesRead)
+                                    val response = OliveEngine.processTelescopeData(data)
+                                    if (response != null && response.isNotEmpty()) {
+                                        outputStream.write(response)
+                                        outputStream.flush()
+                                    }
+                                }
+                            }
                         } catch (e: Exception) {
-                            Log.e("OliveService", "LX200 error during handoff", e)
+                            Log.e("OliveService", "LX200 error during connection", e)
                         } finally {
+                            lastLx200DisconnectTime = System.currentTimeMillis()
                             try {
                                 Os.close(clientFd)
                             } catch (e: Exception) {
@@ -245,7 +264,9 @@ class OliveService : Service() {
         alpacaThreadV6?.interrupt()
         try {
             lx200Fd?.let {
-                try { Os.shutdown(it, OsConstants.SHUT_RDWR) } catch (e: Exception) {}
+                try {
+                    Os.shutdown(it, OsConstants.SHUT_RDWR)
+                } catch (_: Exception) {}
                 Os.close(it)
             }
         } catch (e: Exception) {
@@ -253,7 +274,9 @@ class OliveService : Service() {
         }
         try {
             alpacaFd?.let {
-                try { Os.shutdown(it, OsConstants.SHUT_RDWR) } catch (e: Exception) {}
+                try {
+                    Os.shutdown(it, OsConstants.SHUT_RDWR)
+                } catch (_: Exception) {}
                 Os.close(it)
             }
         } catch (e: Exception) {
@@ -261,7 +284,9 @@ class OliveService : Service() {
         }
         try {
             alpacaFdV6?.let {
-                try { Os.shutdown(it, OsConstants.SHUT_RDWR) } catch (e: Exception) {}
+                try {
+                    Os.shutdown(it, OsConstants.SHUT_RDWR)
+                } catch (_: Exception) {}
                 Os.close(it)
             }
         } catch (e: Exception) {
