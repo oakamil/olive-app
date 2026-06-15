@@ -129,13 +129,11 @@ class OliveService : Service() {
                         if (now - lastLx200DisconnectTime > 5000) {
                             OliveEngine.resetTelescopeServer()
                         }
-
                         try {
                             val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
                             val inputStream =
                                 android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
                             val outputStream = java.io.FileOutputStream(clientFd)
-
                             val buffer = ByteArray(1024)
                             while (!Thread.currentThread().isInterrupted) {
                                 val bytesRead = inputStream.read(buffer)
