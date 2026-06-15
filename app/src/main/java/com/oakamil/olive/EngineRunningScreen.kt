@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +24,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,7 +63,12 @@ fun EngineRunningScreen(
 ) {
     var mainScreenExposure by remember { mutableFloatStateOf(1.0f) }
     var isEnteringPip by remember { mutableStateOf(false) }
+    var showTelescopeControlInfo by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+
+    BackHandler(enabled = !isStopping && !isStarting) {
+        onToggleEngine()
+    }
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -93,11 +109,23 @@ fun EngineRunningScreen(
             StatsDisplay(viewModel.engineStats)
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                "IP Address: $detectedIpAddress Port: 4030",
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "IP Address: $detectedIpAddress",
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { showTelescopeControlInfo = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Info",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
 
         @Composable
@@ -349,6 +377,99 @@ fun EngineRunningScreen(
                     }
                 }
                 ActionButtons()
+            }
+        }
+
+        if (showTelescopeControlInfo) {
+            InfoPopup(
+                title = "Telescope Control",
+                onDismiss = { showTelescopeControlInfo = false }) {
+                Text("Olive Finder runs control servers for external connections:\n- Meade LX200 protocol on port 4030\n- ASCOM Alpaca protocol on port 11111\n- ASCOM Alpaca discovery server\n")
+
+                Text(
+                    "SkySafari Integration",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    "Configuring SkySafari 7/8 Plus or Pro (Alpaca)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(buildAnnotatedString {
+                    append("Menu > Settings > Telescope section - Presets\nAdd Preset > ASCOM Alpaca\nManual Configuration:\n- IP Address - 127.0.0.1 if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder's screen\n- Port - 11111\nCheck IP and Port for Devices\nNext\n- Preset Name: Olive\n- Set Time & Location: leave this checked only if Olive is on a separate device\n- Readout Rate: 10 per second ")
+                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("(Important: swipe back instead of pressing the X)") }
+                    append("\nSave Preset\nSelect the new preset > Use This Preset\n")
+                })
+
+                Text(
+                    "Configuring SkySafari 7/8 Plus or Pro (LX200)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(buildAnnotatedString {
+                    append("Menu > Settings > Telescope section - Presets\nAdd Preset > Other Connection > Meade LX200 Classic, Next > ")
+                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("Alt-Az. GoTo (Recommended)") }
+                    append(", Next\nConnect via WiFi\n- IP Address - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder's screen\n- Port - 4030\nCheck Connection\nNext\n- Preset Name: Olive\n- Set Time & Location: leave this checked only if Olive is on a separate device\n- Readout Rate: 10 per second ")
+                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("(Important: swipe back instead of pressing the X)") }
+                    append("\nSave Preset\nSelect the new preset > Use This Preset\n")
+                })
+
+                Text(
+                    "Configuring SkySafari 6 Plus or Pro (LX200)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(buildAnnotatedString {
+                    append("Settings > Telescope section - Setup\n- Scope Type -- Meade LX200 Classic\n- Mount Type -- ")
+                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("Alt-Az. GoTo (Recommended)") }
+                    append("\n- Connect via WiFi\n- IP Address - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder's screen\n- Port - 4030\n- Set Time & Location: leave this checked only if Olive is on a separate device\n- Readout Rate -- 10 per second ")
+                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("(Important: swipe back instead of pressing the X)") }
+                    append("\nPress X\n")
+                })
+
+                Text(
+                    "SkySafari Usage",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text("Scope > Connect\nSelect an Object\n- GoTo -> Olive will show guidance to the object\n- Stop -> Stop the current GoTo target\n- Align -> Center object in eyepiece, tap Align to update Olive's alignment*\n")
+
+                Text(
+                    "Stellarium Integration",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    "Configuring Stellarium+ (LX200)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(buildAnnotatedString {
+                    append("Menu > Observing Tools > Telescope Control ")
+                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("(toggle on)") }
+                    append("\nType - Network\nHost - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder's screen\nToggle Link to on\nTime and Location sync - Turn off if using Olive on the same device\n")
+                })
+
+                Text(
+                    "Stellarium Usage",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(buildAnnotatedString {
+                    append("Menu > Observing Tools > Telescope Control ")
+                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("(toggle on)") }
+                    append("\nToggle Link to on\nSelect an Object\n- GoTo -> Olive will show guidance to the object\n- Sync -> Center object in eyepiece, tap Sync to update Olive's alignment*\n")
+                })
+
+                Text(
+                    "* Olive uses a single alignment point to determine the offset of the camera's view to the telescope's view. Alignment only needs to be done once each time the camera is mounted on a telescope.",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }

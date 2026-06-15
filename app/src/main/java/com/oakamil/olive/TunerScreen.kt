@@ -6,6 +6,7 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.view.Surface
 import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +54,11 @@ fun TunerScreen(
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+
+    BackHandler {
+        viewModel.setEnginePaused(false)
+        onBack()
+    }
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE

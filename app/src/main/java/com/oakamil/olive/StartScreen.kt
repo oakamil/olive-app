@@ -25,6 +25,17 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,6 +71,12 @@ fun StartScreen(
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
     var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
     var imuIntegration by remember { mutableStateOf(settingsManager.imuIntegration) }
+
+    var showCameraSelectionInfo by remember { mutableStateOf(false) }
+    var showSensorModeInfo by remember { mutableStateOf(false) }
+    var showDownsamplingInfo by remember { mutableStateOf(false) }
+    var showExtractorInfo by remember { mutableStateOf(false) }
+    var showGuidanceModeInfo by remember { mutableStateOf(false) }
 
     val supportsRawMap = remember { mutableMapOf<String, Boolean>() }
 
@@ -127,11 +144,24 @@ fun StartScreen(
 
         // Configuration mode
         val cameraSelectionContent: @Composable () -> Unit = {
-            Text(
-                "Camera Selection",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Camera Selection",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { showCameraSelectionInfo = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Info",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -352,16 +382,28 @@ fun StartScreen(
             }
 
 
-
         }
 
         val otherSettingsContent: @Composable () -> Unit = {
             if (cameraSelection == "internal") {
-                Text(
-                    "Sensor Mode",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Sensor Mode",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { showSensorModeInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = "Info",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 val isRawSupported = supportsRawMap[internalCameraId] ?: false
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -393,11 +435,24 @@ fun StartScreen(
             }
 
             if (cameraSelection != "demo") {
-                Text(
-                    "Downsampling",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Downsampling",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { showDownsamplingInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = "Info",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -431,11 +486,24 @@ fun StartScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            Text(
-                "Extractor",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Extractor",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { showExtractorInfo = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Info",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -461,11 +529,24 @@ fun StartScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            Text(
-                "Guidance Mode",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Guidance Mode",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { showGuidanceModeInfo = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Info",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -579,5 +660,105 @@ fun StartScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        if (showCameraSelectionInfo) {
+            InfoPopup(title = "Camera Selection", onDismiss = { showCameraSelectionInfo = false }) {
+                Text(
+                    "Internal Camera",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text("Use the device's native camera for imaging the sky. The default phone camera is recommended, but all available cameras are shown in the dropdown.\n")
+                Text(
+                    "External Camera",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text("Use a camera plugged into the device's USB port. A dropdown is shown to target a specific frame rate for the video feed from the camera. The engine will try to select a feed that matches the given frame rate if available. A lower frame rate results in longer camera exposures.\n")
+                Text(
+                    "Demo Camera",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text("Cycles through canned images for demo purposes.")
+            }
+        }
+        if (showSensorModeInfo) {
+            InfoPopup(title = "Sensor Mode", onDismiss = { showSensorModeInfo = false }) {
+                Text("Processed mode (recommended) uses the camera's own algorithms to pre-process the image. Raw mode relies on the engine to do the processing. Raw is only available on select phone models.")
+            }
+        }
+        if (showDownsamplingInfo) {
+            InfoPopup(title = "Downsampling", onDismiss = { showDownsamplingInfo = false }) {
+                Text("Based on this setting the image will be reduced in size prior to running the plate-solving algorithms. 2x2 is recommended.")
+            }
+        }
+        if (showExtractorInfo) {
+            InfoPopup(title = "Extractor", onDismiss = { showExtractorInfo = false }) {
+                Text("Determines which algorithm to use for star detection. Cedar (cedar-detect) is recommended for raw mode.")
+            }
+        }
+        if (showGuidanceModeInfo) {
+            InfoPopup(title = "Guidance Mode", onDismiss = { showGuidanceModeInfo = false }) {
+                Text("The engine's guidance display can show Alt-Az offsets (distance to target) or equatorial RA/Dec offsets.")
+            }
+        }
+    }
+}
+
+@Composable
+fun InfoPopup(
+    title: String,
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .padding(24.dp)
+                .fillMaxWidth()
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    RoundedCornerShape(16.dp)
+                )
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    content()
+                }
+            }
+        }
     }
 }
