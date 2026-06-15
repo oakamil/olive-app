@@ -16,7 +16,9 @@ static ENGINE_STATE: Mutex<
 > = Mutex::new(None);
 static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
 static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
-static LX200_FD_TX: Mutex<Option<tokio::sync::mpsc::Sender<i32>>> = Mutex::new(None);
+static LX200_CONTROLLER: Mutex<
+    Option<std::sync::Arc<std::sync::RwLock<olive_engine::telescope_server::Lx200Controller>>>,
+> = Mutex::new(None);
 static ALPACA_FD_TX: Mutex<Option<tokio::sync::mpsc::Sender<i32>>> = Mutex::new(None);
 static ALPACA_V6_FD_TX: Mutex<Option<tokio::sync::mpsc::Sender<i32>>> = Mutex::new(None);
 
@@ -167,7 +169,15 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             use olive_engine::uvc_camera::Camera;
             use std::sync::Arc;
 
-            let mut cam = Camera::with_fd(target_fps, true, None, Some(fd), raw_desc_bytes, false, None);
+            let mut cam = Camera::with_fd(
+                target_fps,
+                true,
+                None,
+                Some(fd),
+                raw_desc_bytes,
+                false,
+                None,
+            );
             if let Err(e) = cam.start_capture() {
                 log::error!("Failed to start UVC camera: {}", e);
                 return;
@@ -246,9 +256,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             }
             let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
 
-            let (fd_tx, fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
-            *LX200_FD_TX.lock().unwrap() = Some(fd_tx);
-
             let (alpaca_fd_tx, alpaca_fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
             *ALPACA_FD_TX.lock().unwrap() = Some(alpaca_fd_tx);
 
@@ -263,10 +270,10 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 imu_arc,
                 Some(telescope_rt.handle().clone()),
                 storage,
-                Some(fd_rx),
                 Some(alpaca_fd_rx),
                 Some(alpaca_v6_fd_rx),
             );
+            *LX200_CONTROLLER.lock().unwrap() = Some(engine.lx200_controller.clone());
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
 
@@ -469,9 +476,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             }
             let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
 
-            let (fd_tx, fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
-            *LX200_FD_TX.lock().unwrap() = Some(fd_tx);
-
             let (alpaca_fd_tx, alpaca_fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
             *ALPACA_FD_TX.lock().unwrap() = Some(alpaca_fd_tx);
 
@@ -486,10 +490,10 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 imu_arc,
                 Some(telescope_rt.handle().clone()),
                 storage,
-                Some(fd_rx),
                 Some(alpaca_fd_rx),
                 Some(alpaca_v6_fd_rx),
             );
+            *LX200_CONTROLLER.lock().unwrap() = Some(engine.lx200_controller.clone());
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
 
@@ -791,27 +795,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEngineSigma(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleTelescopeConnection(
-    _env: JNIEnv,
-    _class: JClass,
-    fd: jint,
-) {
-    if let Some(tx) = LX200_FD_TX.lock().unwrap().as_ref() {
-        if tx.try_send(fd).is_err() {
-            unsafe {
-                use std::os::unix::io::FromRawFd;
-                drop(std::fs::File::from_raw_fd(fd));
-            }
-        }
-    } else {
-        unsafe {
-            use std::os::unix::io::FromRawFd;
-            drop(std::fs::File::from_raw_fd(fd));
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnection(
     _env: JNIEnv,
     _class: JClass,
@@ -924,4 +907,41 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraHotPixe
 ) -> jni::sys::jint {
     crate::android_camera::CURRENT_HOT_PIXEL_MODE.load(std::sync::atomic::Ordering::Relaxed)
         as jni::sys::jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_processTelescopeData<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    data: jni::objects::JByteArray<'local>,
+) -> jni::sys::jbyteArray {
+    let controller_opt = LX200_CONTROLLER.lock().unwrap().clone();
+    if let Some(controller_lock) = controller_opt {
+        if let Ok(data_bytes) = env.convert_byte_array(&data) {
+            let mut controller = controller_lock.write().unwrap();
+            let response = controller.process_client_data(&data_bytes);
+            if !response.is_empty() {
+                if let Ok(j_array) = env.byte_array_from_slice(&response) {
+                    return j_array.into_raw();
+                }
+            }
+        }
+    }
+    std::ptr::null_mut()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_resetTelescopeServer<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) {
+    if let Some(_engine_state_arc) = ENGINE_STATE.lock().unwrap().clone() {
+        // We just reset the buffer and state of the controller, since it's a new connection
+        let controller_opt = LX200_CONTROLLER.lock().unwrap().clone();
+        if let Some(controller_lock) = controller_opt {
+            let mut controller = controller_lock.write().unwrap();
+            controller.client_buffer.clear();
+            controller.is_stellarium = false;
+        }
+    }
 }
