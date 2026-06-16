@@ -5,13 +5,13 @@ import android.content.res.Configuration
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.view.Surface
-import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,15 +19,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,10 +44,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
@@ -112,7 +118,7 @@ fun TunerScreen(
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
-                Text("Back")
+                Text(stringResource(id = R.string.btn_back))
             }
         }
 
@@ -160,7 +166,7 @@ fun TunerScreen(
 
                 androidx.compose.foundation.Image(
                     bitmap = frame,
-                    contentDescription = "Live Preview",
+                    contentDescription = stringResource(id = R.string.cd_live_preview),
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer(
@@ -176,7 +182,10 @@ fun TunerScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Waiting for frame...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        stringResource(id = R.string.status_waiting_for_frame),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -190,22 +199,48 @@ fun TunerScreen(
 
         if (viewModel.engineMode == MainViewModel.EngineMode.UVC) {
             Text(
-                "Exposure: ${String.format(Locale.US, "%.2f", viewModel.engineStats.exposureMs)} s",
+                stringResource(id = R.string.stat_exposure) + ": " + stringResource(
+                    id = R.string.format_ms,
+                    String.format(Locale.getDefault(), "%.2f", viewModel.engineStats.exposureMs)
+                ),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
         }
 
         Text(
-            "Detected Centroids: ${viewModel.engineStats.centroidCount}",
+            stringResource(id = R.string.info_detected_stars) + ": ${viewModel.engineStats.centroidCount}",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary
         )
-        Text(
-            "HFR: ${String.format(Locale.US, "%.2f", viewModel.engineStats.hfr)}",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
+
+        var showHfrInfo by remember { mutableStateOf(false) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(id = R.string.info_hfr_label) + ": " + String.format(
+                    Locale.getDefault(),
+                    "%.2f",
+                    viewModel.engineStats.hfr
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            IconButton(onClick = { showHfrInfo = true }, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = stringResource(id = R.string.cd_info),
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        if (showHfrInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.info_hfr_label),
+                onDismiss = { showHfrInfo = false }) {
+                Text(stringResource(id = R.string.info_hfr))
+            }
+        }
     }
 
     Column(
@@ -225,7 +260,7 @@ fun TunerScreen(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScrollWithScrollbar(rememberScrollState())
                 ) {
                     TuningContent()
                 }
@@ -234,7 +269,7 @@ fun TunerScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScrollWithScrollbar(rememberScrollState())
             ) {
                 CameraFeedContent()
                 Spacer(modifier = Modifier.height(16.dp))
@@ -251,12 +286,37 @@ fun TuningControls(
     settingsManager: SettingsManager,
     activeCameraSelection: String
 ) {
+    var showStarSensitivityInfo by remember { mutableStateOf(false) }
+    var showZoomInfo by remember { mutableStateOf(false) }
+    var showExposureInfo by remember { mutableStateOf(false) }
+    var showStackingInfo by remember { mutableStateOf(false) }
+    var showBrightnessInfo by remember { mutableStateOf(false) }
+    var showGainInfo by remember { mutableStateOf(false) }
+    var showFocusInfo by remember { mutableStateOf(false) }
+    var showNoiseReductionInfo by remember { mutableStateOf(false) }
+    var showHotPixelModeInfo by remember { mutableStateOf(false) }
+
+    val gainLabel = if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) "ISO" else "Gain"
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            IconButton(
+                onClick = { showStarSensitivityInfo = true },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = stringResource(id = R.string.cd_info),
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
         Slider(
             value = viewModel.starSensitivity,
             onValueChange = {
@@ -289,11 +349,24 @@ fun TuningControls(
 
             if (maxZoom > 1f) {
                 var zoomRatio by remember { mutableFloatStateOf(settingsManager.zoomRatio) }
-                Text(
-                    "Zoom: ${String.format(Locale.US, "%.1fx", zoomRatio)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(id = R.string.label_zoom) + ": " + stringResource(
+                            id = R.string.format_zoom,
+                            String.format(Locale.getDefault(), "%.1f", zoomRatio)
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(onClick = { showZoomInfo = true }, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 Slider(
                     value = zoomRatio,
                     onValueChange = {
@@ -307,11 +380,31 @@ fun TuningControls(
             }
 
             if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
-                Text(
-                    "Exposure: ${viewModel.currentExposure.toInt()} us",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(id = R.string.label_exposure) + ": " + stringResource(
+                            id = R.string.format_ms,
+                            String.format(
+                                Locale.getDefault(),
+                                "%.1f",
+                                viewModel.currentExposure / 1000f
+                            )
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { showExposureInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 Slider(
                     value = viewModel.currentExposure,
                     onValueChange = {
@@ -321,11 +414,24 @@ fun TuningControls(
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                Text(
-                    "Stacking (Frames): ${viewModel.uvcStacking}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(id = R.string.label_stacking_frames) + ": ${viewModel.uvcStacking}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { showStackingInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 Slider(
                     value = viewModel.uvcStacking.toFloat(),
                     onValueChange = {
@@ -338,11 +444,24 @@ fun TuningControls(
             }
 
             if (viewModel.engineMode == MainViewModel.EngineMode.UVC && viewModel.uvcBrightnessMax > viewModel.uvcBrightnessMin) {
-                Text(
-                    "Brightness: ${viewModel.currentUvcBrightness}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(id = R.string.label_brightness) + ": ${viewModel.currentUvcBrightness}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { showBrightnessInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 Slider(
                     value = viewModel.currentUvcBrightness.toFloat(),
                     onValueChange = {
@@ -353,13 +472,21 @@ fun TuningControls(
                 )
             }
 
-            val gainLabel =
-                if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) "ISO" else "Gain"
-            Text(
-                "$gainLabel: ${viewModel.currentGain.toInt()}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    gainLabel + ": ${viewModel.currentGain.toInt()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(onClick = { showGainInfo = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(id = R.string.cd_info),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
             Slider(
                 value = viewModel.currentGain,
                 onValueChange = {
@@ -372,11 +499,28 @@ fun TuningControls(
             )
 
             if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
-                Text(
-                    "Focus: ${String.format(Locale.US, "%.2f", viewModel.currentFocus)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(id = R.string.label_focus) + ": " + String.format(
+                            Locale.getDefault(),
+                            "%.2f",
+                            viewModel.currentFocus
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { showFocusInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 Slider(
                     value = viewModel.currentFocus,
                     onValueChange = {
@@ -390,11 +534,15 @@ fun TuningControls(
             if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE && settingsManager.sensorMode == "Processed") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Noise Reduction: ",
+                        stringResource(id = R.string.label_noise_reduction) + ": ",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onBackground
                     )
-                    val modes = listOf("OFF", "FAST", "HQ")
+                    val modes = listOf(
+                        stringResource(id = R.string.value_off),
+                        stringResource(id = R.string.value_fast),
+                        stringResource(id = R.string.value_hq)
+                    )
                     modes.forEachIndexed { index, name ->
                         RadioButton(
                             selected = viewModel.noiseReductionMode == index,
@@ -409,15 +557,30 @@ fun TuningControls(
                             modifier = Modifier.padding(end = 8.dp)
                         )
                     }
+                    IconButton(
+                        onClick = { showNoiseReductionInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Hot Pixel Mode: ",
+                        stringResource(id = R.string.label_hot_pixel_mode) + ": ",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onBackground
                     )
-                    val modes = listOf("OFF", "FAST", "HQ")
+                    val modes = listOf(
+                        stringResource(id = R.string.value_off),
+                        stringResource(id = R.string.value_fast),
+                        stringResource(id = R.string.value_hq)
+                    )
                     modes.forEachIndexed { index, name ->
                         val isSupported = viewModel.supportedHotPixelModes.contains(index)
                         RadioButton(
@@ -436,7 +599,84 @@ fun TuningControls(
                             modifier = Modifier.padding(end = 8.dp)
                         )
                     }
+                    IconButton(
+                        onClick = { showHotPixelModeInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
+            }
+        }
+
+        if (showStarSensitivityInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_star_sensitivity),
+                onDismiss = { showStarSensitivityInfo = false }) {
+                Text(stringResource(id = R.string.info_star_sensitivity))
+            }
+        }
+        if (showZoomInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_zoom),
+                onDismiss = { showZoomInfo = false }) {
+                Text(stringResource(id = R.string.info_zoom))
+            }
+        }
+        if (showExposureInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_exposure),
+                onDismiss = { showExposureInfo = false }) {
+                Text(stringResource(id = R.string.info_exposure))
+            }
+        }
+        if (showStackingInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_stacking_frames),
+                onDismiss = { showStackingInfo = false }) {
+                Text(stringResource(id = R.string.info_stacking))
+            }
+        }
+        if (showBrightnessInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_brightness),
+                onDismiss = { showBrightnessInfo = false }) {
+                Text(stringResource(id = R.string.info_brightness))
+            }
+        }
+        if (showGainInfo) {
+            InfoPopup(title = gainLabel, onDismiss = { showGainInfo = false }) {
+                if (gainLabel == "ISO") {
+                    Text(stringResource(id = R.string.info_iso).parseHtmlToAnnotatedString())
+                } else {
+                    Text(stringResource(id = R.string.info_gain))
+                }
+            }
+        }
+        if (showFocusInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_focus),
+                onDismiss = { showFocusInfo = false }) {
+                Text(stringResource(id = R.string.info_focus))
+            }
+        }
+        if (showNoiseReductionInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_noise_reduction),
+                onDismiss = { showNoiseReductionInfo = false }) {
+                Text(stringResource(id = R.string.info_noise_reduction))
+            }
+        }
+        if (showHotPixelModeInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_hot_pixel_mode),
+                onDismiss = { showHotPixelModeInfo = false }) {
+                Text(stringResource(id = R.string.info_hot_pixel_mode))
             }
         }
     }

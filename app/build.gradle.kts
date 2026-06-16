@@ -11,8 +11,8 @@ android {
         applicationId = "com.oakamil.olive"
         minSdk = 29
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.1.7"
+        versionCode = 9
+        versionName = "0.1.8"
     }
 
     buildFeatures {
@@ -41,7 +41,7 @@ android {
         getByName("release") {
             isMinifyEnabled = true
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
+                getDefaultProguardFile("proguard-android.txt"),
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("debug")
@@ -78,8 +78,6 @@ tasks.register<Exec>("cargoBuild") {
     commandLine("/Users/oakamil/.cargo/bin/cargo", "ndk", "-P", "24", "-t", rustArchName, "-o", "../jniLibs", "build", "--release")
 }
 
-tasks.whenTaskAdded {
-    if (name == "mergeDebugJniLibFolders" || name == "mergeReleaseJniLibFolders") {
-        dependsOn("cargoBuild")
-    }
+tasks.matching { it.name == "mergeDebugJniLibFolders" || it.name == "mergeReleaseJniLibFolders" }.configureEach {
+    dependsOn("cargoBuild")
 }

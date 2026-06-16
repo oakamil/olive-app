@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -13,7 +14,6 @@ import android.system.Os
 import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import android.net.wifi.WifiManager
 import java.net.InetAddress
 import java.net.InetSocketAddress
 
@@ -39,8 +39,8 @@ class OliveService : Service() {
         val mode = intent?.getStringExtra("ENGINE_MODE") ?: "NATIVE"
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Olive Astro Engine")
-            .setContentText("Engine is running in background ($mode)")
+            .setContentTitle(getString(R.string.notif_engine_title))
+            .setContentText(getString(R.string.notif_engine_text, mode))
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .build()
 
@@ -74,7 +74,7 @@ class OliveService : Service() {
     private fun createNotificationChannel() {
         val serviceChannel = NotificationChannel(
             CHANNEL_ID,
-            "Olive Engine Service Channel",
+            getString(R.string.notif_channel_name),
             NotificationManager.IMPORTANCE_LOW
         )
         val manager = getSystemService(NotificationManager::class.java)
@@ -264,7 +264,8 @@ class OliveService : Service() {
             lx200Fd?.let {
                 try {
                     Os.shutdown(it, OsConstants.SHUT_RDWR)
-                } catch (_: Exception) {}
+                } catch (_: Exception) {
+                }
                 Os.close(it)
             }
         } catch (e: Exception) {
@@ -274,7 +275,8 @@ class OliveService : Service() {
             alpacaFd?.let {
                 try {
                     Os.shutdown(it, OsConstants.SHUT_RDWR)
-                } catch (_: Exception) {}
+                } catch (_: Exception) {
+                }
                 Os.close(it)
             }
         } catch (e: Exception) {
@@ -284,7 +286,8 @@ class OliveService : Service() {
             alpacaFdV6?.let {
                 try {
                     Os.shutdown(it, OsConstants.SHUT_RDWR)
-                } catch (_: Exception) {}
+                } catch (_: Exception) {
+                }
                 Os.close(it)
             }
         } catch (e: Exception) {
