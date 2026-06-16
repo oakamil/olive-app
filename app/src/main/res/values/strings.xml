@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Pop-up Info Content -->
+    <string name="info_star_sensitivity"><![CDATA[Determines the sensitivity for detecting stars in a captured image. Increase to detect more stars. Note: increasing the value too much can slow down the solver and/or result in more false stars detected.]]></string>
+    <string name="info_zoom"><![CDATA[Increase the camera\'s zoom for avoiding obstructions at the edges of the image. Note: zooming in reduces the usable image for star detection.]]></string>
+    <string name="info_exposure"><![CDATA[Increase the exposure to gather more light in a captured image. Slower exposures (higher number) increase star detection at the cost of slower updates.]]></string>
+    <string name="info_stacking"><![CDATA[Combine data from multiple frames into a single image prior to star detection. This slows down the effective exposure rate for the camera.]]></string>
+    <string name="info_brightness"><![CDATA[Increase the brightness of the image. Unlike gain, the brightness value is applied after the image is captured by the sensor.]]></string>
+    <string name="info_iso"><![CDATA[Increase the camera\'s brightness / light sensitivity. By default the ISO value is set to the highest <i>analog</i> value supported by the camera. Any increase beyond this will also increase noise artifacts.]]></string>
+    <string name="info_gain"><![CDATA[Increase the camera sensor\'s light sensitivity.]]></string>
+    <string name="info_focus"><![CDATA[Change the focus position of the camera.]]></string>
+    <string name="info_noise_reduction"><![CDATA[Enable software noise reduction in the camera\'s image processor.]]></string>
+    <string name="info_hot_pixel_mode"><![CDATA[Enable hot pixel removal in the camera\'s image processor.]]></string>
+    <string name="info_hfr"><![CDATA[Half-Flux Radius is used to measure the size, sharpness, and focus of detected stars. Lower values indicate a better focus of the camera when it\'s pointed at the sky.]]></string>
+    <string name="info_camera_selection"><![CDATA[<b>Internal Camera</b><br>Use the device\'s native camera for imaging the sky. The default phone camera is recommended, but all available cameras are shown in the dropdown.<br><br><b>External Camera</b><br>Use a camera plugged into the device\'s USB port. A dropdown is shown to target a specific frame rate for the video feed from the camera. The engine will try to select a feed that matches the given frame rate if available. A lower frame rate results in longer camera exposures.<br><br><b>Demo Camera</b><br>Cycles through canned images for demo purposes.]]></string>
+    <string name="info_sensor_mode"><![CDATA[Processed mode (recommended) uses the camera\'s own algorithms to pre-process the image. Raw mode relies on the engine to do the processing. Raw is only available on select phone models.]]></string>
+    <string name="info_downsampling"><![CDATA[Based on this setting the image will be reduced in size prior to running the plate-solving algorithms. 2x2 is recommended.]]></string>
+    <string name="info_extractor"><![CDATA[Determines which algorithm to use for star detection. Cedar (cedar-detect) is recommended for raw mode.]]></string>
+    <string name="info_guidance_mode"><![CDATA[The engine\'s guidance display can show Alt-Az offsets (distance to target) or equatorial RA/Dec offsets.]]></string>
+    <string name="info_telescope_control" tools:ignore="TypographyDashes"><![CDATA[Olive Finder runs control servers for external connections:<br>- Meade LX200 protocol on port 4030<br>- ASCOM Alpaca protocol on port 11111<br>- ASCOM Alpaca discovery server<br><br><h2>SkySafari Integration</h2><b>Configuring SkySafari 7/8 Plus or Pro (Alpaca)</b><br>Menu > Settings > Telescope section - Presets<br>Add Preset > ASCOM Alpaca<br>Manual Configuration:<br>- IP Address - 127.0.0.1 if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>- Port - 11111<br>Check IP and Port for Devices<br>Next<br>- Preset Name: Olive<br>- Set Time &amp; Location: leave this checked only if Olive is on a separate device<br>- Readout Rate: 10 per second <i>(Important: swipe back instead of pressing the X)</i><br>Save Preset<br>Select the new preset > Use This Preset<br><br><b>Configuring SkySafari 7/8 Plus or Pro (LX200)</b><br>Menu > Settings > Telescope section - Presets<br>Add Preset > Other Connection > Meade LX200 Classic, Next > <i>Alt-Az. GoTo (Recommended)</i>, Next<br>Connect via WiFi<br>- IP Address - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>- Port - 4030<br>Check Connection<br>Next<br>- Preset Name: Olive<br>- Set Time &amp; Location: leave this checked only if Olive is on a separate device<br>- Readout Rate: 10 per second <i>(Important: swipe back instead of pressing the X)</i><br>Save Preset<br>Select the new preset > Use This Preset<br><br><b>Configuring SkySafari 6 Plus or Pro (LX200)</b><br>Settings > Telescope section - Setup<br>- Scope Type -- Meade LX200 Classic<br>- Mount Type -- <i>Alt-Az. GoTo (Recommended)</i><br>- Connect via WiFi<br>- IP Address - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>- Port - 4030<br>- Set Time &amp; Location: leave this checked only if Olive is on a separate device<br>- Readout Rate -- 10 per second <i>(Important: swipe back instead of pressing the X)</i><br>Press X<br><br><b>SkySafari Usage</b><br>Scope > Connect<br>Select an Object<br>- GoTo -> Olive will show guidance to the object<br>- Stop -> Stop the current GoTo target<br>- Align -> Center object in eyepiece, tap Align to update Olive\'s alignment*<br><br><h2>Stellarium Integration</h2><b>Configuring Stellarium+ (LX200)</b><br>Menu > Observing Tools > Telescope Control <i>(toggle on)</i><br>Type - Network<br>Host - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>Toggle Link to on<br>Time and Location sync - Turn off if using Olive on the same device<br><br><b>Stellarium Usage</b><br>Menu > Observing Tools > Telescope Control <i>(toggle on)</i><br>Toggle Link to on<br>Select an Object<br>- GoTo -> Olive will show guidance to the object<br>- Sync -> Center object in eyepiece, tap Sync to update Olive\'s alignment*<br><br><small>* Olive uses a single alignment point to determine the offset of the camera\'s view to the telescope\'s view. Alignment only needs to be done once each time the camera is mounted on a telescope.</small>]]></string>
+
+    <!-- Info Headings -->
+    <string name="heading_telescope_control">Telescope Control</string>
+
+    <!-- Camera Mode Labels -->
+    <string name="info_detected_stars">Detected Stars</string>
+    <string name="info_hfr_label">HFR</string>
+    <string name="status_waiting_for_frame">Waiting for frame …</string>
+
+    <!-- Buttons -->
+    <string name="btn_camera_mode">Camera Mode</string>
+    <string name="btn_stop_engine">Stop Engine</string>
+    <string name="btn_start_engine">Start Engine</string>
+    <string name="btn_stopping">Stopping …</string>
+    <string name="btn_starting">Starting …</string>
+    <string name="btn_back">Back</string>
+    <string name="btn_continue">Continue</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_entering_pip">Entering PIP …</string>
+    <string name="btn_pip_mode">Picture-in-Picture Mode</string>
+
+    <!-- Control labels -->
+    <string name="label_star_sensitivity">Star Sensitivity</string>
+    <string name="label_zoom">Zoom</string>
+    <string name="label_exposure">Exposure</string>
+    <string name="label_stacking_frames">Stacking (Frames)</string>
+    <string name="label_brightness">Brightness</string>
+    <string name="label_iso">ISO</string>
+    <string name="label_gain">Gain</string>
+    <string name="label_focus">Focus</string>
+    <string name="label_noise_reduction">Noise Reduction</string>
+    <string name="label_hot_pixel_mode">Hot Pixel Mode</string>
+    <string name="label_camera_selection">Camera Selection</string>
+    <string name="label_sensor_mode">Sensor Mode</string>
+    <string name="label_downsampling">Downsampling</string>
+    <string name="label_extractor">Extractor</string>
+    <string name="label_guidance_mode">Guidance Mode</string>
+
+    <!-- Settings Labels -->
+    <string name="label_external_camera">External (USB/UVC) Camera</string>
+    <string name="label_internal_camera">Internal Camera</string>
+    <string name="label_demo_camera">Demo Camera</string>
+    <string name="label_camera">Camera</string>
+    <string name="label_fps">Target Frame Rate</string>
+    <string name="label_no_external_camera">No External Camera Detected</string>
+
+    <!-- Setting Values -->
+    <string name="value_processed">Processed</string>
+    <string name="value_raw">Raw</string>
+    <string name="value_cedar">Cedar</string>
+    <string name="value_alt_az_offset">Alt-Az</string>
+    <string name="value_equatorial_ra_dec">Equatorial</string>
+    <string name="value_olive">Olive</string>
+    <string name="value_off">Off</string>
+    <string name="value_on">On</string>
+    <string name="value_2x2">2x2</string>
+    <string name="value_4x4">4x4</string>
+    <string name="value_fast">Fast</string>
+    <string name="value_hq">HQ</string>
+
+    <!-- Stats Labels -->
+    <string name="stat_status">Status</string>
+    <string name="stat_star_count">Star Count</string>
+    <string name="stat_ra">RA</string>
+    <string name="stat_dec">Dec</string>
+    <string name="stat_fov">FOV</string>
+    <string name="stat_exposure">Exposure</string>
+    <string name="stat_post_process">Post-Process</string>
+    <string name="stat_extraction">Extraction</string>
+    <string name="stat_solve">Solve</string>
+    <string name="stat_solve_rate">Solve Rate</string>
+    <string name="stat_ip_address">IP Address</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_info">Info</string>
+    <string name="cd_close">Close</string>
+    <string name="cd_live_preview">Live Preview</string>
+    <string name="cd_target">Target</string>
+    <string name="cd_pip_mode">Enter Picture-in-Picture Mode</string>
+
+    <!-- Permissions Dialog -->
+    <string name="title_permissions_required">Permissions Required</string>
+    <string name="desc_permissions_required">Olive Finder needs Location, Camera, and Local Network permissions to operate the telescope engine and allow other devices to connect.</string>
+
+    <!-- Foreground Service Notification -->
+    <string name="notif_engine_title">Olive Astro Engine</string>
+    <string name="notif_engine_text">Engine is running in background (%1$s)</string>
+    <string name="notif_channel_name">Olive Engine Service Channel</string>
+
+    <!-- Value Format Strings -->
+    <string name="format_ms">%1$s ms</string>
+    <string name="format_hz">%1$s Hz</string>
+    <string name="format_zoom">%1$sx</string>
+    <string name="format_degree">%1$s°</string>
+    <string name="format_camera_fov">Camera %1$s (%2$s° FOV)</string>
+
+    <!-- Guidance Display Labels -->
+    <string name="label_alt">Alt</string>
+    <string name="label_az">Az</string>
+    <string name="label_north">North</string>
+    <string name="label_south">South</string>
+    <string name="label_east">East</string>
+    <string name="label_west">West</string>
+</resources>
