@@ -2,51 +2,47 @@ package com.oakamil.olive
 
 import android.content.res.Configuration
 import android.util.Log
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 @Composable
@@ -64,6 +60,10 @@ fun EngineRunningScreen(
     var mainScreenExposure by remember { mutableFloatStateOf(1.0f) }
     var isEnteringPip by remember { mutableStateOf(false) }
     var showTelescopeControlInfo by remember { mutableStateOf(false) }
+    var showStarSensitivityInfo by remember { mutableStateOf(false) }
+    var showZoomInfo by remember { mutableStateOf(false) }
+    var showExposureInfo by remember { mutableStateOf(false) }
+    var showStackingInfo by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     BackHandler(enabled = !isStopping && !isStarting) {
@@ -120,7 +120,7 @@ fun EngineRunningScreen(
                 ) {
                     Icon(
                         Icons.Default.Info,
-                        contentDescription = "Info",
+                        contentDescription = stringResource(id = R.string.cd_info),
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -135,11 +135,24 @@ fun EngineRunningScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) {
-                Text(
-                    "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { showStarSensitivityInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 Slider(
                     value = viewModel.starSensitivity,
                     onValueChange = {
@@ -171,11 +184,27 @@ fun EngineRunningScreen(
 
                 if (maxZoom > 1f) {
                     var zoomRatio by remember { mutableFloatStateOf(settingsManager.zoomRatio) }
-                    Text(
-                        "Zoom: ${String.format(Locale.US, "%.1fx", zoomRatio)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(id = R.string.label_zoom) + ": " + stringResource(
+                                id = R.string.format_zoom,
+                                String.format(Locale.getDefault(), "%.1f", zoomRatio)
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        IconButton(
+                            onClick = { showZoomInfo = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = stringResource(id = R.string.cd_info),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                     Slider(
                         value = zoomRatio,
                         onValueChange = {
@@ -197,17 +226,30 @@ fun EngineRunningScreen(
                         mainScreenExposure = (rawExp / 1000000f).coerceIn(0.2f, 5.0f)
                     }
 
-                    Text(
-                        "Exposure: ${
-                            String.format(
-                                Locale.US,
-                                "%.1f",
-                                mainScreenExposure
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Exposure: ${
+                                String.format(
+                                    Locale.getDefault(),
+                                    "%.1f",
+                                    mainScreenExposure
+                                )
+                            } s",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        IconButton(
+                            onClick = { showExposureInfo = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = stringResource(id = R.string.cd_info),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
                             )
-                        } s",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
+                        }
+                    }
                     Slider(
                         value = mainScreenExposure,
                         onValueChange = {
@@ -220,11 +262,24 @@ fun EngineRunningScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else if (activeCameraSelection == "uvc" || viewModel.engineMode.name == "UVC") {
-                    Text(
-                        "Stacking (Frames): ${viewModel.uvcStacking}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(id = R.string.label_stacking_frames) + ": ${viewModel.uvcStacking}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        IconButton(
+                            onClick = { showStackingInfo = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = stringResource(id = R.string.cd_info),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                     Slider(
                         value = viewModel.uvcStacking.toFloat(),
                         onValueChange = {
@@ -276,7 +331,7 @@ fun EngineRunningScreen(
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
-                    Text("Camera Mode")
+                    Text(stringResource(id = R.string.btn_camera_mode))
                 }
 
                 OutlinedButton(
@@ -293,7 +348,11 @@ fun EngineRunningScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     enabled = !isEnteringPip
                 ) {
-                    Text(if (isEnteringPip) "Entering PIP..." else "Picture-in-Picture Mode")
+                    Text(
+                        if (isEnteringPip) stringResource(id = R.string.btn_entering_pip) else stringResource(
+                            id = R.string.btn_pip_mode
+                        )
+                    )
                 }
 
                 Button(
@@ -309,9 +368,9 @@ fun EngineRunningScreen(
                 ) {
                     Text(
                         when {
-                            isStopping -> "Stopping..."
-                            isStarting -> "Starting..."
-                            else -> "Stop Engine"
+                            isStopping -> stringResource(id = R.string.btn_stopping)
+                            isStarting -> stringResource(id = R.string.btn_starting)
+                            else -> stringResource(id = R.string.btn_stop_engine)
                         }
                     )
                 }
@@ -335,7 +394,7 @@ fun EngineRunningScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
+                                .verticalScrollWithScrollbar(rememberScrollState())
                                 .defaultMinSize(minHeight = maxHeight),
                             verticalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -361,7 +420,7 @@ fun EngineRunningScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScrollWithScrollbar(rememberScrollState())
                             .defaultMinSize(minHeight = maxHeight),
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -382,94 +441,38 @@ fun EngineRunningScreen(
 
         if (showTelescopeControlInfo) {
             InfoPopup(
-                title = "Telescope Control",
+                title = stringResource(id = R.string.heading_telescope_control),
                 onDismiss = { showTelescopeControlInfo = false }) {
-                Text("Olive Finder runs control servers for external connections:\n- Meade LX200 protocol on port 4030\n- ASCOM Alpaca protocol on port 11111\n- ASCOM Alpaca discovery server\n")
+                Text(stringResource(id = R.string.info_telescope_control).parseHtmlToAnnotatedString())
+            }
+        }
 
-                Text(
-                    "SkySafari Integration",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    "Configuring SkySafari 7/8 Plus or Pro (Alpaca)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(buildAnnotatedString {
-                    append("Menu > Settings > Telescope section - Presets\nAdd Preset > ASCOM Alpaca\nManual Configuration:\n- IP Address - 127.0.0.1 if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder's screen\n- Port - 11111\nCheck IP and Port for Devices\nNext\n- Preset Name: Olive\n- Set Time & Location: leave this checked only if Olive is on a separate device\n- Readout Rate: 10 per second ")
-                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("(Important: swipe back instead of pressing the X)") }
-                    append("\nSave Preset\nSelect the new preset > Use This Preset\n")
-                })
-
-                Text(
-                    "Configuring SkySafari 7/8 Plus or Pro (LX200)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(buildAnnotatedString {
-                    append("Menu > Settings > Telescope section - Presets\nAdd Preset > Other Connection > Meade LX200 Classic, Next > ")
-                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("Alt-Az. GoTo (Recommended)") }
-                    append(", Next\nConnect via WiFi\n- IP Address - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder's screen\n- Port - 4030\nCheck Connection\nNext\n- Preset Name: Olive\n- Set Time & Location: leave this checked only if Olive is on a separate device\n- Readout Rate: 10 per second ")
-                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("(Important: swipe back instead of pressing the X)") }
-                    append("\nSave Preset\nSelect the new preset > Use This Preset\n")
-                })
-
-                Text(
-                    "Configuring SkySafari 6 Plus or Pro (LX200)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(buildAnnotatedString {
-                    append("Settings > Telescope section - Setup\n- Scope Type -- Meade LX200 Classic\n- Mount Type -- ")
-                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("Alt-Az. GoTo (Recommended)") }
-                    append("\n- Connect via WiFi\n- IP Address - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder's screen\n- Port - 4030\n- Set Time & Location: leave this checked only if Olive is on a separate device\n- Readout Rate -- 10 per second ")
-                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("(Important: swipe back instead of pressing the X)") }
-                    append("\nPress X\n")
-                })
-
-                Text(
-                    "SkySafari Usage",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text("Scope > Connect\nSelect an Object\n- GoTo -> Olive will show guidance to the object\n- Stop -> Stop the current GoTo target\n- Align -> Center object in eyepiece, tap Align to update Olive's alignment*\n")
-
-                Text(
-                    "Stellarium Integration",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    "Configuring Stellarium+ (LX200)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(buildAnnotatedString {
-                    append("Menu > Observing Tools > Telescope Control ")
-                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("(toggle on)") }
-                    append("\nType - Network\nHost - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder's screen\nToggle Link to on\nTime and Location sync - Turn off if using Olive on the same device\n")
-                })
-
-                Text(
-                    "Stellarium Usage",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(buildAnnotatedString {
-                    append("Menu > Observing Tools > Telescope Control ")
-                    withStyle(style = SpanStyle(fontStyle = FontStyle.Italic)) { append("(toggle on)") }
-                    append("\nToggle Link to on\nSelect an Object\n- GoTo -> Olive will show guidance to the object\n- Sync -> Center object in eyepiece, tap Sync to update Olive's alignment*\n")
-                })
-
-                Text(
-                    "* Olive uses a single alignment point to determine the offset of the camera's view to the telescope's view. Alignment only needs to be done once each time the camera is mounted on a telescope.",
-                    style = MaterialTheme.typography.bodySmall
-                )
+        if (showStarSensitivityInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_star_sensitivity),
+                onDismiss = { showStarSensitivityInfo = false }) {
+                Text(stringResource(id = R.string.info_star_sensitivity).parseHtmlToAnnotatedString())
+            }
+        }
+        if (showZoomInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_zoom),
+                onDismiss = { showZoomInfo = false }) {
+                Text(stringResource(id = R.string.info_zoom).parseHtmlToAnnotatedString())
+            }
+        }
+        if (showExposureInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_exposure),
+                onDismiss = { showExposureInfo = false }) {
+                Text(stringResource(id = R.string.info_exposure).parseHtmlToAnnotatedString())
+            }
+        }
+        if (showStackingInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_stacking_frames),
+                onDismiss = { showStackingInfo = false }) {
+                Text(stringResource(id = R.string.info_stacking).parseHtmlToAnnotatedString())
             }
         }
     }
@@ -486,27 +489,42 @@ fun StatsDisplay(stats: EngineStats) {
             modifier = Modifier.weight(1f),
             horizontalAlignment = Alignment.Start
         ) {
-            Text("Status: ${stats.status}", color = MaterialTheme.colorScheme.primary)
             Text(
-                "Star Count: ${stats.centroidCount}",
+                stringResource(id = R.string.stat_status) + ": ${stats.status}",
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                stringResource(id = R.string.stat_star_count) + ": ${stats.centroidCount}",
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Text("RA: ${stats.ra?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}",
+            Text(stringResource(id = R.string.stat_ra) + ": " + (stats.ra?.let {
+                String.format(
+                    Locale.getDefault(),
+                    "%.4f",
+                    it
+                )
+            } ?: "-"),
                 color = MaterialTheme.colorScheme.onBackground)
-            Text("Dec: ${stats.dec?.let { String.format(Locale.US, "%.4f", it) } ?: "-"}",
+            Text(stringResource(id = R.string.stat_dec) + ": " + (stats.dec?.let {
+                String.format(
+                    Locale.getDefault(),
+                    "%.4f",
+                    it
+                )
+            } ?: "-"),
                 color = MaterialTheme.colorScheme.onBackground)
             Text(
-                "FOV: ${
-                    stats.fov?.let {
-                        String.format(
-                            Locale.US,
-                            "%.2f°",
-                            it
-                        )
-                    } ?: "-"
-                }",
-                color = MaterialTheme.colorScheme.onBackground)
+                stringResource(id = R.string.stat_fov) + ": " + (
+                        stats.fov?.let {
+                            stringResource(
+                                id = R.string.format_degree,
+                                String.format(Locale.getDefault(), "%.2f", it)
+                            )
+                        } ?: "-"
+                        ),
+                color = MaterialTheme.colorScheme.onBackground
+            )
         }
 
         // Right Column: Performance metrics
@@ -515,29 +533,38 @@ fun StatsDisplay(stats: EngineStats) {
             horizontalAlignment = Alignment.Start
         ) {
             Text(
-                "Exposure: ${String.format(Locale.US, "%.2f", stats.exposureMs)} ms",
+                stringResource(id = R.string.stat_exposure) + ": " + stringResource(
+                    id = R.string.format_ms,
+                    String.format(Locale.getDefault(), "%.2f", stats.exposureMs)
+                ),
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                "Post-Process: ${
-                    String.format(
-                        Locale.US,
-                        "%.1f",
-                        stats.postProcessMs
-                    )
-                } ms",
+                stringResource(id = R.string.stat_post_process) + ": " + stringResource(
+                    id = R.string.format_ms,
+                    String.format(Locale.getDefault(), "%.1f", stats.postProcessMs)
+                ),
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                "Extraction: ${String.format(Locale.US, "%.1f", stats.extractMs)} ms",
+                stringResource(id = R.string.stat_extraction) + ": " + stringResource(
+                    id = R.string.format_ms,
+                    String.format(Locale.getDefault(), "%.1f", stats.extractMs)
+                ),
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                "Solve: ${String.format(Locale.US, "%.1f", stats.solveMs)} ms",
+                stringResource(id = R.string.stat_solve) + ": " + stringResource(
+                    id = R.string.format_ms,
+                    String.format(Locale.getDefault(), "%.1f", stats.solveMs)
+                ),
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                "Solve Rate: ${String.format(Locale.US, "%.2f", stats.solveRateHz)} Hz",
+                stringResource(id = R.string.stat_solve_rate) + ": " + stringResource(
+                    id = R.string.format_hz,
+                    String.format(Locale.getDefault(), "%.2f", stats.solveRateHz)
+                ),
                 color = MaterialTheme.colorScheme.onBackground
             )
         }

@@ -10,35 +10,44 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbManager
 import android.hardware.usb.UsbDeviceConnection
-
+import android.hardware.usb.UsbManager
+import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
-import android.location.LocationManager
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.activity.viewModels
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
-import androidx.core.content.edit
 
 class MainActivity : ComponentActivity() {
 
@@ -233,13 +242,13 @@ class MainActivity : ComponentActivity() {
                                 showPermissionDialog = false
                                 isStarting = false
                             },
-                            title = { Text("Permissions Required") },
-                            text = { Text("Olive Finder needs Location, Camera, and Local Network permissions to operate the telescope engine and allow other devices to connect.") },
+                            title = { Text(stringResource(id = R.string.title_permissions_required)) },
+                            text = { Text(stringResource(id = R.string.desc_permissions_required)) },
                             confirmButton = {
                                 TextButton(onClick = {
                                     handlePermissionRequest()
                                 }) {
-                                    Text("Continue")
+                                    Text(stringResource(id = R.string.btn_continue))
                                 }
                             },
                             dismissButton = {
@@ -247,7 +256,7 @@ class MainActivity : ComponentActivity() {
                                     showPermissionDialog = false
                                     isStarting = false
                                 }) {
-                                    Text("Cancel")
+                                    Text(stringResource(id = R.string.btn_cancel))
                                 }
                             }
                         )

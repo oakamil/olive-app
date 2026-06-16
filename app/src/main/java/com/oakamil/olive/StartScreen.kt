@@ -12,30 +12,27 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Divider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,7 +44,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import org.json.JSONArray
 
 @Composable
@@ -127,7 +129,7 @@ fun StartScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScrollWithScrollbar(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -146,7 +148,7 @@ fun StartScreen(
         val cameraSelectionContent: @Composable () -> Unit = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Camera Selection",
+                    stringResource(id = R.string.label_camera_selection),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
@@ -156,7 +158,7 @@ fun StartScreen(
                 ) {
                     Icon(
                         Icons.Default.Info,
-                        contentDescription = "Info",
+                        contentDescription = stringResource(id = R.string.cd_info),
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -179,14 +181,16 @@ fun StartScreen(
                     )
                 )
                 Text(
-                    "Internal Camera",
+                    stringResource(id = R.string.label_internal_camera),
                     modifier = Modifier.padding(start = 8.dp),
                     color = MaterialTheme.colorScheme.onBackground
                 )
             }
 
             if (cameraSelection == "internal") {
-                val camerasList = remember {
+                val fovDegreeFormat = stringResource(id = R.string.format_degree)
+                val cameraFovFormat = stringResource(id = R.string.format_camera_fov)
+                val camerasList = remember(fovDegreeFormat, cameraFovFormat) {
                     val camerasJson = viewModel.getAvailableInternalCameras()
                     val list = mutableListOf<Pair<String, String>>()
                     try {
@@ -205,16 +209,20 @@ fun StartScreen(
                         tempCameras.sortBy { it.first.toIntOrNull() ?: Int.MAX_VALUE }
                         for (cam in tempCameras) {
                             supportsRawMap[cam.first] = cam.third
+                            val degreeStr = String.format(
+                                java.util.Locale.getDefault(),
+                                fovDegreeFormat,
+                                String.format(java.util.Locale.getDefault(), "%.1f", cam.second)
+                            )
                             list.add(
                                 Pair(
                                     cam.first,
-                                    "Camera ${cam.first} (${
-                                        String.format(
-                                            java.util.Locale.US,
-                                            "%.1f",
-                                            cam.second
-                                        )
-                                    }° FOV)"
+                                    String.format(
+                                        java.util.Locale.getDefault(),
+                                        cameraFovFormat,
+                                        cam.first,
+                                        degreeStr
+                                    )
                                 )
                             )
                         }
@@ -229,7 +237,11 @@ fun StartScreen(
                         .fillMaxWidth()
                         .padding(start = 56.dp)
                 ) {
-                    Text("Camera: ", color = MaterialTheme.colorScheme.onBackground)
+                    Text(
+                        stringResource(id = R.string.label_camera),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     var expanded by remember { mutableStateOf(false) }
                     Box(
                         modifier = Modifier.border(
@@ -295,7 +307,7 @@ fun StartScreen(
                     )
                 )
                 Text(
-                    text = "External (USB/UVC) Camera",
+                    text = stringResource(id = R.string.label_external_camera),
                     modifier = Modifier.padding(start = 8.dp),
                     color = if (isCameraConnected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(
                         alpha = 0.38f
@@ -305,7 +317,7 @@ fun StartScreen(
 
             if (!isCameraConnected) {
                 Text(
-                    text = "No external camera detected.",
+                    text = stringResource(id = R.string.label_no_external_camera),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 56.dp)
@@ -319,7 +331,11 @@ fun StartScreen(
                         .fillMaxWidth()
                         .padding(start = 56.dp)
                 ) {
-                    Text("FPS: ", color = MaterialTheme.colorScheme.onBackground)
+                    Text(
+                        stringResource(id = R.string.label_fps),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     var expandedFps by remember { mutableStateOf(false) }
                     Box(
                         modifier = Modifier.border(
@@ -329,7 +345,10 @@ fun StartScreen(
                         )
                     ) {
                         TextButton(onClick = { expandedFps = true }) {
-                            Text("$uvcFps", color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                java.text.NumberFormat.getInstance().format(uvcFps),
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
                         DropdownMenu(
                             expanded = expandedFps,
@@ -344,7 +363,7 @@ fun StartScreen(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            "$fps",
+                                            java.text.NumberFormat.getInstance().format(fps),
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                     },
@@ -375,7 +394,7 @@ fun StartScreen(
                     )
                 )
                 Text(
-                    text = "Demo Camera",
+                    text = stringResource(id = R.string.label_demo_camera),
                     modifier = Modifier.padding(start = 8.dp),
                     color = MaterialTheme.colorScheme.onBackground
                 )
@@ -388,7 +407,7 @@ fun StartScreen(
             if (cameraSelection == "internal") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Sensor Mode",
+                        stringResource(id = R.string.label_sensor_mode),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
@@ -398,7 +417,7 @@ fun StartScreen(
                     ) {
                         Icon(
                             Icons.Default.Info,
-                            contentDescription = "Info",
+                            contentDescription = stringResource(id = R.string.cd_info),
                             modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -411,7 +430,10 @@ fun StartScreen(
                         .fillMaxWidth()
                         .padding(vertical = 8.dp)
                 ) {
-                    listOf("Processed", "Raw").forEach { mode ->
+                    listOf(
+                        "Processed" to stringResource(id = R.string.value_processed),
+                        "Raw" to stringResource(id = R.string.value_raw)
+                    ).forEach { (mode, label) ->
                         val enabled = mode == "Processed" || isRawSupported
                         RadioButton(
                             selected = sensorMode == mode,
@@ -423,7 +445,7 @@ fun StartScreen(
                             )
                         )
                         Text(
-                            mode,
+                            label,
                             modifier = Modifier.padding(start = 8.dp, end = 16.dp),
                             color = if (enabled) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(
                                 alpha = 0.5f
@@ -437,7 +459,7 @@ fun StartScreen(
             if (cameraSelection != "demo") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Downsampling",
+                        stringResource(id = R.string.label_downsampling),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
@@ -447,7 +469,7 @@ fun StartScreen(
                     ) {
                         Icon(
                             Icons.Default.Info,
-                            contentDescription = "Info",
+                            contentDescription = stringResource(id = R.string.cd_info),
                             modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -461,9 +483,9 @@ fun StartScreen(
                         .padding(vertical = 8.dp)
                 ) {
                     listOf(
-                        0 to "Off",
-                        2 to "2x2",
-                        4 to "4x4"
+                        0 to stringResource(id = R.string.value_off),
+                        2 to stringResource(id = R.string.value_2x2),
+                        4 to stringResource(id = R.string.value_4x4)
                     ).forEach { (value, label) ->
                         RadioButton(
                             selected = downsampling == value,
@@ -488,7 +510,7 @@ fun StartScreen(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Extractor",
+                    stringResource(id = R.string.label_extractor),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
@@ -498,50 +520,7 @@ fun StartScreen(
                 ) {
                     Icon(
                         Icons.Default.Info,
-                        contentDescription = "Info",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            ) {
-                listOf("Olive", "Cedar").forEach { ext ->
-                    RadioButton(
-                        selected = extractor == ext,
-                        onClick = { extractor = ext },
-                        colors = RadioButtonDefaults.colors(
-                            selectedColor = MaterialTheme.colorScheme.primary,
-                            unselectedColor = MaterialTheme.colorScheme.onBackground
-                        )
-                    )
-                    Text(
-                        ext,
-                        modifier = Modifier.padding(start = 8.dp, end = 16.dp),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Guidance Mode",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                IconButton(
-                    onClick = { showGuidanceModeInfo = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = "Info",
+                        contentDescription = stringResource(id = R.string.cd_info),
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -554,8 +533,54 @@ fun StartScreen(
                     .padding(vertical = 8.dp)
             ) {
                 listOf(
-                    "alt_az" to "Alt-Az",
-                    "equatorial" to "Equatorial"
+                    "Olive" to stringResource(id = R.string.value_olive),
+                    "Cedar" to stringResource(id = R.string.value_cedar)
+                ).forEach { (ext, label) ->
+                    RadioButton(
+                        selected = extractor == ext,
+                        onClick = { extractor = ext },
+                        colors = RadioButtonDefaults.colors(
+                            selectedColor = MaterialTheme.colorScheme.primary,
+                            unselectedColor = MaterialTheme.colorScheme.onBackground
+                        )
+                    )
+                    Text(
+                        label,
+                        modifier = Modifier.padding(start = 8.dp, end = 16.dp),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(id = R.string.label_guidance_mode),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { showGuidanceModeInfo = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(id = R.string.cd_info),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                listOf(
+                    "alt_az" to stringResource(id = R.string.value_alt_az_offset),
+                    "equatorial" to stringResource(id = R.string.value_equatorial_ra_dec)
                 ).forEach { (value, label) ->
                     RadioButton(
                         selected = guidanceMode == value,
@@ -587,8 +612,8 @@ fun StartScreen(
                     .padding(vertical = 8.dp)
             ) {
                 listOf(
-                    false to "Off",
-                    true to "On"
+                    false to stringResource(id = R.string.value_off),
+                    true to stringResource(id = R.string.value_on)
                 ).forEach { (value, label) ->
                     RadioButton(
                         selected = imuIntegration == value,
@@ -616,7 +641,7 @@ fun StartScreen(
                     enabled = hasCalibration,
                     modifier = Modifier.padding(start = 8.dp)
                 ) {
-                    Text("Reset Calibration")
+                    Text(stringResource(id = R.string.btn_reset_calibration))
                 }
             }*/
         }
@@ -652,9 +677,9 @@ fun StartScreen(
         ) {
             Text(
                 when {
-                    isStopping -> "Stopping..."
-                    isStarting -> "Starting..."
-                    else -> "Start Engine"
+                    isStopping -> stringResource(id = R.string.btn_stopping)
+                    isStarting -> stringResource(id = R.string.btn_starting)
+                    else -> stringResource(id = R.string.btn_start_engine)
                 }
             )
         }
@@ -662,45 +687,38 @@ fun StartScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         if (showCameraSelectionInfo) {
-            InfoPopup(title = "Camera Selection", onDismiss = { showCameraSelectionInfo = false }) {
-                Text(
-                    "Internal Camera",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text("Use the device's native camera for imaging the sky. The default phone camera is recommended, but all available cameras are shown in the dropdown.\n")
-                Text(
-                    "External Camera",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text("Use a camera plugged into the device's USB port. A dropdown is shown to target a specific frame rate for the video feed from the camera. The engine will try to select a feed that matches the given frame rate if available. A lower frame rate results in longer camera exposures.\n")
-                Text(
-                    "Demo Camera",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text("Cycles through canned images for demo purposes.")
+            InfoPopup(
+                title = stringResource(id = R.string.label_camera_selection),
+                onDismiss = { showCameraSelectionInfo = false }) {
+                Text(stringResource(id = R.string.info_camera_selection).parseHtmlToAnnotatedString())
             }
         }
         if (showSensorModeInfo) {
-            InfoPopup(title = "Sensor Mode", onDismiss = { showSensorModeInfo = false }) {
-                Text("Processed mode (recommended) uses the camera's own algorithms to pre-process the image. Raw mode relies on the engine to do the processing. Raw is only available on select phone models.")
+            InfoPopup(
+                title = stringResource(id = R.string.label_sensor_mode),
+                onDismiss = { showSensorModeInfo = false }) {
+                Text(stringResource(id = R.string.info_sensor_mode).parseHtmlToAnnotatedString())
             }
         }
         if (showDownsamplingInfo) {
-            InfoPopup(title = "Downsampling", onDismiss = { showDownsamplingInfo = false }) {
-                Text("Based on this setting the image will be reduced in size prior to running the plate-solving algorithms. 2x2 is recommended.")
+            InfoPopup(
+                title = stringResource(id = R.string.label_downsampling),
+                onDismiss = { showDownsamplingInfo = false }) {
+                Text(stringResource(id = R.string.info_downsampling).parseHtmlToAnnotatedString())
             }
         }
         if (showExtractorInfo) {
-            InfoPopup(title = "Extractor", onDismiss = { showExtractorInfo = false }) {
-                Text("Determines which algorithm to use for star detection. Cedar (cedar-detect) is recommended for raw mode.")
+            InfoPopup(
+                title = stringResource(id = R.string.label_extractor),
+                onDismiss = { showExtractorInfo = false }) {
+                Text(stringResource(id = R.string.info_extractor).parseHtmlToAnnotatedString())
             }
         }
         if (showGuidanceModeInfo) {
-            InfoPopup(title = "Guidance Mode", onDismiss = { showGuidanceModeInfo = false }) {
-                Text("The engine's guidance display can show Alt-Az offsets (distance to target) or equatorial RA/Dec offsets.")
+            InfoPopup(
+                title = stringResource(id = R.string.label_guidance_mode),
+                onDismiss = { showGuidanceModeInfo = false }) {
+                Text(stringResource(id = R.string.info_guidance_mode).parseHtmlToAnnotatedString())
             }
         }
     }
@@ -744,17 +762,17 @@ fun InfoPopup(
                     IconButton(onClick = onDismiss) {
                         Icon(
                             Icons.Default.Close,
-                            contentDescription = "Close",
+                            contentDescription = stringResource(id = R.string.cd_close),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
-                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScrollWithScrollbar(rememberScrollState())
                 ) {
                     content()
                 }
