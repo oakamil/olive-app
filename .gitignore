@@ -24,3 +24,8 @@ app/src/main/rust/Cargo.lock
 
 # Log Files
 *.log
+
+# Other
+.antigravitycli/
+app/release/
+app/src/main/jniLibs/
