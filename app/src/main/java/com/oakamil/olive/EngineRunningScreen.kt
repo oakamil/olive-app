@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
@@ -40,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -414,6 +415,8 @@ fun EngineRunningScreen(
             Column(
                 modifier = Modifier.fillMaxSize()
             ) {
+                GuidanceContent()
+                Spacer(modifier = Modifier.height(16.dp))
                 BoxWithConstraints(
                     modifier = Modifier.weight(1f)
                 ) {
@@ -425,8 +428,6 @@ fun EngineRunningScreen(
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            GuidanceContent()
-                            Spacer(modifier = Modifier.height(16.dp))
                             StatsContent()
                         }
                         Column {
@@ -443,7 +444,7 @@ fun EngineRunningScreen(
             InfoPopup(
                 title = stringResource(id = R.string.heading_telescope_control),
                 onDismiss = { showTelescopeControlInfo = false }) {
-                Text(stringResource(id = R.string.info_telescope_control).parseHtmlToAnnotatedString())
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_telescope_control)))
             }
         }
 
@@ -451,28 +452,28 @@ fun EngineRunningScreen(
             InfoPopup(
                 title = stringResource(id = R.string.label_star_sensitivity),
                 onDismiss = { showStarSensitivityInfo = false }) {
-                Text(stringResource(id = R.string.info_star_sensitivity).parseHtmlToAnnotatedString())
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_star_sensitivity)))
             }
         }
         if (showZoomInfo) {
             InfoPopup(
                 title = stringResource(id = R.string.label_zoom),
                 onDismiss = { showZoomInfo = false }) {
-                Text(stringResource(id = R.string.info_zoom).parseHtmlToAnnotatedString())
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_zoom)))
             }
         }
         if (showExposureInfo) {
             InfoPopup(
                 title = stringResource(id = R.string.label_exposure),
                 onDismiss = { showExposureInfo = false }) {
-                Text(stringResource(id = R.string.info_exposure).parseHtmlToAnnotatedString())
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_exposure)))
             }
         }
         if (showStackingInfo) {
             InfoPopup(
                 title = stringResource(id = R.string.label_stacking_frames),
                 onDismiss = { showStackingInfo = false }) {
-                Text(stringResource(id = R.string.info_stacking).parseHtmlToAnnotatedString())
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_stacking)))
             }
         }
     }

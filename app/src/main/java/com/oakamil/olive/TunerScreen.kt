@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
@@ -48,6 +47,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
@@ -269,11 +270,16 @@ fun TunerScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScrollWithScrollbar(rememberScrollState())
             ) {
                 CameraFeedContent()
                 Spacer(modifier = Modifier.height(16.dp))
-                TuningContent()
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScrollWithScrollbar(rememberScrollState())
+                ) {
+                    TuningContent()
+                }
             }
         }
     }
@@ -652,7 +658,7 @@ fun TuningControls(
         if (showGainInfo) {
             InfoPopup(title = gainLabel, onDismiss = { showGainInfo = false }) {
                 if (gainLabel == "ISO") {
-                    Text(stringResource(id = R.string.info_iso).parseHtmlToAnnotatedString())
+                    Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_iso)))
                 } else {
                     Text(stringResource(id = R.string.info_gain))
                 }
