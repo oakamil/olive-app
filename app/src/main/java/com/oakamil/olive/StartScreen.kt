@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
@@ -46,7 +45,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -690,35 +691,35 @@ fun StartScreen(
             InfoPopup(
                 title = stringResource(id = R.string.label_camera_selection),
                 onDismiss = { showCameraSelectionInfo = false }) {
-                Text(stringResource(id = R.string.info_camera_selection).parseHtmlToAnnotatedString())
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_camera_selection)))
             }
         }
         if (showSensorModeInfo) {
             InfoPopup(
                 title = stringResource(id = R.string.label_sensor_mode),
                 onDismiss = { showSensorModeInfo = false }) {
-                Text(stringResource(id = R.string.info_sensor_mode).parseHtmlToAnnotatedString())
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_sensor_mode)))
             }
         }
         if (showDownsamplingInfo) {
             InfoPopup(
                 title = stringResource(id = R.string.label_downsampling),
                 onDismiss = { showDownsamplingInfo = false }) {
-                Text(stringResource(id = R.string.info_downsampling).parseHtmlToAnnotatedString())
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_downsampling)))
             }
         }
         if (showExtractorInfo) {
             InfoPopup(
                 title = stringResource(id = R.string.label_extractor),
                 onDismiss = { showExtractorInfo = false }) {
-                Text(stringResource(id = R.string.info_extractor).parseHtmlToAnnotatedString())
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_extractor)))
             }
         }
         if (showGuidanceModeInfo) {
             InfoPopup(
                 title = stringResource(id = R.string.label_guidance_mode),
                 onDismiss = { showGuidanceModeInfo = false }) {
-                Text(stringResource(id = R.string.info_guidance_mode).parseHtmlToAnnotatedString())
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_guidance_mode)))
             }
         }
     }
