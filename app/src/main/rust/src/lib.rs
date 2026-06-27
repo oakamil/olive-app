@@ -945,3 +945,161 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_resetTelescopeServer<'
         }
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getPlanets(
+    mut env: JNIEnv,
+    _class: JClass,
+    bsp_path: jni::objects::JString,
+    time_ms: jni::sys::jlong,
+    _latitude: jni::sys::jdouble,
+    _longitude: jni::sys::jdouble,
+) -> jni::sys::jstring {
+    use chrono::TimeZone;
+    use serde::Serialize;
+    use starfield::jplephem::kernel::SpiceKernel;
+    use starfield::jplephem_ext::SpiceKernelExt;
+    use starfield::time::Timescale;
+
+    #[derive(Serialize)]
+    struct PlanetObj {
+        id: i32,
+        #[serde(rename = "catalogLabel")]
+        catalog_label: String,
+        #[serde(rename = "catalogEntry")]
+        catalog_entry: String,
+        ra: f64,
+        dec: f64,
+        constellation: Option<String>,
+        #[serde(rename = "objectType")]
+        object_type: String,
+        #[serde(rename = "broadCategory")]
+        broad_category: String,
+        magnitude: Option<f64>,
+        #[serde(rename = "surfaceBrightness")]
+        surface_brightness: Option<f64>,
+        #[serde(rename = "angularSize")]
+        angular_size: Option<String>,
+        #[serde(rename = "commonName")]
+        common_name: Option<String>,
+        description: Option<String>,
+        copyright: Option<String>,
+    }
+
+    let bsp_path_str: String = env
+        .get_string(&bsp_path)
+        .map(|s| s.into())
+        .unwrap_or_default();
+
+    let result_json = std::panic::catch_unwind(|| {
+        let mut kernel = SpiceKernel::open(&bsp_path_str).map_err(|e| e.to_string())?;
+        let ts = Timescale::default();
+
+        let dt = chrono::Utc
+            .timestamp_millis_opt(time_ms)
+            .single()
+            .ok_or("Invalid time")?;
+        use chrono::{Datelike, Timelike};
+        let time = ts.utc((
+            dt.year(),
+            dt.month(),
+            dt.day(),
+            dt.hour(),
+            dt.minute(),
+            dt.second() as f64 + dt.nanosecond() as f64 / 1_000_000_000.0,
+        ));
+        let earth = kernel.at("EARTH", &time).map_err(|e| e.to_string())?;
+
+        let mut planets = vec![];
+        let targets = [
+            ("MERCURY BARYCENTER", "Mercury", 1),
+            ("VENUS BARYCENTER", "Venus", 2),
+            ("MOON", "Moon", 3),
+            ("MARS BARYCENTER", "Mars", 4),
+            ("JUPITER BARYCENTER", "Jupiter", 5),
+            ("SATURN BARYCENTER", "Saturn", 6),
+            ("URANUS BARYCENTER", "Uranus", 7),
+            ("NEPTUNE BARYCENTER", "Neptune", 8),
+            ("PLUTO BARYCENTER", "Pluto", 9),
+        ];
+
+        for (name, common_name, id) in targets {
+            if let Ok(astrometric) = earth.observe(name, &mut kernel, &time) {
+                let (ra_hours, dec_deg, _dist) = astrometric.radec(None);
+
+                planets.push(PlanetObj {
+                    id,
+                    catalog_label: "Planet".to_string(),
+                    catalog_entry: common_name.to_string(),
+                    ra: ra_hours * 15.0, // convert hours to degrees
+                    dec: dec_deg,
+                    constellation: None,
+                    object_type: "Planet".to_string(),
+                    broad_category: "planet".to_string(),
+                    magnitude: starfield::magnitudelib::planetary_magnitude(&astrometric, &time)
+                        .ok(),
+                    surface_brightness: None,
+                    angular_size: None,
+                    common_name: Some(common_name.to_string()),
+                    description: Some(format!("The planet {}", common_name)),
+                    copyright: None,
+                });
+            }
+        }
+
+        Ok::<Vec<PlanetObj>, String>(planets)
+    });
+
+    let json_str = match result_json {
+        Ok(Ok(planets)) => serde_json::to_string(&planets).unwrap_or_else(|_| "[]".to_string()),
+        Ok(Err(e)) => {
+            log::error!("Planet calculation error: {}", e);
+            "[]".to_string()
+        }
+        Err(_) => {
+            log::error!("Planet calculation panicked");
+            "[]".to_string()
+        }
+    };
+
+    env.new_string(json_str).unwrap().into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setGoToTarget(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    ra: jni::sys::jdouble,
+    dec: jni::sys::jdouble,
+) {
+    if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
+        if let Ok(mut state) = state_arc.write() {
+            state.requested_target_ra = Some(ra as f64);
+            state.requested_target_dec = Some(dec as f64);
+            log::info!(
+                "Target slew requested via JNI (EngineState): RA={}, Dec={}",
+                ra,
+                dec
+            );
+        }
+    } else {
+        log::warn!("setGoToTarget called but ENGINE_STATE is not initialized");
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setAlignTargetPixel(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    x: jni::sys::jdouble,
+    y: jni::sys::jdouble,
+) {
+    if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
+        if let Ok(mut state) = state_arc.write() {
+            state.requested_align_target_pixel = Some((x as f64, y as f64));
+            log::info!("Align target pixel requested via JNI: ({}, {})", x, y);
+        }
+    } else {
+        log::warn!("setAlignTargetPixel called but ENGINE_STATE is not initialized");
+    }
+}

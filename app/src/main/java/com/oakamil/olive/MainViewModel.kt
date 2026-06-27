@@ -32,6 +32,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var engineStats by mutableStateOf(EngineStats())
         private set
 
+    var currentLat by mutableStateOf<Double?>(null)
+    var currentLon by mutableStateOf<Double?>(null)
+
+    // Catalog State
+    var catalogSearchQuery by mutableStateOf("")
+    var catalogSelectedCategory by mutableStateOf("Nearest Objects")
+    var catalogSortBy by mutableStateOf("catalog ID")
+    var catalogMagLimit by mutableStateOf<Double?>(null)
+    var catalogTypeFilter by mutableStateOf("All Types")
+    var catalogVisibilityFilter by mutableStateOf("Above Horizon")
+    var landscapeKeyboardOnRight by mutableStateOf(true)
+
     // Tuning state
     var currentExposure by mutableFloatStateOf(50000f)
     var currentGain by mutableFloatStateOf(100f)
@@ -62,6 +74,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var frameJob: Job? = null
 
     private val settingsManager = SettingsManager(application)
+    val catalogDb = CatalogDatabaseHelper(application)
 
     fun getAvailableInternalCameras(): String {
         return OliveEngine.getAvailableInternalCameras()
@@ -186,13 +199,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         lon: Double = INVALID_COORD,
         timeMs: Long = 0L
     ) {
+        currentLat = lat
+        currentLon = lon
+        val downsampling = if (cameraId == "demo") 0 else settingsManager.downsampling
+
         viewModelScope.launch(Dispatchers.IO) {
             OliveEngine.startNativeCameraEngine(
                 settingsManager.imuIntegration,
                 settingsManager.extractor,
                 settingsManager.sensorMode,
                 cameraId,
-                settingsManager.downsampling,
+                downsampling,
                 lat,
                 lon,
                 timeMs,
@@ -227,7 +244,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startUvcEngine(fd: Int, rawDescriptors: ByteArray, lat: Double = 200.0, lon: Double = 200.0, timeMs: Long = 0L) {
+    fun startUvcEngine(
+        fd: Int,
+        rawDescriptors: ByteArray,
+        lat: Double = 200.0,
+        lon: Double = 200.0,
+        timeMs: Long = 0L
+    ) {
+        currentLat = lat
+        currentLon = lon
         viewModelScope.launch(Dispatchers.IO) {
             if (isEngineRunning) {
                 OliveEngine.stopEngine()
@@ -371,6 +396,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateUvcStacking(frames: Int) {
         uvcStacking = frames.coerceIn(1, 10)
         OliveEngine.updateUvcStacking(uvcStacking)
+    }
+
+    fun setGoToTarget(ra: Double, dec: Double) {
+        if (isEngineRunning) {
+            OliveEngine.setGoToTarget(ra, dec)
+            Log.i("MainViewModel", "GoTo Target set in JNI: RA=$ra, Dec=$dec")
+        } else {
+            Log.w("MainViewModel", "Engine not running, cannot set GoTo Target: RA=$ra, Dec=$dec")
+        }
+    }
+
+    fun getPlanets(): List<CatalogObject> {
+        val bspPath = getApplication<Application>().getDatabasePath("de421.bsp").absolutePath
+        val timeMs = System.currentTimeMillis()
+        val lat = 0.0 // Default or from engine state
+        val lon = 0.0
+
+        val json = OliveEngine.getPlanets(bspPath, timeMs, lat, lon)
+        if (json.isBlank() || json == "[]") return emptyList()
+
+        return try {
+            val arr = org.json.JSONArray(json)
+            val list = mutableListOf<CatalogObject>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(
+                    CatalogObject(
+                        id = obj.optInt("id"),
+                        catalogLabel = obj.optString("catalogLabel"),
+                        catalogEntry = obj.optString("catalogEntry"),
+                        ra = obj.optDouble("ra"),
+                        dec = obj.optDouble("dec"),
+                        constellation = if (obj.has("constellation") && !obj.isNull("constellation")) obj.optString(
+                            "constellation"
+                        ) else null,
+                        objectType = obj.optString("objectType"),
+                        broadCategory = obj.optString("broadCategory"),
+                        magnitude = if (obj.has("magnitude") && !obj.isNull("magnitude")) obj.optDouble(
+                            "magnitude"
+                        ) else null,
+                        surfaceBrightness = if (obj.has("surfaceBrightness") && !obj.isNull("surfaceBrightness")) obj.optDouble(
+                            "surfaceBrightness"
+                        ) else null,
+                        angularSize = if (obj.has("angularSize") && !obj.isNull("angularSize")) obj.optString(
+                            "angularSize"
+                        ) else null,
+                        commonName = if (obj.has("commonName") && !obj.isNull("commonName")) obj.optString(
+                            "commonName"
+                        ) else null,
+                        description = if (obj.has("description") && !obj.isNull("description")) obj.optString(
+                            "description"
+                        ) else null,
+                        copyright = if (obj.has("copyright") && !obj.isNull("copyright")) obj.optString(
+                            "copyright"
+                        ) else null
+                    )
+                )
+            }
+            list
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Failed to parse planets: ${e.message}")
+            emptyList()
+        }
     }
 
     fun stopEngineSync() {
