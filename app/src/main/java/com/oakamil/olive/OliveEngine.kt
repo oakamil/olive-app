@@ -59,4 +59,7 @@ object OliveEngine {
     external fun processTelescopeData(data: ByteArray): ByteArray?
     external fun resetTelescopeServer()
     external fun handleAlpacaConnection(fd: Int)
+    external fun getPlanets(bspPath: String, timeMs: Long, lat: Double, lon: Double): String
+    external fun setGoToTarget(ra: Double, dec: Double)
+    external fun setAlignTargetPixel(x: Double, y: Double)
 }

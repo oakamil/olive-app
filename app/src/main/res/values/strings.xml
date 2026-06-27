@@ -121,4 +121,56 @@
     <string name="label_south">South</string>
     <string name="label_east">East</string>
     <string name="label_west">West</string>
+
+    <!-- Catalog and Alignment Strings -->
+    <string name="title_sky_catalog">Sky Catalog</string>
+    <string name="btn_catalog">Catalog</string>
+    <string name="placeholder_search">Search</string>
+    <string name="cat_all_objects">All Objects</string>
+    <string name="cat_nearest_objects">Nearest Objects</string>
+    <string name="cat_solar_system">Solar System</string>
+    <string name="cat_bright_stars">Bright Stars</string>
+    <string name="btn_goto">GoTo</string>
+    <string name="btn_align">Align</string>
+    <string name="btn_reset">Reset</string>
+    <string name="btn_confirm">Confirm</string>
+    <string name="title_confirm_alignment">Confirm Alignment</string>
+    <string name="inst_confirm_alignment">Please ensure that the selected target is centered in your eyepiece before continuing.</string>
+    <string name="title_reset_alignment">Reset Alignment</string>
+    <string name="inst_reset_alignment">The alignment will be reset to the center of the camera\'s field of view.</string>
+    
+    <!-- Filter and Sort Strings -->
+    <string name="filter_sort_by">Sort By</string>
+    <string name="filter_visibility">Visibility</string>
+    <string name="filter_object_type">Object Type</string>
+    <string name="filter_magnitude_limit">Magnitude Limit</string>
+    <string name="sort_distance">distance</string>
+    <string name="sort_brightness">brightness</string>
+    <string name="sort_name">name</string>
+    <string name="sort_catalog_id">catalog ID</string>
+    <string name="vis_above_horizon">Above Horizon</string>
+    <string name="type_all_types">All Types</string>
+    <string name="type_star">Star</string>
+    <string name="type_galaxy">Galaxy</string>
+    <string name="type_nebula">Nebula</string>
+    <string name="type_cluster">Cluster</string>
+    <string name="type_planet">Planet</string>
+    <string name="type_asterism">Asterism</string>
+    <string name="type_cluster_nebula">Cluster + Nebula</string>
+    <string name="type_dark_nebula">Dark Nebula</string>
+    <string name="type_double_star">Double Star</string>
+    <string name="type_globular_cluster">Globular Cluster</string>
+    <string name="type_open_cluster">Open Cluster</string>
+    <string name="type_planetary_nebula">Planetary Nebula</string>
+    <string name="mag_no_limit">No Limit</string>
+    <string name="mag_naked_eye">Naked Eye (&lt; 6)</string>
+    <string name="mag_binoculars">Binoculars (&lt; 9)</string>
+    <string name="mag_small_scope">Small Scope (&lt; 12)</string>
+    <string name="mag_large_scope">Large Scope (&lt; 15)</string>
+    <string name="status_no_objects">No objects found</string>
+    <string name="btn_load_more">Load More</string>
+    <string name="cd_selected">Selected</string>
+    <string name="status_below_horizon">Below Horizon</string>
+    <string name="cd_direction">Direction</string>
+    <string name="cd_settings">Settings</string>
 </resources>

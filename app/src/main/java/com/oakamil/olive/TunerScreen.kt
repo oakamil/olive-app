@@ -9,6 +9,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -20,10 +23,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,6 +67,11 @@ fun TunerScreen(
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+
+    var alignTargetX by remember { mutableStateOf<Float?>(null) }
+    var alignTargetY by remember { mutableStateOf<Float?>(null) }
+    var showAlignDialog by remember { mutableStateOf(false) }
+    var showResetAlignDialog by remember { mutableStateOf(false) }
 
     BackHandler {
         viewModel.setEnginePaused(false)
@@ -150,17 +161,16 @@ fun TunerScreen(
         ) {
             val frame = viewModel.latestFrame
             if (frame != null) {
-                val cW = maxWidth.value
-                val cH = maxHeight.value
+                val layoutW = constraints.maxWidth.toFloat()
+                val layoutH = constraints.maxHeight.toFloat()
                 val bW = frame.width.toFloat()
                 val bH = frame.height.toFloat()
+                val fitPxScale = minOf(layoutW / bW, layoutH / bH)
 
-                val fitScale = minOf(cW / bW, cH / bH)
-                val drawnWidth = bW * fitScale
-                val drawnHeight = bH * fitScale
-
+                val drawnWidth = bW * fitPxScale
+                val drawnHeight = bH * fitPxScale
                 val baseScale = if (imageRotation % 180f != 0f) {
-                    minOf(cW / drawnHeight, cH / drawnWidth)
+                    minOf(layoutW / drawnHeight, layoutH / drawnWidth)
                 } else {
                     1f
                 }
@@ -170,6 +180,29 @@ fun TunerScreen(
                     contentDescription = stringResource(id = R.string.cd_live_preview),
                     modifier = Modifier
                         .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures { tapOffset ->
+                                val cx = layoutW / 2f
+                                val cy = layoutH / 2f
+                                val x1 = tapOffset.x - cx
+                                val y1 = tapOffset.y - cy
+                                val x2 = x1 - offset.x
+                                val y2 = y1 - offset.y
+                                
+                                val s = scale * baseScale
+                                val x3 = x2 / s
+                                val y3 = y2 / s
+    
+                                val rad = Math.toRadians(-imageRotation.toDouble())
+                                val cosA = kotlin.math.cos(rad).toFloat()
+                                val sinA = kotlin.math.sin(rad).toFloat()
+                                val x4 = x3 * cosA - y3 * sinA
+                                val y4 = x3 * sinA + y3 * cosA
+    
+                                alignTargetX = (x4 / fitPxScale) + bW / 2f
+                                alignTargetY = (y4 / fitPxScale) + bH / 2f
+                            }
+                        }
                         .graphicsLayer(
                             scaleX = scale * baseScale,
                             scaleY = scale * baseScale,
@@ -178,6 +211,46 @@ fun TunerScreen(
                             rotationZ = imageRotation
                         )
                 )
+                
+                if (alignTargetX != null && alignTargetY != null) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = scale * baseScale,
+                                scaleY = scale * baseScale,
+                                translationX = offset.x,
+                                translationY = offset.y,
+                                rotationZ = imageRotation
+                            )
+                    ) {
+                        val fitPxScale = minOf(size.width / bW, size.height / bH)
+                        val canvasX = center.x + (alignTargetX!! - bW / 2f) * fitPxScale
+                        val canvasY = center.y + (alignTargetY!! - bH / 2f) * fitPxScale
+
+                        val crosshairSize = 30f / (scale * baseScale)
+                        val strokeW = 3f / (scale * baseScale)
+
+                        drawCircle(
+                            color = androidx.compose.ui.graphics.Color.Red,
+                            radius = 20f / (scale * baseScale),
+                            center = Offset(canvasX, canvasY),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeW)
+                        )
+                        drawLine(
+                            color = androidx.compose.ui.graphics.Color.Red,
+                            start = Offset(canvasX - crosshairSize, canvasY),
+                            end = Offset(canvasX + crosshairSize, canvasY),
+                            strokeWidth = strokeW
+                        )
+                        drawLine(
+                            color = androidx.compose.ui.graphics.Color.Red,
+                            start = Offset(canvasX, canvasY - crosshairSize),
+                            end = Offset(canvasX, canvasY + crosshairSize),
+                            strokeWidth = strokeW
+                        )
+                    }
+                }
             } else {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -194,6 +267,34 @@ fun TunerScreen(
 
     @Composable
     fun TuningContent() {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Button(
+                onClick = { showAlignDialog = true },
+                enabled = alignTargetX != null && alignTargetY != null,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Text(stringResource(R.string.btn_align))
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Button(
+                onClick = { showResetAlignDialog = true },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary
+                )
+            ) {
+                Text(stringResource(R.string.btn_reset))
+            }
+        }
+        
         TuningControls(viewModel, settingsManager, activeCameraSelection)
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -284,6 +385,58 @@ fun TunerScreen(
         }
     }
 
+    if (showAlignDialog) {
+        AlertDialog(
+            onDismissRequest = { showAlignDialog = false },
+            title = { Text(stringResource(R.string.title_confirm_alignment)) },
+            text = { Text(stringResource(R.string.inst_confirm_alignment)) },
+            confirmButton = {
+                Button(onClick = {
+                    showAlignDialog = false
+                    if (alignTargetX != null && alignTargetY != null) {
+                        OliveEngine.setAlignTargetPixel(alignTargetX!!.toDouble(), alignTargetY!!.toDouble())
+                    }
+                    alignTargetX = null
+                    alignTargetY = null
+                }) {
+                    Text(stringResource(R.string.btn_confirm))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showAlignDialog = false }) {
+                    Text(stringResource(id = R.string.btn_cancel))
+                }
+            }
+        )
+    }
+
+    if (showResetAlignDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetAlignDialog = false },
+            title = { Text(stringResource(R.string.title_reset_alignment)) },
+            text = { Text(stringResource(R.string.inst_reset_alignment)) },
+            confirmButton = {
+                Button(onClick = {
+                    showResetAlignDialog = false
+                    val frame = viewModel.latestFrame
+                    if (frame != null) {
+                        val bW = frame.width.toDouble()
+                        val bH = frame.height.toDouble()
+                        OliveEngine.setAlignTargetPixel(bW / 2.0, bH / 2.0)
+                    }
+                    alignTargetX = null
+                    alignTargetY = null
+                }) {
+                    Text(stringResource(R.string.btn_confirm))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showResetAlignDialog = false }) {
+                    Text(stringResource(id = R.string.btn_cancel))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -685,6 +838,7 @@ fun TuningControls(
                 Text(stringResource(id = R.string.info_hot_pixel_mode))
             }
         }
+        
     }
 }
 

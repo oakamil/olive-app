@@ -37,6 +37,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -65,6 +67,7 @@ fun EngineRunningScreen(
     var showZoomInfo by remember { mutableStateOf(false) }
     var showExposureInfo by remember { mutableStateOf(false) }
     var showStackingInfo by remember { mutableStateOf(false) }
+    var showCatalog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     BackHandler(enabled = !isStopping && !isStarting) {
@@ -299,82 +302,101 @@ fun EngineRunningScreen(
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Button(
-                    onClick = {
-                        viewModel.setEnginePaused(true)
-                        val range = OliveEngine.getNativeCameraGainRange()
-                        if (range != null && range.size >= 2) {
-                            viewModel.minAnalogGain = range[0]
-                            viewModel.maxAnalogGain =
-                                range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
-                        } else {
-                            viewModel.minAnalogGain = 100f
-                            viewModel.maxAnalogGain = 3200f
-                        }
-                        viewModel.currentExposure = OliveEngine.getNativeCameraExposure().toFloat()
-                            .coerceIn(16667f, 5000000f)
-                        val bRange = OliveEngine.getNativeCameraBrightnessRange()
-                        if (bRange != null && bRange.size >= 3) {
-                            viewModel.uvcBrightnessMin = bRange[0]
-                            viewModel.uvcBrightnessMax = bRange[1]
-                            viewModel.currentUvcBrightness = bRange[2]
-                        } else {
-                            viewModel.uvcBrightnessMin = 0
-                            viewModel.uvcBrightnessMax = 0
-                        }
-                        onNavigateToTuner()
-                    },
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(stringResource(id = R.string.btn_camera_mode))
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        isEnteringPip = true
-                        onEnterPipMode()
-                        coroutineScope.launch {
-                            delay(1000)
-                            isEnteringPip = false
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    enabled = !isEnteringPip
-                ) {
-                    Text(
-                        if (isEnteringPip) stringResource(id = R.string.btn_entering_pip) else stringResource(
-                            id = R.string.btn_pip_mode
+                    Button(
+                        onClick = { showCatalog = true },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary,
+                            contentColor = MaterialTheme.colorScheme.onSecondary
                         )
-                    )
+                    ) {
+                        AutoSizeText(stringResource(R.string.btn_catalog))
+                    }
+
+                    Button(
+                        onClick = {
+                            viewModel.setEnginePaused(true)
+                            val range = OliveEngine.getNativeCameraGainRange()
+                            if (range != null && range.size >= 2) {
+                                viewModel.minAnalogGain = range[0]
+                                viewModel.maxAnalogGain =
+                                    range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
+                            } else {
+                                viewModel.minAnalogGain = 100f
+                                viewModel.maxAnalogGain = 3200f
+                            }
+                            viewModel.currentExposure =
+                                OliveEngine.getNativeCameraExposure().toFloat()
+                                    .coerceIn(16667f, 5000000f)
+                            val bRange = OliveEngine.getNativeCameraBrightnessRange()
+                            if (bRange != null && bRange.size >= 3) {
+                                viewModel.uvcBrightnessMin = bRange[0]
+                                viewModel.uvcBrightnessMax = bRange[1]
+                                viewModel.currentUvcBrightness = bRange[2]
+                            } else {
+                                viewModel.uvcBrightnessMin = 0
+                                viewModel.uvcBrightnessMax = 0
+                            }
+                            onNavigateToTuner()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        AutoSizeText("Camera / Align")
+                    }
                 }
 
-                Button(
-                    onClick = onToggleEngine,
+                Row(
                     modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .fillMaxWidth(),
-                    enabled = !isStopping && !isStarting,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        when {
-                            isStopping -> stringResource(id = R.string.btn_stopping)
-                            isStarting -> stringResource(id = R.string.btn_starting)
-                            else -> stringResource(id = R.string.btn_stop_engine)
-                        }
-                    )
+                    OutlinedButton(
+                        onClick = {
+                            isEnteringPip = true
+                            onEnterPipMode()
+                            coroutineScope.launch {
+                                delay(1000)
+                                isEnteringPip = false
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isEnteringPip
+                    ) {
+                        AutoSizeText(
+                            if (isEnteringPip) stringResource(id = R.string.btn_entering_pip) else "Picture-in-Picture"
+                        )
+                    }
+
+                    Button(
+                        onClick = onToggleEngine,
+                        modifier = Modifier.weight(1f),
+                        enabled = !isStopping && !isStarting,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        AutoSizeText(
+                            when {
+                                isStopping -> stringResource(id = R.string.btn_stopping)
+                                isStarting -> stringResource(id = R.string.btn_starting)
+                                else -> stringResource(id = R.string.btn_stop_engine)
+                            }
+                        )
+                    }
                 }
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
 
@@ -476,6 +498,17 @@ fun EngineRunningScreen(
                 Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_stacking)))
             }
         }
+
+        if (showCatalog) {
+            SkyCatalogDialog(
+                viewModel = viewModel,
+                onDismiss = { showCatalog = false },
+                onGoTo = { ra, dec ->
+                    viewModel.setGoToTarget(ra, dec)
+                    showCatalog = false
+                }
+            )
+        }
     }
 }
 
@@ -570,4 +603,35 @@ fun StatsDisplay(stats: EngineStats) {
             )
         }
     }
+}
+
+@Composable
+fun AutoSizeText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified
+) {
+    val defaultTextStyle = MaterialTheme.typography.labelLarge
+    var textStyle by remember { mutableStateOf(defaultTextStyle) }
+    var readyToDraw by remember { mutableStateOf(false) }
+
+    Text(
+        text = text,
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+        style = textStyle,
+        modifier = modifier.drawWithContent {
+            if (readyToDraw) {
+                drawContent()
+            }
+        },
+        onTextLayout = { result ->
+            if (result.didOverflowWidth) {
+                textStyle = textStyle.copy(fontSize = textStyle.fontSize * 0.9f)
+            } else {
+                readyToDraw = true
+            }
+        }
+    )
 }

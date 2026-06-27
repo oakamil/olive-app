@@ -11,8 +11,8 @@ android {
         applicationId = "com.oakamil.olive"
         minSdk = 29
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.1.8"
+        versionCode = 10
+        versionName = "0.1.9"
     }
 
     buildFeatures {
@@ -63,6 +63,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.graphics:graphics-shapes:1.0.0")
+    implementation("com.github.requery:sqlite-android:3.49.0")
 }
 
 // Custom task to compile rust and copy to jniLibs

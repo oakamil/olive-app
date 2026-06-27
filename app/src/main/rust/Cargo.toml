@@ -20,6 +20,7 @@ serde_json = "1.0.149"
 serde = { version = "1.0", features = ["derive"] }
 chrono = "0.4"
 uvc = {git = "https://github.com/oakamil/libuvc-rs", features = ["vendor", "wrap_fd"]}
+starfield = "0.10.2"
 
 [patch."https://github.com/oakamil/libuvc-rs"]
 uvc = { path = "../../../../../libuvc-rs" }
