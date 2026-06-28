@@ -588,6 +588,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    override fun onCleared() {
+        super.onCleared()
+        catalogDb.closeDatabase()
+    }
+
     companion object {
         const val INVALID_COORD = 200.0
     }
