@@ -958,7 +958,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getPlanets(
     use chrono::TimeZone;
     use serde::Serialize;
     use starfield::jplephem::kernel::SpiceKernel;
-    use starfield::jplephem_ext::SpiceKernelExt;
     use starfield::time::Timescale;
 
     #[derive(Serialize)]
@@ -1138,7 +1137,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getAsteroids(
         node: f64,
         incl: f64,
         e: f64,
-        n: f64,
         a: f64,
     }
 

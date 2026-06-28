@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons.AutoMirrored.Filled
 import androidx.compose.material.icons.Icons.Default
@@ -31,7 +30,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -55,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -93,6 +92,8 @@ fun SkyCatalogDialog(
 
     var showSettingsMenu by remember { mutableStateOf(false) }
     var cometsRefreshTrigger by remember { mutableIntStateOf(0) }
+    var isRefreshingComets by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     var searchResults by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     var showRaDecForObj by remember { mutableStateOf<CatalogObject?>(null) }
@@ -128,14 +129,36 @@ fun SkyCatalogDialog(
         "Bright Stars" to "Str"
     )
 
-    val currentRa = remember { viewModel.engineStats.ra }
-    val currentDec = remember { viewModel.engineStats.dec }
+    val currentRaState = remember { mutableStateOf(viewModel.engineStats.ra) }
+    val currentDecState = remember { mutableStateOf(viewModel.engineStats.dec) }
+    val currentTimeMsState = remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(5000)
+            val newRa = viewModel.engineStats.ra
+            val newDec = viewModel.engineStats.dec
+            if (newRa != null && newDec != null) {
+                currentRaState.value = newRa
+                currentDecState.value = newDec
+            }
+            currentTimeMsState.longValue = System.currentTimeMillis()
+        }
+    }
+
+    val currentRa = currentRaState.value
+    val currentDec = currentDecState.value
+    val currentTimeMs = currentTimeMsState.longValue
 
     var hasMore by remember { mutableStateOf(true) }
     var isLoading by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
+    var activeListState by remember {
+        mutableStateOf<androidx.compose.foundation.lazy.LazyListState?>(
+            null
+        )
+    }
     val catalogDescriptions = remember { viewModel.catalogDb.getCatalogDescriptions() }
     var showInfoForCategory by remember { mutableStateOf<String?>(null) }
 
@@ -355,7 +378,7 @@ fun SkyCatalogDialog(
                 if (offset == 0) {
                     searchResults = results
                     if (results.isNotEmpty()) {
-                        listState.scrollToItem(0)
+                        activeListState?.scrollToItem(0)
                     }
                 } else {
                     searchResults = searchResults + results
@@ -613,18 +636,6 @@ fun SkyCatalogDialog(
                                             else -> category
                                         }
                                     )
-                                    val shortCode = categoryToShortCode[category]
-                                    val desc = catalogDescriptions[shortCode]
-                                    if (desc != null && desc.isNotBlank()) {
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Icon(
-                                            imageVector = Default.Info,
-                                            contentDescription = "Info",
-                                            modifier = Modifier
-                                                .size(16.dp)
-                                                .clickable { showInfoForCategory = category }
-                                        )
-                                    }
                                 }
                             }
                         )
@@ -649,13 +660,37 @@ fun SkyCatalogDialog(
                         modifier = modifier,
                         verticalAlignment = Alignment.Top
                     ) { page ->
-                        val pageListState =
-                            if (page == categories.indexOf(selectedCategory)) listState else androidx.compose.foundation.lazy.rememberLazyListState()
+                        val pageListState = androidx.compose.foundation.lazy.rememberLazyListState()
+                        LaunchedEffect(pageListState, selectedCategory) {
+                            if (page == categories.indexOf(selectedCategory)) {
+                                activeListState = pageListState
+                            }
+                        }
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             state = pageListState
                         ) {
-                            if (categories[page] == "Comets") {
+                            val currentCategory = categories[page]
+                            val currentShortCode = categoryToShortCode[currentCategory]
+                            val currentDesc = catalogDescriptions[currentShortCode]
+                            if (currentDesc != null && currentDesc.isNotBlank()) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Button(onClick = {
+                                            showInfoForCategory = currentCategory
+                                        }) {
+                                            Text(stringResource(R.string.catalog_info_button))
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (currentCategory == "Comets") {
                                 item {
                                     Box(
                                         modifier = Modifier
@@ -663,12 +698,31 @@ fun SkyCatalogDialog(
                                             .padding(16.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Button(onClick = {
-                                            viewModel.refreshComets {
-                                                cometsRefreshTrigger++
+                                        if (isRefreshingComets) {
+                                            CircularProgressIndicator(
+                                                color = Color(0xFFFF5252),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        } else {
+                                            Button(onClick = {
+                                                isRefreshingComets = true
+                                                viewModel.refreshComets(
+                                                    onComplete = {
+                                                        isRefreshingComets = false
+                                                        cometsRefreshTrigger++
+                                                    },
+                                                    onNetworkError = {
+                                                        isRefreshingComets = false
+                                                        android.widget.Toast.makeText(
+                                                            context,
+                                                            R.string.error_comets_download,
+                                                            android.widget.Toast.LENGTH_LONG
+                                                        ).show()
+                                                    }
+                                                )
+                                            }) {
+                                                Text(stringResource(R.string.refresh_comets_button))
                                             }
-                                        }) {
-                                            Text(stringResource(R.string.refresh_comets_button))
                                         }
                                     }
                                 }
@@ -678,10 +732,12 @@ fun SkyCatalogDialog(
                                 key = { it.id.toString() + it.catalogEntry }) { obj ->
                                 val lat = viewModel.currentLat
                                 val lon = viewModel.currentLon
-                                val timeMs = System.currentTimeMillis()
                                 var isBelowHorizon = false
                                 if (visibilityFilter == "All Objects" && lat != null && lon != null) {
-                                    val objAltAz = raDecToAltAz(obj.ra, obj.dec, lat, lon, timeMs)
+                                    val objAltAz = raDecToAltAz(
+                                        obj.ra, obj.dec, lat, lon,
+                                        currentTimeMs
+                                    )
                                     if (objAltAz.alt <= 0) {
                                         isBelowHorizon = true
                                     }
@@ -724,7 +780,7 @@ fun SkyCatalogDialog(
                                                 if (currentRa != null && currentDec != null && lat != null && lon != null) {
                                                     val telescopeAltAz = raDecToAltAz(
                                                         currentRa,
-                                                        currentDec, lat, lon, timeMs
+                                                        currentDec, lat, lon, currentTimeMs
                                                     )
                                                     val objAltAz =
                                                         raDecToAltAz(
@@ -732,7 +788,7 @@ fun SkyCatalogDialog(
                                                             obj.dec,
                                                             lat,
                                                             lon,
-                                                            timeMs
+                                                            currentTimeMs
                                                         )
 
                                                     val distance = angularDistance(
@@ -800,7 +856,9 @@ fun SkyCatalogDialog(
                                 if (isLoading) {
                                     item {
                                         Box(
-                                            modifier = Modifier.fillParentMaxSize(),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 128.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             CircularProgressIndicator()
@@ -809,7 +867,9 @@ fun SkyCatalogDialog(
                                 } else {
                                     item {
                                         Box(
-                                            modifier = Modifier.fillParentMaxSize(),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 128.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(stringResource(R.string.status_no_objects))
