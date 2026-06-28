@@ -569,11 +569,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun refreshComets(onComplete: () -> Unit) {
+    fun refreshComets(onComplete: () -> Unit, onNetworkError: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            catalogDb.refreshComets()
-            launch(Dispatchers.Main) {
-                onComplete()
+            val success = catalogDb.refreshComets {
+                onNetworkError()
+            }
+            if (success) {
+                launch(Dispatchers.Main) {
+                    onComplete()
+                }
             }
         }
     }

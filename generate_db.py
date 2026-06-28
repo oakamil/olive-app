@@ -303,53 +303,7 @@ cursor_out.execute('''
     )
 ''')
 
-def date_to_jd(year, month, day_frac):
-    if month <= 2:
-        year -= 1
-        month += 12
-    A = year // 100
-    B = 2 - A + (A // 4)
-    return int(365.25 * (year + 4716)) + int(30.6001 * (month + 1)) + day_frac + B - 1524.5
-
-import urllib.request
-print("Downloading and parsing comets...")
-req = urllib.request.Request("https://www.minorplanetcenter.net/iau/MPCORB/CometEls.txt", headers={'User-Agent': 'Mozilla/5.0'})
-try:
-    with urllib.request.urlopen(req) as response:
-        comets_data = response.read().decode('utf-8')
-    for line in comets_data.splitlines():
-        if not line.strip() or len(line) < 100:
-            continue
-        catalog_id = re.sub(r'\s+', ' ', line[0:12].strip())
-        year = int(line[14:18].strip())
-        month = int(line[19:21].strip())
-        day_frac = float(line[22:29].strip())
-        t_peri = date_to_jd(year, month, day_frac)
-        
-        q = float(line[30:39].strip())
-        e = float(line[40:49].strip())
-        w = float(line[50:59].strip())
-        node = float(line[60:69].strip())
-        incl = float(line[70:79].strip())
-        
-        h_str = line[91:96].strip()
-        k_str = line[96:101].strip()
-        h = float(h_str) if h_str else 0.0
-        k = float(k_str) if k_str else 0.0
-        
-        name_part = line[102:]
-        double_space_idx = name_part.find("  ")
-        if double_space_idx != -1:
-            name_part = name_part[:double_space_idx]
-        common_name = name_part.strip()
-        
-        cursor_out.execute('''
-            INSERT INTO comets (
-                catalog_id, common_name, h, k, t_peri, q, e, w, node, incl
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (catalog_id, common_name, h, k, t_peri, q, e, w, node, incl))
-except Exception as err:
-    print(f"Error downloading comets: {err}")
+# Comet population has been moved to the client application
 
 conn_out.commit()
 cursor_out.execute("VACUUM")

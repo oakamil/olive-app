@@ -269,19 +269,22 @@ class CatalogDatabaseHelper(private val context: Context) :
         return (365.25 * (y + 4716)).toInt() + (30.6001 * (m + 1)).toInt() + dayFrac + b - 1524.5
     }
 
-    fun refreshComets() {
-        openDatabase()
-        val database = db ?: return
+    fun refreshComets(onNetworkError: () -> Unit): Boolean {
         try {
-            val url = java.net.URL("https://www.minorplanetcenter.net/iau/MPCORB/CometEls.txt")
+            val url =
+                java.net.URL("https://cobs.si/api/elements.api?format=mpc&is-active=true&cur-mag=20")
             val connection = url.openConnection() as java.net.HttpURLConnection
             connection.requestMethod = "GET"
             connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
 
             val reader = java.io.BufferedReader(java.io.InputStreamReader(connection.inputStream))
             val lines = reader.readLines()
             reader.close()
 
+            openDatabase()
+            val database = db ?: return false
             database.beginTransaction()
             try {
                 database.execSQL("DELETE FROM comets")
@@ -292,6 +295,10 @@ class CatalogDatabaseHelper(private val context: Context) :
                 for (line in lines) {
                     if (line.trim().isEmpty() || line.length < 100) continue
                     try {
+                        val hStr = line.substring(91, 96).trim()
+                        val kStr = line.substring(96, 101).trim()
+                        if (hStr.isEmpty() || kStr.isEmpty()) continue
+
                         val catalogId = line.take(12).trim().replace(Regex("\\s+"), " ")
                         val year = line.substring(14, 18).trim().toInt()
                         val month = line.substring(19, 21).trim().toInt()
@@ -304,10 +311,8 @@ class CatalogDatabaseHelper(private val context: Context) :
                         val node = line.substring(60, 69).trim().toDouble()
                         val incl = line.substring(70, 79).trim().toDouble()
 
-                        val hStr = line.substring(91, 96).trim()
-                        val kStr = line.substring(96, 101).trim()
-                        val h = if (hStr.isNotEmpty()) hStr.toDouble() else 0.0
-                        val k = if (kStr.isNotEmpty()) kStr.toDouble() else 0.0
+                        val h = hStr.toDouble()
+                        val k = kStr.toDouble()
 
                         var namePart = line.substring(102)
                         val doubleSpaceIdx = namePart.indexOf("  ")
@@ -335,8 +340,13 @@ class CatalogDatabaseHelper(private val context: Context) :
             } finally {
                 database.endTransaction()
             }
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Error refreshing comets", e)
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                onNetworkError()
+            }
+            return false
         }
     }
 

@@ -40,6 +40,7 @@
     <string name="btn_cancel">Cancel</string>
     <string name="btn_entering_pip">Entering PIP …</string>
     <string name="btn_pip_mode">Picture-in-Picture Mode</string>
+    <string name="catalog_info_button">Catalog Info</string>
 
     <!-- Control labels -->
     <string name="label_star_sensitivity">Star Sensitivity</string>
@@ -178,5 +179,6 @@
     <string name="asteroids_catalog_title">Asteroids</string>
     <string name="comets_catalog_title">Comets</string>
     <string name="refresh_comets_button">Refresh Comets</string>
+    <string name="error_comets_download">Unable to fetch comet data.</string>
 
 </resources>
