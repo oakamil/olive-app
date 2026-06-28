@@ -60,6 +60,22 @@ object OliveEngine {
     external fun resetTelescopeServer()
     external fun handleAlpacaConnection(fd: Int)
     external fun getPlanets(bspPath: String, timeMs: Long, lat: Double, lon: Double): String
+    external fun getAsteroids(
+        bspPath: String,
+        timeMs: Long,
+        lat: Double,
+        lon: Double,
+        asteroidsJson: String
+    ): String
+
+    external fun getComets(
+        bspPath: String,
+        timeMs: Long,
+        lat: Double,
+        lon: Double,
+        jsonArray: String
+    ): String
+
     external fun setGoToTarget(ra: Double, dec: Double)
     external fun setAlignTargetPixel(x: Double, y: Double)
 }

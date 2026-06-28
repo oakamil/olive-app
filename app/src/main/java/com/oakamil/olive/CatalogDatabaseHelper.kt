@@ -1,10 +1,12 @@
 package com.oakamil.olive
 
 import android.content.Context
+import android.database.Cursor
 import android.util.Log
 import androidx.core.content.edit
 import io.requery.android.database.sqlite.SQLiteDatabase
 import io.requery.android.database.sqlite.SQLiteOpenHelper
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -138,7 +140,7 @@ class CatalogDatabaseHelper(private val context: Context) :
         initializeIfNeeded()
         if (db == null || !db!!.isOpen) {
             val dbPath = context.getDatabasePath(DB_NAME).absolutePath
-            db = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READONLY)
+            db = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READWRITE)
 
             db?.addCustomFunction("SIN", 1) { args ->
                 try {
@@ -185,6 +187,157 @@ class CatalogDatabaseHelper(private val context: Context) :
             Log.e(TAG, "Error fetching catalog descriptions", e)
         }
         return map
+    }
+
+    fun getAsteroidsJson(): String {
+        openDatabase()
+        val database = db ?: return "[]"
+        val array = org.json.JSONArray()
+        try {
+            database.query(
+                "asteroids",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+            ).use { c ->
+                while (c.moveToNext()) {
+                    val obj = JSONObject()
+                    for (i in 0 until c.columnCount) {
+                        when (c.getType(i)) {
+                            Cursor.FIELD_TYPE_INTEGER -> obj.put(c.getColumnName(i), c.getLong(i))
+                            Cursor.FIELD_TYPE_FLOAT -> obj.put(c.getColumnName(i), c.getDouble(i))
+                            Cursor.FIELD_TYPE_STRING -> obj.put(c.getColumnName(i), c.getString(i))
+                            Cursor.FIELD_TYPE_NULL -> obj.put(c.getColumnName(i), JSONObject.NULL)
+                            Cursor.FIELD_TYPE_BLOB -> Log.w(TAG, "Unexpected blob field")
+                        }
+                    }
+                    array.put(obj)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching asteroids", e)
+        }
+        return array.toString()
+    }
+
+    fun getCometsJson(): String {
+        openDatabase()
+        val database = db ?: return "[]"
+        val array = org.json.JSONArray()
+        try {
+            database.query(
+                "comets",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+            ).use { c ->
+                while (c.moveToNext()) {
+                    val obj = JSONObject()
+                    for (i in 0 until c.columnCount) {
+                        when (c.getType(i)) {
+                            Cursor.FIELD_TYPE_INTEGER -> obj.put(c.getColumnName(i), c.getLong(i))
+                            Cursor.FIELD_TYPE_FLOAT -> obj.put(c.getColumnName(i), c.getDouble(i))
+                            Cursor.FIELD_TYPE_STRING -> obj.put(c.getColumnName(i), c.getString(i))
+                            Cursor.FIELD_TYPE_NULL -> obj.put(c.getColumnName(i), JSONObject.NULL)
+                            Cursor.FIELD_TYPE_BLOB -> Log.w(TAG, "Unexpected blob field")
+                        }
+                    }
+                    array.put(obj)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching comets", e)
+        }
+        return array.toString()
+    }
+
+    private fun dateToJd(year: Int, month: Int, dayFrac: Double): Double {
+        var y = year
+        var m = month
+        if (m <= 2) {
+            y -= 1
+            m += 12
+        }
+        val a = y / 100
+        val b = 2 - a + (a / 4)
+        return (365.25 * (y + 4716)).toInt() + (30.6001 * (m + 1)).toInt() + dayFrac + b - 1524.5
+    }
+
+    fun refreshComets() {
+        openDatabase()
+        val database = db ?: return
+        try {
+            val url = java.net.URL("https://www.minorplanetcenter.net/iau/MPCORB/CometEls.txt")
+            val connection = url.openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+
+            val reader = java.io.BufferedReader(java.io.InputStreamReader(connection.inputStream))
+            val lines = reader.readLines()
+            reader.close()
+
+            database.beginTransaction()
+            try {
+                database.execSQL("DELETE FROM comets")
+                val statement = database.compileStatement(
+                    "INSERT INTO comets (catalog_id, common_name, h, k, t_peri, q, e, w, node, incl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                )
+
+                for (line in lines) {
+                    if (line.trim().isEmpty() || line.length < 100) continue
+                    try {
+                        val catalogId = line.take(12).trim().replace(Regex("\\s+"), " ")
+                        val year = line.substring(14, 18).trim().toInt()
+                        val month = line.substring(19, 21).trim().toInt()
+                        val dayFrac = line.substring(22, 29).trim().toDouble()
+                        val tPeri = dateToJd(year, month, dayFrac)
+
+                        val q = line.substring(30, 39).trim().toDouble()
+                        val e = line.substring(40, 49).trim().toDouble()
+                        val w = line.substring(50, 59).trim().toDouble()
+                        val node = line.substring(60, 69).trim().toDouble()
+                        val incl = line.substring(70, 79).trim().toDouble()
+
+                        val hStr = line.substring(91, 96).trim()
+                        val kStr = line.substring(96, 101).trim()
+                        val h = if (hStr.isNotEmpty()) hStr.toDouble() else 0.0
+                        val k = if (kStr.isNotEmpty()) kStr.toDouble() else 0.0
+
+                        var namePart = line.substring(102)
+                        val doubleSpaceIdx = namePart.indexOf("  ")
+                        if (doubleSpaceIdx != -1) {
+                            namePart = namePart.take(doubleSpaceIdx)
+                        }
+                        val commonName = namePart.trim()
+
+                        statement.bindString(1, catalogId)
+                        statement.bindString(2, commonName)
+                        statement.bindDouble(3, h)
+                        statement.bindDouble(4, k)
+                        statement.bindDouble(5, tPeri)
+                        statement.bindDouble(6, q)
+                        statement.bindDouble(7, e)
+                        statement.bindDouble(8, w)
+                        statement.bindDouble(9, node)
+                        statement.bindDouble(10, incl)
+                        statement.executeInsert()
+                    } catch (ex: Exception) {
+                        Log.e(TAG, "Error parsing comet line: \$line", ex)
+                    }
+                }
+                database.setTransactionSuccessful()
+            } finally {
+                database.endTransaction()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error refreshing comets", e)
+        }
     }
 
     fun searchObjects(

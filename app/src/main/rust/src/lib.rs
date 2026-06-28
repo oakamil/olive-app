@@ -952,8 +952,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getPlanets(
     _class: JClass,
     bsp_path: jni::objects::JString,
     time_ms: jni::sys::jlong,
-    _latitude: jni::sys::jdouble,
-    _longitude: jni::sys::jdouble,
+    latitude: jni::sys::jdouble,
+    longitude: jni::sys::jdouble,
 ) -> jni::sys::jstring {
     use chrono::TimeZone;
     use serde::Serialize;
@@ -1008,7 +1008,10 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getPlanets(
             dt.minute(),
             dt.second() as f64 + dt.nanosecond() as f64 / 1_000_000_000.0,
         ));
-        let earth = kernel.at("EARTH", &time).map_err(|e| e.to_string())?;
+        let observer_loc = starfield::toposlib::WGS84.latlon(latitude, longitude, 0.0);
+        let earth = observer_loc
+            .at(&time, &mut kernel)
+            .map_err(|e| e.to_string())?;
 
         let mut planets = vec![];
         let targets = [
@@ -1102,4 +1105,374 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setAlignTargetPixel(
     } else {
         log::warn!("setAlignTargetPixel called but ENGINE_STATE is not initialized");
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getAsteroids(
+    mut env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    bsp_path: jni::objects::JString,
+    time_ms: jni::sys::jlong,
+    latitude: jni::sys::jdouble,
+    longitude: jni::sys::jdouble,
+    asteroids_json: jni::objects::JString,
+) -> jni::sys::jstring {
+    use chrono::TimeZone;
+    use serde::{Deserialize, Serialize};
+    use starfield::constants::{C_AUDAY, GM_SUN};
+    use starfield::jplephem::kernel::SpiceKernel;
+    use starfield::jplephem_ext::SpiceKernelExt;
+    use starfield::positions::Position;
+    use starfield::time::Timescale;
+
+    #[derive(Deserialize)]
+    struct AsteroidRecord {
+        id: i32,
+        catalog_id: Option<String>,
+        common_name: Option<String>,
+        h: f64,
+        g: f64,
+        epoch: f64,
+        m: f64,
+        peri: f64,
+        node: f64,
+        incl: f64,
+        e: f64,
+        n: f64,
+        a: f64,
+    }
+
+    #[derive(Serialize)]
+    struct PlanetObj {
+        id: i32,
+        #[serde(rename = "catalogLabel")]
+        catalog_label: String,
+        #[serde(rename = "catalogEntry")]
+        catalog_entry: String,
+        ra: f64,
+        dec: f64,
+        constellation: Option<String>,
+        #[serde(rename = "objectType")]
+        object_type: String,
+        #[serde(rename = "broadCategory")]
+        broad_category: String,
+        magnitude: Option<f64>,
+        #[serde(rename = "surfaceBrightness")]
+        surface_brightness: Option<f64>,
+        #[serde(rename = "angularSize")]
+        angular_size: Option<String>,
+        #[serde(rename = "commonName")]
+        common_name: Option<String>,
+        description: Option<String>,
+        copyright: Option<String>,
+    }
+
+    let bsp_path_str: String = env
+        .get_string(&bsp_path)
+        .map(|s| s.into())
+        .unwrap_or_default();
+
+    let json_str: String = env
+        .get_string(&asteroids_json)
+        .map(|s| s.into())
+        .unwrap_or_default();
+
+    let result_json = std::panic::catch_unwind(|| {
+        let mut kernel = SpiceKernel::open(&bsp_path_str).map_err(|e| e.to_string())?;
+        let ts = Timescale::default();
+
+        let dt = chrono::Utc
+            .timestamp_millis_opt(time_ms)
+            .single()
+            .ok_or("Invalid time")?;
+        use chrono::{Datelike, Timelike};
+        let time = ts.utc((
+            dt.year(),
+            dt.month(),
+            dt.day(),
+            dt.hour(),
+            dt.minute(),
+            dt.second() as f64 + dt.nanosecond() as f64 / 1_000_000_000.0,
+        ));
+        let observer_loc = starfield::toposlib::WGS84.latlon(latitude, longitude, 0.0);
+        let earth = observer_loc
+            .at(&time, &mut kernel)
+            .map_err(|e| e.to_string())?;
+        let sun = kernel.at("sun", &time).map_err(|e| e.to_string())?;
+
+        let records: Vec<AsteroidRecord> = serde_json::from_str(&json_str).unwrap_or_default();
+        let mut results = vec![];
+
+        for rec in records {
+            let orbit = starfield::keplerlib::mpcorb_orbit(
+                rec.a,
+                rec.e,
+                rec.incl,
+                rec.node,
+                rec.peri,
+                rec.m,
+                &ts.tt_jd(rec.epoch, None),
+                GM_SUN,
+                rec.common_name.as_deref(),
+            );
+
+            let mut target_helio = orbit.at(&time);
+            let mut target_bary_pos = target_helio.position + sun.position;
+            let mut target_bary_vel = target_helio.velocity + sun.velocity;
+            let mut distance_au = (target_bary_pos - earth.position).norm();
+            let mut light_time0 = 0.0;
+
+            for _ in 0..5 {
+                let light_time = distance_au / C_AUDAY;
+                let delta_t = light_time - light_time0;
+                if delta_t.abs() < 1e-7 {
+                    break;
+                }
+                let retarded_time = ts.tdb_jd(time.tdb() - light_time);
+                target_helio = orbit.at(&retarded_time);
+                let sun_ret = kernel
+                    .at("sun", &retarded_time)
+                    .unwrap_or_else(|_| sun.clone());
+                target_bary_pos = target_helio.position + sun_ret.position;
+                target_bary_vel = target_helio.velocity + sun_ret.velocity;
+                distance_au = (target_bary_pos - earth.position).norm();
+                light_time0 = light_time;
+            }
+
+            let vector = target_bary_pos - earth.position;
+            let velocity = target_bary_vel - earth.velocity;
+
+            let astrometric = Position::astrometric(vector, velocity, &earth, -1, light_time0);
+
+            let (ra_hours, dec_deg, _) = astrometric.radec(None);
+
+            // H-G magnitude
+            let r_vec = -target_helio.position;
+            let delta_vec = earth.position - target_bary_pos;
+            let r = r_vec.norm();
+            let delta = delta_vec.norm();
+            let ph_ang = r_vec.angle(&delta_vec);
+            let ta = (ph_ang / 2.0).tan();
+            let phi1 = (-3.33 * ta.powf(0.63)).exp();
+            let phi2 = (-1.87 * ta.powf(1.22)).exp();
+            let mag = rec.h + 5.0 * (r * delta).log10()
+                - 2.5 * ((1.0 - rec.g) * phi1 + rec.g * phi2).log10();
+
+            results.push(PlanetObj {
+                id: rec.id,
+                catalog_label: "Asteroid".to_string(),
+                catalog_entry: rec.catalog_id.unwrap_or_default(),
+                ra: ra_hours * 15.0,
+                dec: dec_deg,
+                constellation: None,
+                object_type: "Asteroid".to_string(),
+                broad_category: "asteroid".to_string(),
+                magnitude: Some(mag),
+                surface_brightness: None,
+                angular_size: None,
+                common_name: rec.common_name.clone(),
+                description: rec.common_name.map(|n| format!("The asteroid {}", n)),
+                copyright: None,
+            });
+        }
+
+        Ok::<Vec<PlanetObj>, String>(results)
+    });
+
+    let output = match result_json {
+        Ok(Ok(planets)) => serde_json::to_string(&planets).unwrap_or_else(|_| "[]".to_string()),
+        Ok(Err(e)) => {
+            log::error!("Asteroids calculation error: {}", e);
+            "[]".to_string()
+        }
+        Err(_) => {
+            log::error!("Asteroids calculation panicked");
+            "[]".to_string()
+        }
+    };
+
+    env.new_string(output)
+        .expect("Couldn't create java string!")
+        .into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getComets(
+    mut env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    bsp_path: jni::objects::JString,
+    time_ms: jni::sys::jlong,
+    latitude: jni::sys::jdouble,
+    longitude: jni::sys::jdouble,
+    comets_json: jni::objects::JString,
+) -> jni::sys::jstring {
+    use chrono::TimeZone;
+    use serde::{Deserialize, Serialize};
+    use starfield::constants::{C_AUDAY, GM_SUN};
+    use starfield::jplephem::kernel::SpiceKernel;
+    use starfield::jplephem_ext::SpiceKernelExt;
+    use starfield::positions::Position;
+    use starfield::time::Timescale;
+
+    #[derive(Deserialize)]
+    struct CometRecord {
+        id: i32,
+        catalog_id: Option<String>,
+        common_name: Option<String>,
+        h: f64,
+        k: f64,
+        t_peri: f64,
+        q: f64,
+        e: f64,
+        w: f64,
+        node: f64,
+        incl: f64,
+    }
+
+    #[derive(Serialize)]
+    struct PlanetObj {
+        id: i32,
+        #[serde(rename = "catalogLabel")]
+        catalog_label: String,
+        #[serde(rename = "catalogEntry")]
+        catalog_entry: String,
+        ra: f64,
+        dec: f64,
+        constellation: Option<String>,
+        #[serde(rename = "objectType")]
+        object_type: String,
+        #[serde(rename = "broadCategory")]
+        broad_category: String,
+        magnitude: Option<f64>,
+        #[serde(rename = "surfaceBrightness")]
+        surface_brightness: Option<f64>,
+        #[serde(rename = "angularSize")]
+        angular_size: Option<String>,
+        #[serde(rename = "commonName")]
+        common_name: Option<String>,
+        description: Option<String>,
+        copyright: Option<String>,
+    }
+
+    let bsp_path_str: String = env
+        .get_string(&bsp_path)
+        .map(|s| s.into())
+        .unwrap_or_default();
+
+    let json_str: String = env
+        .get_string(&comets_json)
+        .map(|s| s.into())
+        .unwrap_or_default();
+
+    let result_json = std::panic::catch_unwind(|| {
+        let mut kernel = SpiceKernel::open(&bsp_path_str).map_err(|e| e.to_string())?;
+        let ts = Timescale::default();
+
+        let dt = chrono::Utc
+            .timestamp_millis_opt(time_ms)
+            .single()
+            .ok_or("Invalid time")?;
+        use chrono::{Datelike, Timelike};
+        let time = ts.utc((
+            dt.year(),
+            dt.month(),
+            dt.day(),
+            dt.hour(),
+            dt.minute(),
+            dt.second() as f64 + dt.nanosecond() as f64 / 1_000_000_000.0,
+        ));
+        let observer_loc = starfield::toposlib::WGS84.latlon(latitude, longitude, 0.0);
+        let earth = observer_loc
+            .at(&time, &mut kernel)
+            .map_err(|e| e.to_string())?;
+        let sun = kernel.at("sun", &time).map_err(|e| e.to_string())?;
+
+        let records: Vec<CometRecord> = serde_json::from_str(&json_str).unwrap_or_default();
+        let mut results = vec![];
+
+        for rec in records {
+            let orbit = starfield::keplerlib::comet_orbit(
+                rec.q,
+                rec.e,
+                rec.incl,
+                rec.node,
+                rec.w,
+                &ts.tt_jd(rec.t_peri, None),
+                GM_SUN,
+                rec.common_name.as_deref(),
+            );
+
+            let mut target_helio = orbit.at(&time);
+            let mut target_bary_pos = target_helio.position + sun.position;
+            let mut target_bary_vel = target_helio.velocity + sun.velocity;
+            let mut distance_au = (target_bary_pos - earth.position).norm();
+            let mut light_time0 = 0.0;
+
+            for _ in 0..5 {
+                let light_time = distance_au / C_AUDAY;
+                let delta_t = light_time - light_time0;
+                if delta_t.abs() < 1e-7 {
+                    break;
+                }
+                let retarded_time = ts.tdb_jd(time.tdb() - light_time);
+                target_helio = orbit.at(&retarded_time);
+                let sun_ret = kernel
+                    .at("sun", &retarded_time)
+                    .unwrap_or_else(|_| sun.clone());
+                target_bary_pos = target_helio.position + sun_ret.position;
+                target_bary_vel = target_helio.velocity + sun_ret.velocity;
+                distance_au = (target_bary_pos - earth.position).norm();
+                light_time0 = light_time;
+            }
+
+            let vector = target_bary_pos - earth.position;
+            let velocity = target_bary_vel - earth.velocity;
+
+            let astrometric = Position::astrometric(vector, velocity, &earth, -1, light_time0);
+
+            let (ra_hours, dec_deg, _) = astrometric.radec(None);
+
+            // Cometary magnitude
+            let r_vec = -target_helio.position;
+            let delta_vec = earth.position - target_bary_pos;
+            let r = r_vec.norm();
+            let delta = delta_vec.norm();
+            let mag = rec.h + 5.0 * delta.log10() + 2.5 * rec.k * r.log10();
+
+            results.push(PlanetObj {
+                id: rec.id,
+                catalog_label: "Comet".to_string(),
+                catalog_entry: rec.catalog_id.unwrap_or_default(),
+                ra: ra_hours * 15.0,
+                dec: dec_deg,
+                constellation: None,
+                object_type: "Comet".to_string(),
+                broad_category: "comet".to_string(),
+                magnitude: Some(mag),
+                surface_brightness: None,
+                angular_size: None,
+                common_name: rec.common_name.clone(),
+                description: rec.common_name.map(|n| format!("The comet {}", n)),
+                copyright: None,
+            });
+        }
+
+        Ok::<Vec<PlanetObj>, String>(results)
+    });
+
+    let output = match result_json {
+        Ok(Ok(planets)) => serde_json::to_string(&planets).unwrap_or_else(|_| "[]".to_string()),
+        Ok(Err(e)) => {
+            log::error!("Comets calculation error: {}", e);
+            "[]".to_string()
+        }
+        Err(_) => {
+            log::error!("Comets calculation panicked");
+            "[]".to_string()
+        }
+    };
+
+    env.new_string(output)
+        .expect("Couldn't create java string!")
+        .into_raw()
 }
