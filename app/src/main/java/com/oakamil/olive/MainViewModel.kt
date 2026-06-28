@@ -410,8 +410,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun getPlanets(): List<CatalogObject> {
         val bspPath = getApplication<Application>().getDatabasePath("de421.bsp").absolutePath
         val timeMs = System.currentTimeMillis()
-        val lat = 0.0 // Default or from engine state
-        val lon = 0.0
+        val lat = currentLat ?: 0.0
+        val lon = currentLon ?: 0.0
 
         val json = OliveEngine.getPlanets(bspPath, timeMs, lat, lon)
         if (json.isBlank() || json == "[]") return emptyList()
@@ -458,6 +458,123 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             Log.e("MainViewModel", "Failed to parse planets: ${e.message}")
             emptyList()
+        }
+    }
+
+    fun getAsteroids(): List<CatalogObject> {
+        val bspPath = getApplication<Application>().getDatabasePath("de421.bsp").absolutePath
+        val timeMs = System.currentTimeMillis()
+        val lat = currentLat ?: 0.0
+        val lon = currentLon ?: 0.0
+        val asteroidsJson = catalogDb.getAsteroidsJson()
+
+        val json = OliveEngine.getAsteroids(bspPath, timeMs, lat, lon, asteroidsJson)
+        if (json.isBlank() || json == "[]") return emptyList()
+
+        return try {
+            val arr = org.json.JSONArray(json)
+            val list = mutableListOf<CatalogObject>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(
+                    CatalogObject(
+                        id = obj.optInt("id"),
+                        catalogLabel = obj.optString("catalogLabel"),
+                        catalogEntry = obj.optString("catalogEntry"),
+                        ra = obj.optDouble("ra"),
+                        dec = obj.optDouble("dec"),
+                        constellation = if (obj.has("constellation") && !obj.isNull("constellation")) obj.optString(
+                            "constellation"
+                        ) else null,
+                        objectType = obj.optString("objectType"),
+                        broadCategory = obj.optString("broadCategory"),
+                        magnitude = if (obj.has("magnitude") && !obj.isNull("magnitude")) obj.optDouble(
+                            "magnitude"
+                        ) else null,
+                        surfaceBrightness = if (obj.has("surfaceBrightness") && !obj.isNull("surfaceBrightness")) obj.optDouble(
+                            "surfaceBrightness"
+                        ) else null,
+                        angularSize = if (obj.has("angularSize") && !obj.isNull("angularSize")) obj.optString(
+                            "angularSize"
+                        ) else null,
+                        commonName = if (obj.has("commonName") && !obj.isNull("commonName")) obj.optString(
+                            "commonName"
+                        ) else null,
+                        description = if (obj.has("description") && !obj.isNull("description")) obj.optString(
+                            "description"
+                        ) else null,
+                        copyright = if (obj.has("copyright") && !obj.isNull("copyright")) obj.optString(
+                            "copyright"
+                        ) else null
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun getComets(): List<CatalogObject> {
+        val bspPath = getApplication<Application>().getDatabasePath("de421.bsp").absolutePath
+        val timeMs = System.currentTimeMillis()
+        val lat = currentLat ?: 0.0
+        val lon = currentLon ?: 0.0
+        val cometsJson = catalogDb.getCometsJson()
+
+        val json = OliveEngine.getComets(bspPath, timeMs, lat, lon, cometsJson)
+        if (json.isBlank() || json == "[]") return emptyList()
+
+        return try {
+            val arr = org.json.JSONArray(json)
+            val list = mutableListOf<CatalogObject>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(
+                    CatalogObject(
+                        id = obj.optInt("id"),
+                        catalogLabel = obj.optString("catalogLabel"),
+                        catalogEntry = obj.optString("catalogEntry"),
+                        ra = obj.optDouble("ra"),
+                        dec = obj.optDouble("dec"),
+                        constellation = if (obj.has("constellation") && !obj.isNull("constellation")) obj.optString(
+                            "constellation"
+                        ) else null,
+                        objectType = obj.optString("objectType"),
+                        broadCategory = obj.optString("broadCategory"),
+                        magnitude = if (obj.has("magnitude") && !obj.isNull("magnitude")) obj.optDouble(
+                            "magnitude"
+                        ) else null,
+                        surfaceBrightness = if (obj.has("surfaceBrightness") && !obj.isNull("surfaceBrightness")) obj.optDouble(
+                            "surfaceBrightness"
+                        ) else null,
+                        angularSize = if (obj.has("angularSize") && !obj.isNull("angularSize")) obj.optString(
+                            "angularSize"
+                        ) else null,
+                        commonName = if (obj.has("commonName") && !obj.isNull("commonName")) obj.optString(
+                            "commonName"
+                        ) else null,
+                        description = if (obj.has("description") && !obj.isNull("description")) obj.optString(
+                            "description"
+                        ) else null,
+                        copyright = if (obj.has("copyright") && !obj.isNull("copyright")) obj.optString(
+                            "copyright"
+                        ) else null
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun refreshComets(onComplete: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            catalogDb.refreshComets()
+            launch(Dispatchers.Main) {
+                onComplete()
+            }
         }
     }
 

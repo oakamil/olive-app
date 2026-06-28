@@ -54,6 +54,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -91,12 +92,14 @@ fun SkyCatalogDialog(
     var visibilityFilter by viewModel::catalogVisibilityFilter
 
     var showSettingsMenu by remember { mutableStateOf(false) }
+    var cometsRefreshTrigger by remember { mutableIntStateOf(0) }
 
     var searchResults by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
+    var showRaDecForObj by remember { mutableStateOf<CatalogObject?>(null) }
 
     val categories = listOf(
         "Nearest Objects", "All Objects", "Solar System", "Bright Stars",
-        "Messier", "Caldwell", "Collinder", "NGC", "IC",
+        "Messier", "Caldwell", "Collinder", "NGC", "IC", "Asteroids", "Comets",
         "Herschel 400", "Barnard", "Sharpless", "Abell", "Arp",
         "SAC Asterisms", "SAC Doubles", "SAC Red Stars", "TAAS 200",
         "Harris", "RASC Doubles", "EGC"
@@ -108,6 +111,8 @@ fun SkyCatalogDialog(
         "Collinder" to "Col",
         "NGC" to "NGC",
         "IC" to "IC",
+        "Asteroids" to "Ast",
+        "Comets" to "Com",
         "Herschel 400" to "H",
         "Barnard" to "B",
         "Sharpless" to "Sh2",
@@ -128,6 +133,7 @@ fun SkyCatalogDialog(
 
     var hasMore by remember { mutableStateOf(true) }
     var isLoading by remember { mutableStateOf(false) }
+
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val catalogDescriptions = remember { viewModel.catalogDb.getCatalogDescriptions() }
@@ -162,7 +168,8 @@ fun SkyCatalogDialog(
                         cosLat = kotlin.math.cos(latRad)
                     }
 
-                    val allPlanets = viewModel.getPlanets()
+                    val allPlanets =
+                        if (selectedCategory == "Solar System" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects") viewModel.getPlanets() else emptyList()
                     val filteredPlanets = allPlanets.filter { p ->
                         var passes = true
                         if (checkVisibility) {
@@ -188,32 +195,101 @@ fun SkyCatalogDialog(
                         passes
                     }
 
-                    val sqlResults = if (selectedCategory == "Solar System") {
-                        emptyList()
-                    } else {
-                        val filter = when (selectedCategory) {
-                            "Nearest Objects" -> "Nearest Objects"
-                            "All Objects" -> null
-                            else -> categoryToShortCode[selectedCategory]
+                    val sqlResults =
+                        if (selectedCategory == "Solar System" || selectedCategory == "Asteroids" || selectedCategory == "Comets") {
+                            emptyList()
+                        } else {
+                            val filter = when (selectedCategory) {
+                                "Nearest Objects" -> "Nearest Objects"
+                                "All Objects" -> null
+                                else -> categoryToShortCode[selectedCategory]
+                            }
+                            viewModel.catalogDb.searchObjects(
+                                searchQuery = searchQuery,
+                                catalogFilter = filter,
+                                sortBy = sortBy,
+                                magLimit = magLimit,
+                                typeFilter = typeFilter,
+                                visibilityFilter = visibilityFilter,
+                                lat = viewModel.currentLat,
+                                lon = viewModel.currentLon,
+                                targetRa = currentRa,
+                                targetDec = currentDec,
+                                limit = 300,
+                                offset = offset
+                            )
                         }
-                        viewModel.catalogDb.searchObjects(
-                            searchQuery = searchQuery,
-                            catalogFilter = filter,
-                            sortBy = sortBy,
-                            magLimit = magLimit,
-                            typeFilter = typeFilter,
-                            visibilityFilter = visibilityFilter,
-                            lat = viewModel.currentLat,
-                            lon = viewModel.currentLon,
-                            targetRa = currentRa,
-                            targetDec = currentDec,
-                            limit = 300,
-                            offset = offset
-                        )
-                    }
 
-                    if (offset == 0 && (selectedCategory == "Solar System" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects")) {
-                        val combinedList = (filteredPlanets + sqlResults).toMutableList()
+                    if (offset == 0 && (selectedCategory == "Solar System" || selectedCategory == "Asteroids" || selectedCategory == "Comets" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects")) {
+                        val allAsteroids =
+                            if (selectedCategory == "Asteroids" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects") viewModel.getAsteroids() else emptyList()
+                        val filteredAsteroids = allAsteroids.filter { p ->
+                            var passes = true
+                            if (checkVisibility) {
+                                val altCondition =
+                                    kotlin.math.sin(p.dec * Math.PI / 180.0) * sinLat + kotlin.math.cos(
+                                        p.dec * Math.PI / 180.0
+                                    ) * cosLat * kotlin.math.cos(lstRad - p.ra * Math.PI / 180.0)
+                                if (altCondition <= 0) passes = false
+                            }
+                            if (typeFilter != "All Types" && typeFilter != "Asteroid") passes =
+                                false
+                            if (searchQuery.isNotBlank() && !p.displayName.contains(
+                                    searchQuery,
+                                    ignoreCase = true
+                                )
+                            ) passes = false
+                            val limit = magLimit
+                            if (limit != null && p.magnitude != null && p.magnitude > limit) passes =
+                                false
+                            if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
+                                if (angularDistance(
+                                        currentRa,
+                                        currentDec,
+                                        p.ra,
+                                        p.dec
+                                    ) > 10.0
+                                ) passes =
+                                    false
+                            }
+                            passes
+                        }
+
+                        val allComets =
+                            if (selectedCategory == "Comets" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects") viewModel.getComets() else emptyList()
+                        val filteredComets = allComets.filter { p ->
+                            var passes = true
+                            if (checkVisibility) {
+                                val altCondition =
+                                    kotlin.math.sin(p.dec * Math.PI / 180.0) * sinLat + kotlin.math.cos(
+                                        p.dec * Math.PI / 180.0
+                                    ) * cosLat * kotlin.math.cos(lstRad - p.ra * Math.PI / 180.0)
+                                if (altCondition <= 0) passes = false
+                            }
+                            if (typeFilter != "All Types" && typeFilter != "Comet") passes = false
+                            if (searchQuery.isNotBlank() && !p.displayName.contains(
+                                    searchQuery,
+                                    ignoreCase = true
+                                )
+                            ) passes = false
+                            val limit = magLimit
+                            if (limit != null && p.magnitude != null && p.magnitude > limit) passes =
+                                false
+                            if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
+                                if (angularDistance(
+                                        currentRa,
+                                        currentDec,
+                                        p.ra,
+                                        p.dec
+                                    ) > 10.0
+                                ) passes =
+                                    false
+                            }
+                            passes
+                        }
+
+                        val combinedList =
+                            (filteredPlanets + filteredAsteroids + filteredComets + sqlResults).toMutableList()
                         when (sortBy) {
                             "distance" -> {
                                 if (currentRa != null && currentDec != null) {
@@ -231,6 +307,39 @@ fun SkyCatalogDialog(
                             "name" -> {
                                 combinedList.sortWith(compareBy<CatalogObject> { it.commonName.isNullOrEmpty() }.thenBy { it.commonName }
                                     .thenBy { it.catalogEntry.toIntOrNull() ?: Int.MAX_VALUE })
+                            }
+
+                            "catalog ID" -> {
+                                val categoryPriority = { obj: CatalogObject ->
+                                    when (obj.catalogLabel) {
+                                        "Planet", "Moon", "Solar System" -> categories.indexOf("Solar System")
+                                        "Str" -> categories.indexOf("Bright Stars")
+                                        "M" -> categories.indexOf("Messier")
+                                        "C" -> categories.indexOf("Caldwell")
+                                        "Col" -> categories.indexOf("Collinder")
+                                        "NGC" -> categories.indexOf("NGC")
+                                        "IC" -> categories.indexOf("IC")
+                                        "Asteroid" -> categories.indexOf("Asteroids")
+                                        "Comet" -> categories.indexOf("Comets")
+                                        "H" -> categories.indexOf("Herschel 400")
+                                        "B" -> categories.indexOf("Barnard")
+                                        "Sh2" -> categories.indexOf("Sharpless")
+                                        "Abl" -> categories.indexOf("Abell")
+                                        "Arp" -> categories.indexOf("Arp")
+                                        "SaA" -> categories.indexOf("SAC Asterisms")
+                                        "SaM" -> categories.indexOf("SAC Doubles")
+                                        "SaR" -> categories.indexOf("SAC Red Stars")
+                                        "Ta2" -> categories.indexOf("TAAS 200")
+                                        "Har" -> categories.indexOf("Harris")
+                                        "RDS" -> categories.indexOf("RASC Doubles")
+                                        "EGC" -> categories.indexOf("EGC")
+                                        else -> 999
+                                    }
+                                }
+                                combinedList.sortWith(compareBy<CatalogObject> { categoryPriority(it) }
+                                    .thenBy { if (it.objectType == "Planet" || it.objectType == "Moon") it.id else 0 }
+                                    .thenBy { it.catalogEntry.toIntOrNull() ?: Int.MAX_VALUE }
+                                    .thenBy { it.catalogEntry })
                             }
 
                             "brightness" -> {
@@ -257,7 +366,15 @@ fun SkyCatalogDialog(
         }
     }
 
-    LaunchedEffect(searchQuery, selectedCategory, sortBy, magLimit, typeFilter, visibilityFilter) {
+    LaunchedEffect(
+        searchQuery,
+        selectedCategory,
+        sortBy,
+        magLimit,
+        typeFilter,
+        visibilityFilter,
+        cometsRefreshTrigger
+    ) {
         // Cancel ongoing coroutine calls if needed by checking a token, or let it override. 
         // We will just call fetchResults(0) whenever a filter changes.
         fetchResults(0)
@@ -469,6 +586,11 @@ fun SkyCatalogDialog(
                     )
                 }
 
+                val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+                    initialPage = categories.indexOf(selectedCategory).coerceAtLeast(0),
+                    pageCount = { categories.size }
+                )
+                val coroutineScope = rememberCoroutineScope()
                 ScrollableTabRow(
                     selectedTabIndex = categories.indexOf(selectedCategory).coerceAtLeast(0),
                     edgePadding = 8.dp,
@@ -477,10 +599,20 @@ fun SkyCatalogDialog(
                     categories.forEach { category ->
                         Tab(
                             selected = selectedCategory == category,
-                            onClick = { selectedCategory = category },
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(categories.indexOf(category))
+                                }
+                            },
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(category)
+                                    Text(
+                                        when (category) {
+                                            "Asteroids" -> stringResource(R.string.asteroids_catalog_title)
+                                            "Comets" -> stringResource(R.string.comets_catalog_title)
+                                            else -> category
+                                        }
+                                    )
                                     val shortCode = categoryToShortCode[category]
                                     val desc = catalogDescriptions[shortCode]
                                     if (desc != null && desc.isNotBlank()) {
@@ -500,22 +632,11 @@ fun SkyCatalogDialog(
                 }
 
 
-                val pagerState = androidx.compose.foundation.pager.rememberPagerState(
-                    initialPage = categories.indexOf(selectedCategory).coerceAtLeast(0),
-                    pageCount = { categories.size }
-                )
 
-                LaunchedEffect(pagerState.currentPage) {
-                    val targetCategory = categories.getOrNull(pagerState.currentPage)
+                LaunchedEffect(pagerState.targetPage) {
+                    val targetCategory = categories.getOrNull(pagerState.targetPage)
                     if (targetCategory != null && targetCategory != selectedCategory) {
                         selectedCategory = targetCategory
-                    }
-                }
-
-                LaunchedEffect(selectedCategory) {
-                    val targetIndex = categories.indexOf(selectedCategory)
-                    if (targetIndex >= 0 && pagerState.currentPage != targetIndex) {
-                        pagerState.animateScrollToPage(targetIndex)
                     }
                 }
 
@@ -534,6 +655,24 @@ fun SkyCatalogDialog(
                             modifier = Modifier.fillMaxSize(),
                             state = pageListState
                         ) {
+                            if (categories[page] == "Comets") {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Button(onClick = {
+                                            viewModel.refreshComets {
+                                                cometsRefreshTrigger++
+                                            }
+                                        }) {
+                                            Text(stringResource(R.string.refresh_comets_button))
+                                        }
+                                    }
+                                }
+                            }
                             items(
                                 searchResults,
                                 key = { it.id.toString() + it.catalogEntry }) { obj ->
@@ -576,7 +715,10 @@ fun SkyCatalogDialog(
                                                     stringResource(R.string.status_below_horizon),
                                                     style = MaterialTheme.typography.labelMedium,
                                                     color = Color.Red,
-                                                    modifier = Modifier.padding(end = 16.dp)
+                                                    modifier = Modifier
+                                                        .padding(end = 16.dp)
+                                                        .clickable { showRaDecForObj = obj }
+                                                        .padding(4.dp)
                                                 )
                                             } else {
                                                 if (currentRa != null && currentDec != null && lat != null && lon != null) {
@@ -606,7 +748,10 @@ fun SkyCatalogDialog(
 
                                                     Column(
                                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                                        modifier = Modifier.padding(end = 8.dp)
+                                                        modifier = Modifier
+                                                            .padding(end = 8.dp)
+                                                            .clickable { showRaDecForObj = obj }
+                                                            .padding(4.dp)
                                                     ) {
                                                         Icon(
                                                             imageVector = Default.ArrowUpward,
@@ -624,9 +769,26 @@ fun SkyCatalogDialog(
                                                             style = MaterialTheme.typography.labelSmall
                                                         )
                                                     }
-                                                }
-                                                Button(onClick = { onGoTo(obj.ra, obj.dec) }) {
-                                                    Text(stringResource(R.string.btn_goto))
+                                                    Button(onClick = { onGoTo(obj.ra, obj.dec) }) {
+                                                        Text(stringResource(R.string.btn_goto))
+                                                    }
+                                                } else {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        modifier = Modifier
+                                                            .padding(end = 16.dp)
+                                                            .clickable { showRaDecForObj = obj }
+                                                            .padding(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            formatRa(obj.ra),
+                                                            style = MaterialTheme.typography.labelSmall
+                                                        )
+                                                        Text(
+                                                            formatDec(obj.dec),
+                                                            style = MaterialTheme.typography.labelSmall
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -787,6 +949,28 @@ fun SkyCatalogDialog(
             Text(desc)
         }
     }
+
+    if (showRaDecForObj != null) {
+        val obj = showRaDecForObj!!
+        InfoPopup(
+            title = obj.displayName,
+            onDismiss = { showRaDecForObj = null }
+        ) {
+            Column {
+                Row {
+                    Text(stringResource(R.string.ra_j2000_label), fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(formatRa(obj.ra))
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row {
+                    Text(stringResource(R.string.dec_j2000_label), fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(formatDec(obj.dec))
+                }
+            }
+        }
+    }
 }
 
 data class AltAz(val alt: Double, val az: Double)
@@ -938,4 +1122,39 @@ fun NightVisionKey(
     ) {
         Text(text = text, color = textColor, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+fun formatRa(raDegrees: Double): String {
+    val raHours = raDegrees / 15.0
+    var h = kotlin.math.floor(raHours).toInt()
+    val remainder = raHours - h
+    var m = kotlin.math.floor(remainder * 60.0).toInt()
+    var s = kotlin.math.round((remainder * 60.0 - m) * 60.0).toInt()
+    if (s == 60) {
+        s = 0
+        m += 1
+    }
+    if (m == 60) {
+        m = 0
+        h += 1
+    }
+    return String.format(Locale.US, "%02dh %02dm %02ds", h, m, s)
+}
+
+fun formatDec(decDegrees: Double): String {
+    val sign = if (decDegrees < 0) "-" else "+"
+    val absDec = kotlin.math.abs(decDegrees)
+    var d = kotlin.math.floor(absDec).toInt()
+    val remainder = absDec - d
+    var m = kotlin.math.floor(remainder * 60.0).toInt()
+    var s = kotlin.math.round((remainder * 60.0 - m) * 60.0).toInt()
+    if (s == 60) {
+        s = 0
+        m += 1
+    }
+    if (m == 60) {
+        m = 0
+        d += 1
+    }
+    return String.format(Locale.US, "%s%02d° %02d' %02d\"", sign, d, m, s)
 }
