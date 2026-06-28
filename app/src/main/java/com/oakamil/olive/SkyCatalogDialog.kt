@@ -135,7 +135,6 @@ fun SkyCatalogDialog(
 
     LaunchedEffect(Unit) {
         while (true) {
-            kotlinx.coroutines.delay(5000)
             val newRa = viewModel.engineStats.ra
             val newDec = viewModel.engineStats.dec
             if (newRa != null && newDec != null) {
@@ -143,12 +142,12 @@ fun SkyCatalogDialog(
                 currentDecState.value = newDec
             }
             currentTimeMsState.longValue = System.currentTimeMillis()
+            kotlinx.coroutines.delay(5000)
         }
     }
 
     val currentRa = currentRaState.value
     val currentDec = currentDecState.value
-    val currentTimeMs = currentTimeMsState.longValue
 
     var hasMore by remember { mutableStateOf(true) }
     var isLoading by remember { mutableStateOf(false) }
@@ -730,6 +729,9 @@ fun SkyCatalogDialog(
                             items(
                                 searchResults,
                                 key = { it.id.toString() + it.catalogEntry }) { obj ->
+                                val currentRa = currentRaState.value
+                                val currentDec = currentDecState.value
+                                val currentTimeMs = currentTimeMsState.longValue
                                 val lat = viewModel.currentLat
                                 val lon = viewModel.currentLon
                                 var isBelowHorizon = false
@@ -1075,17 +1077,14 @@ fun angularDistance(ra1: Double, dec1: Double, ra2: Double, dec2: Double): Doubl
 }
 
 fun targetBearingAltAz(az1: Double, alt1: Double, az2: Double, alt2: Double): Double {
-    val a1 = Math.toRadians(alt1)
-    val a2 = Math.toRadians(alt2)
-    val dAz = Math.toRadians(az2 - az1)
+    var dAz = az2 - az1
+    while (dAz > 180.0) dAz -= 360.0
+    while (dAz < -180.0) dAz += 360.0
 
-    val y = kotlin.math.sin(dAz) * kotlin.math.cos(a2)
-    val x =
-        kotlin.math.cos(a1) * kotlin.math.sin(a2) - kotlin.math.sin(a1) * kotlin.math.cos(a2) * kotlin.math.cos(
-            dAz
-        )
+    val dAlt = alt2 - alt1
+    val x = dAz * kotlin.math.cos(Math.toRadians(alt1))
 
-    var bearing = Math.toDegrees(kotlin.math.atan2(y, x))
+    var bearing = Math.toDegrees(kotlin.math.atan2(x, dAlt))
     if (bearing < 0) bearing += 360.0
     return bearing
 }
