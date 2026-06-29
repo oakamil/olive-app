@@ -282,6 +282,9 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 let handles = engine.start();
                 let _ = handles.0.join();
                 let _ = handles.1.join();
+                if let Some(t) = handles.2 {
+                    let _ = t.join();
+                }
             });
 
             let _ = ready_tx.send(());
@@ -502,6 +505,9 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 let handles = engine.start();
                 let _ = handles.0.join();
                 let _ = handles.1.join();
+                if let Some(t) = handles.2 {
+                    let _ = t.join();
+                }
             });
 
             let _ = ready_tx.send(());

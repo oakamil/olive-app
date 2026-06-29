@@ -3,6 +3,7 @@ package com.oakamil.olive
 import android.content.res.Configuration
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -100,7 +102,9 @@ fun EngineRunningScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
+                    .aspectRatio(16f / 9f),
+                colors = CardDefaults.cardColors(containerColor = Color.Black),
+                border = BorderStroke(2.dp, Color(0xFF4A1010))
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
                     GuidanceDisplay(viewModel.engineStats, settingsManager.guidanceMode == "alt_az")

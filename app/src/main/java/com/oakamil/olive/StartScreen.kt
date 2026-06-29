@@ -599,7 +599,7 @@ fun StartScreen(
                 }
             }
 
-            /*Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Text(
                 "Motion Sensor",
@@ -644,7 +644,7 @@ fun StartScreen(
                 ) {
                     Text(stringResource(id = R.string.btn_reset_calibration))
                 }
-            }*/
+            }
         }
 
         if (isLandscape) {

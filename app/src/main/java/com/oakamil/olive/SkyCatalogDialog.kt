@@ -19,17 +19,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons.AutoMirrored.Filled
 import androidx.compose.material.icons.Icons.Default
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -43,10 +45,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -426,268 +427,289 @@ fun SkyCatalogDialog(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(showKeyboard) {
-                        if (showKeyboard) {
-                            detectTapGestures {
-                                showKeyboard = false
-                                focusManager.clearFocus()
-                            }
-                        }
-                    }) {
-                TopAppBar(
-                    title = { Text(stringResource(R.string.title_sky_catalog)) },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                Filled.ArrowBack,
-                                contentDescription = stringResource(R.string.cd_close)
-                            )
-                        }
-                    },
-                    actions = {
-                        Box {
-                            IconButton(onClick = { showSettingsMenu = true }) {
-                                Icon(
-                                    Default.Settings,
-                                    contentDescription = stringResource(R.string.cd_settings)
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showSettingsMenu,
-                                onDismissRequest = { showSettingsMenu = false }
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.filter_sort_by),
-                                    modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                val sortOptions =
-                                    listOf("catalog ID", "name", "brightness", "distance")
-                                sortOptions.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(option.replaceFirstChar { it.uppercase() }) },
-                                        onClick = {
-                                            sortBy = option
-                                        },
-                                        trailingIcon = {
-                                            if (sortBy == option) {
-                                                Icon(
-                                                    Default.Check,
-                                                    contentDescription = "Selected",
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                    )
-                                }
-                                HorizontalDivider()
-                                Text(
-                                    text = stringResource(R.string.filter_visibility),
-                                    modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                val visibilityOptions = listOf("Above Horizon", "All Objects")
-                                visibilityOptions.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(option) },
-                                        onClick = {
-                                            visibilityFilter = option
-                                        },
-                                        trailingIcon = {
-                                            if (visibilityFilter == option) {
-                                                Icon(
-                                                    Default.Check,
-                                                    contentDescription = "Selected",
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                    )
-                                }
-                                HorizontalDivider()
-                                Text(
-                                    text = stringResource(R.string.filter_magnitude_limit),
-                                    modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                val magOptions = listOf(
-                                    "No Limit" to null,
-                                    "Naked Eye (< 6)" to 6.0,
-                                    "Binoculars (< 9)" to 9.0,
-                                    "Small Scope (< 12)" to 12.0,
-                                    "Large Scope (< 15)" to 15.0
-                                )
-                                magOptions.forEach { (label, value) ->
-                                    DropdownMenuItem(
-                                        text = { Text(label) },
-                                        onClick = {
-                                            magLimit = value
-                                        },
-                                        trailingIcon = {
-                                            if (magLimit == value) {
-                                                Icon(
-                                                    Default.Check,
-                                                    contentDescription = "Selected",
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                    )
-                                }
-                                HorizontalDivider()
-                                Text(
-                                    text = stringResource(R.string.filter_object_type),
-                                    modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                val typeOptions = listOf(
-                                    "All Types",
-                                    "Asterism",
-                                    "Cluster + Nebula",
-                                    "Dark Nebula",
-                                    "Double Star",
-                                    "Galaxy",
-                                    "Globular Cluster",
-                                    "Nebula",
-                                    "Open Cluster",
-                                    "Planetary Nebula",
-                                    "Star"
-                                )
-                                typeOptions.forEach { type ->
-                                    DropdownMenuItem(
-                                        text = { Text(type) },
-                                        onClick = {
-                                            typeFilter = type
-                                        },
-                                        trailingIcon = {
-                                            if (typeFilter == type) {
-                                                Icon(
-                                                    Default.Check,
-                                                    contentDescription = "Selected",
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                )
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = {},
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(R.string.placeholder_search)) },
-                        leadingIcon = { Icon(Default.Search, contentDescription = null) },
-                        singleLine = true,
-                        readOnly = true
-                    )
-                    Spacer(
+            val drawerState =
+                androidx.compose.material3.rememberDrawerState(initialValue = androidx.compose.material3.DrawerValue.Closed)
+            val coroutineScope = rememberCoroutineScope()
+            androidx.compose.material3.ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    androidx.compose.material3.ModalDrawerSheet(
+                        drawerContainerColor = MaterialTheme.colorScheme.surface,
+                        drawerContentColor = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
-                            .matchParentSize()
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                showKeyboard = true
-                            }
-                    )
-                }
-
-                val pagerState = androidx.compose.foundation.pager.rememberPagerState(
-                    initialPage = categories.indexOf(selectedCategory).coerceAtLeast(0),
-                    pageCount = { categories.size }
-                )
-                val coroutineScope = rememberCoroutineScope()
-                ScrollableTabRow(
-                    selectedTabIndex = categories.indexOf(selectedCategory).coerceAtLeast(0),
-                    edgePadding = 8.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    categories.forEach { category ->
-                        Tab(
-                            selected = selectedCategory == category,
-                            onClick = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(categories.indexOf(category))
-                                }
-                            },
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        when (category) {
-                                            "Asteroids" -> stringResource(R.string.asteroids_catalog_title)
-                                            "Comets" -> stringResource(R.string.comets_catalog_title)
-                                            else -> category
-                                        }
-                                    )
-                                }
-                            }
+                            .fillMaxWidth(0.75f)
+                            .widthIn(max = 280.dp)
+                    ) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            stringResource(R.string.title_sky_catalog),
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-                    }
-                }
-
-
-
-                LaunchedEffect(pagerState.targetPage) {
-                    val targetCategory = categories.getOrNull(pagerState.targetPage)
-                    if (targetCategory != null && targetCategory != selectedCategory) {
-                        selectedCategory = targetCategory
-                    }
-                }
-
-                val isLandscape =
-                    androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-
-                val listContent: @Composable (Modifier) -> Unit = { modifier ->
-                    androidx.compose.foundation.pager.HorizontalPager(
-                        state = pagerState,
-                        modifier = modifier,
-                        verticalAlignment = Alignment.Top
-                    ) { page ->
-                        val pageListState = androidx.compose.foundation.lazy.rememberLazyListState()
-                        LaunchedEffect(pageListState, selectedCategory) {
-                            if (page == categories.indexOf(selectedCategory)) {
-                                activeListState = pageListState
+                        HorizontalDivider()
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(categories) { category ->
+                                androidx.compose.material3.NavigationDrawerItem(
+                                    label = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                when (category) {
+                                                    "Asteroids" -> stringResource(R.string.asteroids_catalog_title)
+                                                    "Comets" -> stringResource(R.string.comets_catalog_title)
+                                                    else -> category
+                                                }
+                                            )
+                                            val currentShortCode = categoryToShortCode[category]
+                                            val currentDesc = catalogDescriptions[currentShortCode]
+                                            if (currentDesc != null && currentDesc.isNotBlank()) {
+                                                IconButton(onClick = {
+                                                    showInfoForCategory = category
+                                                }) {
+                                                    Icon(Default.Info, contentDescription = "Info")
+                                                }
+                                            }
+                                        }
+                                    },
+                                    selected = selectedCategory == category,
+                                    onClick = {
+                                        selectedCategory = category
+                                        coroutineScope.launch { drawerState.close() }
+                                    },
+                                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                                    colors = NavigationDrawerItemDefaults.colors(
+                                        selectedContainerColor = Color(0xFF4A1010),
+                                        selectedTextColor = Color.Red,
+                                        unselectedTextColor = Color.Red,
+                                        selectedIconColor = Color.Red,
+                                        unselectedIconColor = Color.Red
+                                    )
+                                )
                             }
                         }
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            state = pageListState
-                        ) {
-                            val currentCategory = categories[page]
-                            val currentShortCode = categoryToShortCode[currentCategory]
-                            val currentDesc = catalogDescriptions[currentShortCode]
-                            if (currentDesc != null && currentDesc.isNotBlank()) {
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 16.dp, start = 16.dp, end = 16.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Button(onClick = {
-                                            showInfoForCategory = currentCategory
-                                        }) {
-                                            Text(stringResource(R.string.catalog_info_button))
-                                        }
+                    }
+                }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(showKeyboard) {
+                            if (showKeyboard) {
+                                detectTapGestures {
+                                    showKeyboard = false
+                                    focusManager.clearFocus()
+                                }
+                            }
+                        }) {
+                    TopAppBar(
+                        title = { Text(stringResource(R.string.title_sky_catalog)) },
+                        navigationIcon = {
+                            IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                                Icon(
+                                    Default.Menu,
+                                    contentDescription = "Open catalogs menu"
+                                )
+                            }
+                        },
+                        actions = {
+                            Box {
+                                IconButton(onClick = { showSettingsMenu = true }) {
+                                    Icon(
+                                        Default.Settings,
+                                        contentDescription = stringResource(R.string.cd_settings)
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showSettingsMenu,
+                                    onDismissRequest = { showSettingsMenu = false }
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.filter_sort_by),
+                                        modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    val sortOptions =
+                                        listOf("catalog ID", "name", "brightness", "distance")
+                                    sortOptions.forEach { option ->
+                                        DropdownMenuItem(
+                                            text = { Text(option.replaceFirstChar { it.uppercase() }) },
+                                            onClick = {
+                                                sortBy = option
+                                            },
+                                            trailingIcon = {
+                                                if (sortBy == option) {
+                                                    Icon(
+                                                        Default.Check,
+                                                        contentDescription = "Selected",
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        )
+                                    }
+                                    HorizontalDivider()
+                                    Text(
+                                        text = stringResource(R.string.filter_visibility),
+                                        modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    val visibilityOptions = listOf("Above Horizon", "All Objects")
+                                    visibilityOptions.forEach { option ->
+                                        DropdownMenuItem(
+                                            text = { Text(option) },
+                                            onClick = {
+                                                visibilityFilter = option
+                                            },
+                                            trailingIcon = {
+                                                if (visibilityFilter == option) {
+                                                    Icon(
+                                                        Default.Check,
+                                                        contentDescription = "Selected",
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        )
+                                    }
+                                    HorizontalDivider()
+                                    Text(
+                                        text = stringResource(R.string.filter_magnitude_limit),
+                                        modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    val magOptions = listOf(
+                                        "No Limit" to null,
+                                        "Naked Eye (< 6)" to 6.0,
+                                        "Binoculars (< 9)" to 9.0,
+                                        "Small Scope (< 12)" to 12.0,
+                                        "Large Scope (< 15)" to 15.0
+                                    )
+                                    magOptions.forEach { (label, value) ->
+                                        DropdownMenuItem(
+                                            text = { Text(label) },
+                                            onClick = {
+                                                magLimit = value
+                                            },
+                                            trailingIcon = {
+                                                if (magLimit == value) {
+                                                    Icon(
+                                                        Default.Check,
+                                                        contentDescription = "Selected",
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        )
+                                    }
+                                    HorizontalDivider()
+                                    Text(
+                                        text = stringResource(R.string.filter_object_type),
+                                        modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    val typeOptions = listOf(
+                                        "All Types",
+                                        "Asterism",
+                                        "Cluster + Nebula",
+                                        "Dark Nebula",
+                                        "Double Star",
+                                        "Galaxy",
+                                        "Globular Cluster",
+                                        "Nebula",
+                                        "Open Cluster",
+                                        "Planetary Nebula",
+                                        "Star"
+                                    )
+                                    typeOptions.forEach { type ->
+                                        DropdownMenuItem(
+                                            text = { Text(type) },
+                                            onClick = {
+                                                typeFilter = type
+                                            },
+                                            trailingIcon = {
+                                                if (typeFilter == type) {
+                                                    Icon(
+                                                        Default.Check,
+                                                        contentDescription = "Selected",
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        )
                                     }
                                 }
                             }
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    Default.Close,
+                                    contentDescription = stringResource(R.string.cd_close)
+                                )
+                            }
+                        }
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = {},
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(R.string.placeholder_search)) },
+                            leadingIcon = { Icon(Default.Search, contentDescription = null) },
+                            singleLine = true,
+                            readOnly = true
+                        )
+                        Spacer(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .padding(end = 48.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    showKeyboard = true
+                                }
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = { searchQuery = "" },
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .padding(end = 4.dp)
+                            ) {
+                                Icon(
+                                    Default.Close,
+                                    contentDescription = "Clear search",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+
+                    val isLandscape =
+                        androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+                    val listContent: @Composable (Modifier) -> Unit = { modifier ->
+                        val pageListState = androidx.compose.foundation.lazy.rememberLazyListState()
+                        LaunchedEffect(pageListState, selectedCategory) {
+                            activeListState = pageListState
+                        }
+                        LazyColumn(
+                            modifier = modifier.fillMaxSize(),
+                            state = pageListState
+                        ) {
+                            val currentCategory = selectedCategory
 
                             if (currentCategory == "Comets") {
                                 item {
@@ -898,62 +920,14 @@ fun SkyCatalogDialog(
                             }
                         }
                     }
-                }
 
-                val keyboardContent: @Composable (Modifier) -> Unit = { modifier ->
-                    val sideButtons = @Composable {
-                        Column(
-                            modifier = Modifier.fillMaxHeight(),
-                            verticalArrangement = Arrangement.SpaceBetween,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            IconButton(onClick = {
-                                showKeyboard = false
-                                focusManager.clearFocus()
-                            }) {
-                                Icon(
-                                    Default.Close,
-                                    contentDescription = "Close Keyboard",
-                                    tint = Color.Red
-                                )
-                            }
-                            IconButton(onClick = {
-                                viewModel.landscapeKeyboardOnRight =
-                                    !viewModel.landscapeKeyboardOnRight
-                            }) {
-                                Icon(
-                                    imageVector = if (viewModel.landscapeKeyboardOnRight) Filled.KeyboardArrowLeft else Filled.KeyboardArrowRight,
-                                    contentDescription = "Swap keyboard side",
-                                    tint = Color.Red
-                                )
-                            }
-                        }
-                    }
 
-                    if (isLandscape) {
-                        Row(modifier = modifier) {
-                            if (viewModel.landscapeKeyboardOnRight) {
-                                sideButtons()
-                            }
-                            NightVisionKeyboard(
-                                isLandscape = true,
-                                modifier = Modifier.weight(1f),
-                                onKeyClick = { char -> searchQuery += char },
-                                onSpace = { searchQuery += " " },
-                                onBackspace = {
-                                    if (searchQuery.isNotEmpty()) searchQuery =
-                                        searchQuery.dropLast(1)
-                                },
-                            )
-                            if (!viewModel.landscapeKeyboardOnRight) {
-                                sideButtons()
-                            }
-                        }
-                    } else {
-                        Column(modifier = modifier) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
+                    val keyboardContent: @Composable (Modifier) -> Unit = { modifier ->
+                        val sideButtons = @Composable {
+                            Column(
+                                modifier = Modifier.fillMaxHeight(),
+                                verticalArrangement = Arrangement.SpaceBetween,
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 IconButton(onClick = {
                                     showKeyboard = false
@@ -965,35 +939,84 @@ fun SkyCatalogDialog(
                                         tint = Color.Red
                                     )
                                 }
+                                IconButton(onClick = {
+                                    viewModel.landscapeKeyboardOnRight =
+                                        !viewModel.landscapeKeyboardOnRight
+                                }) {
+                                    Icon(
+                                        imageVector = if (viewModel.landscapeKeyboardOnRight) Filled.KeyboardArrowLeft else Filled.KeyboardArrowRight,
+                                        contentDescription = "Swap keyboard side",
+                                        tint = Color.Red
+                                    )
+                                }
                             }
-                            NightVisionKeyboard(
-                                isLandscape = false,
-                                modifier = Modifier.fillMaxWidth(),
-                                onKeyClick = { char -> searchQuery += char },
-                                onSpace = { searchQuery += " " },
-                                onBackspace = {
-                                    if (searchQuery.isNotEmpty()) searchQuery =
-                                        searchQuery.dropLast(1)
-                                },
-                            )
                         }
-                    }
-                }
 
-                if (isLandscape && showKeyboard) {
-                    Row(modifier = Modifier.weight(1f)) {
-                        if (viewModel.landscapeKeyboardOnRight) {
-                            listContent(Modifier.weight(1f))
-                            keyboardContent(Modifier.weight(1f))
+                        if (isLandscape) {
+                            Row(modifier = modifier) {
+                                if (viewModel.landscapeKeyboardOnRight) {
+                                    sideButtons()
+                                }
+                                NightVisionKeyboard(
+                                    isLandscape = true,
+                                    modifier = Modifier.weight(1f),
+                                    onKeyClick = { char -> searchQuery += char },
+                                    onSpace = { searchQuery += " " },
+                                    onBackspace = {
+                                        if (searchQuery.isNotEmpty()) searchQuery =
+                                            searchQuery.dropLast(1)
+                                    },
+                                )
+                                if (!viewModel.landscapeKeyboardOnRight) {
+                                    sideButtons()
+                                }
+                            }
                         } else {
-                            keyboardContent(Modifier.weight(1f))
-                            listContent(Modifier.weight(1f))
+                            Column(modifier = modifier) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    IconButton(onClick = {
+                                        showKeyboard = false
+                                        focusManager.clearFocus()
+                                    }) {
+                                        Icon(
+                                            Default.Close,
+                                            contentDescription = "Close Keyboard",
+                                            tint = Color.Red
+                                        )
+                                    }
+                                }
+                                NightVisionKeyboard(
+                                    isLandscape = false,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onKeyClick = { char -> searchQuery += char },
+                                    onSpace = { searchQuery += " " },
+                                    onBackspace = {
+                                        if (searchQuery.isNotEmpty()) searchQuery =
+                                            searchQuery.dropLast(1)
+                                    },
+                                )
+                            }
                         }
                     }
-                } else {
-                    listContent(Modifier.weight(1f))
-                    if (showKeyboard) {
-                        keyboardContent(Modifier.fillMaxWidth())
+
+                    if (isLandscape && showKeyboard) {
+                        Row(modifier = Modifier.weight(1f)) {
+                            if (viewModel.landscapeKeyboardOnRight) {
+                                listContent(Modifier.weight(1f))
+                                keyboardContent(Modifier.weight(1f))
+                            } else {
+                                keyboardContent(Modifier.weight(1f))
+                                listContent(Modifier.weight(1f))
+                            }
+                        }
+                    } else {
+                        listContent(Modifier.weight(1f))
+                        if (showKeyboard) {
+                            keyboardContent(Modifier.fillMaxWidth())
+                        }
                     }
                 }
             }
