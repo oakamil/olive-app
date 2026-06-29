@@ -31,6 +31,7 @@
 
     <!-- Buttons -->
     <string name="btn_camera_mode">Camera Mode</string>
+    <string name="btn_reset_calibration">Reset Calibration</string>
     <string name="btn_stop_engine">Stop Engine</string>
     <string name="btn_start_engine">Start Engine</string>
     <string name="btn_stopping">Stopping …</string>
