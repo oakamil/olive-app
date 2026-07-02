@@ -111,7 +111,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     _class: JClass,
     fd: jint,
     raw_descriptors: jni::objects::JByteArray,
-    imu_enabled: jni::sys::jboolean,
+    motion_sensor_mode: jint,
     uvc_fps: jint,
     extractor: jni::objects::JString,
     downsample_mode: jint,
@@ -127,7 +127,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
 
     let fd = fd as i32;
     let raw_desc_bytes = env.convert_byte_array(&raw_descriptors).ok();
-    let use_imu = imu_enabled != 0;
+    let motion_sensor_mode = motion_sensor_mode as i32;
     let target_fps = uvc_fps as u32;
     let extractor_str: String = env.get_string(&extractor).unwrap().into();
     let ext_type = if extractor_str == "Cedar" {
@@ -230,8 +230,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             use crate::android_imu::AndroidImu;
             use olive_engine::imu::Imu;
 
-            let imu_arc = if use_imu {
-                let mut imu_dev = AndroidImu::new();
+            let imu_arc = if motion_sensor_mode != 0 {
+                let mut imu_dev = AndroidImu::new(motion_sensor_mode);
                 if imu_dev.init().is_ok() {
                     if let Ok(imu) = Imu::start(imu_dev, storage.clone()) {
                         Some(Arc::new(imu))
@@ -312,7 +312,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngine(
     mut env: JNIEnv,
     _class: JClass,
-    imu_enabled: jni::sys::jboolean,
+    motion_sensor_mode: jint,
     extractor: jni::objects::JString,
     sensor_mode: jni::objects::JString,
     internal_camera_id: jni::objects::JString,
@@ -342,7 +342,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     let storage: Option<std::sync::Arc<dyn olive_engine::storage::PersistentStorage>> =
         Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
 
-    let use_imu = imu_enabled != 0;
+    let motion_sensor_mode = motion_sensor_mode as i32;
     let internal_camera_id_str: String = env.get_string(&internal_camera_id).unwrap().into();
     let sensor_mode_str: String = env.get_string(&sensor_mode).unwrap().into();
     let extractor_str: String = env.get_string(&extractor).unwrap().into();
@@ -453,8 +453,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             use crate::android_imu::AndroidImu;
             use olive_engine::imu::Imu;
 
-            let imu_arc = if use_imu {
-                let mut imu_dev = AndroidImu::new();
+            let imu_arc = if motion_sensor_mode != 0 {
+                let mut imu_dev = AndroidImu::new(motion_sensor_mode);
                 if imu_dev.init().is_ok() {
                     if let Ok(imu) = Imu::start(imu_dev, storage.clone()) {
                         Some(Arc::new(imu))
@@ -706,9 +706,20 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getLatestFrameInto(
     env: JNIEnv,
     _class: JClass,
     buffer: jni::objects::JByteBuffer,
-) -> jni::sys::jboolean {
+    last_timestamp_ms: jni::sys::jlong,
+) -> jni::sys::jlong {
     if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
         if let Some(img) = cam.get_last_capture() {
+            let img_ts_ms = img
+                .timestamp
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+
+            if img_ts_ms <= last_timestamp_ms {
+                return img_ts_ms; // No new frame
+            }
+
             let width = img.width as usize;
             let height = img.height as usize;
             let data = &img.data;
@@ -731,7 +742,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getLatestFrameInto(
                             slice[dest_idx + 3] = 255; // A
                             dest_idx += 4;
                         }
-                        return 1;
+                        return img_ts_ms;
                     }
                 } else {
                     log::error!(

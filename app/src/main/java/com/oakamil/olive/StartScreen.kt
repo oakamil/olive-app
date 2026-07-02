@@ -19,14 +19,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.SettingsBackupRestore
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
@@ -52,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import org.json.JSONArray
+import java.text.NumberFormat
+import java.util.Locale
 
 @Composable
 fun StartScreen(
@@ -73,13 +78,14 @@ fun StartScreen(
     var sensorMode by remember { mutableStateOf(settingsManager.sensorMode) }
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
     var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
-    var imuIntegration by remember { mutableStateOf(settingsManager.imuIntegration) }
+    var motionSensorMode by remember { mutableIntStateOf(settingsManager.motionSensorMode) }
 
     var showCameraSelectionInfo by remember { mutableStateOf(false) }
     var showSensorModeInfo by remember { mutableStateOf(false) }
     var showDownsamplingInfo by remember { mutableStateOf(false) }
     var showExtractorInfo by remember { mutableStateOf(false) }
     var showGuidanceModeInfo by remember { mutableStateOf(false) }
+    var showMotionSensorInfo by remember { mutableStateOf(false) }
 
     val supportsRawMap = remember { mutableMapOf<String, Boolean>() }
 
@@ -96,7 +102,7 @@ fun StartScreen(
         sensorMode,
         internalCameraId,
         guidanceMode,
-        imuIntegration
+        motionSensorMode
     ) {
         settingsManager.cameraSelection = cameraSelection
         settingsManager.uvcFps = uvcFps
@@ -104,7 +110,7 @@ fun StartScreen(
         settingsManager.sensorMode = sensorMode
         settingsManager.internalCameraId = internalCameraId
         settingsManager.guidanceMode = guidanceMode
-        settingsManager.imuIntegration = imuIntegration
+        settingsManager.motionSensorMode = motionSensorMode
     }
 
     LaunchedEffect(internalCameraId) {
@@ -141,6 +147,25 @@ fun StartScreen(
                 "Olive Finder",
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            IconBarItem(
+                icon = Icons.Outlined.PlayCircle,
+                label = when {
+                    isStopping -> stringResource(id = R.string.btn_stopping)
+                    isStarting -> stringResource(id = R.string.btn_starting)
+                    else -> stringResource(id = R.string.btn_start_engine)
+                },
+                enabled = !isStopping && !isStarting,
+                singleLine = true,
+                iconSize = 36.dp,
+                onClick = onToggleEngine,
+                modifier = Modifier.weight(1f, fill = false)
             )
         }
         Spacer(modifier = Modifier.height(32.dp))
@@ -211,15 +236,15 @@ fun StartScreen(
                         for (cam in tempCameras) {
                             supportsRawMap[cam.first] = cam.third
                             val degreeStr = String.format(
-                                java.util.Locale.getDefault(),
+                                Locale.getDefault(),
                                 fovDegreeFormat,
-                                String.format(java.util.Locale.getDefault(), "%.1f", cam.second)
+                                String.format(Locale.getDefault(), "%.1f", cam.second)
                             )
                             list.add(
                                 Pair(
                                     cam.first,
                                     String.format(
-                                        java.util.Locale.getDefault(),
+                                        Locale.getDefault(),
                                         cameraFovFormat,
                                         cam.first,
                                         degreeStr
@@ -342,12 +367,12 @@ fun StartScreen(
                         modifier = Modifier.border(
                             1.dp,
                             Color.Red,
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(4.dp)
                         )
                     ) {
                         TextButton(onClick = { expandedFps = true }) {
                             Text(
-                                java.text.NumberFormat.getInstance().format(uvcFps),
+                                NumberFormat.getInstance().format(uvcFps),
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -357,14 +382,14 @@ fun StartScreen(
                             modifier = Modifier.border(
                                 1.dp,
                                 Color.Red,
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                                shape = RoundedCornerShape(4.dp)
                             )
                         ) {
                             listOf(5, 10, 15, 20, 30).forEach { fps ->
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            java.text.NumberFormat.getInstance().format(fps),
+                                            NumberFormat.getInstance().format(fps),
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                     },
@@ -601,11 +626,26 @@ fun StartScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            Text(
-                "Motion Sensor",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(id = R.string.label_motion_sensor),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { showMotionSensorInfo = true },
+                    modifier = Modifier.padding(start = 4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(id = R.string.cd_info),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -613,36 +653,74 @@ fun StartScreen(
                     .padding(vertical = 8.dp)
             ) {
                 listOf(
-                    false to stringResource(id = R.string.value_off),
-                    true to stringResource(id = R.string.value_on)
+                    0 to stringResource(id = R.string.value_off),
+                    3 to stringResource(id = R.string.value_on)
                 ).forEach { (value, label) ->
-                    RadioButton(
-                        selected = imuIntegration == value,
-                        onClick = { imuIntegration = value },
-                        colors = RadioButtonDefaults.colors(
-                            selectedColor = MaterialTheme.colorScheme.primary,
-                            unselectedColor = MaterialTheme.colorScheme.onBackground
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable { motionSensorMode = value }
+                            .padding(end = 16.dp)
+                    ) {
+                        RadioButton(
+                            selected = motionSensorMode == value,
+                            onClick = { motionSensorMode = value },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.onBackground
+                            )
                         )
-                    )
-                    Text(
-                        label,
-                        modifier = Modifier.padding(start = 8.dp, end = 16.dp),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-            }
+                        Text(
+                            label,
+                            modifier = Modifier.padding(start = 4.dp),
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        if (value == 3 && motionSensorMode != 0) {
+                            var hasCalibration by remember {
+                                mutableStateOf(
+                                    settingsManager.getString(
+                                        "imu_calibration.txt"
+                                    ) != null
+                                )
+                            }
+                            var showResetCalibrationDialog by remember { mutableStateOf(false) }
 
-            if (imuIntegration) {
-                var hasCalibration by remember { mutableStateOf(settingsManager.getString("imu_calibration.txt") != null) }
-                Button(
-                    onClick = {
-                        settingsManager.removeString("imu_calibration.txt")
-                        hasCalibration = false
-                    },
-                    enabled = hasCalibration,
-                    modifier = Modifier.padding(start = 8.dp)
-                ) {
-                    Text(stringResource(id = R.string.btn_reset_calibration))
+                            if (showResetCalibrationDialog) {
+                                AlertDialog(
+                                    onDismissRequest = { showResetCalibrationDialog = false },
+                                    title = { Text(stringResource(R.string.title_reset_calibration)) },
+                                    text = { Text(stringResource(R.string.inst_reset_calibration)) },
+                                    confirmButton = {
+                                        Button(onClick = {
+                                            showResetCalibrationDialog = false
+                                            settingsManager.removeString("imu_calibration.txt")
+                                            hasCalibration = false
+                                        }) {
+                                            Text(stringResource(R.string.btn_confirm))
+                                        }
+                                    },
+                                    dismissButton = {
+                                        OutlinedButton(onClick = {
+                                            showResetCalibrationDialog = false
+                                        }) {
+                                            Text(stringResource(id = R.string.btn_cancel))
+                                        }
+                                    }
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(16.dp))
+                            IconBarItem(
+                                icon = Icons.Default.SettingsBackupRestore,
+                                label = stringResource(id = R.string.btn_reset),
+                                singleLine = true,
+                                onClick = {
+                                    showResetCalibrationDialog = true
+                                },
+                                enabled = hasCalibration
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -663,29 +741,7 @@ fun StartScreen(
             }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
 
-        Button(
-            onClick = onToggleEngine,
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            enabled = !isStopping && !isStarting,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            )
-        ) {
-            Text(
-                when {
-                    isStopping -> stringResource(id = R.string.btn_stopping)
-                    isStarting -> stringResource(id = R.string.btn_starting)
-                    else -> stringResource(id = R.string.btn_start_engine)
-                }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
 
         if (showCameraSelectionInfo) {
             InfoPopup(
@@ -720,6 +776,13 @@ fun StartScreen(
                 title = stringResource(id = R.string.label_guidance_mode),
                 onDismiss = { showGuidanceModeInfo = false }) {
                 Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_guidance_mode)))
+            }
+        }
+        if (showMotionSensorInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_motion_sensor),
+                onDismiss = { showMotionSensorInfo = false }) {
+                Text(stringResource(id = R.string.info_motion_sensor))
             }
         }
     }

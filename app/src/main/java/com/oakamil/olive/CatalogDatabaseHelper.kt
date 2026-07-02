@@ -2,14 +2,21 @@ package com.oakamil.olive
 
 import android.content.Context
 import android.database.Cursor
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.edit
 import io.requery.android.database.sqlite.SQLiteDatabase
 import io.requery.android.database.sqlite.SQLiteOpenHelper
+import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.zip.GZIPInputStream
 import kotlin.math.cos
 import kotlin.math.sin
@@ -192,7 +199,7 @@ class CatalogDatabaseHelper(private val context: Context) :
     fun getAsteroidsJson(): String {
         openDatabase()
         val database = db ?: return "[]"
-        val array = org.json.JSONArray()
+        val array = JSONArray()
         try {
             database.query(
                 "asteroids",
@@ -226,7 +233,7 @@ class CatalogDatabaseHelper(private val context: Context) :
     fun getCometsJson(): String {
         openDatabase()
         val database = db ?: return "[]"
-        val array = org.json.JSONArray()
+        val array = JSONArray()
         try {
             database.query(
                 "comets",
@@ -272,14 +279,14 @@ class CatalogDatabaseHelper(private val context: Context) :
     fun refreshComets(onNetworkError: () -> Unit): Boolean {
         try {
             val url =
-                java.net.URL("https://cobs.si/api/elements.api?format=mpc&is-active=true&cur-mag=20")
-            val connection = url.openConnection() as java.net.HttpURLConnection
+                URL("https://cobs.si/api/elements.api?format=mpc&is-active=true&cur-mag=20")
+            val connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.setRequestProperty("User-Agent", "Mozilla/5.0")
             connection.connectTimeout = 10000
             connection.readTimeout = 10000
 
-            val reader = java.io.BufferedReader(java.io.InputStreamReader(connection.inputStream))
+            val reader = BufferedReader(InputStreamReader(connection.inputStream))
             val lines = reader.readLines()
             reader.close()
 
@@ -343,7 +350,7 @@ class CatalogDatabaseHelper(private val context: Context) :
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Error refreshing comets", e)
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
+            Handler(Looper.getMainLooper()).post {
                 onNetworkError()
             }
             return false

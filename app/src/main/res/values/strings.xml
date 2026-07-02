@@ -31,7 +31,7 @@
 
     <!-- Buttons -->
     <string name="btn_camera_mode">Camera Mode</string>
-    <string name="btn_reset_calibration">Reset Calibration</string>
+
     <string name="btn_stop_engine">Stop Engine</string>
     <string name="btn_start_engine">Start Engine</string>
     <string name="btn_stopping">Stopping …</string>
@@ -77,6 +77,7 @@
     <string name="value_olive">Olive</string>
     <string name="value_off">Off</string>
     <string name="value_on">On</string>
+
     <string name="value_2x2">2x2</string>
     <string name="value_4x4">4x4</string>
     <string name="value_fast">Fast</string>
@@ -142,6 +143,8 @@
     <string name="inst_confirm_alignment">Please ensure that the selected target is centered in your eyepiece before continuing.</string>
     <string name="title_reset_alignment">Reset Alignment</string>
     <string name="inst_reset_alignment">The alignment will be reset to the center of the camera\'s field of view.</string>
+    <string name="title_reset_calibration">Reset Calibration</string>
+    <string name="inst_reset_calibration">The calibration data for the motion sensor will be removed.</string>
     
     <!-- Filter and Sort Strings -->
     <string name="filter_sort_by">Sort By</string>
@@ -181,5 +184,27 @@
     <string name="comets_catalog_title">Comets</string>
     <string name="refresh_comets_button">Refresh Comets</string>
     <string name="error_comets_download">Unable to fetch comet data.</string>
+    
+    <!-- Added Missing Strings -->
+    <string name="label_motion_sensor">Motion Sensor</string>
+    <string name="info_motion_sensor">Enable the phone\'s motion sensor for calculating position between camera solves. Reset sensor calibration when the position of the phone changes relative to the camera.</string>
+    <string name="btn_camera_align">Camera / Align</string>
+    <string name="stat_solving">Solving</string>
+    <string name="stat_slewing">Slewing</string>
+    <string name="stat_idle">Idle</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="cd_close_keyboard">Close Keyboard</string>
+    <string name="cd_open_catalogs_menu">Open catalogs menu</string>
+    <string name="cd_swap_keyboard_side">Swap keyboard side</string>
+    <string name="cat_messier">Messier</string>
+    <string name="cat_ngc">NGC</string>
+    <string name="cat_ic">IC</string>
+    <string name="cat_barnard">Barnard</string>
+    <string name="cat_caldwell">Caldwell</string>
+    <string name="cat_collinder">Collinder</string>
+    <string name="cat_rasc_doubles">RASC Doubles</string>
+    <string name="cat_sac_asterisms">SAC Asterisms</string>
+    <string name="type_asteroid">Asteroid</string>
+    <string name="type_comet">Comet</string>
 
 </resources>

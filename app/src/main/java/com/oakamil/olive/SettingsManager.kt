@@ -1,6 +1,7 @@
 package com.oakamil.olive
 
 import android.content.Context
+import androidx.annotation.Keep
 import androidx.core.content.edit
 
 class SettingsManager(context: Context) {
@@ -14,9 +15,9 @@ class SettingsManager(context: Context) {
         get() = prefs.getString("guidance_mode", "alt_az") ?: "alt_az"
         set(value) = prefs.edit { putString("guidance_mode", value) }
 
-    var imuIntegration: Boolean
-        get() = prefs.getBoolean("imu_integration", false)
-        set(value) = prefs.edit { putBoolean("imu_integration", value) }
+    var motionSensorMode: Int
+        get() = prefs.getInt("motion_sensor_mode", 0)
+        set(value) = prefs.edit { putInt("motion_sensor_mode", value) }
 
     var uvcFps: Int
         get() = prefs.getInt("uvc_fps", 30)
@@ -46,12 +47,12 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit { putFloat("zoom_ratio", value) }
 
     /* These are used from the native layer. */
-    @androidx.annotation.Keep
+    @Keep
     fun getString(key: String): String? = prefs.getString(key, null)
 
-    @androidx.annotation.Keep
+    @Keep
     fun setString(key: String, value: String) = prefs.edit { putString(key, value) }
 
-    @androidx.annotation.Keep
+    @Keep
     fun removeString(key: String) = prefs.edit { remove(key) }
 }

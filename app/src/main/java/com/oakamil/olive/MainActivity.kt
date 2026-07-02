@@ -1,6 +1,7 @@
 package com.oakamil.olive
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.content.BroadcastReceiver
@@ -12,9 +13,13 @@ import android.content.res.Configuration
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
+import android.location.Location
 import android.location.LocationManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.util.Log
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -36,8 +41,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
+import androidx.core.location.LocationManagerCompat
+import androidx.core.os.CancellationSignal
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -46,7 +54,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.util.Collections
 import kotlin.coroutines.resume
 
 class MainActivity : ComponentActivity() {
@@ -130,14 +144,14 @@ class MainActivity : ComponentActivity() {
                             @Suppress("DEPRECATION")
                             intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                         }
-                    android.util.Log.d("OliveUI", "USB Device Detached: ${device?.deviceName}")
+                    Log.d("OliveUI", "USB Device Detached: ${device?.deviceName}")
 
                     val wasActiveDevice =
                         viewModel.engineMode == MainViewModel.EngineMode.UVC && (device == null || connectedDevice == null || device.deviceName == connectedDevice?.deviceName)
 
                     checkForCameras()
                     if (wasActiveDevice) {
-                        android.util.Log.w(
+                        Log.w(
                             "OliveUI",
                             "Active UVC camera detached! Stopping engine."
                         )
@@ -152,11 +166,11 @@ class MainActivity : ComponentActivity() {
 
     private fun copyAssetDatabase() {
         val assetName = "default_database.npz"
-        val outFile = java.io.File(filesDir, assetName)
+        val outFile = File(filesDir, assetName)
         if (!outFile.exists()) {
             try {
                 assets.open(assetName).use { inputStream ->
-                    java.io.FileOutputStream(outFile).use { outputStream ->
+                    FileOutputStream(outFile).use { outputStream ->
                         val buffer = ByteArray(1024 * 4)
                         var read: Int
                         while (inputStream.read(buffer).also { read = it } != -1) {
@@ -367,7 +381,7 @@ class MainActivity : ComponentActivity() {
         if (viewModel.isEngineRunning && !isStopping) {
             // Ensure engine is actually alive or restart if needed
             // For now just logged, but we could add auto-restart logic here
-            android.util.Log.d(
+            Log.d(
                 "OliveUI",
                 "App resumed, engine running mode: ${viewModel.engineMode}"
             )
@@ -421,9 +435,9 @@ class MainActivity : ComponentActivity() {
     }
 
     @Suppress("DEPRECATION")
-    @android.annotation.SuppressLint("MissingPermission")
+    @SuppressLint("MissingPermission")
     private suspend fun getClientLocation(): Pair<Double, Double> =
-        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        suspendCancellableCoroutine { cont ->
             if (ContextCompat.checkSelfPermission(
                     this,
                     Manifest.permission.ACCESS_FINE_LOCATION
@@ -449,12 +463,12 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val executor = ContextCompat.getMainExecutor(this)
-                androidx.core.location.LocationManagerCompat.getCurrentLocation(
+                LocationManagerCompat.getCurrentLocation(
                     locationManager,
                     LocationManager.NETWORK_PROVIDER,
-                    null as androidx.core.os.CancellationSignal?,
+                    null as CancellationSignal?,
                     executor
-                ) { location: android.location.Location? ->
+                ) { location: Location? ->
                     if (location != null) {
                         cont.resume(Pair(location.latitude, location.longitude))
                     } else {
@@ -468,15 +482,15 @@ class MainActivity : ComponentActivity() {
 
     private fun getDeviceIpAddress(): String {
         try {
-            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
-            for (intf in java.util.Collections.list(interfaces)) {
+            val interfaces = NetworkInterface.getNetworkInterfaces()
+            for (intf in Collections.list(interfaces)) {
                 if (intf.isLoopback || !intf.isUp) continue
                 val name = intf.name.lowercase()
                 if (name.contains("rmnet") || name.contains("ccmni") || name.contains("tun")) continue
 
                 val addrs = intf.inetAddresses
-                for (addr in java.util.Collections.list(addrs)) {
-                    if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                for (addr in Collections.list(addrs)) {
+                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
                         return addr.hostAddress ?: "127.0.0.1"
                     }
                 }
@@ -561,7 +575,7 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
         val shouldShowRationale = denied.any {
-            androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+            ActivityCompat.shouldShowRequestPermissionRationale(this, it)
         }
         val prefs = getPreferences(MODE_PRIVATE)
         val isFirstRun = prefs.getBoolean("first_run_permissions", true)
@@ -573,8 +587,8 @@ class MainActivity : ComponentActivity() {
         } else {
             showPermissionDialog = false
             val intent =
-                Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = android.net.Uri.fromParts("package", packageName, null)
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
                 }
             startActivity(intent)
         }
@@ -614,7 +628,7 @@ class MainActivity : ComponentActivity() {
                         engineStarted = true // Pending permission, don't turn off isStarting yet
                     }
                 } else {
-                    android.util.Log.e("OliveUI", "UVC camera selected but none connected!")
+                    Log.e("OliveUI", "UVC camera selected but none connected!")
                     viewModel.stopEngineSync()
                 }
             } else if (activeCameraSelection == "demo" || ContextCompat.checkSelfPermission(

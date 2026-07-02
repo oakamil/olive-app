@@ -6,12 +6,12 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.view.Surface
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,14 +26,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterCenterFocus
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -48,7 +50,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -56,7 +61,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
+import org.json.JSONArray
 import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun TunerScreen(
@@ -118,19 +126,19 @@ fun TunerScreen(
     fun CameraFeedContent() {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start
+            horizontalArrangement = Arrangement.End
         ) {
-            Button(
+            IconButton(
                 onClick = {
                     viewModel.setEnginePaused(false)
                     onBack()
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                }
             ) {
-                Text(stringResource(id = R.string.btn_back))
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = stringResource(id = R.string.cd_close),
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
         }
 
@@ -175,7 +183,7 @@ fun TunerScreen(
                     1f
                 }
 
-                androidx.compose.foundation.Image(
+                Image(
                     bitmap = frame,
                     contentDescription = stringResource(id = R.string.cd_live_preview),
                     modifier = Modifier
@@ -188,17 +196,17 @@ fun TunerScreen(
                                 val y1 = tapOffset.y - cy
                                 val x2 = x1 - offset.x
                                 val y2 = y1 - offset.y
-                                
+
                                 val s = scale * baseScale
                                 val x3 = x2 / s
                                 val y3 = y2 / s
-    
+
                                 val rad = Math.toRadians(-imageRotation.toDouble())
-                                val cosA = kotlin.math.cos(rad).toFloat()
-                                val sinA = kotlin.math.sin(rad).toFloat()
+                                val cosA = cos(rad).toFloat()
+                                val sinA = sin(rad).toFloat()
                                 val x4 = x3 * cosA - y3 * sinA
                                 val y4 = x3 * sinA + y3 * cosA
-    
+
                                 alignTargetX = (x4 / fitPxScale) + bW / 2f
                                 alignTargetY = (y4 / fitPxScale) + bH / 2f
                             }
@@ -211,7 +219,7 @@ fun TunerScreen(
                             rotationZ = imageRotation
                         )
                 )
-                
+
                 if (alignTargetX != null && alignTargetY != null) {
                     Canvas(
                         modifier = Modifier
@@ -232,19 +240,19 @@ fun TunerScreen(
                         val strokeW = 3f / (scale * baseScale)
 
                         drawCircle(
-                            color = androidx.compose.ui.graphics.Color.Red,
+                            color = Color.Red,
                             radius = 20f / (scale * baseScale),
                             center = Offset(canvasX, canvasY),
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeW)
+                            style = Stroke(width = strokeW)
                         )
                         drawLine(
-                            color = androidx.compose.ui.graphics.Color.Red,
+                            color = Color.Red,
                             start = Offset(canvasX - crosshairSize, canvasY),
                             end = Offset(canvasX + crosshairSize, canvasY),
                             strokeWidth = strokeW
                         )
                         drawLine(
-                            color = androidx.compose.ui.graphics.Color.Red,
+                            color = Color.Red,
                             start = Offset(canvasX, canvasY - crosshairSize),
                             end = Offset(canvasX, canvasY + crosshairSize),
                             strokeWidth = strokeW
@@ -268,33 +276,29 @@ fun TunerScreen(
     @Composable
     fun TuningContent() {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.Center
         ) {
-            Button(
-                onClick = { showAlignDialog = true },
+            IconBarItem(
+                icon = Icons.Default.FilterCenterFocus,
+                label = stringResource(R.string.btn_align),
                 enabled = alignTargetX != null && alignTargetY != null,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            ) {
-                Text(stringResource(R.string.btn_align))
-            }
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Button(
-                onClick = { showResetAlignDialog = true },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary,
-                    contentColor = MaterialTheme.colorScheme.onSecondary
-                )
-            ) {
-                Text(stringResource(R.string.btn_reset))
-            }
+                singleLine = true,
+                onClick = { showAlignDialog = true }
+            )
+
+            Spacer(modifier = Modifier.width(32.dp))
+
+            IconBarItem(
+                icon = Icons.Default.SettingsBackupRestore,
+                label = stringResource(R.string.btn_reset),
+                singleLine = true,
+                onClick = { showResetAlignDialog = true }
+            )
         }
-        
+
         TuningControls(viewModel, settingsManager, activeCameraSelection)
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -394,7 +398,10 @@ fun TunerScreen(
                 Button(onClick = {
                     showAlignDialog = false
                     if (alignTargetX != null && alignTargetY != null) {
-                        OliveEngine.setAlignTargetPixel(alignTargetX!!.toDouble(), alignTargetY!!.toDouble())
+                        OliveEngine.setAlignTargetPixel(
+                            alignTargetX!!.toDouble(),
+                            alignTargetY!!.toDouble()
+                        )
                     }
                     alignTargetX = null
                     alignTargetY = null
@@ -490,7 +497,7 @@ fun TuningControls(
                 var mZ = 1f
                 try {
                     if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE && settingsManager.sensorMode == "Processed") {
-                        val jsonArray = org.json.JSONArray(viewModel.getAvailableInternalCameras())
+                        val jsonArray = JSONArray(viewModel.getAvailableInternalCameras())
                         for (i in 0 until jsonArray.length()) {
                             val obj = jsonArray.getJSONObject(i)
                             if (obj.getString("id") == settingsManager.internalCameraId) {
@@ -838,7 +845,7 @@ fun TuningControls(
                 Text(stringResource(id = R.string.info_hot_pixel_mode))
             }
         }
-        
+
     }
 }
 

@@ -1,10 +1,16 @@
 package com.oakamil.olive
 
+import android.app.Activity
 import android.content.res.Configuration
+import android.provider.Settings
+import android.text.format.DateFormat
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,37 +24,47 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.PictureInPicture
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeJoin.Companion.Round
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import java.util.Locale
+import kotlin.math.round
 
 @Composable
 fun EngineRunningScreen(
@@ -71,6 +87,41 @@ fun EngineRunningScreen(
     var showStackingInfo by remember { mutableStateOf(false) }
     var showCatalog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var isLowPowerMode by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val activity = context as? Activity
+
+    LaunchedEffect(lastInteractionTime, showCatalog) {
+        if (!showCatalog) {
+            delay(30_000)
+            isLowPowerMode = true
+        }
+    }
+
+    DisposableEffect(isLowPowerMode) {
+        if (isLowPowerMode) {
+            activity?.window?.attributes = activity.window?.attributes?.apply {
+                preferredRefreshRate = 30f
+            }
+        } else {
+            activity?.window?.attributes = activity.window?.attributes?.apply {
+                preferredRefreshRate = 0f
+            }
+        }
+        onDispose {
+            activity?.window?.attributes = activity.window?.attributes?.apply {
+                preferredRefreshRate = 0f
+            }
+        }
+    }
+
+    val controlsAlpha by animateFloatAsState(
+        targetValue = if (isLowPowerMode) 0f else 1f,
+        animationSpec = tween(durationMillis = 500),
+        label = "alpha"
+    )
 
     BackHandler(enabled = !isStopping && !isStarting) {
         onToggleEngine()
@@ -82,20 +133,37 @@ fun EngineRunningScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial)
+                        val ev = awaitPointerEvent(PointerEventPass.Initial)
+                        lastInteractionTime = System.currentTimeMillis()
+                        if (isLowPowerMode) {
+                            isLowPowerMode = false
+                            ev.changes.forEach { it.consume() }
+                        }
+                    }
+                }
+            }
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start
-        ) {
-            Text(
-                "Olive Finder",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+        Box(modifier = Modifier.alpha(controlsAlpha)) {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Start
+                ) {
+                    Text(
+                        "Olive Finder",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
         }
-        Spacer(modifier = Modifier.height(24.dp))
 
         @Composable
         fun GuidanceContent() {
@@ -104,10 +172,17 @@ fun EngineRunningScreen(
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f),
                 colors = CardDefaults.cardColors(containerColor = Color.Black),
-                border = BorderStroke(2.dp, Color(0xFF4A1010))
+                border = BorderStroke(
+                    2.dp,
+                    if (isLowPowerMode) Color.Transparent else Color(0xFF4A1010)
+                )
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
-                    GuidanceDisplay(viewModel.engineStats, settingsManager.guidanceMode == "alt_az")
+                    GuidanceDisplay(
+                        viewModel.engineStats,
+                        settingsManager.guidanceMode == "alt_az",
+                        isLowPowerMode
+                    )
                 }
             }
         }
@@ -143,6 +218,38 @@ fun EngineRunningScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) {
+                val initialBrightness = remember {
+                    try {
+                        Settings.System.getInt(
+                            context.contentResolver,
+                            Settings.System.SCREEN_BRIGHTNESS
+                        ) / 255f
+                    } catch (_: Exception) {
+                        0.5f
+                    }
+                }
+                var screenBrightness by remember { mutableFloatStateOf(initialBrightness) }
+
+                LaunchedEffect(screenBrightness) {
+                    activity?.window?.attributes = activity.window?.attributes?.apply {
+                        this.screenBrightness = screenBrightness
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Screen Brightness: ${(screenBrightness * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+                Slider(
+                    value = screenBrightness,
+                    onValueChange = { screenBrightness = it },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
@@ -261,7 +368,7 @@ fun EngineRunningScreen(
                     Slider(
                         value = mainScreenExposure,
                         onValueChange = {
-                            val stepped = kotlin.math.round(it * 10.0f) / 10.0f
+                            val stepped = round(it * 10.0f) / 10.0f
                             mainScreenExposure = stepped
                             viewModel.setExposure(stepped * 1000000)
                         },
@@ -301,106 +408,80 @@ fun EngineRunningScreen(
             }
         }
 
+
         @Composable
         fun ActionButtons() {
-            Column(
-                modifier = Modifier.fillMaxWidth()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 0.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Button(
-                        onClick = { showCatalog = true },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary,
-                            contentColor = MaterialTheme.colorScheme.onSecondary
-                        )
-                    ) {
-                        AutoSizeText(stringResource(R.string.btn_catalog))
-                    }
+                // Catalog
+                IconBarItem(
+                    icon = Icons.Default.AutoAwesome,
+                    label = stringResource(R.string.btn_catalog),
+                    onClick = { showCatalog = true }
+                )
 
-                    Button(
-                        onClick = {
-                            viewModel.setEnginePaused(true)
-                            val range = OliveEngine.getNativeCameraGainRange()
-                            if (range != null && range.size >= 2) {
-                                viewModel.minAnalogGain = range[0]
-                                viewModel.maxAnalogGain =
-                                    range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
-                            } else {
-                                viewModel.minAnalogGain = 100f
-                                viewModel.maxAnalogGain = 3200f
-                            }
-                            viewModel.currentExposure =
-                                OliveEngine.getNativeCameraExposure().toFloat()
-                                    .coerceIn(16667f, 5000000f)
-                            val bRange = OliveEngine.getNativeCameraBrightnessRange()
-                            if (bRange != null && bRange.size >= 3) {
-                                viewModel.uvcBrightnessMin = bRange[0]
-                                viewModel.uvcBrightnessMax = bRange[1]
-                                viewModel.currentUvcBrightness = bRange[2]
-                            } else {
-                                viewModel.uvcBrightnessMin = 0
-                                viewModel.uvcBrightnessMax = 0
-                            }
-                            onNavigateToTuner()
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        AutoSizeText("Camera / Align")
+                // Camera / Align
+                IconBarItem(
+                    icon = Icons.Outlined.PhotoCamera,
+                    label = stringResource(id = R.string.btn_camera_align),
+                    onClick = {
+                        viewModel.setEnginePaused(true)
+                        val range = OliveEngine.getNativeCameraGainRange()
+                        if (range != null && range.size >= 2) {
+                            viewModel.minAnalogGain = range[0]
+                            viewModel.maxAnalogGain =
+                                range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
+                        } else {
+                            viewModel.minAnalogGain = 100f
+                            viewModel.maxAnalogGain = 3200f
+                        }
+                        viewModel.currentExposure =
+                            OliveEngine.getNativeCameraExposure().toFloat()
+                                .coerceIn(16667f, 5000000f)
+                        val bRange = OliveEngine.getNativeCameraBrightnessRange()
+                        if (bRange != null && bRange.size >= 3) {
+                            viewModel.uvcBrightnessMin = bRange[0]
+                            viewModel.uvcBrightnessMax = bRange[1]
+                            viewModel.currentUvcBrightness = bRange[2]
+                        } else {
+                            viewModel.uvcBrightnessMin = 0
+                            viewModel.uvcBrightnessMax = 0
+                        }
+                        onNavigateToTuner()
                     }
-                }
+                )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            isEnteringPip = true
-                            onEnterPipMode()
-                            coroutineScope.launch {
-                                delay(1000)
-                                isEnteringPip = false
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        enabled = !isEnteringPip
-                    ) {
-                        AutoSizeText(
-                            if (isEnteringPip) stringResource(id = R.string.btn_entering_pip) else "Picture-in-Picture"
-                        )
+                // Picture in Picture
+                IconBarItem(
+                    icon = Icons.Default.PictureInPicture,
+                    label = if (isEnteringPip) stringResource(id = R.string.btn_entering_pip) else "Picture\nin Picture",
+                    enabled = !isEnteringPip,
+                    onClick = {
+                        isEnteringPip = true
+                        onEnterPipMode()
+                        coroutineScope.launch {
+                            delay(1000)
+                            isEnteringPip = false
+                        }
                     }
+                )
 
-                    Button(
-                        onClick = onToggleEngine,
-                        modifier = Modifier.weight(1f),
-                        enabled = !isStopping && !isStarting,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        AutoSizeText(
-                            when {
-                                isStopping -> stringResource(id = R.string.btn_stopping)
-                                isStarting -> stringResource(id = R.string.btn_starting)
-                                else -> stringResource(id = R.string.btn_stop_engine)
-                            }
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
+                // Stop Engine
+                IconBarItem(
+                    icon = Icons.Outlined.Cancel,
+                    label = when {
+                        isStopping -> stringResource(id = R.string.btn_stopping)
+                        isStarting -> stringResource(id = R.string.btn_starting)
+                        else -> stringResource(id = R.string.btn_stop_engine)
+                    },
+                    enabled = !isStopping && !isStarting,
+                    onClick = onToggleEngine
+                )
             }
         }
 
@@ -412,29 +493,39 @@ fun EngineRunningScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     GuidanceContent()
                 }
-                Column(
-                    modifier = Modifier.weight(1f)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    BoxWithConstraints(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScrollWithScrollbar(rememberScrollState())
-                                .defaultMinSize(minHeight = maxHeight),
-                            verticalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                StatsContent()
+                    Box(modifier = Modifier.alpha(controlsAlpha)) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            BoxWithConstraints(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .verticalScrollWithScrollbar(rememberScrollState())
+                                        .defaultMinSize(minHeight = maxHeight),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        StatsContent()
+                                    }
+                                    Column {
+                                        Spacer(modifier = Modifier.height(24.dp))
+                                        SlidersContent()
+                                    }
+                                }
                             }
-                            Column {
-                                Spacer(modifier = Modifier.height(24.dp))
-                                SlidersContent()
-                            }
+                            ActionButtons()
                         }
                     }
-                    ActionButtons()
+                    if (isLowPowerMode) {
+                        DigitalClock()
+                    }
                 }
             }
         } else {
@@ -443,26 +534,40 @@ fun EngineRunningScreen(
             ) {
                 GuidanceContent()
                 Spacer(modifier = Modifier.height(16.dp))
-                BoxWithConstraints(
-                    modifier = Modifier.weight(1f)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScrollWithScrollbar(rememberScrollState())
-                            .defaultMinSize(minHeight = maxHeight),
-                        verticalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            StatsContent()
-                        }
-                        Column {
-                            Spacer(modifier = Modifier.height(24.dp))
-                            SlidersContent()
+                    Box(modifier = Modifier.alpha(controlsAlpha)) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            BoxWithConstraints(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .verticalScrollWithScrollbar(rememberScrollState())
+                                        .defaultMinSize(minHeight = maxHeight),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        StatsContent()
+                                    }
+                                    Column {
+                                        Spacer(modifier = Modifier.height(24.dp))
+                                        SlidersContent()
+                                    }
+                                }
+                            }
+                            ActionButtons()
                         }
                     }
+                    if (isLowPowerMode) {
+                        DigitalClock()
+                    }
                 }
-                ActionButtons()
             }
         }
 
@@ -517,6 +622,31 @@ fun EngineRunningScreen(
 }
 
 @Composable
+fun DigitalClock() {
+    var timeString by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        while (true) {
+            val is24Hour = DateFormat.is24HourFormat(context)
+            val cal = Calendar.getInstance()
+            val format = if (is24Hour) "HH:mm" else "h:mm"
+            timeString = DateFormat.format(format, cal).toString()
+            delay(1000)
+        }
+    }
+    Text(
+        text = timeString,
+        style = MaterialTheme.typography.displayLarge.copy(
+            drawStyle = Stroke(
+                width = 2f,
+                join = Round
+            )
+        ),
+        color = MaterialTheme.colorScheme.primary
+    )
+}
+
+@Composable
 fun StatsDisplay(stats: EngineStats) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -528,7 +658,15 @@ fun StatsDisplay(stats: EngineStats) {
             horizontalAlignment = Alignment.Start
         ) {
             Text(
-                stringResource(id = R.string.stat_status) + ": ${stats.status}",
+                stringResource(id = R.string.stat_status) + ": ${
+                    when (stats.status) {
+                        "Solving" -> stringResource(id = R.string.stat_solving)
+                        "Slewing" -> stringResource(id = R.string.stat_slewing)
+                        "Idle" -> stringResource(id = R.string.stat_idle)
+                        "Camera Mode" -> stringResource(id = R.string.btn_camera_mode)
+                        else -> stats.status
+                    }
+                }",
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
@@ -607,35 +745,4 @@ fun StatsDisplay(stats: EngineStats) {
             )
         }
     }
-}
-
-@Composable
-fun AutoSizeText(
-    text: String,
-    modifier: Modifier = Modifier,
-    color: Color = Color.Unspecified
-) {
-    val defaultTextStyle = MaterialTheme.typography.labelLarge
-    var textStyle by remember { mutableStateOf(defaultTextStyle) }
-    var readyToDraw by remember { mutableStateOf(false) }
-
-    Text(
-        text = text,
-        color = color,
-        maxLines = 1,
-        softWrap = false,
-        style = textStyle,
-        modifier = modifier.drawWithContent {
-            if (readyToDraw) {
-                drawContent()
-            }
-        },
-        onTextLayout = { result ->
-            if (result.didOverflowWidth) {
-                textStyle = textStyle.copy(fontSize = textStyle.fontSize * 0.9f)
-            } else {
-                readyToDraw = true
-            }
-        }
-    )
 }

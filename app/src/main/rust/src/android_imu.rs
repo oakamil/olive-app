@@ -1,4 +1,4 @@
-use nalgebra::{UnitQuaternion, Vector3};
+use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 use ndk_sys::*;
 use olive_engine::imu::ImuDevice;
 use std::ptr;
@@ -10,19 +10,23 @@ pub struct AndroidImu {
     sensor: *const ASensor,
     last_engine_poll_time: Option<Instant>,
     last_hardware_timestamp: Option<i64>,
+    mode: i32,
+    last_fused_quat: Option<UnitQuaternion<f64>>,
 }
 
 unsafe impl Send for AndroidImu {}
 unsafe impl Sync for AndroidImu {}
 
 impl AndroidImu {
-    pub fn new() -> Self {
+    pub fn new(mode: i32) -> Self {
         Self {
             manager: ptr::null_mut(),
             queue: ptr::null_mut(),
             sensor: ptr::null(),
             last_engine_poll_time: None,
             last_hardware_timestamp: None,
+            mode,
+            last_fused_quat: None,
         }
     }
 }
@@ -44,10 +48,21 @@ impl ImuDevice for AndroidImu {
                 return Err("Failed to get ASensorManager".to_string());
             }
 
-            self.sensor =
-                ASensorManager_getDefaultSensor(self.manager, ASENSOR_TYPE_GYROSCOPE as i32);
+            let sensor_type = match self.mode {
+                1 => 11, // ASENSOR_TYPE_ROTATION_VECTOR (Standard)
+                2 => 15, // ASENSOR_TYPE_GAME_ROTATION_VECTOR (Gyro + Accel)
+                3 => 4,  // ASENSOR_TYPE_GYROSCOPE (Gyro only)
+                _ => 0,
+            };
+
+            self.sensor = ASensorManager_getDefaultSensor(self.manager, sensor_type);
+            if self.sensor.is_null() && self.mode == 2 {
+                log::warn!("Game rotation vector not available, falling back to rotation vector");
+                self.sensor = ASensorManager_getDefaultSensor(self.manager, 11);
+            }
+
             if self.sensor.is_null() {
-                return Err("Failed to get ASENSOR_TYPE_GYROSCOPE".to_string());
+                return Err(format!("Failed to get sensor for mode {}", self.mode));
             }
 
             self.queue =
@@ -85,32 +100,13 @@ impl ImuDevice for AndroidImu {
                 let mut accumulated_q = UnitQuaternion::identity();
                 let mut processed_events = 0;
                 let mut last_gyro: Option<Vector3<f64>> = None;
+                let mut latest_fused_quat: Option<UnitQuaternion<f64>> = None;
 
                 while ASensorEventQueue_getEvents(self.queue, event.as_mut_ptr(), 1) > 0 {
                     let ev = event.assume_init();
-                    if ev.type_ == ASENSOR_TYPE_GYROSCOPE as i32 {
-                        let x = ev
-                            .__bindgen_anon_1
-                            .__bindgen_anon_1
-                            .vector
-                            .__bindgen_anon_1
-                            .__bindgen_anon_1
-                            .x as f64;
-                        let y = ev
-                            .__bindgen_anon_1
-                            .__bindgen_anon_1
-                            .vector
-                            .__bindgen_anon_1
-                            .__bindgen_anon_1
-                            .y as f64;
-                        let z = ev
-                            .__bindgen_anon_1
-                            .__bindgen_anon_1
-                            .vector
-                            .__bindgen_anon_1
-                            .__bindgen_anon_1
-                            .z as f64;
-                        let gyro_vec = Vector3::new(x, y, z);
+                    if ev.type_ == 4 {
+                        let data = ev.__bindgen_anon_1.__bindgen_anon_1.data;
+                        let gyro_vec = Vector3::new(data[0] as f64, data[1] as f64, data[2] as f64);
                         last_gyro = Some(gyro_vec);
 
                         if let Some(last_ts) = self.last_hardware_timestamp {
@@ -123,6 +119,17 @@ impl ImuDevice for AndroidImu {
                         }
                         self.last_hardware_timestamp = Some(ev.timestamp);
                         processed_events += 1;
+                    } else if ev.type_ == 15 || ev.type_ == 11 {
+                        let data = ev.__bindgen_anon_1.__bindgen_anon_1.data;
+                        let x = data[0] as f64;
+                        let y = data[1] as f64;
+                        let z = data[2] as f64;
+                        let w = data[3] as f64;
+                        let q = Quaternion::new(w, x, y, z);
+                        let unit_q = UnitQuaternion::from_quaternion(q);
+                        latest_fused_quat = Some(unit_q);
+                        self.last_hardware_timestamp = Some(ev.timestamp);
+                        processed_events += 1;
                     }
                 }
 
@@ -133,20 +140,45 @@ impl ImuDevice for AndroidImu {
                         self.last_engine_poll_time = Some(now);
 
                         if dt_engine > 0.0001 {
-                            let angle = accumulated_q.angle();
-                            if angle > 1e-8 {
-                                if let Some(axis) = accumulated_q.axis() {
-                                    let equivalent_velocity =
-                                        axis.into_inner() * (angle / dt_engine);
-                                    return Ok(Some(equivalent_velocity));
+                            if self.mode == 1 || self.mode == 2 {
+                                if let Some(current_q) = latest_fused_quat {
+                                    if let Some(prev_q) = self.last_fused_quat {
+                                        let q_delta = prev_q.conjugate() * current_q;
+                                        self.last_fused_quat = Some(current_q);
+
+                                        let angle = q_delta.angle();
+                                        if angle > 1e-8 {
+                                            if let Some(axis) = q_delta.axis() {
+                                                let equivalent_velocity =
+                                                    axis.into_inner() * (angle / dt_engine);
+                                                return Ok(Some(equivalent_velocity));
+                                            }
+                                        }
+                                    } else {
+                                        self.last_fused_quat = Some(current_q);
+                                    }
+                                }
+                            } else if self.mode == 3 {
+                                let angle = accumulated_q.angle();
+                                if angle > 1e-8 {
+                                    if let Some(axis) = accumulated_q.axis() {
+                                        let equivalent_velocity =
+                                            axis.into_inner() * (angle / dt_engine);
+                                        return Ok(Some(equivalent_velocity));
+                                    }
                                 }
                             }
                         }
                     } else {
                         self.last_engine_poll_time = Some(now);
+                        if self.mode == 1 || self.mode == 2 {
+                            self.last_fused_quat = latest_fused_quat;
+                        }
                     }
-                    // Return the last instantaneous reading if angle was tiny or first poll
-                    return Ok(last_gyro);
+                    if self.mode == 3 {
+                        return Ok(last_gyro);
+                    }
+                    return Ok(Some(Vector3::zeros()));
                 }
             }
         }

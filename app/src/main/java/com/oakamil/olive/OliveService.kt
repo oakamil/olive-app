@@ -1,5 +1,6 @@
 package com.oakamil.olive
 
+import android.R.drawable
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,11 +10,14 @@ import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import java.io.FileDescriptor
+import java.io.FileOutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 
@@ -41,7 +45,7 @@ class OliveService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.notif_engine_title))
             .setContentText(getString(R.string.notif_engine_text, mode))
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setSmallIcon(drawable.ic_menu_camera)
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -102,13 +106,13 @@ class OliveService : Service() {
     }
 
     private var lx200Thread: Thread? = null
-    private var lx200Fd: java.io.FileDescriptor? = null
+    private var lx200Fd: FileDescriptor? = null
     private var lastLx200DisconnectTime: Long = 0
 
     private var alpacaThread: Thread? = null
     private var alpacaThreadV6: Thread? = null
-    private var alpacaFd: java.io.FileDescriptor? = null
-    private var alpacaFdV6: java.io.FileDescriptor? = null
+    private var alpacaFd: FileDescriptor? = null
+    private var alpacaFdV6: FileDescriptor? = null
 
     private fun startServers() {
         lx200Thread = Thread {
@@ -130,10 +134,10 @@ class OliveService : Service() {
                             OliveEngine.resetTelescopeServer()
                         }
                         try {
-                            val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
+                            val pfd = ParcelFileDescriptor.dup(clientFd)
                             val inputStream =
-                                android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
-                            val outputStream = java.io.FileOutputStream(clientFd)
+                                ParcelFileDescriptor.AutoCloseInputStream(pfd)
+                            val outputStream = FileOutputStream(clientFd)
                             val buffer = ByteArray(1024)
                             while (!Thread.currentThread().isInterrupted) {
                                 val bytesRead = inputStream.read(buffer)
@@ -183,7 +187,7 @@ class OliveService : Service() {
                         val clientFd = Os.accept(fd, null)
                         Log.d("OliveService", "Alpaca V4 accepted socket!")
                         try {
-                            val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
+                            val pfd = ParcelFileDescriptor.dup(clientFd)
                             val nativeFd = pfd.detachFd()
                             Log.d(
                                 "OliveService",
@@ -228,7 +232,7 @@ class OliveService : Service() {
                         val clientFd = Os.accept(fd, null)
                         Log.d("OliveService", "Alpaca V6 accepted socket!")
                         try {
-                            val pfd = android.os.ParcelFileDescriptor.dup(clientFd)
+                            val pfd = ParcelFileDescriptor.dup(clientFd)
                             val nativeFd = pfd.detachFd()
                             Log.d(
                                 "OliveService",

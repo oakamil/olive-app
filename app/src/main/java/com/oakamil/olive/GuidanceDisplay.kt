@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Straight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -25,9 +23,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeJoin.Companion.Round
 import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -40,9 +42,10 @@ import androidx.graphics.shapes.CornerRounding
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 import java.util.Locale
+import kotlin.math.abs
 
 @Composable
-fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
+fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean, isLowPowerMode: Boolean = false) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -84,7 +87,8 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
                 color = MaterialTheme.colorScheme.primary,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 200.sp,
-                lineHeight = TextUnit.Unspecified
+                lineHeight = TextUnit.Unspecified,
+                drawStyle = if (isLowPowerMode) Stroke(width = 2f, join = Round) else Fill
             )
 
             val indicatorStyle = MaterialTheme.typography.displayMedium.copy(
@@ -94,7 +98,8 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
                 fontStyle = FontStyle.Italic,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 200.sp,
-                lineHeight = TextUnit.Unspecified
+                lineHeight = TextUnit.Unspecified,
+                drawStyle = if (isLowPowerMode) Stroke(width = 2f, join = Round) else Fill
             )
 
             Box(modifier = Modifier.fillMaxSize()) {
@@ -158,7 +163,11 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
                                             .weight(2f)
                                             .fillMaxWidth()
                                     ) {
-                                        DirectionArrow(if (displayTilt > 0.0) 270 else 90, false)
+                                        DirectionArrow(
+                                            if (displayTilt > 0.0) 270 else 90,
+                                            false,
+                                            isLowPowerMode
+                                        )
                                     }
                                     Row(
                                         modifier = Modifier
@@ -197,8 +206,8 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
                                     modifier = Modifier.fillMaxSize(0.5f),
                                     strokeWidth = 8.dp
                                 )
-                            } else if (stats.offsetAngle != null && kotlin.math.abs(stats.offsetAngle) >= 0.05) {
-                                TargetArrow(stats.offsetAngle)
+                            } else if (stats.offsetAngle != null && abs(stats.offsetAngle) >= 0.05) {
+                                TargetArrow(stats.offsetAngle, isLowPowerMode)
                             }
                         }
 
@@ -216,7 +225,11 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
                                             .weight(2f)
                                             .fillMaxWidth()
                                     ) {
-                                        DirectionArrow(if (displayRot > 0.0) 0 else 180, true)
+                                        DirectionArrow(
+                                            if (displayRot > 0.0) 0 else 180,
+                                            true,
+                                            isLowPowerMode
+                                        )
                                     }
                                     Row(
                                         modifier = Modifier
@@ -268,7 +281,7 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean) {
 }
 
 @Composable
-fun DirectionArrow(rotation: Int, alignRight: Boolean) {
+fun DirectionArrow(rotation: Int, alignRight: Boolean, isOutlined: Boolean) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -296,7 +309,11 @@ fun DirectionArrow(rotation: Int, alignRight: Boolean) {
                         degrees = rotation.toFloat(),
                         pivot = Offset(shapeCenterX, shapeCenterY)
                     ) {
-                        drawPath(roundedPolygonPath, PureRed)
+                        drawPath(
+                            path = roundedPolygonPath,
+                            color = PureRed,
+                            style = if (isOutlined) Stroke(width = size.minDimension / 50f) else Fill
+                        )
                     }
                 }
             }
@@ -304,18 +321,18 @@ fun DirectionArrow(rotation: Int, alignRight: Boolean) {
 }
 
 @Composable
-fun TargetArrow(rotation: Double) {
+fun TargetArrow(rotation: Double, isOutlined: Boolean) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = Icons.Filled.Straight,
+            painter = painterResource(id = if (isOutlined) R.drawable.ic_straight_100 else R.drawable.ic_straight_400),
             contentDescription = stringResource(id = R.string.cd_target),
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer(rotationZ = -rotation.toFloat()),
-            tint = PureRed
+            tint = if (isOutlined) DarkRed else PureRed
         )
     }
 }
