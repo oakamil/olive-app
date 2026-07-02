@@ -7,11 +7,12 @@ object OliveEngine {
         System.loadLibrary("olive_jni")
     }
 
+
     external fun initJni(filesDir: String)
     external fun startEngine(
         fd: Int,
         rawDescriptors: ByteArray,
-        imuEnabled: Boolean,
+        motionSensorMode: Int,
         uvcFps: Int,
         extractor: String,
         downsampleMode: Int,
@@ -22,7 +23,7 @@ object OliveEngine {
     )
 
     external fun startNativeCameraEngine(
-        imuEnabled: Boolean,
+        motionSensorMode: Int,
         extractor: String,
         sensorMode: String,
         internalCameraId: String,
@@ -52,7 +53,7 @@ object OliveEngine {
     external fun setNativeCameraHotPixelMode(mode: Int)
     external fun getNativeCameraHotPixelMode(): Int
     external fun getAvailableInternalCameras(): String
-    external fun getLatestFrameInto(buffer: ByteBuffer): Boolean
+    external fun getLatestFrameInto(buffer: ByteBuffer, lastTimestamp: Long): Long
     external fun setEnginePaused(paused: Boolean)
     external fun setEngineSigma(sigma: Float)
     external fun updateUvcStacking(frames: Int)

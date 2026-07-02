@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.Color
 
 // Night vision theme colors
 val PureRed = Color(0xFFFF0000)
+val DarkRed = Color(0xFF8B0000)
 val PureBlack = Color(0xFF000000)
 
 private val NightVisionColorScheme = darkColorScheme(

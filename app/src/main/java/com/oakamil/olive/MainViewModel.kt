@@ -17,8 +17,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     enum class EngineMode { STOPPED, UVC, NATIVE }
@@ -113,51 +115,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private var frameBuffer: ByteBuffer? = null
-    private var backBitmap: android.graphics.Bitmap? = null
-    private var frontBitmap: android.graphics.Bitmap? = null
-    private val frameHeaderBytes = ByteArray(8)
+
+    private var lastFrameTimestamp = 0L
 
     private fun fetchLatestFrame() {
         if (frameBuffer == null) {
-            frameBuffer = ByteBuffer.allocateDirect(100 * 1024 * 1024)
+            frameBuffer =
+                ByteBuffer.allocateDirect(100 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
         }
         val buffer = frameBuffer ?: return
-        buffer.clear()
 
-        if (!OliveEngine.getLatestFrameInto(buffer)) return
+        val ts = OliveEngine.getLatestFrameInto(buffer, lastFrameTimestamp)
+        if (ts <= 0L || ts <= lastFrameTimestamp) return
 
-        buffer.position(0)
-        buffer.get(frameHeaderBytes)
-
-        val bytes = frameHeaderBytes
-
-        val width = ((bytes[0].toInt() and 0xFF) or
-                ((bytes[1].toInt() and 0xFF) shl 8) or
-                ((bytes[2].toInt() and 0xFF) shl 16) or
-                ((bytes[3].toInt() and 0xFF) shl 24))
-
-        val height = ((bytes[4].toInt() and 0xFF) or
-                ((bytes[5].toInt() and 0xFF) shl 8) or
-                ((bytes[6].toInt() and 0xFF) shl 16) or
-                ((bytes[7].toInt() and 0xFF) shl 24))
+        buffer.rewind()
+        val width = buffer.int
+        val height = buffer.int
 
         val pixelCount = width * height
         if (pixelCount !in 1..25000000) return
 
-        val tmp = backBitmap
-        backBitmap = frontBitmap
-        frontBitmap = tmp
-
-        var bitmap = backBitmap
-        if (bitmap == null || bitmap.width != width || bitmap.height != height) {
-            bitmap = createBitmap(width, height)
-            backBitmap = bitmap
-            frontBitmap = createBitmap(width, height)
-        }
+        val bitmap = createBitmap(width, height)
         bitmap.copyPixelsFromBuffer(buffer)
         val imageBitmapToPublish = bitmap.asImageBitmap()
         viewModelScope.launch(Dispatchers.Main) {
-            latestFrame = imageBitmapToPublish
+            if (isActive) {
+                latestFrame = imageBitmapToPublish
+                lastFrameTimestamp = ts
+            }
         }
     }
 
@@ -172,7 +157,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (e: Exception) {
                     Log.e("MainViewModel", "Error in updateStats: ${e.message}")
                 }
-                delay(200) // 5Hz stats
+                delay(100) // ~10Hz stats
             }
         }
 
@@ -183,7 +168,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (e: Exception) {
                     Log.e("MainViewModel", "Error in fetchLatestFrame: ${e.message}")
                 }
-                delay(100) // 10Hz frames
+                delay(33) // ~30Hz frames
             }
         }
     }
@@ -199,13 +184,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         lon: Double = INVALID_COORD,
         timeMs: Long = 0L
     ) {
+        latestFrame = null
+        lastFrameTimestamp = 0L
         currentLat = lat
         currentLon = lon
         val downsampling = if (cameraId == "demo") 0 else settingsManager.downsampling
 
         viewModelScope.launch(Dispatchers.IO) {
             OliveEngine.startNativeCameraEngine(
-                settingsManager.imuIntegration,
+                settingsManager.motionSensorMode,
                 settingsManager.extractor,
                 settingsManager.sensorMode,
                 cameraId,
@@ -251,6 +238,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         lon: Double = 200.0,
         timeMs: Long = 0L
     ) {
+        latestFrame = null
+        lastFrameTimestamp = 0L
         currentLat = lat
         currentLon = lon
         viewModelScope.launch(Dispatchers.IO) {
@@ -261,7 +250,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             OliveEngine.startEngine(
                 fd,
                 rawDescriptors,
-                settingsManager.imuIntegration,
+                settingsManager.motionSensorMode,
                 settingsManager.uvcFps,
                 settingsManager.extractor,
                 settingsManager.downsampling,
@@ -417,7 +406,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (json.isBlank() || json == "[]") return emptyList()
 
         return try {
-            val arr = org.json.JSONArray(json)
+            val arr = JSONArray(json)
             val list = mutableListOf<CatalogObject>()
             for (i in 0 until arr.length()) {
                 val obj = arr.getJSONObject(i)
@@ -472,7 +461,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (json.isBlank() || json == "[]") return emptyList()
 
         return try {
-            val arr = org.json.JSONArray(json)
+            val arr = JSONArray(json)
             val list = mutableListOf<CatalogObject>()
             for (i in 0 until arr.length()) {
                 val obj = arr.getJSONObject(i)
@@ -526,7 +515,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (json.isBlank() || json == "[]") return emptyList()
 
         return try {
-            val arr = org.json.JSONArray(json)
+            val arr = JSONArray(json)
             val list = mutableListOf<CatalogObject>()
             for (i in 0 until arr.length()) {
                 val obj = arr.getJSONObject(i)

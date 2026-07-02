@@ -1,5 +1,7 @@
 package com.oakamil.olive
 
+import android.content.res.Configuration
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,7 +23,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons.AutoMirrored.Filled
 import androidx.compose.material.icons.Icons.Default
@@ -30,12 +34,14 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,11 +51,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +74,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -71,9 +83,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.acos
+import kotlin.math.asin
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.round
+import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,7 +115,7 @@ fun SkyCatalogDialog(
     var showSettingsMenu by remember { mutableStateOf(false) }
     var cometsRefreshTrigger by remember { mutableIntStateOf(0) }
     var isRefreshingComets by remember { mutableStateOf(false) }
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
 
     var searchResults by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     var showRaDecForObj by remember { mutableStateOf<CatalogObject?>(null) }
@@ -143,7 +164,7 @@ fun SkyCatalogDialog(
                 currentDecState.value = newDec
             }
             currentTimeMsState.longValue = System.currentTimeMillis()
-            kotlinx.coroutines.delay(5000)
+            delay(5000)
         }
     }
 
@@ -155,7 +176,7 @@ fun SkyCatalogDialog(
 
     val coroutineScope = rememberCoroutineScope()
     var activeListState by remember {
-        mutableStateOf<androidx.compose.foundation.lazy.LazyListState?>(
+        mutableStateOf<LazyListState?>(
             null
         )
     }
@@ -187,8 +208,8 @@ fun SkyCatalogDialog(
                         if (lst < 0) lst += 360.0
                         lstRad = Math.toRadians(lst)
                         val latRad = Math.toRadians(lat)
-                        sinLat = kotlin.math.sin(latRad)
-                        cosLat = kotlin.math.cos(latRad)
+                        sinLat = sin(latRad)
+                        cosLat = cos(latRad)
                     }
 
                     val allPlanets =
@@ -197,9 +218,9 @@ fun SkyCatalogDialog(
                         var passes = true
                         if (checkVisibility) {
                             val altCondition =
-                                kotlin.math.sin(p.dec * Math.PI / 180.0) * sinLat + kotlin.math.cos(
+                                sin(p.dec * Math.PI / 180.0) * sinLat + cos(
                                     p.dec * Math.PI / 180.0
-                                ) * cosLat * kotlin.math.cos(lstRad - p.ra * Math.PI / 180.0)
+                                ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
                             if (altCondition <= 0) passes = false
                         }
                         if (typeFilter != "All Types" && typeFilter != "Planet") passes = false
@@ -250,9 +271,9 @@ fun SkyCatalogDialog(
                             var passes = true
                             if (checkVisibility) {
                                 val altCondition =
-                                    kotlin.math.sin(p.dec * Math.PI / 180.0) * sinLat + kotlin.math.cos(
+                                    sin(p.dec * Math.PI / 180.0) * sinLat + cos(
                                         p.dec * Math.PI / 180.0
-                                    ) * cosLat * kotlin.math.cos(lstRad - p.ra * Math.PI / 180.0)
+                                    ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
                                 if (altCondition <= 0) passes = false
                             }
                             if (typeFilter != "All Types" && typeFilter != "Asteroid") passes =
@@ -284,9 +305,9 @@ fun SkyCatalogDialog(
                             var passes = true
                             if (checkVisibility) {
                                 val altCondition =
-                                    kotlin.math.sin(p.dec * Math.PI / 180.0) * sinLat + kotlin.math.cos(
+                                    sin(p.dec * Math.PI / 180.0) * sinLat + cos(
                                         p.dec * Math.PI / 180.0
-                                    ) * cosLat * kotlin.math.cos(lstRad - p.ra * Math.PI / 180.0)
+                                    ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
                                 if (altCondition <= 0) passes = false
                             }
                             if (typeFilter != "All Types" && typeFilter != "Comet") passes = false
@@ -428,12 +449,12 @@ fun SkyCatalogDialog(
             color = MaterialTheme.colorScheme.background
         ) {
             val drawerState =
-                androidx.compose.material3.rememberDrawerState(initialValue = androidx.compose.material3.DrawerValue.Closed)
+                rememberDrawerState(initialValue = DrawerValue.Closed)
             val coroutineScope = rememberCoroutineScope()
-            androidx.compose.material3.ModalNavigationDrawer(
+            ModalNavigationDrawer(
                 drawerState = drawerState,
                 drawerContent = {
-                    androidx.compose.material3.ModalDrawerSheet(
+                    ModalDrawerSheet(
                         drawerContainerColor = MaterialTheme.colorScheme.surface,
                         drawerContentColor = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
@@ -450,7 +471,7 @@ fun SkyCatalogDialog(
                         HorizontalDivider()
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(categories) { category ->
-                                androidx.compose.material3.NavigationDrawerItem(
+                                NavigationDrawerItem(
                                     label = {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -461,6 +482,18 @@ fun SkyCatalogDialog(
                                                 when (category) {
                                                     "Asteroids" -> stringResource(R.string.asteroids_catalog_title)
                                                     "Comets" -> stringResource(R.string.comets_catalog_title)
+                                                    "Messier" -> stringResource(R.string.cat_messier)
+                                                    "NGC" -> stringResource(R.string.cat_ngc)
+                                                    "IC" -> stringResource(R.string.cat_ic)
+                                                    "Barnard" -> stringResource(R.string.cat_barnard)
+                                                    "Caldwell" -> stringResource(R.string.cat_caldwell)
+                                                    "Collinder" -> stringResource(R.string.cat_collinder)
+                                                    "RASC Doubles" -> stringResource(R.string.cat_rasc_doubles)
+                                                    "SAC Asterisms" -> stringResource(R.string.cat_sac_asterisms)
+                                                    "All Objects" -> stringResource(R.string.cat_all_objects)
+                                                    "Nearest Objects" -> stringResource(R.string.cat_nearest_objects)
+                                                    "Solar System" -> stringResource(R.string.cat_solar_system)
+                                                    "Bright Stars" -> stringResource(R.string.cat_bright_stars)
                                                     else -> category
                                                 }
                                             )
@@ -511,7 +544,7 @@ fun SkyCatalogDialog(
                             IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
                                 Icon(
                                     Default.Menu,
-                                    contentDescription = "Open catalogs menu"
+                                    contentDescription = stringResource(R.string.cd_open_catalogs_menu)
                                 )
                             }
                         },
@@ -601,7 +634,7 @@ fun SkyCatalogDialog(
                                                 if (magLimit == value) {
                                                     Icon(
                                                         Default.Check,
-                                                        contentDescription = "Selected",
+                                                        contentDescription = stringResource(R.string.cd_selected),
                                                         modifier = Modifier.size(16.dp)
                                                     )
                                                 }
@@ -630,7 +663,28 @@ fun SkyCatalogDialog(
                                     )
                                     typeOptions.forEach { type ->
                                         DropdownMenuItem(
-                                            text = { Text(type) },
+                                            text = {
+                                                Text(
+                                                    when (type) {
+                                                        "All Types" -> stringResource(R.string.type_all_types)
+                                                        "Star" -> stringResource(R.string.type_star)
+                                                        "Galaxy" -> stringResource(R.string.type_galaxy)
+                                                        "Nebula" -> stringResource(R.string.type_nebula)
+                                                        "Cluster" -> stringResource(R.string.type_cluster)
+                                                        "Planet" -> stringResource(R.string.type_planet)
+                                                        "Asterism" -> stringResource(R.string.type_asterism)
+                                                        "Cluster + Nebula" -> stringResource(R.string.type_cluster_nebula)
+                                                        "Dark Nebula" -> stringResource(R.string.type_dark_nebula)
+                                                        "Double Star" -> stringResource(R.string.type_double_star)
+                                                        "Globular Cluster" -> stringResource(R.string.type_globular_cluster)
+                                                        "Open Cluster" -> stringResource(R.string.type_open_cluster)
+                                                        "Planetary Nebula" -> stringResource(R.string.type_planetary_nebula)
+                                                        "Asteroid" -> stringResource(R.string.type_asteroid)
+                                                        "Comet" -> stringResource(R.string.type_comet)
+                                                        else -> type
+                                                    }
+                                                )
+                                            },
                                             onClick = {
                                                 typeFilter = type
                                             },
@@ -638,7 +692,7 @@ fun SkyCatalogDialog(
                                                 if (typeFilter == type) {
                                                     Icon(
                                                         Default.Check,
-                                                        contentDescription = "Selected",
+                                                        contentDescription = stringResource(R.string.cd_selected),
                                                         modifier = Modifier.size(16.dp)
                                                     )
                                                 }
@@ -690,7 +744,7 @@ fun SkyCatalogDialog(
                             ) {
                                 Icon(
                                     Default.Close,
-                                    contentDescription = "Clear search",
+                                    contentDescription = stringResource(R.string.cd_clear_search),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             }
@@ -698,10 +752,10 @@ fun SkyCatalogDialog(
                     }
 
                     val isLandscape =
-                        androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
                     val listContent: @Composable (Modifier) -> Unit = { modifier ->
-                        val pageListState = androidx.compose.foundation.lazy.rememberLazyListState()
+                        val pageListState = rememberLazyListState()
                         LaunchedEffect(pageListState, selectedCategory) {
                             activeListState = pageListState
                         }
@@ -734,10 +788,10 @@ fun SkyCatalogDialog(
                                                     },
                                                     onNetworkError = {
                                                         isRefreshingComets = false
-                                                        android.widget.Toast.makeText(
+                                                        Toast.makeText(
                                                             context,
                                                             R.string.error_comets_download,
-                                                            android.widget.Toast.LENGTH_LONG
+                                                            Toast.LENGTH_LONG
                                                         ).show()
                                                     }
                                                 )
@@ -775,6 +829,23 @@ fun SkyCatalogDialog(
                                     ) else ListItemDefaults.colors(),
                                     headlineContent = { Text(obj.displayName) },
                                     supportingContent = {
+                                        val localizedType = when (obj.objectType) {
+                                            "Star" -> stringResource(R.string.type_star)
+                                            "Galaxy" -> stringResource(R.string.type_galaxy)
+                                            "Nebula" -> stringResource(R.string.type_nebula)
+                                            "Cluster" -> stringResource(R.string.type_cluster)
+                                            "Planet" -> stringResource(R.string.type_planet)
+                                            "Asterism" -> stringResource(R.string.type_asterism)
+                                            "Cluster + Nebula" -> stringResource(R.string.type_cluster_nebula)
+                                            "Dark Nebula" -> stringResource(R.string.type_dark_nebula)
+                                            "Double Star" -> stringResource(R.string.type_double_star)
+                                            "Globular Cluster" -> stringResource(R.string.type_globular_cluster)
+                                            "Open Cluster" -> stringResource(R.string.type_open_cluster)
+                                            "Planetary Nebula" -> stringResource(R.string.type_planetary_nebula)
+                                            "Asteroid" -> stringResource(R.string.type_asteroid)
+                                            "Comet" -> stringResource(R.string.type_comet)
+                                            else -> obj.objectType
+                                        }
                                         val magText = if (obj.magnitude != null) "Mag: ${
                                             String.format(
                                                 Locale.getDefault(),
@@ -784,7 +855,7 @@ fun SkyCatalogDialog(
                                         }" else if (obj.catalogLabel == "Planet") "" else "Mag: N/A"
                                         val text = listOfNotNull(
                                             obj.designation.takeIf { it.isNotBlank() },
-                                            obj.objectType,
+                                            localizedType,
                                             magText.takeIf { it.isNotBlank() }).joinToString(" | ")
                                         Text(text)
                                     },
@@ -796,7 +867,6 @@ fun SkyCatalogDialog(
                                                     style = MaterialTheme.typography.labelMedium,
                                                     color = Color.Red,
                                                     modifier = Modifier
-                                                        .padding(end = 16.dp)
                                                         .clickable { showRaDecForObj = obj }
                                                         .padding(4.dp)
                                                 )
@@ -849,9 +919,12 @@ fun SkyCatalogDialog(
                                                             style = MaterialTheme.typography.labelSmall
                                                         )
                                                     }
-                                                    Button(onClick = { onGoTo(obj.ra, obj.dec) }) {
-                                                        Text(stringResource(R.string.btn_goto))
-                                                    }
+                                                    IconBarItem(
+                                                        icon = Default.GpsFixed,
+                                                        label = stringResource(R.string.btn_goto),
+                                                        singleLine = true,
+                                                        onClick = { onGoTo(obj.ra, obj.dec) }
+                                                    )
                                                 } else {
                                                     Column(
                                                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -935,7 +1008,7 @@ fun SkyCatalogDialog(
                                 }) {
                                     Icon(
                                         Default.Close,
-                                        contentDescription = "Close Keyboard",
+                                        contentDescription = stringResource(R.string.cd_close_keyboard),
                                         tint = Color.Red
                                     )
                                 }
@@ -945,7 +1018,7 @@ fun SkyCatalogDialog(
                                 }) {
                                     Icon(
                                         imageVector = if (viewModel.landscapeKeyboardOnRight) Filled.KeyboardArrowLeft else Filled.KeyboardArrowRight,
-                                        contentDescription = "Swap keyboard side",
+                                        contentDescription = stringResource(R.string.cd_swap_keyboard_side),
                                         tint = Color.Red
                                     )
                                 }
@@ -983,7 +1056,7 @@ fun SkyCatalogDialog(
                                     }) {
                                         Icon(
                                             Default.Close,
-                                            contentDescription = "Close Keyboard",
+                                            contentDescription = stringResource(R.string.cd_close_keyboard),
                                             tint = Color.Red
                                         )
                                     }
@@ -1072,17 +1145,17 @@ fun raDecToAltAz(ra: Double, dec: Double, lat: Double, lon: Double, timeMs: Long
     val latRad = Math.toRadians(lat)
 
     val sinAlt =
-        kotlin.math.sin(decRad) * kotlin.math.sin(latRad) + kotlin.math.cos(decRad) * kotlin.math.cos(
+        sin(decRad) * sin(latRad) + cos(decRad) * cos(
             latRad
-        ) * kotlin.math.cos(ha)
-    val alt = Math.toDegrees(kotlin.math.asin(sinAlt.coerceIn(-1.0, 1.0)))
+        ) * cos(ha)
+    val alt = Math.toDegrees(asin(sinAlt.coerceIn(-1.0, 1.0)))
 
-    val y = -kotlin.math.sin(ha) * kotlin.math.cos(decRad)
+    val y = -sin(ha) * cos(decRad)
     val x =
-        kotlin.math.cos(latRad) * kotlin.math.sin(decRad) - kotlin.math.sin(latRad) * kotlin.math.cos(
+        cos(latRad) * sin(decRad) - sin(latRad) * cos(
             decRad
-        ) * kotlin.math.cos(ha)
-    var az = Math.toDegrees(kotlin.math.atan2(y, x))
+        ) * cos(ha)
+    var az = Math.toDegrees(atan2(y, x))
     if (az < 0) az += 360.0
 
     return AltAz(alt, az)
@@ -1093,10 +1166,10 @@ fun angularDistance(ra1: Double, dec1: Double, ra2: Double, dec2: Double): Doubl
     val d2 = Math.toRadians(dec2)
     val dRa = Math.toRadians(ra2 - ra1)
     val c =
-        kotlin.math.sin(d1) * kotlin.math.sin(d2) + kotlin.math.cos(d1) * kotlin.math.cos(d2) * kotlin.math.cos(
+        sin(d1) * sin(d2) + cos(d1) * cos(d2) * cos(
             dRa
         )
-    return Math.toDegrees(kotlin.math.acos(c.coerceIn(-1.0, 1.0)))
+    return Math.toDegrees(acos(c.coerceIn(-1.0, 1.0)))
 }
 
 fun targetBearingAltAz(az1: Double, alt1: Double, az2: Double, alt2: Double): Double {
@@ -1105,9 +1178,9 @@ fun targetBearingAltAz(az1: Double, alt1: Double, az2: Double, alt2: Double): Do
     while (dAz < -180.0) dAz += 360.0
 
     val dAlt = alt2 - alt1
-    val x = dAz * kotlin.math.cos(Math.toRadians(alt1))
+    val x = dAz * cos(Math.toRadians(alt1))
 
-    var bearing = Math.toDegrees(kotlin.math.atan2(x, dAlt))
+    var bearing = Math.toDegrees(atan2(x, dAlt))
     if (bearing < 0) bearing += 360.0
     return bearing
 }
@@ -1208,10 +1281,10 @@ fun NightVisionKey(
 
 fun formatRa(raDegrees: Double): String {
     val raHours = raDegrees / 15.0
-    var h = kotlin.math.floor(raHours).toInt()
+    var h = floor(raHours).toInt()
     val remainder = raHours - h
-    var m = kotlin.math.floor(remainder * 60.0).toInt()
-    var s = kotlin.math.round((remainder * 60.0 - m) * 60.0).toInt()
+    var m = floor(remainder * 60.0).toInt()
+    var s = round((remainder * 60.0 - m) * 60.0).toInt()
     if (s == 60) {
         s = 0
         m += 1
@@ -1225,11 +1298,11 @@ fun formatRa(raDegrees: Double): String {
 
 fun formatDec(decDegrees: Double): String {
     val sign = if (decDegrees < 0) "-" else "+"
-    val absDec = kotlin.math.abs(decDegrees)
-    var d = kotlin.math.floor(absDec).toInt()
+    val absDec = abs(decDegrees)
+    var d = floor(absDec).toInt()
     val remainder = absDec - d
-    var m = kotlin.math.floor(remainder * 60.0).toInt()
-    var s = kotlin.math.round((remainder * 60.0 - m) * 60.0).toInt()
+    var m = floor(remainder * 60.0).toInt()
+    var s = round((remainder * 60.0 - m) * 60.0).toInt()
     if (s == 60) {
         s = 0
         m += 1
