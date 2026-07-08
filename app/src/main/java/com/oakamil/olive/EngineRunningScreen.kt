@@ -102,16 +102,16 @@ fun EngineRunningScreen(
 
     DisposableEffect(isLowPowerMode) {
         if (isLowPowerMode) {
-            activity?.window?.attributes = activity.window?.attributes?.apply {
+            activity?.window?.attributes = activity?.window?.attributes?.apply {
                 preferredRefreshRate = 30f
             }
         } else {
-            activity?.window?.attributes = activity.window?.attributes?.apply {
+            activity?.window?.attributes = activity?.window?.attributes?.apply {
                 preferredRefreshRate = 0f
             }
         }
         onDispose {
-            activity?.window?.attributes = activity.window?.attributes?.apply {
+            activity?.window?.attributes = activity?.window?.attributes?.apply {
                 preferredRefreshRate = 0f
             }
         }
@@ -231,7 +231,7 @@ fun EngineRunningScreen(
                 var screenBrightness by remember { mutableFloatStateOf(initialBrightness) }
 
                 LaunchedEffect(screenBrightness) {
-                    activity?.window?.attributes = activity.window?.attributes?.apply {
+                    activity?.window?.attributes = activity?.window?.attributes?.apply {
                         this.screenBrightness = screenBrightness
                     }
                 }
