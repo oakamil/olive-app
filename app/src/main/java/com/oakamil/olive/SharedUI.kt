@@ -26,6 +26,7 @@ fun IconBarItem(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     singleLine: Boolean = false,
+    isLoading: Boolean = false,
     iconSize: androidx.compose.ui.unit.Dp = 28.dp
 ) {
     Column(
@@ -35,14 +36,22 @@ fun IconBarItem(
             .clickable(enabled = enabled, onClick = onClick)
             .padding(start = 4.dp, top = 4.dp, end = 4.dp, bottom = 0.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
-                alpha = 0.38f
-            ),
-            modifier = Modifier.size(iconSize)
-        )
+        if (isLoading) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(iconSize),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 3.dp
+            )
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
+                    alpha = 0.38f
+                ),
+                modifier = Modifier.size(iconSize)
+            )
+        }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = label,

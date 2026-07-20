@@ -29,7 +29,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterCenterFocus
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.ModeNight
 import androidx.compose.material.icons.filled.SettingsBackupRestore
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -40,6 +42,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -81,6 +84,14 @@ fun TunerScreen(
     var showAlignDialog by remember { mutableStateOf(false) }
     var showResetAlignDialog by remember { mutableStateOf(false) }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            if (viewModel.engineMode == MainViewModel.EngineMode.CEDAR_REMOTE && viewModel.remoteDaylightMode) {
+                viewModel.updateRemoteDaylightMode(false)
+            }
+        }
+    }
+
     BackHandler {
         viewModel.setEnginePaused(false)
         onBack()
@@ -120,7 +131,11 @@ fun TunerScreen(
         else -> 0
     }
 
-    val imageRotation = ((sensorOrientation - displayRotationDegrees + 360) % 360).toFloat()
+    val imageRotation = if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) {
+        ((sensorOrientation - displayRotationDegrees + 360) % 360).toFloat()
+    } else {
+        0f
+    }
 
     @Composable
     fun CameraFeedContent() {
@@ -144,7 +159,6 @@ fun TunerScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Live Preview with Pan/Zoom
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
@@ -152,78 +166,91 @@ fun TunerScreen(
                 .padding(8.dp)
                 .background(MaterialTheme.colorScheme.surface)
                 .clipToBounds()
-                .transformable(
-                    state = rememberTransformableState { zoomChange, panChange, _ ->
-                        scale = (scale * zoomChange).coerceIn(1f, 10f)
-                        val maxOffset =
-                            (scale - 1) * 300f // Approximate bound, fine for preview
-                        offset = Offset(
-                            x = (offset.x + panChange.x * scale).coerceIn(
-                                -maxOffset,
-                                maxOffset
-                            ),
-                            y = (offset.y + panChange.y * scale).coerceIn(-maxOffset, maxOffset)
-                        )
-                    }
-                )
         ) {
             val frame = viewModel.latestFrame
+            val layoutW = constraints.maxWidth.toFloat()
+            val layoutH = constraints.maxHeight.toFloat()
+
+            val maxOffsetX: Float
+            val maxOffsetY: Float
+            val baseScale: Float
+
             if (frame != null) {
-                val layoutW = constraints.maxWidth.toFloat()
-                val layoutH = constraints.maxHeight.toFloat()
                 val bW = frame.width.toFloat()
                 val bH = frame.height.toFloat()
                 val fitPxScale = minOf(layoutW / bW, layoutH / bH)
 
                 val drawnWidth = bW * fitPxScale
                 val drawnHeight = bH * fitPxScale
-                val baseScale = if (imageRotation % 180f != 0f) {
+                baseScale = if (imageRotation % 180f != 0f) {
                     minOf(layoutW / drawnHeight, layoutH / drawnWidth)
                 } else {
                     1f
                 }
 
-                Image(
-                    bitmap = frame,
-                    contentDescription = stringResource(id = R.string.cd_live_preview),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(Unit) {
-                            detectTapGestures { tapOffset ->
-                                val cx = layoutW / 2f
-                                val cy = layoutH / 2f
-                                val x1 = tapOffset.x - cx
-                                val y1 = tapOffset.y - cy
-                                val x2 = x1 - offset.x
-                                val y2 = y1 - offset.y
+                val visualWidth = if (imageRotation % 180f != 0f) drawnHeight else drawnWidth
+                val visualHeight = if (imageRotation % 180f != 0f) drawnWidth else drawnHeight
 
-                                val s = scale * baseScale
-                                val x3 = x2 / s
-                                val y3 = y2 / s
+                maxOffsetX = maxOf(0f, (visualWidth * scale * baseScale - layoutW) / 2f)
+                maxOffsetY = maxOf(0f, (visualHeight * scale * baseScale - layoutH) / 2f)
+            } else {
+                maxOffsetX = 0f
+                maxOffsetY = 0f
+                baseScale = 1f
+            }
 
-                                val rad = Math.toRadians(-imageRotation.toDouble())
-                                val cosA = cos(rad).toFloat()
-                                val sinA = sin(rad).toFloat()
-                                val x4 = x3 * cosA - y3 * sinA
-                                val y4 = x3 * sinA + y3 * cosA
-
-                                alignTargetX = (x4 / fitPxScale) + bW / 2f
-                                alignTargetY = (y4 / fitPxScale) + bH / 2f
-                            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .transformable(
+                        state = rememberTransformableState { zoomChange, panChange, _ ->
+                            scale = (scale * zoomChange).coerceIn(1f, 10f)
+                            offset = Offset(
+                                x = (offset.x + panChange.x * scale).coerceIn(
+                                    -maxOffsetX,
+                                    maxOffsetX
+                                ),
+                                y = (offset.y + panChange.y * scale).coerceIn(
+                                    -maxOffsetY,
+                                    maxOffsetY
+                                )
+                            )
                         }
-                        .graphicsLayer(
-                            scaleX = scale * baseScale,
-                            scaleY = scale * baseScale,
-                            translationX = offset.x,
-                            translationY = offset.y,
-                            rotationZ = imageRotation
-                        )
-                )
+                    )
+            ) {
+                if (frame != null) {
+                    val bW = frame.width.toFloat()
+                    val bH = frame.height.toFloat()
+                    val fitPxScale = minOf(layoutW / bW, layoutH / bH)
 
-                if (alignTargetX != null && alignTargetY != null) {
-                    Canvas(
+                    Image(
+                        bitmap = frame,
+                        contentDescription = stringResource(id = R.string.cd_live_preview),
                         modifier = Modifier
                             .fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTapGestures { tapOffset ->
+                                    val cx = layoutW / 2f
+                                    val cy = layoutH / 2f
+                                    val x1 = tapOffset.x - cx
+                                    val y1 = tapOffset.y - cy
+                                    val x2 = x1 - offset.x
+                                    val y2 = y1 - offset.y
+
+                                    val s = scale * baseScale
+                                    val x3 = x2 / s
+                                    val y3 = y2 / s
+
+                                    val rad = Math.toRadians(-imageRotation.toDouble())
+                                    val cosA = cos(rad).toFloat()
+                                    val sinA = sin(rad).toFloat()
+                                    val x4 = x3 * cosA - y3 * sinA
+                                    val y4 = x3 * sinA + y3 * cosA
+
+                                    alignTargetX = (x4 / fitPxScale) + bW / 2f
+                                    alignTargetY = (y4 / fitPxScale) + bH / 2f
+                                }
+                            }
                             .graphicsLayer(
                                 scaleX = scale * baseScale,
                                 scaleY = scale * baseScale,
@@ -231,43 +258,55 @@ fun TunerScreen(
                                 translationY = offset.y,
                                 rotationZ = imageRotation
                             )
+                    )
+
+                    if (alignTargetX != null && alignTargetY != null) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer(
+                                    scaleX = scale * baseScale,
+                                    scaleY = scale * baseScale,
+                                    translationX = offset.x,
+                                    translationY = offset.y,
+                                    rotationZ = imageRotation
+                                )
+                        ) {
+                            val canvasX = (alignTargetX!! - bW / 2f) * fitPxScale
+                            val canvasY = (alignTargetY!! - bH / 2f) * fitPxScale
+                            val crosshairSize = 40f / (scale * baseScale)
+                            val strokeW = 3f / (scale * baseScale)
+
+                            drawCircle(
+                                color = Color.Red,
+                                radius = 20f / (scale * baseScale),
+                                center = Offset(canvasX, canvasY),
+                                style = Stroke(width = strokeW)
+                            )
+                            drawLine(
+                                color = Color.Red,
+                                start = Offset(canvasX - crosshairSize, canvasY),
+                                end = Offset(canvasX + crosshairSize, canvasY),
+                                strokeWidth = strokeW
+                            )
+                            drawLine(
+                                color = Color.Red,
+                                start = Offset(canvasX, canvasY - crosshairSize),
+                                end = Offset(canvasX, canvasY + crosshairSize),
+                                strokeWidth = strokeW
+                            )
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        val fitPxScale = minOf(size.width / bW, size.height / bH)
-                        val canvasX = center.x + (alignTargetX!! - bW / 2f) * fitPxScale
-                        val canvasY = center.y + (alignTargetY!! - bH / 2f) * fitPxScale
-
-                        val crosshairSize = 30f / (scale * baseScale)
-                        val strokeW = 3f / (scale * baseScale)
-
-                        drawCircle(
-                            color = Color.Red,
-                            radius = 20f / (scale * baseScale),
-                            center = Offset(canvasX, canvasY),
-                            style = Stroke(width = strokeW)
-                        )
-                        drawLine(
-                            color = Color.Red,
-                            start = Offset(canvasX - crosshairSize, canvasY),
-                            end = Offset(canvasX + crosshairSize, canvasY),
-                            strokeWidth = strokeW
-                        )
-                        drawLine(
-                            color = Color.Red,
-                            start = Offset(canvasX, canvasY - crosshairSize),
-                            end = Offset(canvasX, canvasY + crosshairSize),
-                            strokeWidth = strokeW
+                        Text(
+                            stringResource(id = R.string.status_waiting_for_frame),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        stringResource(id = R.string.status_waiting_for_frame),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }
@@ -297,6 +336,19 @@ fun TunerScreen(
                 singleLine = true,
                 onClick = { showResetAlignDialog = true }
             )
+
+            if (viewModel.engineMode == MainViewModel.EngineMode.CEDAR_REMOTE) {
+                Spacer(modifier = Modifier.width(32.dp))
+                IconBarItem(
+                    icon = if (viewModel.remoteDaylightMode) Icons.Default.ModeNight else Icons.Default.WbSunny,
+                    label = if (viewModel.remoteDaylightMode) stringResource(id = R.string.label_night) else stringResource(
+                        id = R.string.label_day
+                    ),
+                    enabled = !viewModel.remoteCalibrating && !viewModel.remoteSkipFocusActive,
+                    singleLine = true,
+                    onClick = { viewModel.updateRemoteDaylightMode(!viewModel.remoteDaylightMode) }
+                )
+            }
         }
 
         TuningControls(viewModel, settingsManager, activeCameraSelection)
@@ -320,31 +372,33 @@ fun TunerScreen(
             color = MaterialTheme.colorScheme.primary
         )
 
-        var showHfrInfo by remember { mutableStateOf(false) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                stringResource(id = R.string.info_hfr_label) + ": " + String.format(
-                    Locale.getDefault(),
-                    "%.2f",
-                    viewModel.engineStats.hfr
-                ),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            IconButton(onClick = { showHfrInfo = true }, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    Icons.Default.Info,
-                    contentDescription = stringResource(id = R.string.cd_info),
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary
+        if (activeCameraSelection != "cedar" && viewModel.engineMode.name != "CEDAR_REMOTE") {
+            var showHfrInfo by remember { mutableStateOf(false) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(id = R.string.info_hfr_label) + ": " + String.format(
+                        Locale.getDefault(),
+                        "%.2f",
+                        viewModel.engineStats.hfr
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
                 )
+                IconButton(onClick = { showHfrInfo = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(id = R.string.cd_info),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
-        }
-        if (showHfrInfo) {
-            InfoPopup(
-                title = stringResource(id = R.string.info_hfr_label),
-                onDismiss = { showHfrInfo = false }) {
-                Text(stringResource(id = R.string.info_hfr))
+            if (showHfrInfo) {
+                InfoPopup(
+                    title = stringResource(id = R.string.info_hfr_label),
+                    onDismiss = { showHfrInfo = false }) {
+                    Text(stringResource(id = R.string.info_hfr))
+                }
             }
         }
     }
@@ -398,7 +452,7 @@ fun TunerScreen(
                 Button(onClick = {
                     showAlignDialog = false
                     if (alignTargetX != null && alignTargetY != null) {
-                        OliveEngine.setAlignTargetPixel(
+                        viewModel.setAlignTargetPixel(
                             alignTargetX!!.toDouble(),
                             alignTargetY!!.toDouble()
                         )
@@ -429,7 +483,7 @@ fun TunerScreen(
                     if (frame != null) {
                         val bW = frame.width.toDouble()
                         val bH = frame.height.toDouble()
-                        OliveEngine.setAlignTargetPixel(bW / 2.0, bH / 2.0)
+                        viewModel.setAlignTargetPixel(bW / 2.0, bH / 2.0)
                     }
                     alignTargetX = null
                     alignTargetY = null
@@ -465,34 +519,36 @@ fun TuningControls(
     val gainLabel = if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) "ISO" else "Gain"
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            IconButton(
-                onClick = { showStarSensitivityInfo = true },
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    Icons.Default.Info,
-                    contentDescription = stringResource(id = R.string.cd_info),
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary
+        if (activeCameraSelection != "cedar" && viewModel.engineMode.name != "CEDAR_REMOTE") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
+                IconButton(
+                    onClick = { showStarSensitivityInfo = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(id = R.string.cd_info),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
+            Slider(
+                value = viewModel.starSensitivity,
+                onValueChange = {
+                    viewModel.updateStarSensitivity(it)
+                },
+                valueRange = 1f..100f,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
-        Slider(
-            value = viewModel.starSensitivity,
-            onValueChange = {
-                viewModel.updateStarSensitivity(it)
-            },
-            valueRange = 1f..100f,
-            modifier = Modifier.fillMaxWidth()
-        )
 
-        if (activeCameraSelection != "demo") {
+        if (activeCameraSelection != "demo" && activeCameraSelection != "cedar" && viewModel.engineMode.name != "CEDAR_REMOTE") {
             val maxZoom = remember {
                 var mZ = 1f
                 try {

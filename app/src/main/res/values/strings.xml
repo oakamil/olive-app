@@ -12,7 +12,7 @@
     <string name="info_noise_reduction"><![CDATA[Enable software noise reduction in the camera\'s image processor.]]></string>
     <string name="info_hot_pixel_mode"><![CDATA[Enable hot pixel removal in the camera\'s image processor.]]></string>
     <string name="info_hfr"><![CDATA[Half-Flux Radius is used to measure the size, sharpness, and focus of detected stars. Lower values indicate a better focus of the camera when it\'s pointed at the sky.]]></string>
-    <string name="info_camera_selection"><![CDATA[<b>Internal Camera</b><br>Use the device\'s native camera for imaging the sky. The default phone camera is recommended, but all available cameras are shown in the dropdown.<br><br><b>External Camera</b><br>Use a camera plugged into the device\'s USB port. A dropdown is shown to target a specific frame rate for the video feed from the camera. The engine will try to select a feed that matches the given frame rate if available. A lower frame rate results in longer camera exposures.<br><br><b>Demo Camera</b><br>Cycles through canned images for demo purposes.]]></string>
+    <string name="info_camera_selection"><![CDATA[<b>Internal Camera</b><br>Use the device\'s native camera for imaging the sky. The default phone camera is recommended, but all available cameras are shown in the dropdown.<br><br><b>External Camera</b><br>Use a camera plugged into the device\'s USB port. A dropdown is shown to target a specific frame rate for the video feed from the camera. The engine will try to select a feed that matches the given frame rate if available. A lower frame rate results in longer camera exposures.<br><br><b>Cedar Finder</b><br>Connect wirelessly to a dedicated Cedar Finder device over WiFi or Bluetooth.<br><br><b>Demo Camera</b><br>Cycles through canned images for demo purposes.]]></string>
     <string name="info_sensor_mode"><![CDATA[Processed mode (recommended) uses the camera\'s own algorithms to pre-process the image. Raw mode relies on the engine to do the processing. Raw is only available on select phone models.]]></string>
     <string name="info_downsampling"><![CDATA[Based on this setting the image will be reduced in size prior to running the plate-solving algorithms. 2x2 is recommended.]]></string>
     <string name="info_extractor"><![CDATA[Determines which algorithm to use for star detection. Cedar (cedar-detect) is recommended for raw mode.]]></string>
@@ -39,6 +39,8 @@
     <string name="btn_back">Back</string>
     <string name="btn_continue">Continue</string>
     <string name="btn_cancel">Cancel</string>
+    <string name="btn_save">Save</string>
+    <string name="btn_retry">Retry</string>
     <string name="btn_entering_pip">Entering PIP …</string>
     <string name="btn_pip_mode">Picture-in-Picture Mode</string>
     <string name="catalog_info_button">Catalog Info</string>
@@ -95,6 +97,21 @@
     <string name="stat_solve">Solve</string>
     <string name="stat_solve_rate">Solve Rate</string>
     <string name="stat_ip_address">IP Address</string>
+    <string name="stat_error">Error: %s</string>
+
+    <!-- Cedar Finder Labels -->
+    <string name="label_cedar_finder">Cedar Finder</string>
+    <string name="btn_select_device">Select Device</string>
+    <string name="label_wifi">WiFi</string>
+    <string name="label_bluetooth">Bluetooth</string>
+    <string name="label_device_ip_address">Device IP Address</string>
+    <string name="label_paired_devices">Paired Devices</string>
+    <string name="msg_no_paired_devices">No paired classic/dual mode devices found. Please pair Cedar Finder in Android Settings.</string>
+    <string name="title_connection_failed">Connection Failed</string>
+    <string name="msg_connection_failed">Failed to connect to Cedar Finder.</string>
+    <string name="label_night">Night</string>
+    <string name="label_day">Day</string>
+    <string name="label_unknown_device">Unknown Device</string>
 
     <!-- Content Descriptions -->
     <string name="cd_info">Info</string>
