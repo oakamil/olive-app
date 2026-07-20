@@ -17,12 +17,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SettingsBackupRestore
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -86,6 +89,8 @@ fun StartScreen(
     var showExtractorInfo by remember { mutableStateOf(false) }
     var showGuidanceModeInfo by remember { mutableStateOf(false) }
     var showMotionSensorInfo by remember { mutableStateOf(false) }
+
+    var showCedarSelectionDialog by remember { mutableStateOf(false) }
 
     val supportsRawMap = remember { mutableMapOf<String, Boolean>() }
 
@@ -162,6 +167,7 @@ fun StartScreen(
                     else -> stringResource(id = R.string.btn_start_engine)
                 },
                 enabled = !isStopping && !isStarting,
+                isLoading = isStarting || isStopping,
                 singleLine = true,
                 iconSize = 36.dp,
                 onClick = onToggleEngine,
@@ -408,6 +414,70 @@ fun StartScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable { cameraSelection = "cedar" }
+                    .padding(vertical = 8.dp)
+            ) {
+                RadioButton(
+                    selected = cameraSelection == "cedar",
+                    onClick = { cameraSelection = "cedar" },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                    )
+                )
+                Text(
+                    text = stringResource(id = R.string.label_cedar_finder),
+                    modifier = Modifier.padding(start = 8.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+
+            if (cameraSelection == "cedar") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 56.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { showCedarSelectionDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.btn_select_device)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    val cedarType = settingsManager.cedarConnectionType
+                    if (cedarType == "wifi") {
+                        Icon(
+                            imageVector = Icons.Default.Wifi,
+                            contentDescription = "WiFi",
+                            tint = Color.Red
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = settingsManager.cedarWifiIp, color = Color.Red)
+                    } else if (cedarType == "bluetooth") {
+                        Icon(
+                            imageVector = Icons.Default.Bluetooth,
+                            contentDescription = "Bluetooth",
+                            tint = Color.Red
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = settingsManager.cedarBtName, color = Color.Red)
+                    }
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
                     .clickable { cameraSelection = "demo" }
                     .padding(vertical = 8.dp)
             ) {
@@ -626,99 +696,101 @@ fun StartScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    stringResource(id = R.string.label_motion_sensor),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                IconButton(
-                    onClick = { showMotionSensorInfo = true },
-                    modifier = Modifier.padding(start = 4.dp)
+            if (cameraSelection != "demo") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = stringResource(id = R.string.cd_info),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                    Text(
+                        stringResource(id = R.string.label_motion_sensor),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
-                }
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            ) {
-                listOf(
-                    0 to stringResource(id = R.string.value_off),
-                    3 to stringResource(id = R.string.value_on)
-                ).forEach { (value, label) ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clickable { motionSensorMode = value }
-                            .padding(end = 16.dp)
+                    IconButton(
+                        onClick = { showMotionSensorInfo = true },
+                        modifier = Modifier.padding(start = 4.dp)
                     ) {
-                        RadioButton(
-                            selected = motionSensorMode == value,
-                            onClick = { motionSensorMode = value },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary,
-                                unselectedColor = MaterialTheme.colorScheme.onBackground
-                            )
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Text(
-                            label,
-                            modifier = Modifier.padding(start = 4.dp),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        if (value == 3 && motionSensorMode != 0) {
-                            var hasCalibration by remember {
-                                mutableStateOf(
-                                    settingsManager.getString(
-                                        "imu_calibration.txt"
-                                    ) != null
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    listOf(
+                        0 to stringResource(id = R.string.value_off),
+                        3 to stringResource(id = R.string.value_on)
+                    ).forEach { (value, label) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clickable { motionSensorMode = value }
+                                .padding(end = 16.dp)
+                        ) {
+                            RadioButton(
+                                selected = motionSensorMode == value,
+                                onClick = { motionSensorMode = value },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary,
+                                    unselectedColor = MaterialTheme.colorScheme.onBackground
                                 )
-                            }
-                            var showResetCalibrationDialog by remember { mutableStateOf(false) }
+                            )
+                            Text(
+                                label,
+                                modifier = Modifier.padding(start = 4.dp),
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            if (value == 3 && motionSensorMode != 0) {
+                                var hasCalibration by remember {
+                                    mutableStateOf(
+                                        settingsManager.getString(
+                                            "imu_calibration.txt"
+                                        ) != null
+                                    )
+                                }
+                                var showResetCalibrationDialog by remember { mutableStateOf(false) }
 
-                            if (showResetCalibrationDialog) {
-                                AlertDialog(
-                                    onDismissRequest = { showResetCalibrationDialog = false },
-                                    title = { Text(stringResource(R.string.title_reset_calibration)) },
-                                    text = { Text(stringResource(R.string.inst_reset_calibration)) },
-                                    confirmButton = {
-                                        Button(onClick = {
-                                            showResetCalibrationDialog = false
-                                            settingsManager.removeString("imu_calibration.txt")
-                                            hasCalibration = false
-                                        }) {
-                                            Text(stringResource(R.string.btn_confirm))
+                                if (showResetCalibrationDialog) {
+                                    AlertDialog(
+                                        onDismissRequest = { showResetCalibrationDialog = false },
+                                        title = { Text(stringResource(R.string.title_reset_calibration)) },
+                                        text = { Text(stringResource(R.string.inst_reset_calibration)) },
+                                        confirmButton = {
+                                            Button(onClick = {
+                                                showResetCalibrationDialog = false
+                                                settingsManager.removeString("imu_calibration.txt")
+                                                hasCalibration = false
+                                            }) {
+                                                Text(stringResource(R.string.btn_confirm))
+                                            }
+                                        },
+                                        dismissButton = {
+                                            OutlinedButton(onClick = {
+                                                showResetCalibrationDialog = false
+                                            }) {
+                                                Text(stringResource(id = R.string.btn_cancel))
+                                            }
                                         }
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(16.dp))
+                                IconBarItem(
+                                    icon = Icons.Default.SettingsBackupRestore,
+                                    label = stringResource(id = R.string.btn_reset),
+                                    singleLine = true,
+                                    onClick = {
+                                        showResetCalibrationDialog = true
                                     },
-                                    dismissButton = {
-                                        OutlinedButton(onClick = {
-                                            showResetCalibrationDialog = false
-                                        }) {
-                                            Text(stringResource(id = R.string.btn_cancel))
-                                        }
-                                    }
+                                    enabled = hasCalibration
                                 )
                             }
-
-                            Spacer(modifier = Modifier.width(16.dp))
-                            IconBarItem(
-                                icon = Icons.Default.SettingsBackupRestore,
-                                label = stringResource(id = R.string.btn_reset),
-                                singleLine = true,
-                                onClick = {
-                                    showResetCalibrationDialog = true
-                                },
-                                enabled = hasCalibration
-                            )
                         }
                     }
                 }
@@ -731,13 +803,17 @@ fun StartScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) { cameraSelectionContent() }
-                Column(modifier = Modifier.weight(1f)) { otherSettingsContent() }
+                if (cameraSelection != "cedar") {
+                    Column(modifier = Modifier.weight(1f)) { otherSettingsContent() }
+                }
             }
         } else {
             Column(modifier = Modifier.fillMaxWidth()) {
                 cameraSelectionContent()
-                Spacer(modifier = Modifier.height(24.dp))
-                otherSettingsContent()
+                if (cameraSelection != "cedar") {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    otherSettingsContent()
+                }
             }
         }
 
@@ -784,6 +860,12 @@ fun StartScreen(
                 onDismiss = { showMotionSensorInfo = false }) {
                 Text(stringResource(id = R.string.info_motion_sensor))
             }
+        }
+        if (showCedarSelectionDialog) {
+            CedarDeviceSelectionDialog(
+                settingsManager = settingsManager,
+                onDismiss = { showCedarSelectionDialog = false }
+            )
         }
     }
 }

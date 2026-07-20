@@ -70,7 +70,7 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean, isLowPowerMode: Boolea
             }
         }
 
-        if (stats.targetRa == null && stats.targetDec == null && stats.status != "Solving" && stats.status != "Slewing") {
+        if (stats.targetRa == null && stats.targetDec == null && stats.status != "Solving" && stats.status != "Slewing" && stats.status != "Calibrating") {
 
 
             return@Box

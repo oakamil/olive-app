@@ -192,27 +192,31 @@ fun EngineRunningScreen(
             StatsDisplay(viewModel.engineStats)
 
             Spacer(modifier = Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "IP Address: $detectedIpAddress",
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                IconButton(
-                    onClick = { showTelescopeControlInfo = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = stringResource(id = R.string.cd_info),
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
+            if (activeCameraSelection != "cedar" && viewModel.engineMode.name != "CEDAR_REMOTE") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "IP Address: $detectedIpAddress",
+                        color = MaterialTheme.colorScheme.onBackground
                     )
+                    IconButton(
+                        onClick = { showTelescopeControlInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }
 
         @Composable
         fun SlidersContent() {
+            if (activeCameraSelection == "cedar" || viewModel.engineMode.name == "CEDAR_REMOTE") return
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -690,17 +694,16 @@ fun StatsDisplay(stats: EngineStats) {
                 )
             } ?: "-"),
                 color = MaterialTheme.colorScheme.onBackground)
-            Text(
-                stringResource(id = R.string.stat_fov) + ": " + (
-                        stats.fov?.let {
+            stats.fov?.let { fovVal ->
+                Text(
+                    stringResource(id = R.string.stat_fov) + ": " +
                             stringResource(
                                 id = R.string.format_degree,
-                                String.format(Locale.getDefault(), "%.2f", it)
-                            )
-                        } ?: "-"
-                        ),
-                color = MaterialTheme.colorScheme.onBackground
-            )
+                                String.format(Locale.getDefault(), "%.2f", fovVal)
+                            ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
         }
 
         // Right Column: Performance metrics
