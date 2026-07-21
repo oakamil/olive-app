@@ -228,16 +228,11 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             });
 
             use crate::android_imu::AndroidImu;
-            use olive_engine::imu::Imu;
 
-            let imu_arc = if motion_sensor_mode != 0 {
+            let imu_type = if motion_sensor_mode != 0 {
                 let mut imu_dev = AndroidImu::new(motion_sensor_mode);
                 if imu_dev.init().is_ok() {
-                    if let Ok(imu) = Imu::start(imu_dev, storage.clone()) {
-                        Some(Arc::new(imu))
-                    } else {
-                        None
-                    }
+                    Some(olive_solve::ImuType::Custom(Box::new(imu_dev)))
                 } else {
                     None
                 }
@@ -267,12 +262,18 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 config,
                 client_connected,
                 engine_state,
-                imu_arc,
+                imu_type,
                 Some(telescope_rt.handle().clone()),
                 storage,
                 Some(alpaca_fd_rx),
                 Some(alpaca_v6_fd_rx),
-            );
+            ).await;
+
+            if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
+                engine.fused_solver.set_observer_location(latitude, longitude).await;
+            }
+
+            let _ = engine.fused_solver.start_imu().await;
             *LX200_CONTROLLER.lock().unwrap() = Some(engine.lx200_controller.clone());
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle

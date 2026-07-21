@@ -1,6 +1,6 @@
 use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 use ndk_sys::*;
-use olive_engine::imu::ImuDevice;
+use olive_imu::ImuDevice;
 use std::ptr;
 use std::time::Instant;
 
