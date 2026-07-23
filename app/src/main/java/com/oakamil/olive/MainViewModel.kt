@@ -136,7 +136,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 offsetAngle = if (obj.isNull("offset_angle")) null else obj.getDouble("offset_angle"),
                 hfr = obj.optDouble("hfr", 0.0),
                 targetRa = if (obj.isNull("target_ra")) null else obj.getDouble("target_ra"),
-                targetDec = if (obj.isNull("target_dec")) null else obj.getDouble("target_dec")
+                targetDec = if (obj.isNull("target_dec")) null else obj.getDouble("target_dec"),
+                isImuEstimate = obj.optBoolean("is_imu_estimate", false)
             )
 
             // Removed syncing tuning sliders here to allow them to reflect user-selected values

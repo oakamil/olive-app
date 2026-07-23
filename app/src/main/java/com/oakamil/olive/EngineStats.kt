@@ -19,5 +19,6 @@ data class EngineStats(
     val offsetAngle: Double? = null,
     val hfr: Double = 0.0,
     val targetRa: Double? = null,
-    val targetDec: Double? = null
+    val targetDec: Double? = null,
+    val isImuEstimate: Boolean = false
 )

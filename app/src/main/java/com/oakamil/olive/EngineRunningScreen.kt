@@ -181,7 +181,8 @@ fun EngineRunningScreen(
                     GuidanceDisplay(
                         viewModel.engineStats,
                         settingsManager.guidanceMode == "alt_az",
-                        isLowPowerMode
+                        isLowPowerMode,
+                        settingsManager.motionSensorMode != 0
                     )
                 }
             }
