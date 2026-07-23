@@ -8,8 +8,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +49,12 @@ import java.util.Locale
 import kotlin.math.abs
 
 @Composable
-fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean, isLowPowerMode: Boolean = false) {
+fun GuidanceDisplay(
+    stats: EngineStats,
+    isAltAz: Boolean,
+    isLowPowerMode: Boolean = false,
+    isImuEnabled: Boolean = false
+) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -70,9 +79,7 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean, isLowPowerMode: Boolea
             }
         }
 
-        if (stats.targetRa == null && stats.targetDec == null && stats.status != "Solving" && stats.status != "Slewing" && stats.status != "Calibrating") {
-
-
+        if (stats.targetRa == null && stats.targetDec == null && stats.status != "Solving" && stats.status != "Slewing" && stats.status != "Calibrating" && stats.ra == null) {
             return@Box
         }
 
@@ -260,21 +267,33 @@ fun GuidanceDisplay(stats: EngineStats, isAltAz: Boolean, isLowPowerMode: Boolea
                 }
             }
         } else {
-            if (stats.status == "Solving" || stats.status == "Slewing") {
-                CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                BasicText(
-                    text = stats.status,
-                    style = MaterialTheme.typography.displayMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.primary
-                    ),
-                    softWrap = false,
-                    autoSize = TextAutoSize.StepBased()
-                )
+            CircularProgressIndicator(
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        if (isImuEnabled && (stats.ra != null || stats.isImuEstimate)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = 2.dp),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                if (stats.isImuEstimate) {
+                    Icon(
+                        imageVector = Icons.Outlined.Sensors,
+                        contentDescription = "IMU Estimate",
+                        tint = DarkRed,
+                        modifier = Modifier.size(12.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.PhotoCamera,
+                        contentDescription = "Plate Solving",
+                        tint = DarkRed,
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
             }
         }
     }

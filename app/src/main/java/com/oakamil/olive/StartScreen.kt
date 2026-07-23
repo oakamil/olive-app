@@ -750,7 +750,7 @@ fun StartScreen(
                                 var hasCalibration by remember {
                                     mutableStateOf(
                                         settingsManager.getString(
-                                            "imu_calibration.txt"
+                                            "imu_calibration"
                                         ) != null
                                     )
                                 }
@@ -764,7 +764,7 @@ fun StartScreen(
                                         confirmButton = {
                                             Button(onClick = {
                                                 showResetCalibrationDialog = false
-                                                settingsManager.removeString("imu_calibration.txt")
+                                                settingsManager.removeString("imu_calibration")
                                                 hasCalibration = false
                                             }) {
                                                 Text(stringResource(R.string.btn_confirm))

@@ -288,7 +288,9 @@ class MainActivity : ComponentActivity() {
                         ) {
                             GuidanceDisplay(
                                 viewModel.engineStats,
-                                settingsManager.guidanceMode == "alt_az"
+                                settingsManager.guidanceMode == "alt_az",
+                                false,
+                                settingsManager.motionSensorMode != 0
                             )
                         }
                     } else {

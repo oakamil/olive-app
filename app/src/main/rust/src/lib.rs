@@ -1,7 +1,7 @@
 use jni::JNIEnv;
 use jni::objects::JClass;
 use jni::sys::jint;
-use olive_engine::imu::ImuDevice;
+use olive_imu::ImuDevice;
 use std::sync::Mutex;
 use std::thread;
 
@@ -27,26 +27,36 @@ struct JniStorage {
     settings_mgr: jni::objects::GlobalRef,
 }
 
-impl olive_engine::storage::PersistentStorage for JniStorage {
+impl olive_imu::PersistentStorage for JniStorage {
     fn get(&self, key: &str) -> Option<String> {
         if let Ok(mut env) = self.jvm.attach_current_thread() {
             if let Ok(jkey) = env.new_string(key) {
-                if let Ok(result) = env.call_method(
+                match env.call_method(
                     &self.settings_mgr,
                     "getString",
                     "(Ljava/lang/String;)Ljava/lang/String;",
                     &[(&jkey).into()],
                 ) {
-                    if let Ok(jstr) = result.l() {
-                        if !jstr.is_null() {
-                            return env
-                                .get_string(&jni::objects::JString::from(jstr))
-                                .ok()
-                                .map(|s| s.into());
+                    Ok(result) => {
+                        if let Ok(jstr) = result.l() {
+                            if !jstr.is_null() {
+                                return env
+                                    .get_string(&jni::objects::JString::from(jstr))
+                                    .ok()
+                                    .map(|s| s.into());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("JniStorage::get call_method error: {:?}", e);
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
                         }
                     }
                 }
             }
+        } else {
+            log::error!("JniStorage::get attach_current_thread failed!");
         }
         None
     }
@@ -54,26 +64,46 @@ impl olive_engine::storage::PersistentStorage for JniStorage {
     fn set(&self, key: &str, value: &str) {
         if let Ok(mut env) = self.jvm.attach_current_thread() {
             if let (Ok(jkey), Ok(jval)) = (env.new_string(key), env.new_string(value)) {
-                let _ = env.call_method(
+                match env.call_method(
                     &self.settings_mgr,
                     "setString",
                     "(Ljava/lang/String;Ljava/lang/String;)V",
                     &[(&jkey).into(), (&jval).into()],
-                );
+                ) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("JniStorage::set call_method error: {:?}", e);
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
+                }
             }
+        } else {
+            log::error!("JniStorage::set attach_current_thread failed!");
         }
     }
 
     fn remove(&self, key: &str) {
         if let Ok(mut env) = self.jvm.attach_current_thread() {
             if let Ok(jkey) = env.new_string(key) {
-                let _ = env.call_method(
+                match env.call_method(
                     &self.settings_mgr,
                     "removeString",
                     "(Ljava/lang/String;)V",
                     &[(&jkey).into()],
-                );
+                ) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("JniStorage::remove call_method error: {:?}", e);
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
+                }
             }
+        } else {
+            log::error!("JniStorage::remove attach_current_thread failed!");
         }
     }
 }
@@ -122,7 +152,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
 ) {
     let jvm = env.get_java_vm().unwrap();
     let settings_mgr = env.new_global_ref(settings_manager).unwrap();
-    let storage: Option<std::sync::Arc<dyn olive_engine::storage::PersistentStorage>> =
+    let storage: Option<std::sync::Arc<dyn olive_imu::PersistentStorage>> =
         Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
 
     let fd = fd as i32;
@@ -267,10 +297,14 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 storage,
                 Some(alpaca_fd_rx),
                 Some(alpaca_v6_fd_rx),
-            ).await;
+            )
+            .await;
 
             if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
-                engine.fused_solver.set_observer_location(latitude, longitude).await;
+                engine
+                    .fused_solver
+                    .set_observer_location(latitude, longitude)
+                    .await;
             }
 
             let _ = engine.fused_solver.start_imu().await;
@@ -283,9 +317,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 let handles = engine.start();
                 let _ = handles.0.join();
                 let _ = handles.1.join();
-                if let Some(t) = handles.2 {
-                    let _ = t.join();
-                }
             });
 
             let _ = ready_tx.send(());
@@ -340,7 +371,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
 
     let jvm = env.get_java_vm().unwrap();
     let settings_mgr = env.new_global_ref(settings_manager).unwrap();
-    let storage: Option<std::sync::Arc<dyn olive_engine::storage::PersistentStorage>> =
+    let storage: Option<std::sync::Arc<dyn olive_imu::PersistentStorage>> =
         Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
 
     let motion_sensor_mode = motion_sensor_mode as i32;
@@ -452,16 +483,11 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             });
 
             use crate::android_imu::AndroidImu;
-            use olive_engine::imu::Imu;
 
-            let imu_arc = if motion_sensor_mode != 0 {
+            let imu_type = if motion_sensor_mode != 0 {
                 let mut imu_dev = AndroidImu::new(motion_sensor_mode);
                 if imu_dev.init().is_ok() {
-                    if let Ok(imu) = Imu::start(imu_dev, storage.clone()) {
-                        Some(Arc::new(imu))
-                    } else {
-                        None
-                    }
+                    Some(olive_solve::ImuType::Custom(Box::new(imu_dev)))
                 } else {
                     None
                 }
@@ -491,12 +517,22 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 config,
                 client_connected,
                 engine_state,
-                imu_arc,
+                imu_type,
                 Some(telescope_rt.handle().clone()),
                 storage,
                 Some(alpaca_fd_rx),
                 Some(alpaca_v6_fd_rx),
-            );
+            )
+            .await;
+
+            if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
+                engine
+                    .fused_solver
+                    .set_observer_location(latitude, longitude)
+                    .await;
+            }
+
+            let _ = engine.fused_solver.start_imu().await;
             *LX200_CONTROLLER.lock().unwrap() = Some(engine.lx200_controller.clone());
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
@@ -506,9 +542,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 let handles = engine.start();
                 let _ = handles.0.join();
                 let _ = handles.1.join();
-                if let Some(t) = handles.2 {
-                    let _ = t.join();
-                }
             });
 
             let _ = ready_tx.send(());

@@ -85,7 +85,7 @@ impl ImuDevice for AndroidImu {
         Ok(())
     }
 
-    fn poll_gyro(&mut self) -> Result<Option<Vector3<f64>>, String> {
+    fn poll_gyros(&mut self) -> Result<Vec<(Vector3<f64>, f64)>, String> {
         unsafe {
             let mut fd: i32 = 0;
             let mut events: i32 = 0;
@@ -151,7 +151,7 @@ impl ImuDevice for AndroidImu {
                                             if let Some(axis) = q_delta.axis() {
                                                 let equivalent_velocity =
                                                     axis.into_inner() * (angle / dt_engine);
-                                                return Ok(Some(equivalent_velocity));
+                                                return Ok(vec![(equivalent_velocity, dt_engine)]);
                                             }
                                         }
                                     } else {
@@ -164,7 +164,7 @@ impl ImuDevice for AndroidImu {
                                     if let Some(axis) = accumulated_q.axis() {
                                         let equivalent_velocity =
                                             axis.into_inner() * (angle / dt_engine);
-                                        return Ok(Some(equivalent_velocity));
+                                        return Ok(vec![(equivalent_velocity, dt_engine)]);
                                     }
                                 }
                             }
@@ -176,13 +176,15 @@ impl ImuDevice for AndroidImu {
                         }
                     }
                     if self.mode == 3 {
-                        return Ok(last_gyro);
+                        if let Some(lg) = last_gyro {
+                            return Ok(vec![(lg, 0.0)]);
+                        }
                     }
-                    return Ok(Some(Vector3::zeros()));
+                    return Ok(vec![(Vector3::zeros(), 0.0)]);
                 }
             }
         }
-        Ok(None)
+        Ok(vec![])
     }
 
     fn revive(&mut self) -> Result<(), String> {
