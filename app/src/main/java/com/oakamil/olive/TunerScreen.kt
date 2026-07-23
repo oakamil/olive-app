@@ -66,8 +66,6 @@ import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import java.util.Locale
-import kotlin.math.cos
-import kotlin.math.sin
 
 @Composable
 fun TunerScreen(
@@ -232,20 +230,9 @@ fun TunerScreen(
                                 detectTapGestures { tapOffset ->
                                     val cx = layoutW / 2f
                                     val cy = layoutH / 2f
-                                    val x1 = tapOffset.x - cx
-                                    val y1 = tapOffset.y - cy
-                                    val x2 = x1 - offset.x
-                                    val y2 = y1 - offset.y
+                                    val x4 = tapOffset.x - cx
+                                    val y4 = tapOffset.y - cy
 
-                                    val s = scale * baseScale
-                                    val x3 = x2 / s
-                                    val y3 = y2 / s
-
-                                    val rad = Math.toRadians(-imageRotation.toDouble())
-                                    val cosA = cos(rad).toFloat()
-                                    val sinA = sin(rad).toFloat()
-                                    val x4 = x3 * cosA - y3 * sinA
-                                    val y4 = x3 * sinA + y3 * cosA
 
                                     alignTargetX = (x4 / fitPxScale) + bW / 2f
                                     alignTargetY = (y4 / fitPxScale) + bH / 2f
@@ -272,8 +259,9 @@ fun TunerScreen(
                                     rotationZ = imageRotation
                                 )
                         ) {
-                            val canvasX = (alignTargetX!! - bW / 2f) * fitPxScale
-                            val canvasY = (alignTargetY!! - bH / 2f) * fitPxScale
+                            val fitPxScale = minOf(size.width / bW, size.height / bH)
+                            val canvasX = center.x + (alignTargetX!! - bW / 2f) * fitPxScale
+                            val canvasY = center.y + (alignTargetY!! - bH / 2f) * fitPxScale
                             val crosshairSize = 40f / (scale * baseScale)
                             val strokeW = 3f / (scale * baseScale)
 
