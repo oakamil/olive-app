@@ -76,21 +76,26 @@ fun StartScreen(
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     var cameraSelection by remember { mutableStateOf(activeCameraSelection) }
+    var cameraSettingsMode by remember { mutableStateOf(settingsManager.cameraSettingsMode) }
+    var internalFps by remember { mutableIntStateOf(settingsManager.internalFps) }
     var uvcFps by remember { mutableIntStateOf(settingsManager.uvcFps) }
     var extractor by remember { mutableStateOf(settingsManager.extractor) }
     var sensorMode by remember { mutableStateOf(settingsManager.sensorMode) }
+    var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
     var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
     var motionSensorMode by remember { mutableIntStateOf(settingsManager.motionSensorMode) }
     var autoCameraCalibration by remember { mutableStateOf(settingsManager.autoCameraCalibration) }
 
     var showCameraSelectionInfo by remember { mutableStateOf(false) }
+    var showCameraSettingsInfo by remember { mutableStateOf(false) }
+    var showCameraFrameRateInfo by remember { mutableStateOf(false) }
+    var showInternalCameraInfo by remember { mutableStateOf(false) }
     var showSensorModeInfo by remember { mutableStateOf(false) }
     var showDownsamplingInfo by remember { mutableStateOf(false) }
     var showExtractorInfo by remember { mutableStateOf(false) }
     var showGuidanceModeInfo by remember { mutableStateOf(false) }
     var showMotionSensorInfo by remember { mutableStateOf(false) }
-    var showCameraCalibrationInfo by remember { mutableStateOf(false) }
 
     var showCedarSelectionDialog by remember { mutableStateOf(false) }
 
@@ -104,18 +109,24 @@ fun StartScreen(
     // Update settings manager when local state changes
     LaunchedEffect(
         cameraSelection,
+        cameraSettingsMode,
+        internalFps,
         uvcFps,
         extractor,
         sensorMode,
+        downsampling,
         internalCameraId,
         guidanceMode,
         motionSensorMode,
         autoCameraCalibration
     ) {
         settingsManager.cameraSelection = cameraSelection
+        settingsManager.cameraSettingsMode = cameraSettingsMode
+        settingsManager.internalFps = internalFps
         settingsManager.uvcFps = uvcFps
         settingsManager.extractor = extractor
         settingsManager.sensorMode = sensorMode
+        settingsManager.downsampling = downsampling
         settingsManager.internalCameraId = internalCameraId
         settingsManager.guidanceMode = guidanceMode
         settingsManager.motionSensorMode = motionSensorMode
@@ -223,103 +234,6 @@ fun StartScreen(
                 )
             }
 
-            if (cameraSelection == "internal") {
-                val fovDegreeFormat = stringResource(id = R.string.format_degree)
-                val cameraFovFormat = stringResource(id = R.string.format_camera_fov)
-                val camerasList = remember(fovDegreeFormat, cameraFovFormat) {
-                    val camerasJson = viewModel.getAvailableInternalCameras()
-                    val list = mutableListOf<Pair<String, String>>()
-                    try {
-                        val jsonArray = JSONArray(camerasJson)
-                        val tempCameras = mutableListOf<Triple<String, Double, Boolean>>()
-                        for (i in 0 until jsonArray.length()) {
-                            val obj = jsonArray.getJSONObject(i)
-                            val id = obj.getString("id")
-                            val fov = obj.getDouble("fov")
-                            val supportsRaw =
-                                if (obj.has("supports_raw")) obj.getBoolean("supports_raw") else false
-                            if (fov >= 10.0) {
-                                tempCameras.add(Triple(id, fov, supportsRaw))
-                            }
-                        }
-                        tempCameras.sortBy { it.first.toIntOrNull() ?: Int.MAX_VALUE }
-                        for (cam in tempCameras) {
-                            supportsRawMap[cam.first] = cam.third
-                            val degreeStr = String.format(
-                                Locale.getDefault(),
-                                fovDegreeFormat,
-                                String.format(Locale.getDefault(), "%.1f", cam.second)
-                            )
-                            list.add(
-                                Pair(
-                                    cam.first,
-                                    String.format(
-                                        Locale.getDefault(),
-                                        cameraFovFormat,
-                                        cam.first,
-                                        degreeStr
-                                    )
-                                )
-                            )
-                        }
-                    } catch (_: Exception) {
-                    }
-                    list
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 56.dp)
-                ) {
-                    Text(
-                        stringResource(id = R.string.label_camera),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    var expanded by remember { mutableStateOf(false) }
-                    Box(
-                        modifier = Modifier.border(
-                            1.dp,
-                            Color.Red,
-                            shape = RoundedCornerShape(4.dp)
-                        )
-                    ) {
-                        TextButton(onClick = { expanded = true }) {
-                            val currentText =
-                                camerasList.find { it.first == internalCameraId }?.second
-                                    ?: camerasList.firstOrNull()?.second ?: "Camera 0"
-                            Text(currentText, color = MaterialTheme.colorScheme.primary)
-                        }
-                        DropdownMenu(
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false },
-                            modifier = Modifier.border(
-                                1.dp,
-                                Color.Red,
-                                shape = RoundedCornerShape(4.dp)
-                            )
-                        ) {
-                            camerasList.forEach { (id, label) ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            label,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    },
-                                    onClick = {
-                                        internalCameraId = id
-                                        expanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -358,60 +272,6 @@ fun StartScreen(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 56.dp)
                 )
-            }
-
-            if (cameraSelection == "external") {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 56.dp)
-                ) {
-                    Text(
-                        stringResource(id = R.string.label_fps),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    var expandedFps by remember { mutableStateOf(false) }
-                    Box(
-                        modifier = Modifier.border(
-                            1.dp,
-                            Color.Red,
-                            shape = RoundedCornerShape(4.dp)
-                        )
-                    ) {
-                        TextButton(onClick = { expandedFps = true }) {
-                            Text(
-                                NumberFormat.getInstance().format(uvcFps),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = expandedFps,
-                            onDismissRequest = { expandedFps = false },
-                            modifier = Modifier.border(
-                                1.dp,
-                                Color.Red,
-                                shape = RoundedCornerShape(4.dp)
-                            )
-                        ) {
-                            listOf(5, 10, 15, 20, 30).forEach { fps ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            NumberFormat.getInstance().format(fps),
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    },
-                                    onClick = {
-                                        uvcFps = fps
-                                        expandedFps = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
             }
 
             Row(
@@ -504,15 +364,15 @@ fun StartScreen(
         }
 
         val otherSettingsContent: @Composable () -> Unit = {
-            if (cameraSelection == "internal") {
+            if (cameraSelection == "internal" || cameraSelection == "external") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        stringResource(id = R.string.label_sensor_mode),
+                        stringResource(id = R.string.label_camera_settings),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     IconButton(
-                        onClick = { showSensorModeInfo = true },
+                        onClick = { showCameraSettingsInfo = true },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -523,7 +383,6 @@ fun StartScreen(
                         )
                     }
                 }
-                val isRawSupported = supportsRawMap[internalCameraId] ?: false
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -531,115 +390,13 @@ fun StartScreen(
                         .padding(vertical = 8.dp)
                 ) {
                     listOf(
-                        "Processed" to stringResource(id = R.string.value_processed),
-                        "Raw" to stringResource(id = R.string.value_raw)
-                    ).forEach { (mode, label) ->
-                        val enabled = mode == "Processed" || isRawSupported
-                        RadioButton(
-                            selected = sensorMode == mode,
-                            onClick = { sensorMode = mode },
-                            enabled = enabled,
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary,
-                                unselectedColor = MaterialTheme.colorScheme.onBackground
-                            )
-                        )
-                        Text(
-                            label,
-                            modifier = Modifier.padding(start = 8.dp, end = 16.dp),
-                            color = if (enabled) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(
-                                alpha = 0.5f
-                            )
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-
-            if (cameraSelection != "demo") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(id = R.string.label_downsampling),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    IconButton(
-                        onClick = { showDownsamplingInfo = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = stringResource(id = R.string.cd_info),
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
-                    listOf(
-                        0 to stringResource(id = R.string.value_off),
-                        2 to stringResource(id = R.string.value_2x2),
-                        4 to stringResource(id = R.string.value_4x4)
+                        "Auto" to stringResource(id = R.string.value_auto),
+                        "Manual" to stringResource(id = R.string.value_manual)
                     ).forEach { (value, label) ->
                         RadioButton(
-                            selected = downsampling == value,
+                            selected = cameraSettingsMode == value,
                             onClick = {
-                                downsampling = value
-                                settingsManager.downsampling = value
-                            },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary,
-                                unselectedColor = MaterialTheme.colorScheme.onBackground
-                            )
-                        )
-                        Text(
-                            label,
-                            modifier = Modifier.padding(start = 8.dp, end = 16.dp),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(id = R.string.label_camera_calibration),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    IconButton(
-                        onClick = { showCameraCalibrationInfo = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = stringResource(id = R.string.cd_info),
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
-                    listOf(
-                        true to stringResource(id = R.string.value_auto),
-                        false to stringResource(id = R.string.value_manual)
-                    ).forEach { (value, label) ->
-                        RadioButton(
-                            selected = autoCameraCalibration == value,
-                            onClick = {
-                                autoCameraCalibration = value
-                                settingsManager.autoCameraCalibration = value
+                                cameraSettingsMode = value
                             },
                             colors = RadioButtonDefaults.colors(
                                 selectedColor = MaterialTheme.colorScheme.primary,
@@ -656,51 +413,346 @@ fun StartScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(id = R.string.label_extractor),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                IconButton(
-                    onClick = { showExtractorInfo = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = stringResource(id = R.string.cd_info),
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            ) {
-                listOf(
-                    "Olive" to stringResource(id = R.string.value_olive),
-                    "Cedar" to stringResource(id = R.string.value_cedar)
-                ).forEach { (ext, label) ->
-                    RadioButton(
-                        selected = extractor == ext,
-                        onClick = { extractor = ext },
-                        colors = RadioButtonDefaults.colors(
-                            selectedColor = MaterialTheme.colorScheme.primary,
-                            unselectedColor = MaterialTheme.colorScheme.onBackground
-                        )
-                    )
+            if (cameraSelection == "external" || (cameraSelection == "internal" && cameraSettingsMode == "Auto")) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        label,
-                        modifier = Modifier.padding(start = 8.dp, end = 16.dp),
+                        stringResource(id = R.string.label_camera_frame_rate),
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
+                    IconButton(
+                        onClick = { showCameraFrameRateInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
+                ) {
+                    var expandedFps by remember { mutableStateOf(false) }
+                    Box(
+                        modifier = Modifier.border(
+                            1.dp,
+                            Color.Red,
+                            shape = RoundedCornerShape(4.dp)
+                        )
+                    ) {
+                        TextButton(onClick = { expandedFps = true }) {
+                            Text(
+                                NumberFormat.getInstance()
+                                    .format(if (cameraSelection == "external") uvcFps else internalFps),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = expandedFps,
+                            onDismissRequest = { expandedFps = false },
+                            modifier = Modifier.border(
+                                1.dp,
+                                Color.Red,
+                                shape = RoundedCornerShape(4.dp)
+                            )
+                        ) {
+                            val fpsOptions = if (cameraSelection == "external") listOf(
+                                30,
+                                20,
+                                15,
+                                10,
+                                5
+                            ) else listOf(10, 5, 2, 1)
+                            fpsOptions.forEach { fps ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            NumberFormat.getInstance().format(fps),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    onClick = {
+                                        if (cameraSelection == "external") {
+                                            uvcFps = fps
+                                        } else {
+                                            internalFps = fps
+                                        }
+                                        expandedFps = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            if (cameraSelection == "internal" && cameraSettingsMode == "Manual") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(id = R.string.label_internal_camera_section),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { showInternalCameraInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                val fovDegreeFormat = stringResource(id = R.string.format_degree)
+                val cameraFovFormat = stringResource(id = R.string.format_camera_fov)
+                val camerasList = remember(fovDegreeFormat, cameraFovFormat) {
+                    val camerasJson = viewModel.getAvailableInternalCameras()
+                    val list = mutableListOf<Pair<String, String>>()
+                    try {
+                        val jsonArray = JSONArray(camerasJson)
+                        val tempCameras = mutableListOf<Triple<String, Double, Boolean>>()
+                        for (i in 0 until jsonArray.length()) {
+                            val obj = jsonArray.getJSONObject(i)
+                            val id = obj.getString("id")
+                            val fov = obj.getDouble("fov")
+                            val supportsRaw =
+                                if (obj.has("supports_raw")) obj.getBoolean("supports_raw") else false
+                            if (fov >= 10.0) {
+                                tempCameras.add(Triple(id, fov, supportsRaw))
+                            }
+                        }
+                        tempCameras.sortBy { it.first.toIntOrNull() ?: Int.MAX_VALUE }
+                        for (cam in tempCameras) {
+                            supportsRawMap[cam.first] = cam.third
+                            val degreeStr = String.format(
+                                Locale.getDefault(),
+                                fovDegreeFormat,
+                                String.format(Locale.getDefault(), "%.1f", cam.second)
+                            )
+                            list.add(
+                                Pair(
+                                    cam.first,
+                                    String.format(
+                                        Locale.getDefault(),
+                                        cameraFovFormat,
+                                        cam.first,
+                                        degreeStr
+                                    )
+                                )
+                            )
+                        }
+                    } catch (_: Exception) {
+                    }
+                    list
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
+                ) {
+                    var expanded by remember { mutableStateOf(false) }
+                    Box(
+                        modifier = Modifier.border(
+                            1.dp,
+                            Color.Red,
+                            shape = RoundedCornerShape(4.dp)
+                        )
+                    ) {
+                        TextButton(onClick = { expanded = true }) {
+                            val currentText =
+                                camerasList.find { it.first == internalCameraId }?.second
+                                    ?: camerasList.firstOrNull()?.second ?: "Camera 0"
+                            Text(currentText, color = MaterialTheme.colorScheme.primary)
+                        }
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                            modifier = Modifier.border(
+                                1.dp,
+                                Color.Red,
+                                shape = RoundedCornerShape(4.dp)
+                            )
+                        ) {
+                            camerasList.forEach { (id, label) ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            label,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    onClick = {
+                                        internalCameraId = id
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            if (cameraSettingsMode == "Manual") {
+                if (cameraSelection == "internal") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(id = R.string.label_sensor_mode),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        IconButton(
+                            onClick = { showSensorModeInfo = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = stringResource(id = R.string.cd_info),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    val isRawSupported = supportsRawMap[internalCameraId] ?: false
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    ) {
+                        listOf(
+                            "Processed" to stringResource(id = R.string.value_processed),
+                            "Raw" to stringResource(id = R.string.value_raw)
+                        ).forEach { (mode, label) ->
+                            val enabled = mode == "Processed" || isRawSupported
+                            RadioButton(
+                                selected = sensorMode == mode,
+                                onClick = { sensorMode = mode },
+                                enabled = enabled,
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary,
+                                    unselectedColor = MaterialTheme.colorScheme.onBackground
+                                )
+                            )
+                            Text(
+                                label,
+                                modifier = Modifier.padding(start = 8.dp, end = 16.dp),
+                                color = if (enabled) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(
+                                    alpha = 0.5f
+                                )
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
+                if (cameraSelection != "demo") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(id = R.string.label_downsampling),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        IconButton(
+                            onClick = { showDownsamplingInfo = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = stringResource(id = R.string.cd_info),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    ) {
+                        listOf(
+                            0 to stringResource(id = R.string.value_off),
+                            2 to stringResource(id = R.string.value_2x2),
+                            4 to stringResource(id = R.string.value_4x4)
+                        ).forEach { (value, label) ->
+                            RadioButton(
+                                selected = downsampling == value,
+                                onClick = {
+                                    downsampling = value
+                                    settingsManager.downsampling = value
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary,
+                                    unselectedColor = MaterialTheme.colorScheme.onBackground
+                                )
+                            )
+                            Text(
+                                label,
+                                modifier = Modifier.padding(start = 8.dp, end = 16.dp),
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(id = R.string.label_extractor),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { showExtractorInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    listOf(
+                        "Olive" to stringResource(id = R.string.value_olive),
+                        "Cedar" to stringResource(id = R.string.value_cedar)
+                    ).forEach { (ext, label) ->
+                        RadioButton(
+                            selected = extractor == ext,
+                            onClick = { extractor = ext },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.onBackground
+                            )
+                        )
+                        Text(
+                            label,
+                            modifier = Modifier.padding(start = 8.dp, end = 16.dp),
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -871,11 +923,25 @@ fun StartScreen(
 
 
 
-        if (showCameraCalibrationInfo) {
+        if (showCameraSettingsInfo) {
             InfoPopup(
-                title = stringResource(id = R.string.label_camera_calibration),
-                onDismiss = { showCameraCalibrationInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_camera_calibration)))
+                title = stringResource(id = R.string.label_camera_settings),
+                onDismiss = { showCameraSettingsInfo = false }) {
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_camera_settings)))
+            }
+        }
+        if (showCameraFrameRateInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_camera_frame_rate),
+                onDismiss = { showCameraFrameRateInfo = false }) {
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_camera_frame_rate)))
+            }
+        }
+        if (showInternalCameraInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_internal_camera_section),
+                onDismiss = { showInternalCameraInfo = false }) {
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_internal_camera)))
             }
         }
         if (showCameraSelectionInfo) {
