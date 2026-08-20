@@ -77,10 +77,20 @@ class SettingsManager(context: Context) {
 
     /* These are used from the native layer. */
     @Keep
-    fun getString(key: String): String? = prefs.getString(key, null)
+    fun getString(key: String): String? {
+        if (key == "imu_calibration" && cameraSelection == "external") {
+            return null
+        }
+        return prefs.getString(key, null)
+    }
 
     @Keep
-    fun setString(key: String, value: String) = prefs.edit { putString(key, value) }
+    fun setString(key: String, value: String) {
+        if (key == "imu_calibration" && cameraSelection == "external") {
+            return
+        }
+        prefs.edit { putString(key, value) }
+    }
 
     @Keep
     fun removeString(key: String) = prefs.edit { remove(key) }
