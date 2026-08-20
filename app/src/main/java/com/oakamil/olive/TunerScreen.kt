@@ -230,12 +230,34 @@ fun TunerScreen(
                                 detectTapGestures { tapOffset ->
                                     val cx = layoutW / 2f
                                     val cy = layoutH / 2f
-                                    val x4 = tapOffset.x - cx
-                                    val y4 = tapOffset.y - cy
 
+                                    // 1. Find tap offset from center of the screen
+                                    val screenDx = tapOffset.x - cx
+                                    val screenDy = tapOffset.y - cy
 
-                                    alignTargetX = (x4 / fitPxScale) + bW / 2f
-                                    alignTargetY = (y4 / fitPxScale) + bH / 2f
+                                    // 2. Remove translation (pan)
+                                    val translatedDx = screenDx - offset.x
+                                    val translatedDy = screenDy - offset.y
+
+                                    // 3. Remove rotation
+                                    val angleRad = -Math.toRadians(imageRotation.toDouble())
+                                    val rx =
+                                        (translatedDx * Math.cos(angleRad) - translatedDy * Math.sin(
+                                            angleRad
+                                        )).toFloat()
+                                    val ry =
+                                        (translatedDx * Math.sin(angleRad) + translatedDy * Math.cos(
+                                            angleRad
+                                        )).toFloat()
+
+                                    // 4. Remove scale (zoom and base fit)
+                                    val totalScale = scale * baseScale
+                                    val unscaledX = rx / totalScale
+                                    val unscaledY = ry / totalScale
+
+                                    // 5. Apply to bitmap coordinates
+                                    alignTargetX = (unscaledX / fitPxScale) + bW / 2f
+                                    alignTargetY = (unscaledY / fitPxScale) + bH / 2f
                                 }
                             }
                             .graphicsLayer(
