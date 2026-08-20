@@ -232,4 +232,8 @@
     <string name="title_camera_stuck">Camera Not Responding</string>
     <string name="body_camera_stuck">The camera has stopped responding. A clean restart of the app may help to restore camera functionality.</string>
     <string name="btn_restart">Restart</string>
+
+    <!-- USB Claim Dialog -->
+    <string name="title_usb_claim_failed">Failed to Start Camera</string>
+    <string name="body_usb_claim_failed">Could not connect to the camera hardware. Please try unplugging and plugging in the camera again. If the problem persists, try rebooting the phone.</string>
 </resources>
