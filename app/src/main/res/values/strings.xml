@@ -12,7 +12,7 @@
     <string name="info_noise_reduction"><![CDATA[Enable software noise reduction in the camera\'s image processor.]]></string>
     <string name="info_hot_pixel_mode"><![CDATA[Enable hot pixel removal in the camera\'s image processor.]]></string>
     <string name="info_hfr"><![CDATA[Half-Flux Radius is used to measure the size, sharpness, and focus of detected stars. Lower values indicate a better focus of the camera when it\'s pointed at the sky.]]></string>
-    <string name="info_camera_selection"><![CDATA[<b>Internal Camera</b><br>Use the device\'s native camera for imaging the sky. The default phone camera is recommended, but all available cameras are shown in the dropdown.<br><br><b>External Camera</b><br>Use a camera plugged into the device\'s USB port. A dropdown is shown to target a specific frame rate for the video feed from the camera. The engine will try to select a feed that matches the given frame rate if available. A lower frame rate results in longer camera exposures.<br><br><b>Cedar Finder</b><br>Connect wirelessly to a dedicated Cedar Finder device over WiFi or Bluetooth.<br><br><b>Demo Camera</b><br>Cycles through canned images for demo purposes.]]></string>
+    <string name="info_camera_selection"><![CDATA[<b>Internal Camera</b><br>Use the device\'s native camera for imaging the sky.<br><br><b>External Camera</b><br>Use a camera plugged into the device\'s USB port.<br><br><b>Cedar Finder</b><br>Connect wirelessly to a dedicated Cedar Finder device over WiFi or Bluetooth.<br><br><b>Demo Camera</b><br>Cycles through canned images for demo purposes.]]></string>
     <string name="info_sensor_mode"><![CDATA[Processed mode (recommended) uses the camera\'s own algorithms to pre-process the image. Raw mode relies on the engine to do the processing. Raw is only available on select phone models.]]></string>
     <string name="info_downsampling"><![CDATA[Based on this setting the image will be reduced in size prior to running the plate-solving algorithms. 2x2 is recommended.]]></string>
     <string name="info_extractor"><![CDATA[Determines which algorithm to use for star detection. Cedar (cedar-detect) is recommended for raw mode.]]></string>
@@ -223,8 +223,12 @@
     <string name="cat_sac_asterisms">SAC Asterisms</string>
     <string name="type_asteroid">Asteroid</string>
     <string name="type_comet">Comet</string>
-    <string name="label_camera_calibration">Camera Calibration</string>
-    <string name="info_camera_calibration">Determine whether the engine should automatically adjust exposure and stacking for best results, or use manual user-provided settings.</string>
+    <string name="label_camera_settings">Camera Settings</string>
+    <string name="info_camera_settings">Set if the engine dynamically chooses the camera settings including effective exposure.</string>
+    <string name="label_camera_frame_rate">Camera Frame Rate</string>
+    <string name="info_camera_frame_rate">Sets the frame rate and base exposure time for the camera.</string>
+    <string name="info_internal_camera">Choose the phone camera to use for imaging.</string>
+    <string name="label_internal_camera_section">Internal Camera</string>
     <string name="value_auto">Auto</string>
     <string name="value_manual">Manual</string>
 

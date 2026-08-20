@@ -243,19 +243,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val downsampling = if (cameraId == "demo") 0 else settingsManager.downsampling
 
         val motionSensorMode = if (cameraId == "demo") 0 else settingsManager.motionSensorMode
+        val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
 
         viewModelScope.launch(Dispatchers.IO) {
+            val forcedSensorMode = if (isAutoSettings) "Processed" else settingsManager.sensorMode
+            val forcedDownsampling = if (isAutoSettings) 2 else downsampling
+            val forcedExtractor = if (isAutoSettings) "Olive" else settingsManager.extractor
+            val forcedCameraId = if (isAutoSettings && cameraId != "demo") "0" else cameraId
+
+            if (cameraId != "demo") {
+                val expUs = if (isAutoSettings) {
+                    val fps = settingsManager.internalFps.coerceAtLeast(1)
+                    1000000 / fps
+                } else {
+                    currentExposure.toInt()
+                }
+                currentExposure = expUs.toFloat()
+                OliveEngine.setNativeCameraExposure(expUs)
+            }
+
             OliveEngine.startNativeCameraEngine(
                 motionSensorMode,
-                settingsManager.extractor,
-                settingsManager.sensorMode,
-                cameraId,
-                downsampling,
+                forcedExtractor,
+                forcedSensorMode,
+                forcedCameraId,
+                forcedDownsampling,
                 lat,
                 lon,
                 timeMs,
                 settingsManager,
-                settingsManager.autoCameraCalibration
+                isAutoSettings
             )
             OliveEngine.setEngineSigma(currentSigma)
             OliveEngine.setEngineStrictMatch(false) // Phone camera has wide FOV, needs generous thresholds
@@ -274,7 +291,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     OliveEngine.setNativeCameraZoomRatio(1f)
 
                     setFocus(0.0f)
-                    val defExp = OliveEngine.getNativeCameraExposure()
+                    val defExp = if (isAutoSettings) {
+                        val fps = settingsManager.internalFps.coerceAtLeast(1)
+                        1000000 / fps
+                    } else {
+                        OliveEngine.getNativeCameraExposure()
+                    }
                     setExposure(defExp.toFloat())
                     setNoiseReduction(0)
                     val hpModes = OliveEngine.getNativeCameraSupportedHotPixelModes()
@@ -303,6 +325,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 OliveEngine.stopEngine()
             }
 
+            val fps = settingsManager.uvcFps.coerceAtLeast(1)
+            currentExposure = (1000000f / fps)
+            OliveEngine.setNativeCameraExposure(currentExposure.toInt())
+
+            val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
             OliveEngine.startEngine(
                 fd,
                 rawDescriptors,
@@ -314,7 +341,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lon,
                 timeMs,
                 settingsManager,
-                settingsManager.autoCameraCalibration
+                isAutoSettings
             )
             OliveEngine.setEngineSigma(currentSigma)
             OliveEngine.setEngineStrictMatch(true) // SC2210 has tight FOV, use strict thresholds

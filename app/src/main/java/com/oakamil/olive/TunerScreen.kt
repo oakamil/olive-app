@@ -589,35 +589,35 @@ fun TuningControls(
                 )
             }
 
-            if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(id = R.string.label_exposure) + ": " + stringResource(
-                            id = R.string.format_ms,
-                            String.format(
-                                Locale.getDefault(),
-                                "%.1f",
-                                viewModel.currentExposure / 1000f
-                            )
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    IconButton(
-                        onClick = { showExposureInfo = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = stringResource(id = R.string.cd_info),
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(id = R.string.label_exposure) + ": " + stringResource(
+                        id = R.string.format_ms,
+                        String.format(
+                            Locale.getDefault(),
+                            "%.1f",
+                            viewModel.currentExposure / 1000f
                         )
-                    }
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { showExposureInfo = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(id = R.string.cd_info),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
+            }
+            if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
                 Slider(
                     value = viewModel.currentExposure,
-                    enabled = !settingsManager.autoCameraCalibration,
+                    enabled = settingsManager.cameraSettingsMode != "Auto",
                     onValueChange = {
                         viewModel.setExposure(it)
                     },
@@ -645,7 +645,7 @@ fun TuningControls(
                 }
                 Slider(
                     value = viewModel.uvcStacking.toFloat(),
-                    enabled = !settingsManager.autoCameraCalibration,
+                    enabled = settingsManager.cameraSettingsMode != "Auto",
                     onValueChange = {
                         viewModel.updateUvcStacking(it.toInt())
                     },

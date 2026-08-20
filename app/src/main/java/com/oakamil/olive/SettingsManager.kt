@@ -11,6 +11,14 @@ class SettingsManager(context: Context) {
         get() = prefs.getString("camera_selection", "internal") ?: "internal"
         set(value) = prefs.edit { putString("camera_selection", value) }
 
+    var cameraSettingsMode: String
+        get() = prefs.getString("camera_settings_mode", "Auto") ?: "Auto"
+        set(value) = prefs.edit { putString("camera_settings_mode", value) }
+
+    var internalFps: Int
+        get() = prefs.getInt("internal_fps", 10)
+        set(value) = prefs.edit { putInt("internal_fps", value) }
+
     var autoCameraCalibration: Boolean
         get() = prefs.getBoolean("auto_camera_calibration", false)
         set(value) = prefs.edit { putBoolean("auto_camera_calibration", value) }
