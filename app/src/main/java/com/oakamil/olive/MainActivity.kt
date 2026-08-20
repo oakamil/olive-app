@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
     private var isStopping by mutableStateOf(false)
     private var isStarting by mutableStateOf(false)
     private var showCedarErrorDialog by mutableStateOf(false)
+    private var showUsbClaimErrorDialog by mutableStateOf(false)
     private var uvcConnection: UsbDeviceConnection? = null
     private var connectedDevice: UsbDevice? = null
 
@@ -352,6 +353,30 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    if (showUsbClaimErrorDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showUsbClaimErrorDialog = false },
+                            title = {
+                                Text(
+                                    getString(R.string.title_usb_claim_failed),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            text = {
+                                Text(
+                                    getString(R.string.body_usb_claim_failed),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            confirmButton = {
+                                Button(onClick = { showUsbClaimErrorDialog = false }) {
+                                    Text(getString(R.string.btn_cancel))
+                                }
+                            },
+                            containerColor = MaterialTheme.colorScheme.surface
+                        )
+                    }
+
                     if (viewModel.isCameraStuck && viewModel.isEngineRunning && !isStopping) {
                         AlertDialog(
                             onDismissRequest = { /* Force user choice */ },
@@ -609,7 +634,19 @@ class MainActivity : ComponentActivity() {
                 withContext(Dispatchers.IO) {
                     viewModel.stopEngineSync()
                 }
-                uvcConnection?.close()
+                val activeDevice = connectedDevice
+                uvcConnection?.let { conn ->
+                    if (activeDevice != null) {
+                        for (i in 0 until activeDevice.interfaceCount) {
+                            try {
+                                conn.releaseInterface(activeDevice.getInterface(i))
+                            } catch (_: Exception) {
+                                // Ignore
+                            }
+                        }
+                    }
+                    conn.close()
+                }
                 uvcConnection = null
                 stopBackgroundService()
                 isStopping = false
@@ -798,18 +835,30 @@ class MainActivity : ComponentActivity() {
                 uvcConnection?.close()
                 val conn = usbManager.openDevice(device)
                 if (conn != null) {
+                    var allClaimed = true
                     for (i in 0 until device.interfaceCount) {
-                        conn.claimInterface(device.getInterface(i), true)
+                        val claimed = conn.claimInterface(device.getInterface(i), true)
+                        if (!claimed) {
+                            allClaimed = false
+                        }
                     }
-                    uvcConnection = conn
-                    val fd = conn.fileDescriptor
-                    val rawDesc = conn.rawDescriptors
-                    viewModel.startUvcEngine(fd, rawDesc, lat, lon, timeMs)
+                    if (allClaimed) {
+                        uvcConnection = conn
+                        val fd = conn.fileDescriptor
+                        val rawDesc = conn.rawDescriptors
+                        viewModel.startUvcEngine(fd, rawDesc, lat, lon, timeMs)
+                    } else {
+                        conn.close()
+                        return@withContext null
+                    }
                 }
                 conn
             }
             if (connection != null) {
                 startBackgroundService("UVC")
+            } else {
+                isStarting = false
+                showUsbClaimErrorDialog = true
             }
         }
     }
