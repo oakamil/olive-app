@@ -884,16 +884,18 @@ fun StartScreen(
                                     )
                                 }
 
-                                Spacer(modifier = Modifier.width(16.dp))
-                                IconBarItem(
-                                    icon = Icons.Default.SettingsBackupRestore,
-                                    label = stringResource(id = R.string.btn_reset),
-                                    singleLine = true,
-                                    onClick = {
-                                        showResetCalibrationDialog = true
-                                    },
-                                    enabled = hasCalibration
-                                )
+                                if (cameraSelection != "external") {
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    IconBarItem(
+                                        icon = Icons.Default.SettingsBackupRestore,
+                                        label = stringResource(id = R.string.btn_reset),
+                                        singleLine = true,
+                                        onClick = {
+                                            showResetCalibrationDialog = true
+                                        },
+                                        enabled = hasCalibration
+                                    )
+                                }
                             }
                         }
                     }

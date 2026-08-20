@@ -204,7 +204,7 @@
     
     <!-- Added Missing Strings -->
     <string name="label_motion_sensor">Motion Sensor</string>
-    <string name="info_motion_sensor">Enable the phone\'s motion sensor for calculating position between camera solves. Reset sensor calibration when the position of the phone changes relative to the camera.</string>
+    <string name="info_motion_sensor">Enable the phone\'s motion sensor for calculating position between camera solves. Sensor calibration is stored when using the phone\'s camera. Reset the calibration when adding or removing a mirror.</string>
     <string name="btn_camera_align">Camera / Align</string>
     <string name="stat_solving">Solving</string>
     <string name="stat_slewing">Slewing</string>
