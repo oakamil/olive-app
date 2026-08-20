@@ -343,7 +343,7 @@ fun EngineRunningScreen(
                         delay(1000)
                         val rawExp = OliveEngine.getNativeCameraExposure()
                         Log.d("OliveUI", "Initial exposure from native: $rawExp")
-                        mainScreenExposure = (rawExp / 1000000f).coerceIn(0.2f, 5.0f)
+                        mainScreenExposure = (rawExp / 1000000f).coerceIn(0.2f, 2.0f)
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -372,13 +372,14 @@ fun EngineRunningScreen(
                     }
                     Slider(
                         value = mainScreenExposure,
+                        enabled = !settingsManager.autoCameraCalibration,
                         onValueChange = {
                             val stepped = round(it * 10.0f) / 10.0f
                             mainScreenExposure = stepped
                             viewModel.setExposure(stepped * 1000000)
                         },
-                        valueRange = 0.2f..3.0f,
-                        steps = 27,
+                        valueRange = 0.2f..2.0f,
+                        steps = 17,
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else if (activeCameraSelection == "uvc" || viewModel.engineMode.name == "UVC") {
@@ -402,6 +403,7 @@ fun EngineRunningScreen(
                     }
                     Slider(
                         value = viewModel.uvcStacking.toFloat(),
+                        enabled = !settingsManager.autoCameraCalibration,
                         onValueChange = {
                             viewModel.updateUvcStacking(it.toInt())
                         },

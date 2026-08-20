@@ -47,7 +47,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var landscapeKeyboardOnRight by mutableStateOf(true)
 
     // Tuning state
-    var currentExposure by mutableFloatStateOf(50000f)
+    var currentExposure by mutableFloatStateOf(250000f)
     var currentGain by mutableFloatStateOf(100f)
     var minAnalogGain by mutableFloatStateOf(100f)
     var maxAnalogGain by mutableFloatStateOf(3200f)
@@ -59,6 +59,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var uvcBrightnessMax by mutableIntStateOf(0)
     var currentUvcBrightness by mutableIntStateOf(0)
     var latestFrame by mutableStateOf<ImageBitmap?>(null)
+    var isCameraStuck by mutableStateOf(false)
+    private var lastFrameReceivedRealtime = 0L
 
     // Cedar remote frame parameters
     var remoteBinningFactor: Int = 1
@@ -174,11 +176,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (isActive) {
                 latestFrame = imageBitmapToPublish
                 lastFrameTimestamp = ts
+                lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime()
+                isCameraStuck = false // Reset stuck state if frames resume
             }
         }
     }
 
+    fun dismissCameraStuckDialog() {
+        isCameraStuck = false
+        // Offset the timer by 10s so the 5s timeout takes 15s to trigger again
+        lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime() + 10000L
+    }
+
     private fun startPolling() {
+        lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime()
+
         statsJob?.cancel()
         frameJob?.cancel()
 
@@ -199,6 +211,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     fetchLatestFrame()
                 } catch (e: Exception) {
                     Log.e("MainViewModel", "Error in fetchLatestFrame: ${e.message}")
+                }
+
+                if (isEngineRunning) {
+                    val timeSinceLastFrame =
+                        android.os.SystemClock.elapsedRealtime() - lastFrameReceivedRealtime
+                    if (timeSinceLastFrame > CAMERA_STUCK_TIMEOUT_MS) {
+                        isCameraStuck = true
+                    }
                 }
                 delay(33) // ~30Hz frames
             }
@@ -234,9 +254,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lat,
                 lon,
                 timeMs,
-                settingsManager
+                settingsManager,
+                settingsManager.autoCameraCalibration
             )
             OliveEngine.setEngineSigma(currentSigma)
+            OliveEngine.setEngineStrictMatch(false) // Phone camera has wide FOV, needs generous thresholds
 
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.NATIVE
@@ -291,9 +313,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lat,
                 lon,
                 timeMs,
-                settingsManager
+                settingsManager,
+                settingsManager.autoCameraCalibration
             )
             OliveEngine.setEngineSigma(currentSigma)
+            OliveEngine.setEngineStrictMatch(true) // SC2210 has tight FOV, use strict thresholds
 
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.UVC
@@ -790,5 +814,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         const val INVALID_COORD = 200.0
+        const val CAMERA_STUCK_TIMEOUT_MS = 5000L
     }
 }

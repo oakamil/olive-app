@@ -223,5 +223,13 @@
     <string name="cat_sac_asterisms">SAC Asterisms</string>
     <string name="type_asteroid">Asteroid</string>
     <string name="type_comet">Comet</string>
+    <string name="label_camera_calibration">Camera Calibration</string>
+    <string name="info_camera_calibration">Determine whether the engine should automatically adjust exposure and stacking for best results, or use manual user-provided settings.</string>
+    <string name="value_auto">Auto</string>
+    <string name="value_manual">Manual</string>
 
+    <!-- Camera Stuck Dialog -->
+    <string name="title_camera_stuck">Camera Not Responding</string>
+    <string name="body_camera_stuck">The camera has stopped responding. A clean restart of the app may help to restore camera functionality.</string>
+    <string name="btn_restart">Restart</string>
 </resources>

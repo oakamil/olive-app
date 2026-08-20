@@ -1,7 +1,7 @@
 // Required Notice: Copyright (c) 2026 Omair Kamil
 // See LICENSE file in root directory for license terms.
 
-use log::{info, warn};
+use log::{error, info, warn};
 use ndk_sys::*;
 use olive_engine::{CameraConfig, CameraTrait, Image};
 use std::ffi::CStr;
@@ -15,9 +15,9 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
 
-const INITIAL_EXPOSURE_US: i32 = 500_000;
+const INITIAL_EXPOSURE_US: i32 = 250_000;
 const MIN_EXPOSURE_US: i32 = 16_667;
-const MAX_EXPOSURE_US: i32 = 5_000_000;
+const MAX_EXPOSURE_US: i32 = 2_000_000;
 
 pub static CURRENT_HOT_PIXEL_MODE: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(0);
@@ -79,6 +79,7 @@ pub struct AndroidCamera {
     saved_exposure: Arc<AtomicI32>,
     current_gain: Arc<AtomicI32>,
     current_focus: Arc<AtomicU32>, // Store f32 as u32 bits
+    current_zoom: Arc<AtomicU32>,  // Store f32 as u32 bits
     current_nr: Arc<AtomicU32>,    // Store u8 as u32
 
     config: Arc<Mutex<Option<AndroidCameraConfiguration>>>,
@@ -165,14 +166,6 @@ impl CameraTrait for AndroidCamera {
         self.send_command(CaptureCommand::SetExposure(clamped));
     }
 
-    fn enable_hcg(&self) {
-        // warn!("HCG explicitly managed by Android ISP; ignoring manual enable.");
-    }
-
-    fn disable_hcg(&self) {
-        warn!("HCG explicitly managed by Android ISP; ignoring manual disable.");
-    }
-
     fn set_focus(&self, distance: f32) {
         self.current_focus
             .store(distance.to_bits(), Ordering::Relaxed);
@@ -185,7 +178,12 @@ impl CameraTrait for AndroidCamera {
     }
 
     fn set_zoom(&self, zoom: f32) {
+        self.current_zoom.store(zoom.to_bits(), Ordering::Relaxed);
         self.send_command(CaptureCommand::SetZoom(zoom));
+    }
+
+    fn get_zoom(&self) -> Option<f32> {
+        Some(f32::from_bits(self.current_zoom.load(Ordering::Relaxed)))
     }
 
     fn get_last_capture(&self) -> Option<Arc<Image>> {
@@ -485,6 +483,7 @@ impl AndroidCamera {
 
         let current_gain = Arc::new(AtomicI32::new(fixed_gain));
         let current_focus = Arc::new(AtomicU32::new(0.0f32.to_bits()));
+        let current_zoom = Arc::new(AtomicU32::new(zoom_ratio.unwrap_or(1.0).to_bits()));
         let current_nr = Arc::new(AtomicU32::new(
             acamera_metadata_enum_acamera_noise_reduction_mode::ACAMERA_NOISE_REDUCTION_MODE_OFF.0
                 as u32,
@@ -498,6 +497,7 @@ impl AndroidCamera {
             current_exposure,
             saved_exposure,
             current_focus,
+            current_zoom,
             current_nr,
             config,
         }
@@ -811,7 +811,7 @@ impl AndroidCamera {
 
                 if valid_sizes.is_empty() {
                     // Safety fallback if no sizes fit (extremely unlikely)
-                    log::warn!("No resolutions found under 13MP, falling back to 1920x1080");
+                    warn!("No resolutions found under 13MP, falling back to 1920x1080");
                     valid_sizes.push((1920, 1080));
                 }
 
@@ -1096,11 +1096,11 @@ impl AndroidCamera {
     }
 
     extern "C" fn on_session_ready(_context: *mut c_void, _session: *mut ACameraCaptureSession) {
-        log::info!("Camera capture session READY");
+        info!("Camera capture session READY");
     }
 
     extern "C" fn on_session_active(_context: *mut c_void, _session: *mut ACameraCaptureSession) {
-        log::info!("Camera capture session ACTIVE");
+        info!("Camera capture session ACTIVE");
     }
 
     extern "C" fn on_capture_completed(
@@ -1157,7 +1157,7 @@ impl AndroidCamera {
     ) {
         unsafe {
             let reason = (*failure).reason;
-            log::error!("Camera capture FAILED: reason {}", reason);
+            error!("Camera capture FAILED: reason {}", reason);
         }
     }
 
@@ -1168,7 +1168,7 @@ impl AndroidCamera {
         _window: *mut ANativeWindow,
         frame_number: i64,
     ) {
-        log::warn!("Camera capture BUFFER LOST for frame {}", frame_number);
+        warn!("Camera capture BUFFER LOST for frame {}", frame_number);
     }
 
     unsafe fn capture_loop(

@@ -1,6 +1,6 @@
 use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 use ndk_sys::*;
-use olive_imu::ImuDevice;
+use olive_imu::{ImuDevice, SensorEvent};
 use std::ptr;
 use std::time::Instant;
 
@@ -85,7 +85,7 @@ impl ImuDevice for AndroidImu {
         Ok(())
     }
 
-    fn poll_gyros(&mut self) -> Result<Vec<(Vector3<f64>, f64)>, String> {
+    fn poll(&mut self) -> Result<Vec<SensorEvent>, String> {
         unsafe {
             let mut fd: i32 = 0;
             let mut events: i32 = 0;
@@ -151,7 +151,12 @@ impl ImuDevice for AndroidImu {
                                             if let Some(axis) = q_delta.axis() {
                                                 let equivalent_velocity =
                                                     axis.into_inner() * (angle / dt_engine);
-                                                return Ok(vec![(equivalent_velocity, dt_engine)]);
+                                                return Ok(vec![SensorEvent {
+                                                    gyro: Some(equivalent_velocity),
+                                                    accel: None,
+                                                    hardware_quaternion: Some(current_q),
+                                                    dt: Some(dt_engine),
+                                                }]);
                                             }
                                         }
                                     } else {
@@ -164,7 +169,12 @@ impl ImuDevice for AndroidImu {
                                     if let Some(axis) = accumulated_q.axis() {
                                         let equivalent_velocity =
                                             axis.into_inner() * (angle / dt_engine);
-                                        return Ok(vec![(equivalent_velocity, dt_engine)]);
+                                        return Ok(vec![SensorEvent {
+                                            gyro: Some(equivalent_velocity),
+                                            accel: None,
+                                            hardware_quaternion: None,
+                                            dt: Some(dt_engine),
+                                        }]);
                                     }
                                 }
                             }
@@ -177,10 +187,20 @@ impl ImuDevice for AndroidImu {
                     }
                     if self.mode == 3 {
                         if let Some(lg) = last_gyro {
-                            return Ok(vec![(lg, 0.0)]);
+                            return Ok(vec![SensorEvent {
+                                gyro: Some(lg),
+                                accel: None,
+                                hardware_quaternion: None,
+                                dt: Some(0.0),
+                            }]);
                         }
                     }
-                    return Ok(vec![(Vector3::zeros(), 0.0)]);
+                    return Ok(vec![SensorEvent {
+                        gyro: Some(Vector3::zeros()),
+                        accel: None,
+                        hardware_quaternion: None,
+                        dt: Some(0.0),
+                    }]);
                 }
             }
         }

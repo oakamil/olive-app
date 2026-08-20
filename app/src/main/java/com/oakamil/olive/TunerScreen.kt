@@ -617,10 +617,11 @@ fun TuningControls(
                 }
                 Slider(
                     value = viewModel.currentExposure,
+                    enabled = !settingsManager.autoCameraCalibration,
                     onValueChange = {
                         viewModel.setExposure(it)
                     },
-                    valueRange = 16667f..5000000f,
+                    valueRange = 16667f..2000000f,
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
@@ -644,6 +645,7 @@ fun TuningControls(
                 }
                 Slider(
                     value = viewModel.uvcStacking.toFloat(),
+                    enabled = !settingsManager.autoCameraCalibration,
                     onValueChange = {
                         viewModel.updateUvcStacking(it.toInt())
                     },

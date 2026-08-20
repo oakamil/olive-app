@@ -19,7 +19,8 @@ object OliveEngine {
         lat: Double,
         lon: Double,
         timeMs: Long,
-        settingsManager: SettingsManager
+        settingsManager: SettingsManager,
+        autoCameraCalibration: Boolean
     )
 
     external fun startNativeCameraEngine(
@@ -31,7 +32,8 @@ object OliveEngine {
         lat: Double,
         lon: Double,
         timeMs: Long,
-        settingsManager: SettingsManager
+        settingsManager: SettingsManager,
+        autoCameraCalibration: Boolean
     )
 
     external fun stopEngine()
@@ -56,6 +58,7 @@ object OliveEngine {
     external fun getLatestFrameInto(buffer: ByteBuffer, lastTimestamp: Long): Long
     external fun setEnginePaused(paused: Boolean)
     external fun setEngineSigma(sigma: Float)
+    external fun setEngineStrictMatch(strict: Boolean)
     external fun updateUvcStacking(frames: Int)
     external fun processTelescopeData(data: ByteArray): ByteArray?
     external fun resetTelescopeServer()
