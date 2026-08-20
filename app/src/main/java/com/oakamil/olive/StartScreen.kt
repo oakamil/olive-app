@@ -82,6 +82,7 @@ fun StartScreen(
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
     var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
     var motionSensorMode by remember { mutableIntStateOf(settingsManager.motionSensorMode) }
+    var autoCameraCalibration by remember { mutableStateOf(settingsManager.autoCameraCalibration) }
 
     var showCameraSelectionInfo by remember { mutableStateOf(false) }
     var showSensorModeInfo by remember { mutableStateOf(false) }
@@ -89,6 +90,7 @@ fun StartScreen(
     var showExtractorInfo by remember { mutableStateOf(false) }
     var showGuidanceModeInfo by remember { mutableStateOf(false) }
     var showMotionSensorInfo by remember { mutableStateOf(false) }
+    var showCameraCalibrationInfo by remember { mutableStateOf(false) }
 
     var showCedarSelectionDialog by remember { mutableStateOf(false) }
 
@@ -107,7 +109,8 @@ fun StartScreen(
         sensorMode,
         internalCameraId,
         guidanceMode,
-        motionSensorMode
+        motionSensorMode,
+        autoCameraCalibration
     ) {
         settingsManager.cameraSelection = cameraSelection
         settingsManager.uvcFps = uvcFps
@@ -116,6 +119,7 @@ fun StartScreen(
         settingsManager.internalCameraId = internalCameraId
         settingsManager.guidanceMode = guidanceMode
         settingsManager.motionSensorMode = motionSensorMode
+        settingsManager.autoCameraCalibration = autoCameraCalibration
     }
 
     LaunchedEffect(internalCameraId) {
@@ -602,6 +606,54 @@ fun StartScreen(
                     }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(id = R.string.label_camera_calibration),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { showCameraCalibrationInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    listOf(
+                        true to stringResource(id = R.string.value_auto),
+                        false to stringResource(id = R.string.value_manual)
+                    ).forEach { (value, label) ->
+                        RadioButton(
+                            selected = autoCameraCalibration == value,
+                            onClick = {
+                                autoCameraCalibration = value
+                                settingsManager.autoCameraCalibration = value
+                            },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.onBackground
+                            )
+                        )
+                        Text(
+                            label,
+                            modifier = Modifier.padding(start = 8.dp, end = 16.dp),
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -819,6 +871,13 @@ fun StartScreen(
 
 
 
+        if (showCameraCalibrationInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_camera_calibration),
+                onDismiss = { showCameraCalibrationInfo = false }) {
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_camera_calibration)))
+            }
+        }
         if (showCameraSelectionInfo) {
             InfoPopup(
                 title = stringResource(id = R.string.label_camera_selection),

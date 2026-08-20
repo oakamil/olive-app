@@ -12,8 +12,8 @@ android {
         applicationId = "com.oakamil.olive"
         minSdk = 29
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.2.2"
+        versionCode = 15
+        versionName = "0.2.3"
     }
 
     buildFeatures {
@@ -103,15 +103,15 @@ protobuf {
 
 // Custom task to compile rust and copy to jniLibs
 tasks.register<Exec>("cargoBuild") {
-    // Only target arm64 for now to keep things simple
-    val rustArchName = "arm64-v8a"
+    // Target arm64 and armeabi-v7a
     val projectDir = file("src/main/rust")
 
     workingDir(projectDir)
     environment("ANDROID_NDK_HOME", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358")
     environment("CMAKE_TOOLCHAIN_FILE_aarch64_linux_android", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358/build/cmake/android.toolchain.cmake")
+    environment("CMAKE_TOOLCHAIN_FILE_armv7_linux_androideabi", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358/build/cmake/android.toolchain.cmake")
     environment("CMAKE_MAKE_PROGRAM", "/opt/homebrew/bin/ninja")
-    commandLine("/Users/oakamil/.cargo/bin/cargo", "ndk", "-P", "24", "-t", rustArchName, "-o", "../jniLibs", "build", "--release")
+    commandLine("/Users/oakamil/.cargo/bin/cargo", "ndk", "-P", "24", "-t", "armeabi-v7a", "-t", "arm64-v8a", "-o", "../jniLibs", "build", "--release")
 }
 
 tasks.matching { it.name == "mergeDebugJniLibFolders" || it.name == "mergeReleaseJniLibFolders" }.configureEach {

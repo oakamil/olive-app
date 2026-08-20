@@ -351,6 +351,52 @@ class MainActivity : ComponentActivity() {
                             containerColor = MaterialTheme.colorScheme.surface
                         )
                     }
+
+                    if (viewModel.isCameraStuck && viewModel.isEngineRunning && !isStopping) {
+                        AlertDialog(
+                            onDismissRequest = { /* Force user choice */ },
+                            title = {
+                                Text(
+                                    getString(R.string.title_camera_stuck),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            text = {
+                                Text(
+                                    getString(R.string.body_camera_stuck),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        val intent =
+                                            baseContext.packageManager.getLaunchIntentForPackage(
+                                                baseContext.packageName
+                                            )
+                                        val componentName = intent?.component
+                                        if (componentName != null) {
+                                            val restartIntent =
+                                                Intent.makeRestartActivityTask(componentName)
+                                            restartIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            baseContext.startActivity(restartIntent)
+                                            finishAffinity()
+                                        } else {
+                                            Runtime.getRuntime().exit(0)
+                                        }
+                                    }
+                                ) {
+                                    Text(getString(R.string.btn_restart))
+                                }
+                            },
+                            dismissButton = {
+                                OutlinedButton(onClick = { viewModel.dismissCameraStuckDialog() }) {
+                                    Text(getString(R.string.btn_cancel))
+                                }
+                            },
+                            containerColor = MaterialTheme.colorScheme.surface
+                        )
+                    }
                 }
             }
         }

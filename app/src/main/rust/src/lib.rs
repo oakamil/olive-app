@@ -149,6 +149,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     longitude: jni::sys::jdouble,
     time_ms: jni::sys::jlong,
     settings_manager: jni::objects::JObject,
+    auto_camera_calibration: jni::sys::jboolean,
 ) {
     let jvm = env.get_java_vm().unwrap();
     let settings_mgr = env.new_global_ref(settings_manager).unwrap();
@@ -163,7 +164,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     let ext_type = if extractor_str == "Cedar" {
         olive_engine::engine::Extractor::Cedar
     } else {
-        olive_engine::engine::Extractor::Sequential
+        olive_engine::engine::Extractor::Approximate
     };
 
     let mut runtime_lock = RUNTIME.lock().unwrap();
@@ -224,9 +225,10 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 extractor_type: ext_type,
                 crop: None,
                 downsample: downsample_mode as u8,
-                bypass_calibration: true,
+                bypass_calibration: auto_camera_calibration == 0,
                 noise_filter: false,
                 initial_fov: None,
+                use_observer_location: true,
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -303,11 +305,10 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
             if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
                 engine
                     .fused_solver
-                    .set_observer_location(latitude, longitude)
-                    .await;
+                    .set_observer_location(latitude, longitude);
             }
 
-            let _ = engine.fused_solver.start_imu().await;
+            let _ = engine.fused_solver.start_imu();
             *LX200_CONTROLLER.lock().unwrap() = Some(engine.lx200_controller.clone());
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
@@ -353,6 +354,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     longitude: jni::sys::jdouble,
     time_ms: jni::sys::jlong,
     settings_manager: jni::objects::JObject,
+    auto_camera_calibration: jni::sys::jboolean,
 ) {
     let zoom_ratio_method = env
         .get_method_id("com/oakamil/olive/SettingsManager", "getZoomRatio", "()F")
@@ -381,7 +383,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     let ext_type = if extractor_str == "Cedar" {
         olive_engine::engine::Extractor::Cedar
     } else {
-        olive_engine::engine::Extractor::Sequential
+        olive_engine::engine::Extractor::Approximate
     };
 
     let mut runtime_lock = RUNTIME.lock().unwrap();
@@ -449,9 +451,11 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 extractor_type: ext_type,
                 crop: None,
                 downsample: downsample_mode as u8,
-                bypass_calibration: true,
+                bypass_calibration: auto_camera_calibration == 0
+                    || internal_camera_id_str == "demo",
                 noise_filter: true,
                 initial_fov: camera.get_config().and_then(|c| c.initial_fov),
+                use_observer_location: internal_camera_id_str != "demo",
             };
             let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -528,11 +532,10 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
                 engine
                     .fused_solver
-                    .set_observer_location(latitude, longitude)
-                    .await;
+                    .set_observer_location(latitude, longitude);
             }
 
-            let _ = engine.fused_solver.start_imu().await;
+            let _ = engine.fused_solver.start_imu();
             *LX200_CONTROLLER.lock().unwrap() = Some(engine.lx200_controller.clone());
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
@@ -841,6 +844,19 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEngineSigma(
     if let Some(engine_state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
         if let Ok(mut state) = engine_state_arc.write() {
             state.current_sigma = Some(sigma as f32);
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEngineStrictMatch(
+    _env: JNIEnv,
+    _class: JClass,
+    strict: jni::sys::jboolean,
+) {
+    if let Some(engine_state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
+        if let Ok(mut state) = engine_state_arc.write() {
+            state.strict_match = strict != 0;
         }
     }
 }
