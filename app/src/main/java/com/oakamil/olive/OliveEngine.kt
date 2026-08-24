@@ -80,6 +80,6 @@ object OliveEngine {
         jsonArray: String
     ): String
 
-    external fun setGoToTarget(ra: Double, dec: Double)
+    external fun setGoToTarget(ra: Double, dec: Double, epoch: Double)
     external fun setAlignTargetPixel(x: Double, y: Double)
 }

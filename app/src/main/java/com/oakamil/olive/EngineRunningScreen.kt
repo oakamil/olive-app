@@ -619,8 +619,8 @@ fun EngineRunningScreen(
             SkyCatalogDialog(
                 viewModel = viewModel,
                 onDismiss = { showCatalog = false },
-                onGoTo = { ra, dec ->
-                    viewModel.setGoToTarget(ra, dec)
+                onGoTo = { ra, dec, epoch ->
+                    viewModel.setGoToTarget(ra, dec, epoch)
                     showCatalog = false
                 }
             )
@@ -749,6 +749,23 @@ fun StatsDisplay(stats: EngineStats) {
                 ),
                 color = MaterialTheme.colorScheme.onBackground
             )
+
+            val cropString = when (stats.solvedCrop) {
+                "Center" -> stringResource(id = R.string.crop_center)
+                "Top" -> stringResource(id = R.string.crop_top)
+                "Bottom" -> stringResource(id = R.string.crop_bottom)
+                "Left" -> stringResource(id = R.string.crop_left)
+                "Right" -> stringResource(id = R.string.crop_right)
+                "Full" -> stringResource(id = R.string.crop_full)
+                "Failed" -> stringResource(id = R.string.crop_failed)
+                else -> ""
+            }
+            if (cropString.isNotEmpty()) {
+                Text(
+                    stringResource(id = R.string.stat_last_solve) + ": " + cropString,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
         }
     }
 }

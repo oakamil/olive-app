@@ -152,7 +152,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     auto_camera_calibration: jni::sys::jboolean,
 ) {
     let jvm = env.get_java_vm().unwrap();
-    let settings_mgr = env.new_global_ref(settings_manager).unwrap();
+    let settings_mgr = env.new_global_ref(&settings_manager).unwrap();
     let storage: Option<std::sync::Arc<dyn olive_imu::PersistentStorage>> =
         Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
 
@@ -191,6 +191,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     if let Some(handle) = old_thread {
         let _ = handle.join();
     }
+
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
     let new_thread = thread::spawn(move || {
         rt_handle.block_on(async {
@@ -372,7 +373,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     };
 
     let jvm = env.get_java_vm().unwrap();
-    let settings_mgr = env.new_global_ref(settings_manager).unwrap();
+    let settings_mgr = env.new_global_ref(&settings_manager).unwrap();
     let storage: Option<std::sync::Arc<dyn olive_imu::PersistentStorage>> =
         Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
 
@@ -410,6 +411,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     if let Some(handle) = old_thread {
         let _ = handle.join();
     }
+
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
 
     let new_thread = thread::spawn(move || {

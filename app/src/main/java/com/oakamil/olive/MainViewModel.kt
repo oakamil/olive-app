@@ -21,6 +21,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     enum class EngineMode { STOPPED, UVC, NATIVE, CEDAR_REMOTE }
@@ -139,7 +140,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 hfr = obj.optDouble("hfr", 0.0),
                 targetRa = if (obj.isNull("target_ra")) null else obj.getDouble("target_ra"),
                 targetDec = if (obj.isNull("target_dec")) null else obj.getDouble("target_dec"),
-                isImuEstimate = obj.optBoolean("is_imu_estimate", false)
+                isImuEstimate = obj.optBoolean("is_imu_estimate", false),
+                solvedCrop = if (obj.isNull("solved_crop")) null else obj.getString("solved_crop")
             )
 
             // Removed syncing tuning sliders here to allow them to reflect user-selected values
@@ -243,7 +245,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val downsampling = if (cameraId == "demo") 0 else settingsManager.downsampling
 
         val motionSensorMode = if (cameraId == "demo") 0 else settingsManager.motionSensorMode
-        val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
+        val isAutoSettings =
+            if (cameraId == "demo") false else settingsManager.cameraSettingsMode == "Auto"
 
         viewModelScope.launch(Dispatchers.IO) {
             val forcedSensorMode = if (isAutoSettings) "Processed" else settingsManager.sensorMode
@@ -593,26 +596,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         OliveEngine.updateUvcStacking(uvcStacking)
     }
 
-    fun setGoToTarget(ra: Double, dec: Double) {
+    fun setGoToTarget(ra: Double, dec: Double, epoch: Double = 2000.0) {
         if (engineMode == EngineMode.CEDAR_REMOTE) {
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    val coord = cedar_common.CedarCommon.CelestialCoord.newBuilder()
+                    val coordBuilder = cedar_common.CedarCommon.CelestialCoord.newBuilder()
                         .setRa(ra)
                         .setDec(dec)
-                        .build()
+                    if (abs(epoch - 2000.0) > 0.001) {
+                        coordBuilder.setEpoch(epoch)
+                    }
                     val req = cedar.CedarOuterClass.ActionRequest.newBuilder()
-                        .setInitiateSlew(coord)
+                        .setInitiateSlew(coordBuilder.build())
                         .build()
                     cedarClient?.initiateAction(req)
-                    Log.i("MainViewModel", "GoTo Target set in Cedar: RA=$ra, Dec=$dec")
+                    Log.i(
+                        "MainViewModel",
+                        "GoTo Target set in Cedar: RA=$ra, Dec=$dec, Epoch=$epoch"
+                    )
                 } catch (e: Exception) {
                     Log.e("MainViewModel", "Failed to set goto target", e)
                 }
             }
         } else if (isEngineRunning) {
-            OliveEngine.setGoToTarget(ra, dec)
-            Log.i("MainViewModel", "GoTo Target set in JNI: RA=$ra, Dec=$dec")
+            OliveEngine.setGoToTarget(ra, dec, epoch)
+            Log.i("MainViewModel", "GoTo Target set in JNI: RA=$ra, Dec=$dec, Epoch=$epoch")
         } else {
             Log.w("MainViewModel", "Engine not running, cannot set GoTo Target: RA=$ra, Dec=$dec")
         }

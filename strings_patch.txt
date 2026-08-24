@@ -1,0 +1,11 @@
+--- app/src/main/res/values/strings.xml
++++ app/src/main/res/values/strings.xml
+@@ -107,6 +107,8 @@
+     <string name="label_downsampling">Downsampling</string>
+     <string name="label_extractor">Extractor</string>
+     <string name="label_guidance_mode">Guidance Mode</string>
++    <string name="label_horizon_filter">Horizon Filter</string>
++    <string name="info_horizon_filter">When on, mathematically impossible star matches below the physical horizon are rejected. Turn this off if you are pointing your camera downwards into a mirror.</string>
+ 
+     <string name="value_none">None</string>
+     <string name="value_auto">Auto</string>
