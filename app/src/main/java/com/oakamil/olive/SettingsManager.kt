@@ -54,7 +54,6 @@ class SettingsManager(context: Context) {
         }
         set(value) = prefs.edit { putString("internal_camera_id", value) }
 
-
     var zoomRatio: Float
         get() = prefs.getFloat("zoom_ratio", 1.0f)
         set(value) = prefs.edit { putFloat("zoom_ratio", value) }
@@ -95,6 +94,4 @@ class SettingsManager(context: Context) {
 
     @Keep
     fun removeString(key: String) = prefs.edit { remove(key) }
-
-
 }
