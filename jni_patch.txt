@@ -1,0 +1,63 @@
+--- app/src/main/rust/src/lib.rs
++++ app/src/main/rust/src/lib.rs
+@@ -218,6 +218,17 @@
+         olive_engine::engine::Extractor::Approximate
+     };
+ 
++    let horizon_filter_method = env
++        .get_method_id("com/oakamil/olive/SettingsManager", "getHorizonFilter", "()Z")
++        .unwrap();
++    let horizon_filter_val = unsafe {
++        env.call_method_unchecked(
++            &settings_manager,
++            horizon_filter_method,
++            jni::signature::ReturnType::Primitive(jni::signature::Primitive::Boolean),
++            &[],
++        )
++        .unwrap()
++        .z()
++        .unwrap()
++    };
++
+     let mut runtime_lock = RUNTIME.lock().unwrap();
+ 
+     let engine = if let Some((existing_engine, engine_client_connected)) = runtime_lock.take() {
+@@ -228,7 +239,7 @@
+         bypass_calibration: auto_camera_calibration == 0,
+         noise_filter: false,
+         initial_fov: None,
+-        use_observer_location: true,
++        use_observer_location: horizon_filter_val,
+     };
+     let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
+ 
+@@ -439,6 +450,17 @@
+         Arc::new(cam)
+     };
+     *CAMERA.lock().unwrap() = Some(camera.clone());
++    
++    let horizon_filter_method = env
++        .get_method_id("com/oakamil/olive/SettingsManager", "getHorizonFilter", "()Z")
++        .unwrap();
++    let horizon_filter_val = unsafe {
++        env.call_method_unchecked(
++            &settings_manager,
++            horizon_filter_method,
++            jni::signature::ReturnType::Primitive(jni::signature::Primitive::Boolean),
++            &[],
++        )
++        .unwrap()
++        .z()
++        .unwrap()
++    };
+ 
+     let config = EngineConfig {
+         gain: Some(camera.get_gain()),
+@@ -456,7 +478,7 @@
+             || internal_camera_id_str == "demo",
+         noise_filter: true,
+         initial_fov: camera.get_config().and_then(|c| c.initial_fov),
+-        use_observer_location: internal_camera_id_str != "demo",
++        use_observer_location: horizon_filter_val && internal_camera_id_str != "demo",
+     };
+     let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));

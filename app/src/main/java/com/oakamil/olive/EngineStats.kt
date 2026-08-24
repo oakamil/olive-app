@@ -20,5 +20,6 @@ data class EngineStats(
     val hfr: Double = 0.0,
     val targetRa: Double? = null,
     val targetDec: Double? = null,
-    val isImuEstimate: Boolean = false
+    val isImuEstimate: Boolean = false,
+    val solvedCrop: String? = null
 )

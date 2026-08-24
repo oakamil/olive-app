@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons.AutoMirrored.Filled
 import androidx.compose.material.icons.Icons.Default
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -94,6 +95,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.round
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,7 +103,7 @@ import kotlin.math.sin
 fun SkyCatalogDialog(
     viewModel: MainViewModel,
     onDismiss: () -> Unit,
-    onGoTo: (Double, Double) -> Unit,
+    onGoTo: (Double, Double, Double) -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
     var showKeyboard by remember { mutableStateOf(false) }
@@ -119,6 +121,7 @@ fun SkyCatalogDialog(
 
     var searchResults by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     var showRaDecForObj by remember { mutableStateOf<CatalogObject?>(null) }
+    var showGotoRaDecPopup by remember { mutableStateOf(false) }
 
     val categories = listOf(
         "Nearest Objects", "All Objects", "Solar System", "Bright Stars",
@@ -710,45 +713,59 @@ fun SkyCatalogDialog(
                         }
                     )
 
-                    Box(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(8.dp)
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = {},
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text(stringResource(R.string.placeholder_search)) },
-                            leadingIcon = { Icon(Default.Search, contentDescription = null) },
-                            singleLine = true,
-                            readOnly = true
-                        )
-                        Spacer(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .padding(end = 48.dp)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
-                                ) {
-                                    showKeyboard = true
-                                }
-                        )
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(
-                                onClick = { searchQuery = "" },
+                        Box(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = {},
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text(stringResource(R.string.placeholder_search)) },
+                                leadingIcon = { Icon(Default.Search, contentDescription = null) },
+                                singleLine = true,
+                                readOnly = true
+                            )
+                            Spacer(
                                 modifier = Modifier
-                                    .align(Alignment.CenterEnd)
-                                    .padding(end = 4.dp)
-                            ) {
-                                Icon(
-                                    Default.Close,
-                                    contentDescription = stringResource(R.string.cd_clear_search),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
+                                    .matchParentSize()
+                                    .padding(end = 48.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        showKeyboard = true
+                                    }
+                            )
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { searchQuery = "" },
+                                    modifier = Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .padding(end = 4.dp)
+                                ) {
+                                    Icon(
+                                        Default.Close,
+                                        contentDescription = stringResource(R.string.cd_clear_search),
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
                             }
                         }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconBarItem(
+                            icon = Default.GpsFixed,
+                            label = stringResource(R.string.label_ra_dec),
+                            singleLine = true,
+                            onClick = { showGotoRaDecPopup = true }
+                        )
                     }
 
                     val isLandscape =
@@ -923,7 +940,13 @@ fun SkyCatalogDialog(
                                                         icon = Default.GpsFixed,
                                                         label = stringResource(R.string.btn_goto),
                                                         singleLine = true,
-                                                        onClick = { onGoTo(obj.ra, obj.dec) }
+                                                        onClick = {
+                                                            onGoTo(
+                                                                obj.ra,
+                                                                obj.dec,
+                                                                2000.0
+                                                            )
+                                                        }
                                                     )
                                                 } else {
                                                     Column(
@@ -1129,6 +1152,16 @@ fun SkyCatalogDialog(
             }
         }
     }
+
+    if (showGotoRaDecPopup) {
+        GotoRaDecPopup(
+            onDismiss = { showGotoRaDecPopup = false },
+            onGoTo = { ra, dec, epoch ->
+                showGotoRaDecPopup = false
+                onGoTo(ra, dec, epoch)
+            }
+        )
+    }
 }
 
 data class AltAz(val alt: Double, val az: Double)
@@ -1312,4 +1345,322 @@ fun formatDec(decDegrees: Double): String {
         d += 1
     }
     return String.format(Locale.US, "%s%02d° %02d' %02d\"", sign, d, m, s)
+}
+
+enum class CoordinateField {
+    RA_H, RA_M, RA_S, DEC_D, DEC_M, DEC_S
+}
+
+@Composable
+fun GotoRaDecPopup(
+    onDismiss: () -> Unit,
+    onGoTo: (Double, Double, Double) -> Unit
+) {
+    var epochIsJ2000 by remember { mutableStateOf(true) }
+
+    var raH by remember { mutableStateOf("") }
+    var raM by remember { mutableStateOf("") }
+    var raS by remember { mutableStateOf("") }
+
+    var decSign by remember { mutableStateOf("+") }
+    var decD by remember { mutableStateOf("") }
+    var decM by remember { mutableStateOf("") }
+    var decS by remember { mutableStateOf("") }
+
+    var focusedField by remember { mutableStateOf(CoordinateField.RA_H) }
+
+    InfoPopup(
+        title = stringResource(R.string.title_goto_ra_dec),
+        onDismiss = onDismiss
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Epoch Toggle
+            Text(stringResource(R.string.label_epoch), style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier
+                    .padding(top = 4.dp, bottom = 12.dp)
+                    .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clickable { epochIsJ2000 = true }
+                        .background(if (epochIsJ2000) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.label_j2000),
+                        color = if (epochIsJ2000) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clickable { epochIsJ2000 = false }
+                        .background(if (!epochIsJ2000) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.label_now),
+                        color = if (!epochIsJ2000) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            // RA Input
+            Text(stringResource(R.string.label_ra), style = MaterialTheme.typography.labelLarge)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CoordinateBox(
+                    value = raH,
+                    isFocused = focusedField == CoordinateField.RA_H,
+                    suffix = "h",
+                    onClick = { focusedField = CoordinateField.RA_H })
+                CoordinateBox(
+                    value = raM,
+                    isFocused = focusedField == CoordinateField.RA_M,
+                    suffix = "m",
+                    onClick = { focusedField = CoordinateField.RA_M })
+                CoordinateBox(
+                    value = raS,
+                    isFocused = focusedField == CoordinateField.RA_S,
+                    suffix = "s",
+                    onClick = { focusedField = CoordinateField.RA_S })
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Dec Input
+            Text(stringResource(R.string.label_dec), style = MaterialTheme.typography.labelLarge)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clickable { decSign = if (decSign == "+") "-" else "+" }
+                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(decSign, style = MaterialTheme.typography.bodyLarge)
+                }
+                CoordinateBox(
+                    value = decD,
+                    isFocused = focusedField == CoordinateField.DEC_D,
+                    suffix = "°",
+                    onClick = { focusedField = CoordinateField.DEC_D })
+                CoordinateBox(
+                    value = decM,
+                    isFocused = focusedField == CoordinateField.DEC_M,
+                    suffix = "'",
+                    onClick = { focusedField = CoordinateField.DEC_M })
+                CoordinateBox(
+                    value = decS,
+                    isFocused = focusedField == CoordinateField.DEC_S,
+                    suffix = "\"",
+                    onClick = { focusedField = CoordinateField.DEC_S })
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Numpad
+            NightVisionNumpad(
+                onKeyClick = { char ->
+                    val validateAndAppend = { current: String, max: Int ->
+                        val next = if (current == "0") char.toString() else current + char
+                        if (next.length <= 2 && (next.toIntOrNull() ?: 0) <= max) next else current
+                    }
+                    when (focusedField) {
+                        CoordinateField.RA_H -> raH = validateAndAppend(raH, 23)
+                        CoordinateField.RA_M -> raM = validateAndAppend(raM, 59)
+                        CoordinateField.RA_S -> raS = validateAndAppend(raS, 59)
+                        CoordinateField.DEC_D -> {
+                            decD = validateAndAppend(decD, 90)
+                            if ((decD.toIntOrNull() ?: 0) == 90) {
+                                decM = "0"
+                                decS = "0"
+                            }
+                        }
+
+                        CoordinateField.DEC_M -> if ((decD.toIntOrNull() ?: 0) != 90) decM =
+                            validateAndAppend(decM, 59)
+
+                        CoordinateField.DEC_S -> if ((decD.toIntOrNull() ?: 0) != 90) decS =
+                            validateAndAppend(decS, 59)
+                    }
+                },
+                onBackspace = {
+                    when (focusedField) {
+                        CoordinateField.RA_H -> if (raH.isNotEmpty()) raH = raH.dropLast(1)
+                        CoordinateField.RA_M -> if (raM.isNotEmpty()) raM = raM.dropLast(1)
+                        CoordinateField.RA_S -> if (raS.isNotEmpty()) raS = raS.dropLast(1)
+                        CoordinateField.DEC_D -> if (decD.isNotEmpty()) decD = decD.dropLast(1)
+                        CoordinateField.DEC_M -> if (decM.isNotEmpty()) decM = decM.dropLast(1)
+                        CoordinateField.DEC_S -> if (decS.isNotEmpty()) decS = decS.dropLast(1)
+                    }
+                },
+                onNext = {
+                    focusedField = when (focusedField) {
+                        CoordinateField.RA_H -> CoordinateField.RA_M
+                        CoordinateField.RA_M -> CoordinateField.RA_S
+                        CoordinateField.RA_S -> CoordinateField.DEC_D
+                        CoordinateField.DEC_D -> CoordinateField.DEC_M
+                        CoordinateField.DEC_M -> CoordinateField.DEC_S
+                        CoordinateField.DEC_S -> CoordinateField.RA_H
+                    }
+                }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = {
+                    val h = raH.toDoubleOrNull() ?: 0.0
+                    val m = raM.toDoubleOrNull() ?: 0.0
+                    val s = raS.toDoubleOrNull() ?: 0.0
+                    val raDeg = (h + m / 60.0 + s / 3600.0) * 15.0
+
+                    val dd = decD.toDoubleOrNull() ?: 0.0
+                    val dm = decM.toDoubleOrNull() ?: 0.0
+                    val ds = decS.toDoubleOrNull() ?: 0.0
+                    var decDeg = dd + dm / 60.0 + ds / 3600.0
+                    if (decSign == "-") {
+                        decDeg = -decDeg
+                    }
+
+                    val epoch = if (epochIsJ2000) {
+                        2000.0
+                    } else {
+                        val cal = java.util.Calendar.getInstance()
+                        val year = cal.get(java.util.Calendar.YEAR)
+                        val dayOfYear = cal.get(java.util.Calendar.DAY_OF_YEAR)
+                        val isLeapYear = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+                        val daysInYear = if (isLeapYear) 366 else 365
+                        val epochDecimal = year + (dayOfYear.toDouble() / daysInYear.toDouble())
+                        (epochDecimal * 10.0).roundToInt() / 10.0
+                    }
+
+                    onGoTo(raDeg, decDeg, epoch)
+                }
+            ) {
+                Icon(Default.GpsFixed, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.btn_goto))
+            }
+        }
+    }
+}
+
+@Composable
+fun CoordinateBox(
+    value: String,
+    isFocused: Boolean,
+    suffix: String,
+    onClick: () -> Unit
+) {
+    val borderColor =
+        if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(
+            alpha = 0.5f
+        )
+    val borderWidth = if (isFocused) 2.dp else 1.dp
+
+    Row(
+        modifier = Modifier
+            .clickable { onClick() }
+            .border(borderWidth, borderColor, RoundedCornerShape(4.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val isDeclination = suffix == "°" || suffix == "'" || suffix == "\""
+        Text(
+            text = value.ifEmpty { "00" },
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (value.isEmpty()) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.alignByBaseline()
+        )
+        Text(
+            text = suffix,
+            style = if (isDeclination) {
+                MaterialTheme.typography.bodyLarge.copy(baselineShift = androidx.compose.ui.text.style.BaselineShift.Superscript)
+            } else {
+                MaterialTheme.typography.labelSmall
+            },
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+            modifier = Modifier
+                .padding(start = 2.dp)
+                .alignByBaseline()
+        )
+    }
+}
+
+@Composable
+fun NightVisionNumpad(
+    onKeyClick: (Char) -> Unit,
+    onBackspace: () -> Unit,
+    onNext: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val keys = listOf(
+        listOf("1", "2", "3"),
+        listOf("4", "5", "6"),
+        listOf("7", "8", "9"),
+        listOf("⌫", "0", "→")
+    )
+
+    Column(
+        modifier = modifier
+            .background(Color.Black)
+            .padding(2.dp)
+            .width(200.dp)
+    ) {
+        keys.forEach { row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                row.forEach { key ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 2.dp)
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.primary,
+                                RoundedCornerShape(4.dp)
+                            )
+                            .clickable {
+                                when (key) {
+                                    "⌫" -> onBackspace()
+                                    "→" -> onNext()
+                                    else -> onKeyClick(key[0])
+                                }
+                            }
+                            .height(48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (key == "→") {
+                            Icon(
+                                imageVector = Filled.ArrowForward,
+                                contentDescription = "Next",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Text(
+                                text = key,
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

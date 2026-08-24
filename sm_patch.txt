@@ -1,0 +1,23 @@
+--- app/src/main/java/com/oakamil/olive/SettingsManager.kt
++++ app/src/main/java/com/oakamil/olive/SettingsManager.kt
+@@ -48,6 +48,10 @@
+         }
+         set(value) = prefs.edit { putString("internal_camera_id", value) }
+ 
++    var horizonFilter: Boolean
++        get() = prefs.getBoolean("horizon_filter", true)
++        set(value) = prefs.edit { putBoolean("horizon_filter", value) }
++
+     var zoomRatio: Float
+         get() = prefs.getFloat("zoom_ratio", 1.0f)
+         set(value) = prefs.edit { putFloat("zoom_ratio", value) }
+@@ -82,5 +86,10 @@
+ 
+     @Keep
+     fun removeString(key: String) = prefs.edit { remove(key) }
++
++    @Keep
++    fun getHorizonFilter(): Boolean {
++        return horizonFilter
++    }
+ }
