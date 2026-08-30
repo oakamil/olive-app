@@ -760,6 +760,12 @@ fun StatsDisplay(stats: EngineStats) {
                 "Right" -> stringResource(id = R.string.crop_right)
                 "Full" -> stringResource(id = R.string.crop_full)
                 "Failed" -> stringResource(id = R.string.crop_failed)
+                "CenterHighSens" -> stringResource(id = R.string.crop_center) + " (HS)"
+                "TopHighSens" -> stringResource(id = R.string.crop_top) + " (HS)"
+                "BottomHighSens" -> stringResource(id = R.string.crop_bottom) + " (HS)"
+                "LeftHighSens" -> stringResource(id = R.string.crop_left) + " (HS)"
+                "RightHighSens" -> stringResource(id = R.string.crop_right) + " (HS)"
+                "FullHighSens" -> stringResource(id = R.string.crop_full) + " (HS)"
                 else -> ""
             }
             if (cropString.isNotEmpty()) {

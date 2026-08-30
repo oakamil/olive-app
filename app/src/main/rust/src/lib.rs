@@ -1141,15 +1141,18 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setGoToTarget(
     _class: jni::objects::JClass,
     ra: jni::sys::jdouble,
     dec: jni::sys::jdouble,
+    epoch: jni::sys::jdouble,
 ) {
     if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
         if let Ok(mut state) = state_arc.write() {
             state.requested_target_ra = Some(ra as f64);
             state.requested_target_dec = Some(dec as f64);
+            state.requested_target_epoch = Some(epoch as f64);
             log::info!(
-                "Target slew requested via JNI (EngineState): RA={}, Dec={}",
+                "Target slew requested via JNI (EngineState): RA={}, Dec={}, Epoch={}",
                 ra,
-                dec
+                dec,
+                epoch
             );
         }
     } else {
