@@ -20,7 +20,7 @@ object OliveEngine {
         lon: Double,
         timeMs: Long,
         settingsManager: SettingsManager,
-        autoCameraCalibration: Boolean
+        autoMode: Boolean
     )
 
     external fun startNativeCameraEngine(
@@ -33,7 +33,7 @@ object OliveEngine {
         lon: Double,
         timeMs: Long,
         settingsManager: SettingsManager,
-        autoCameraCalibration: Boolean
+        autoMode: Boolean
     )
 
     external fun stopEngine()
