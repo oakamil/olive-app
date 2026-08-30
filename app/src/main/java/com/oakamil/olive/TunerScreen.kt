@@ -66,6 +66,8 @@ import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun TunerScreen(
@@ -242,11 +244,11 @@ fun TunerScreen(
                                     // 3. Remove rotation
                                     val angleRad = -Math.toRadians(imageRotation.toDouble())
                                     val rx =
-                                        (translatedDx * Math.cos(angleRad) - translatedDy * Math.sin(
+                                        (translatedDx * cos(angleRad) - translatedDy * sin(
                                             angleRad
                                         )).toFloat()
                                     val ry =
-                                        (translatedDx * Math.sin(angleRad) + translatedDy * Math.cos(
+                                        (translatedDx * sin(angleRad) + translatedDy * cos(
                                             angleRad
                                         )).toFloat()
 
@@ -361,56 +363,61 @@ fun TunerScreen(
             }
         }
 
-        TuningControls(viewModel, settingsManager, activeCameraSelection)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (viewModel.engineMode == MainViewModel.EngineMode.UVC) {
-            Text(
-                stringResource(id = R.string.stat_exposure) + ": " + stringResource(
-                    id = R.string.format_ms,
-                    String.format(Locale.getDefault(), "%.2f", viewModel.engineStats.exposureMs)
-                ),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-
-        Text(
-            stringResource(id = R.string.info_detected_stars) + ": ${viewModel.engineStats.centroidCount}",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        if (activeCameraSelection != "cedar" && viewModel.engineMode.name != "CEDAR_REMOTE") {
-            var showHfrInfo by remember { mutableStateOf(false) }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(id = R.string.info_hfr_label) + ": " + String.format(
-                        Locale.getDefault(),
-                        "%.2f",
-                        viewModel.engineStats.hfr
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                IconButton(onClick = { showHfrInfo = true }, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = stringResource(id = R.string.cd_info),
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Text(
+                        stringResource(id = R.string.info_detected_stars) + ": ${viewModel.engineStats.centroidCount}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
-            if (showHfrInfo) {
-                InfoPopup(
-                    title = stringResource(id = R.string.info_hfr_label),
-                    onDismiss = { showHfrInfo = false }) {
-                    Text(stringResource(id = R.string.info_hfr))
+            Column(modifier = Modifier.weight(1f)) {
+                if (activeCameraSelection != "cedar" && viewModel.engineMode.name != "CEDAR_REMOTE") {
+                    var showHfrInfo by remember { mutableStateOf(false) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(id = R.string.info_hfr_label) + ": " + String.format(
+                                Locale.getDefault(),
+                                "%.2f",
+                                viewModel.engineStats.hfr
+                            ),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(
+                            onClick = { showHfrInfo = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = stringResource(id = R.string.cd_info),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    if (showHfrInfo) {
+                        InfoPopup(
+                            title = stringResource(id = R.string.info_hfr_label),
+                            onDismiss = { showHfrInfo = false }) {
+                            Text(stringResource(id = R.string.info_hfr))
+                        }
+                    }
                 }
             }
         }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        TuningControls(viewModel, settingsManager, activeCameraSelection)
     }
 
     Column(
@@ -550,6 +557,7 @@ fun TuningControls(
             }
             Slider(
                 value = viewModel.starSensitivity,
+                enabled = settingsManager.cameraSettingsMode != "Auto",
                 onValueChange = {
                     viewModel.updateStarSensitivity(it)
                 },
@@ -601,6 +609,7 @@ fun TuningControls(
                 }
                 Slider(
                     value = zoomRatio,
+                    enabled = settingsManager.cameraSettingsMode != "Auto",
                     onValueChange = {
                         zoomRatio = it
                         settingsManager.zoomRatio = it
@@ -723,6 +732,7 @@ fun TuningControls(
             }
             Slider(
                 value = viewModel.currentGain,
+                enabled = settingsManager.cameraSettingsMode != "Auto",
                 onValueChange = {
                     viewModel.setGain(it)
                 },

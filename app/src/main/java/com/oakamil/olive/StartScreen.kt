@@ -85,7 +85,7 @@ fun StartScreen(
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
     var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
     var motionSensorMode by remember { mutableIntStateOf(settingsManager.motionSensorMode) }
-    var autoCameraCalibration by remember { mutableStateOf(settingsManager.autoCameraCalibration) }
+
 
     var showCameraSelectionInfo by remember { mutableStateOf(false) }
     var showCameraSettingsInfo by remember { mutableStateOf(false) }
@@ -117,8 +117,7 @@ fun StartScreen(
         downsampling,
         internalCameraId,
         guidanceMode,
-        motionSensorMode,
-        autoCameraCalibration
+        motionSensorMode
     ) {
         settingsManager.cameraSelection = cameraSelection
         settingsManager.cameraSettingsMode = cameraSettingsMode
@@ -130,7 +129,6 @@ fun StartScreen(
         settingsManager.internalCameraId = internalCameraId
         settingsManager.guidanceMode = guidanceMode
         settingsManager.motionSensorMode = motionSensorMode
-        settingsManager.autoCameraCalibration = autoCameraCalibration
     }
 
     LaunchedEffect(internalCameraId) {

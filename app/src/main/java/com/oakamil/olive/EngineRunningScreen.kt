@@ -255,163 +255,165 @@ fun EngineRunningScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    IconButton(
-                        onClick = { showStarSensitivityInfo = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = stringResource(id = R.string.cd_info),
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                if (settingsManager.cameraSettingsMode != "Auto") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onBackground
                         )
+                        IconButton(
+                            onClick = { showStarSensitivityInfo = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = stringResource(id = R.string.cd_info),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
-                }
-                Slider(
-                    value = viewModel.starSensitivity,
-                    onValueChange = {
-                        viewModel.updateStarSensitivity(it)
-                    },
-                    valueRange = 1f..100f,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    Slider(
+                        value = viewModel.starSensitivity,
+                        onValueChange = {
+                            viewModel.updateStarSensitivity(it)
+                        },
+                        valueRange = 1f..100f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                val maxZoom = remember {
-                    var mZ = 1f
-                    try {
-                        if (activeCameraSelection == "internal" && settingsManager.sensorMode == "Processed") {
-                            val jsonArray =
-                                org.json.JSONArray(viewModel.getAvailableInternalCameras())
-                            for (i in 0 until jsonArray.length()) {
-                                val obj = jsonArray.getJSONObject(i)
-                                if (obj.getString("id") == settingsManager.internalCameraId) {
-                                    mZ = if (obj.has("max_zoom")) obj.getDouble("max_zoom")
-                                        .toFloat() else 1f
-                                    break
+                    val maxZoom = remember {
+                        var mZ = 1f
+                        try {
+                            if (activeCameraSelection == "internal" && settingsManager.sensorMode == "Processed") {
+                                val jsonArray =
+                                    org.json.JSONArray(viewModel.getAvailableInternalCameras())
+                                for (i in 0 until jsonArray.length()) {
+                                    val obj = jsonArray.getJSONObject(i)
+                                    if (obj.getString("id") == settingsManager.internalCameraId) {
+                                        mZ = if (obj.has("max_zoom")) obj.getDouble("max_zoom")
+                                            .toFloat() else 1f
+                                        break
+                                    }
                                 }
                             }
+                        } catch (_: Exception) {
                         }
-                    } catch (_: Exception) {
+                        mZ
                     }
-                    mZ
-                }
 
-                if (maxZoom > 1f) {
-                    var zoomRatio by remember { mutableFloatStateOf(settingsManager.zoomRatio) }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            stringResource(id = R.string.label_zoom) + ": " + stringResource(
-                                id = R.string.format_zoom,
-                                String.format(Locale.getDefault(), "%.1f", zoomRatio)
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        IconButton(
-                            onClick = { showZoomInfo = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = stringResource(id = R.string.cd_info),
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
+                    if (maxZoom > 1f) {
+                        var zoomRatio by remember { mutableFloatStateOf(settingsManager.zoomRatio) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stringResource(id = R.string.label_zoom) + ": " + stringResource(
+                                    id = R.string.format_zoom,
+                                    String.format(Locale.getDefault(), "%.1f", zoomRatio)
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onBackground
                             )
-                        }
-                    }
-                    Slider(
-                        value = zoomRatio,
-                        onValueChange = {
-                            zoomRatio = it
-                            settingsManager.zoomRatio = it
-                            OliveEngine.setNativeCameraZoomRatio(it)
-                        },
-                        valueRange = 1f..5f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                if (activeCameraSelection == "internal") {
-                    LaunchedEffect(viewModel.isEngineRunning) {
-                        // Wait a moment for the camera to actually start and the JNI reference to be set
-                        delay(1000)
-                        val rawExp = OliveEngine.getNativeCameraExposure()
-                        Log.d("OliveUI", "Initial exposure from native: $rawExp")
-                        mainScreenExposure = (rawExp / 1000000f).coerceIn(0.1f, 2.0f)
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "Exposure: ${
-                                String.format(
-                                    Locale.getDefault(),
-                                    "%.1f",
-                                    mainScreenExposure
+                            IconButton(
+                                onClick = { showZoomInfo = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = stringResource(id = R.string.cd_info),
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
-                            } s",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        IconButton(
-                            onClick = { showExposureInfo = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = stringResource(id = R.string.cd_info),
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                            }
                         }
-                    }
-                    Slider(
-                        value = mainScreenExposure,
-                        enabled = settingsManager.cameraSettingsMode != "Auto",
-                        onValueChange = {
-                            val stepped = round(it * 10.0f) / 10.0f
-                            mainScreenExposure = stepped
-                            viewModel.setExposure(stepped * 1000000)
-                        },
-                        valueRange = 0.1f..2.0f,
-                        steps = 18,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                } else if (activeCameraSelection == "uvc" || viewModel.engineMode.name == "UVC") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            stringResource(id = R.string.label_stacking_frames) + ": ${viewModel.uvcStacking}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onBackground
+                        Slider(
+                            value = zoomRatio,
+                            onValueChange = {
+                                zoomRatio = it
+                                settingsManager.zoomRatio = it
+                                OliveEngine.setNativeCameraZoomRatio(it)
+                            },
+                            valueRange = 1f..5f,
+                            modifier = Modifier.fillMaxWidth()
                         )
-                        IconButton(
-                            onClick = { showStackingInfo = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = stringResource(id = R.string.cd_info),
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
                     }
-                    Slider(
-                        value = viewModel.uvcStacking.toFloat(),
-                        enabled = settingsManager.cameraSettingsMode != "Auto",
-                        onValueChange = {
-                            viewModel.updateUvcStacking(it.toInt())
-                        },
-                        valueRange = 1f..10f,
-                        steps = 8,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+
+                    if (activeCameraSelection == "internal") {
+                        LaunchedEffect(viewModel.isEngineRunning) {
+                            // Wait a moment for the camera to actually start and the JNI reference to be set
+                            delay(1000)
+                            val rawExp = OliveEngine.getNativeCameraExposure()
+                            Log.d("OliveUI", "Initial exposure from native: $rawExp")
+                            mainScreenExposure = (rawExp / 1000000f).coerceIn(0.1f, 2.0f)
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Exposure: ${
+                                    String.format(
+                                        Locale.getDefault(),
+                                        "%.1f",
+                                        mainScreenExposure
+                                    )
+                                } s",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            IconButton(
+                                onClick = { showExposureInfo = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = stringResource(id = R.string.cd_info),
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Slider(
+                            value = mainScreenExposure,
+                            enabled = settingsManager.cameraSettingsMode != "Auto",
+                            onValueChange = {
+                                val stepped = round(it * 10.0f) / 10.0f
+                                mainScreenExposure = stepped
+                                viewModel.setExposure(stepped * 1000000)
+                            },
+                            valueRange = 0.1f..2.0f,
+                            steps = 18,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else if (activeCameraSelection == "uvc" || viewModel.engineMode.name == "UVC") {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stringResource(id = R.string.label_stacking_frames) + ": ${viewModel.uvcStacking}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            IconButton(
+                                onClick = { showStackingInfo = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = stringResource(id = R.string.cd_info),
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Slider(
+                            value = viewModel.uvcStacking.toFloat(),
+                            enabled = settingsManager.cameraSettingsMode != "Auto",
+                            onValueChange = {
+                                viewModel.updateUvcStacking(it.toInt())
+                            },
+                            valueRange = 1f..10f,
+                            steps = 8,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                } // End of isAutoMode check
             }
         }
 

@@ -149,7 +149,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
     longitude: jni::sys::jdouble,
     time_ms: jni::sys::jlong,
     settings_manager: jni::objects::JObject,
-    auto_camera_calibration: jni::sys::jboolean,
+    auto_mode: jni::sys::jboolean,
 ) {
     let jvm = env.get_java_vm().unwrap();
     let settings_mgr = env.new_global_ref(&settings_manager).unwrap();
@@ -226,7 +226,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
                 extractor_type: ext_type,
                 crop: None,
                 downsample: downsample_mode as u8,
-                bypass_calibration: auto_camera_calibration == 0,
+                auto_mode: auto_mode != 0,
                 noise_filter: false,
                 initial_fov: None,
                 use_observer_location: true,
@@ -355,7 +355,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     longitude: jni::sys::jdouble,
     time_ms: jni::sys::jlong,
     settings_manager: jni::objects::JObject,
-    auto_camera_calibration: jni::sys::jboolean,
+    auto_mode: jni::sys::jboolean,
 ) {
     let zoom_ratio_method = env
         .get_method_id("com/oakamil/olive/SettingsManager", "getZoomRatio", "()F")
@@ -445,7 +445,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             *CAMERA.lock().unwrap() = Some(camera.clone());
 
             let config = EngineConfig {
-                gain: Some(camera.get_gain()),
+                gain: None,
                 target_centroids: 20,
                 database_path: "default_database.npz".to_string(),
                 isp: false,
@@ -453,8 +453,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 extractor_type: ext_type,
                 crop: None,
                 downsample: downsample_mode as u8,
-                bypass_calibration: auto_camera_calibration == 0
-                    || internal_camera_id_str == "demo",
+                auto_mode: auto_mode != 0 && internal_camera_id_str != "demo",
                 noise_filter: true,
                 initial_fov: camera.get_config().and_then(|c| c.initial_fov),
                 use_observer_location: internal_camera_id_str != "demo",

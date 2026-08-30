@@ -19,9 +19,6 @@ class SettingsManager(context: Context) {
         get() = prefs.getInt("internal_fps", 5)
         set(value) = prefs.edit { putInt("internal_fps", value) }
 
-    var autoCameraCalibration: Boolean
-        get() = prefs.getBoolean("auto_camera_calibration", false)
-        set(value) = prefs.edit { putBoolean("auto_camera_calibration", value) }
 
     var guidanceMode: String
         get() = prefs.getString("guidance_mode", "alt_az") ?: "alt_az"
