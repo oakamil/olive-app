@@ -19,6 +19,7 @@ import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.util.Rational
@@ -48,6 +49,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.location.LocationManagerCompat
+import androidx.core.net.toUri
 import androidx.core.os.CancellationSignal
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -67,6 +69,22 @@ import java.util.Collections
 import kotlin.coroutines.resume
 
 class MainActivity : ComponentActivity() {
+    // We MUST explicitly release all claimed interfaces before closing the UsbDeviceConnection.
+    // Failing to do so causes a native resource leak in the Android kernel's USB stack,
+    // which prevents the camera from being reopened until it is physically unplugged.
+    private fun releaseAndCloseUsbConnection(conn: UsbDeviceConnection?, device: UsbDevice?) {
+        conn?.let { oldConn ->
+            if (device != null) {
+                for (i in 0 until device.interfaceCount) {
+                    try {
+                        oldConn.releaseInterface(device.getInterface(i))
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+            oldConn.close()
+        }
+    }
 
     private lateinit var usbManager: UsbManager
     private val ACTION_USB_PERMISSION = "com.oakamil.olive.USB_PERMISSION"
@@ -77,8 +95,9 @@ class MainActivity : ComponentActivity() {
     private var isStopping by mutableStateOf(false)
     private var isStarting by mutableStateOf(false)
     private var showCedarErrorDialog by mutableStateOf(false)
-    private var showUsbClaimErrorDialog by mutableStateOf(false)
+
     private var uvcConnection: UsbDeviceConnection? = null
+    private var currentUvcDevice: UsbDevice? = null
     private var connectedDevice: UsbDevice? = null
 
     private var currentScreen by mutableStateOf("main")
@@ -88,6 +107,7 @@ class MainActivity : ComponentActivity() {
     private var cachedLocation: Pair<Double, Double>? = null
     private var detectedIpAddress by mutableStateOf("127.0.0.1")
     private var showPermissionDialog by mutableStateOf(false)
+    private var showBatteryOptimizationDialog by mutableStateOf(false)
 
 
     init {
@@ -152,7 +172,7 @@ class MainActivity : ComponentActivity() {
                     Log.d("OliveUI", "USB Device Detached: ${device?.deviceName}")
 
                     val wasActiveDevice =
-                        viewModel.engineMode == MainViewModel.EngineMode.UVC && (device == null || connectedDevice == null || device.deviceName == connectedDevice?.deviceName)
+                        viewModel.engineMode == MainViewModel.EngineMode.UVC && (device == null || currentUvcDevice == null || device.deviceName == currentUvcDevice?.deviceName)
 
                     checkForCameras()
                     if (wasActiveDevice) {
@@ -281,6 +301,52 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    if (showBatteryOptimizationDialog) {
+                        AlertDialog(
+                            onDismissRequest = {
+                                showBatteryOptimizationDialog = false
+                                isStarting = false
+                            },
+                            title = { Text(getString(R.string.title_battery_optimization)) },
+                            text = { Text(getString(R.string.body_battery_optimization)) },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showBatteryOptimizationDialog = false
+                                    getPreferences(MODE_PRIVATE).edit {
+                                        putBoolean(
+                                            "has_prompted_battery_opt",
+                                            true
+                                        )
+                                    }
+                                    val intent =
+                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = "package:$packageName".toUri()
+                                        }
+                                    try {
+                                        startActivity(intent)
+                                    } catch (_: Exception) {
+                                    }
+                                }) {
+                                    Text(getString(R.string.btn_open_settings))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    showBatteryOptimizationDialog = false
+                                    getPreferences(MODE_PRIVATE).edit {
+                                        putBoolean(
+                                            "has_prompted_battery_opt",
+                                            true
+                                        )
+                                    }
+                                    executeStartEngine() // Skip settings and just start anyway
+                                }) {
+                                    Text(getString(R.string.btn_skip))
+                                }
+                            }
+                        )
+                    }
+
                     if (isInPipMode) {
                         Box(
                             modifier = Modifier
@@ -353,29 +419,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    if (showUsbClaimErrorDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showUsbClaimErrorDialog = false },
-                            title = {
-                                Text(
-                                    getString(R.string.title_usb_claim_failed),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            text = {
-                                Text(
-                                    getString(R.string.body_usb_claim_failed),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            confirmButton = {
-                                Button(onClick = { showUsbClaimErrorDialog = false }) {
-                                    Text(getString(R.string.btn_cancel))
-                                }
-                            },
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
-                    }
 
                     if (viewModel.isCameraStuck && viewModel.isEngineRunning && !isStopping) {
                         AlertDialog(
@@ -457,6 +500,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
     private fun enterPipMode() {
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(16, 9))
@@ -505,13 +549,15 @@ class MainActivity : ComponentActivity() {
         if (viewModel.isEngineRunning) {
             CoroutineScope(Dispatchers.IO).launch {
                 viewModel.stopEngineSync()
-                uvcConnection?.close()
+                releaseAndCloseUsbConnection(uvcConnection, currentUvcDevice)
                 uvcConnection = null
+                currentUvcDevice = null
             }
             stopBackgroundService()
         } else {
-            uvcConnection?.close()
+            releaseAndCloseUsbConnection(uvcConnection, currentUvcDevice)
             uvcConnection = null
+            currentUvcDevice = null
         }
     }
 
@@ -634,20 +680,9 @@ class MainActivity : ComponentActivity() {
                 withContext(Dispatchers.IO) {
                     viewModel.stopEngineSync()
                 }
-                val activeDevice = connectedDevice
-                uvcConnection?.let { conn ->
-                    if (activeDevice != null) {
-                        for (i in 0 until activeDevice.interfaceCount) {
-                            try {
-                                conn.releaseInterface(activeDevice.getInterface(i))
-                            } catch (_: Exception) {
-                                // Ignore
-                            }
-                        }
-                    }
-                    conn.close()
-                }
+                releaseAndCloseUsbConnection(uvcConnection, currentUvcDevice)
                 uvcConnection = null
+                currentUvcDevice = null
                 stopBackgroundService()
                 isStopping = false
             }
@@ -718,6 +753,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun executeStartEngine() {
+        val prefs = getPreferences(MODE_PRIVATE)
+        val hasPrompted = prefs.getBoolean("has_prompted_battery_opt", false)
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+
+        if (!hasPrompted && !powerManager.isIgnoringBatteryOptimizations(packageName)) {
+            isStarting = false
+            showBatteryOptimizationDialog = true
+            return
+        }
+
         lifecycleScope.launch {
             val loc = if (cachedLocation == null || cachedLocation == Pair(
                     MainViewModel.INVALID_COORD,
@@ -832,23 +877,78 @@ class MainActivity : ComponentActivity() {
                 if (viewModel.isEngineRunning) {
                     viewModel.stopEngineSync()
                 }
-                uvcConnection?.close()
-                val conn = usbManager.openDevice(device)
-                if (conn != null) {
-                    var allClaimed = true
+
+                releaseAndCloseUsbConnection(uvcConnection, currentUvcDevice)
+                uvcConnection = null
+                currentUvcDevice = null
+
+                // ---------------------------------------------------------
+                // WAKE-UP HACK: The "Double Open" Trick
+                // ---------------------------------------------------------
+                // If the phone was idle, the USB port may have been suspended by the OS.
+                // Many astronomy cameras do not fully wake up their image sensors from
+                // suspend, leading to successful negotiation but zero frames delivered.
+                // By briefly opening, claiming, releasing, and closing the device, we force
+                // the Android kernel to send a reset signal down the USB bus, shocking the
+                // camera firmware awake before we perform the actual open.
+                val tempConn = usbManager.openDevice(device)
+                if (tempConn != null) {
                     for (i in 0 until device.interfaceCount) {
-                        val claimed = conn.claimInterface(device.getInterface(i), true)
-                        if (!claimed) {
-                            allClaimed = false
+                        try {
+                            tempConn.claimInterface(device.getInterface(i), true)
+                        } catch (_: Exception) {
                         }
                     }
-                    if (allClaimed) {
-                        uvcConnection = conn
+                    for (i in 0 until device.interfaceCount) {
+                        try {
+                            tempConn.releaseInterface(device.getInterface(i))
+                        } catch (_: Exception) {
+                        }
+                    }
+                    tempConn.close()
+                    delay(100) // Give the camera's capacitors/firmware time to settle
+                }
+                // ---------------------------------------------------------
+
+                val conn = usbManager.openDevice(device)
+                if (conn != null) {
+                    var hasVideoInterface = false
+                    var videoClaimFailed = false
+                    var anyClaimed = false
+
+                    for (i in 0 until device.interfaceCount) {
+                        val intf = device.getInterface(i)
+                        val isVideo = intf.interfaceClass == 14 // USB_CLASS_VIDEO
+                        if (isVideo) hasVideoInterface = true
+
+                        val claimed = try {
+                            conn.claimInterface(intf, true)
+                        } catch (_: Exception) {
+                            false
+                        }
+
+                        if (claimed) {
+                            anyClaimed = true
+                        } else if (isVideo) {
+                            videoClaimFailed = true
+                        }
+                    }
+
+                    // Must succeed if all video interfaces claimed; for vendor devices without class 14, at least one claimed interface is needed
+                    val canProceed = if (hasVideoInterface) !videoClaimFailed else anyClaimed
+
+                    if (canProceed) {
                         val fd = conn.fileDescriptor
+                        if (fd == -1) {
+                            releaseAndCloseUsbConnection(conn, device)
+                            return@withContext null
+                        }
+                        uvcConnection = conn
+                        currentUvcDevice = device
                         val rawDesc = conn.rawDescriptors
                         viewModel.startUvcEngine(fd, rawDesc, lat, lon, timeMs)
                     } else {
-                        conn.close()
+                        releaseAndCloseUsbConnection(conn, device)
                         return@withContext null
                     }
                 }
@@ -858,7 +958,15 @@ class MainActivity : ComponentActivity() {
                 startBackgroundService("UVC")
             } else {
                 isStarting = false
-                showUsbClaimErrorDialog = true
+                usbManager.requestPermission(
+                    device,
+                    PendingIntent.getBroadcast(
+                        this@MainActivity,
+                        0,
+                        Intent(ACTION_USB_PERMISSION).apply { setPackage(packageName) },
+                        PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                )
             }
         }
     }

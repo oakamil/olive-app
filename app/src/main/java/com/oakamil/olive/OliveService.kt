@@ -133,11 +133,12 @@ class OliveService : Service() {
                         if (now - lastLx200DisconnectTime > 5000) {
                             OliveEngine.resetTelescopeServer()
                         }
+                        var inputStream: ParcelFileDescriptor.AutoCloseInputStream? = null
+                        var outputStream: FileOutputStream? = null
                         try {
                             val pfd = ParcelFileDescriptor.dup(clientFd)
-                            val inputStream =
-                                ParcelFileDescriptor.AutoCloseInputStream(pfd)
-                            val outputStream = FileOutputStream(clientFd)
+                            inputStream = ParcelFileDescriptor.AutoCloseInputStream(pfd)
+                            outputStream = FileOutputStream(clientFd)
                             val buffer = ByteArray(1024)
                             while (!Thread.currentThread().isInterrupted) {
                                 val bytesRead = inputStream.read(buffer)
@@ -155,10 +156,21 @@ class OliveService : Service() {
                             Log.e("OliveService", "LX200 error during connection", e)
                         } finally {
                             lastLx200DisconnectTime = System.currentTimeMillis()
+                            // Explicitly close streams to prevent ParcelFileDescriptor and FileDescriptor leaks
+                            // which otherwise trigger ART FinalizerDaemon GC thrashing and USB bus starvation.
                             try {
+                                inputStream?.close()
+                            } catch (_: Exception) {
+                            }
+                            try {
+                                outputStream?.close()
+                            } catch (_: Exception) {
+                            }
+                            try {
+                                // clientFd may already be closed by outputStream.close(), which throws EBADF.
+                                // We catch and ignore it to avoid logcat spam.
                                 Os.close(clientFd)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
+                            } catch (_: Exception) {
                             }
                         }
                     } catch (e: Exception) {
