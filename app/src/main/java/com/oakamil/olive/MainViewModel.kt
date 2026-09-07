@@ -240,6 +240,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         latestFrame = null
         lastFrameTimestamp = 0L
+
+        // Reset watchdog state so stale timestamps from a previous session
+        // don't immediately trigger a false-positive UI timeout.
+        isCameraStuck = false
+        lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime()
         currentLat = lat
         currentLon = lon
         val downsampling = if (cameraId == "demo") 0 else settingsManager.downsampling
@@ -321,6 +326,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         latestFrame = null
         lastFrameTimestamp = 0L
+
+        // Reset watchdog state so stale timestamps from a previous session
+        // don't immediately trigger a false-positive UI timeout.
+        isCameraStuck = false
+        lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime()
         currentLat = lat
         currentLon = lon
         viewModelScope.launch(Dispatchers.IO) {
