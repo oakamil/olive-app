@@ -29,6 +29,7 @@
         android:label="Olive Finder"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
         
         <service
