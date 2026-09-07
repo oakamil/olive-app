@@ -695,7 +695,7 @@ class MainActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= 33) {
                     add(Manifest.permission.NEARBY_WIFI_DEVICES)
                 }
-                if (Build.VERSION.SDK_INT >= 37) {
+                if (Build.VERSION.SDK_INT >= 36) {
                     add("android.permission.ACCESS_LOCAL_NETWORK")
                 }
             }
@@ -724,7 +724,7 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= 33) {
                 add(Manifest.permission.NEARBY_WIFI_DEVICES)
             }
-            if (Build.VERSION.SDK_INT >= 37) {
+            if (Build.VERSION.SDK_INT >= 36) {
                 add("android.permission.ACCESS_LOCAL_NETWORK")
             }
         }
