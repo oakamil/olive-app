@@ -16,7 +16,7 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit { putString("camera_settings_mode", value) }
 
     var internalFps: Int
-        get() = prefs.getInt("internal_fps", 5)
+        get() = prefs.getInt("internal_fps", 2)
         set(value) = prefs.edit { putInt("internal_fps", value) }
 
 
