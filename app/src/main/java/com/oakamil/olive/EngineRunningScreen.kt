@@ -440,26 +440,28 @@ fun EngineRunningScreen(
                     label = stringResource(id = R.string.btn_camera_align),
                     onClick = {
                         viewModel.setEnginePaused(true)
-                        val range = OliveEngine.getNativeCameraGainRange()
-                        if (range != null && range.size >= 2) {
-                            viewModel.minAnalogGain = range[0]
-                            viewModel.maxAnalogGain =
-                                range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
-                        } else {
-                            viewModel.minAnalogGain = 100f
-                            viewModel.maxAnalogGain = 3200f
-                        }
-                        viewModel.currentExposure =
-                            OliveEngine.getNativeCameraExposure().toFloat()
-                                .coerceIn(16667f, 5000000f)
-                        val bRange = OliveEngine.getNativeCameraBrightnessRange()
-                        if (bRange != null && bRange.size >= 3) {
-                            viewModel.uvcBrightnessMin = bRange[0]
-                            viewModel.uvcBrightnessMax = bRange[1]
-                            viewModel.currentUvcBrightness = bRange[2]
-                        } else {
-                            viewModel.uvcBrightnessMin = 0
-                            viewModel.uvcBrightnessMax = 0
+                        if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
+                            val range = OliveEngine.getNativeCameraGainRange()
+                            if (range != null && range.size >= 2) {
+                                viewModel.minAnalogGain = range[0]
+                                viewModel.maxAnalogGain =
+                                    range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
+                            } else {
+                                viewModel.minAnalogGain = 100f
+                                viewModel.maxAnalogGain = 3200f
+                            }
+                            viewModel.currentExposure =
+                                OliveEngine.getNativeCameraExposure().toFloat()
+                                    .coerceIn(16667f, 5000000f)
+                            val bRange = OliveEngine.getNativeCameraBrightnessRange()
+                            if (bRange != null && bRange.size >= 3) {
+                                viewModel.uvcBrightnessMin = bRange[0]
+                                viewModel.uvcBrightnessMax = bRange[1]
+                                viewModel.currentUvcBrightness = bRange[2]
+                            } else {
+                                viewModel.uvcBrightnessMin = 0
+                                viewModel.uvcBrightnessMax = 0
+                            }
                         }
                         onNavigateToTuner()
                     }

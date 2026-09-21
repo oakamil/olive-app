@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.protobuf")
 }
 
@@ -12,16 +13,12 @@ android {
         applicationId = "com.oakamil.olive"
         minSdk = 29
         targetSdk = 36
-        versionCode = 20
-        versionName = "0.3.4"
+        versionCode = 21
+        versionName = "0.4.0"
     }
 
     buildFeatures {
         compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
     }
 
     compileOptions {
@@ -65,6 +62,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.graphics:graphics-shapes:1.0.0")
     implementation("com.github.requery:sqlite-android:3.49.0")
+    implementation("com.github.ernestp:AndroidUSBCamera:3.6.0")
     
     // gRPC
     implementation("io.grpc:grpc-okhttp:1.66.0")
