@@ -9,19 +9,7 @@ object OliveEngine {
 
 
     external fun initJni(filesDir: String)
-    external fun startEngine(
-        fd: Int,
-        rawDescriptors: ByteArray,
-        motionSensorMode: Int,
-        uvcFps: Int,
-        extractor: String,
-        downsampleMode: Int,
-        lat: Double,
-        lon: Double,
-        timeMs: Long,
-        settingsManager: SettingsManager,
-        autoMode: Boolean
-    )
+
 
     external fun startNativeCameraEngine(
         motionSensorMode: Int,
@@ -35,6 +23,23 @@ object OliveEngine {
         settingsManager: SettingsManager,
         autoMode: Boolean
     )
+
+    external fun startExternalCameraEngine(
+        width: Int,
+        height: Int,
+        motionSensorMode: Int,
+        extractor: String,
+        downsampleMode: Int,
+        lat: Double,
+        lon: Double,
+        timeMs: Long,
+        settingsManager: SettingsManager,
+        autoMode: Boolean,
+        uvcFps: Int,
+        uvcWrapper: UvcCameraWrapper?
+    )
+
+    external fun pushExternalUvcFrame(buffer: ByteBuffer, width: Int, height: Int, timestamp: Long)
 
     external fun stopEngine()
     external fun getEngineStats(): String

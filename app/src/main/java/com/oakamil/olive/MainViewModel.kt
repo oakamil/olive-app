@@ -24,6 +24,8 @@ import java.nio.ByteOrder
 import kotlin.math.abs
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
+    var uvcWrapper: UvcCameraWrapper? = null
+
     enum class EngineMode { STOPPED, UVC, NATIVE, CEDAR_REMOTE }
 
     var engineMode by mutableStateOf(EngineMode.STOPPED)
@@ -48,17 +50,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var landscapeKeyboardOnRight by mutableStateOf(true)
 
     // Tuning state
-    var currentExposure by mutableFloatStateOf(250000f)
-    var currentGain by mutableFloatStateOf(100f)
+    var currentExposure by mutableFloatStateOf(33000f)
+    var currentGain by mutableFloatStateOf(50f)
     var minAnalogGain by mutableFloatStateOf(100f)
     var maxAnalogGain by mutableFloatStateOf(3200f)
     var currentFocus by mutableFloatStateOf(0.0f)
     var noiseReductionMode by mutableIntStateOf(0)
     var hotPixelMode by mutableIntStateOf(0)
     var supportedHotPixelModes by mutableStateOf<List<Int>>(emptyList())
+    var isRecording by mutableStateOf(false)
+    var isCameraConnecting by mutableStateOf(true)
+
+    // UVC controls
     var uvcBrightnessMin by mutableIntStateOf(0)
-    var uvcBrightnessMax by mutableIntStateOf(0)
-    var currentUvcBrightness by mutableIntStateOf(0)
+    var uvcBrightnessMax by mutableIntStateOf(100)
+    var currentUvcBrightness by mutableIntStateOf(50)
     var latestFrame by mutableStateOf<ImageBitmap?>(null)
     var isCameraStuck by mutableStateOf(false)
     private var lastFrameReceivedRealtime = 0L
@@ -109,7 +115,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var statsJob: Job? = null
     private var frameJob: Job? = null
 
-    private val settingsManager = SettingsManager(application)
+    val settingsManager = SettingsManager(application)
     val catalogDb = CatalogDatabaseHelper(application)
 
     fun getAvailableInternalCameras(): String {
@@ -155,9 +161,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var lastFrameTimestamp = 0L
 
     private fun fetchLatestFrame() {
-        if (frameBuffer == null) {
-            frameBuffer =
-                ByteBuffer.allocateDirect(100 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
+        var targetSize = 52 * 1024 * 1024 // 52MB safe default for internal camera and up to 13MP
+        if (engineMode == EngineMode.UVC) {
+            val pw = uvcWrapper?.previewWidth ?: 640
+            val ph = uvcWrapper?.previewHeight ?: 480
+            targetSize = pw * ph * 4 + 1024
+        }
+        if (frameBuffer == null || frameBuffer!!.capacity() < targetSize) {
+            frameBuffer = ByteBuffer.allocateDirect(targetSize).order(ByteOrder.LITTLE_ENDIAN)
         }
         val buffer = frameBuffer ?: return
 
@@ -167,6 +178,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         buffer.rewind()
         val width = buffer.int
         val height = buffer.int
+
 
         val pixelCount = width * height
         if (pixelCount !in 1..25000000) return
@@ -318,8 +330,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startUvcEngine(
-        fd: Int,
-        rawDescriptors: ByteArray,
         lat: Double = 200.0,
         lon: Double = 200.0,
         timeMs: Long = 0L
@@ -343,58 +353,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             OliveEngine.setNativeCameraExposure(currentExposure.toInt())
 
             val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
-            OliveEngine.startEngine(
-                fd,
-                rawDescriptors,
+            OliveEngine.startExternalCameraEngine(
+                uvcWrapper?.previewWidth ?: 640,
+                uvcWrapper?.previewHeight ?: 480,
                 settingsManager.motionSensorMode,
-                settingsManager.uvcFps,
                 settingsManager.extractor,
                 settingsManager.downsampling,
                 lat,
                 lon,
                 timeMs,
                 settingsManager,
-                isAutoSettings
+                isAutoSettings,
+                settingsManager.uvcFps,
+                uvcWrapper
             )
+
+            launch(Dispatchers.Main) {
+                uvcWrapper?.startZeroCopyStream()
+                kotlinx.coroutines.delay(300) // Wait for hardware to initialize limits
+
+                currentUvcBrightness = 50
+                OliveEngine.setNativeCameraBrightness(50)
+
+                val hwGain = uvcWrapper?.getHardwareGain()
+                if (hwGain != null && hwGain in 0..100) {
+                    currentGain = hwGain.toFloat()
+                    OliveEngine.setNativeCameraGain(hwGain.toFloat())
+                }
+
+                OliveEngine.updateUvcStacking(uvcStacking)
+            }
             OliveEngine.setEngineSigma(currentSigma)
             OliveEngine.setEngineStrictMatch(true) // SC2210 has tight FOV, use strict thresholds
 
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.UVC
 
-                var brightRange = OliveEngine.getNativeCameraBrightnessRange()
-                var gainRange = OliveEngine.getNativeCameraGainRange()
-                var retries = 0
-
-                // Wait up to 2 seconds for UVC ranges to be populated
-                while ((brightRange == null || brightRange.size < 3 || brightRange[1] == 100) &&
-                    (gainRange == null || gainRange.size < 3 || gainRange[1] == 100f) &&
-                    retries < 20
-                ) {
-                    delay(100)
-                    brightRange = OliveEngine.getNativeCameraBrightnessRange()
-                    gainRange = OliveEngine.getNativeCameraGainRange()
-                    retries++
-                }
-
-                if (brightRange != null && brightRange.size >= 3) {
-                    uvcBrightnessMin = brightRange[0]
-                    uvcBrightnessMax = brightRange[1]
-                    val defaultBrightness = brightRange[2]
-                    currentUvcBrightness = defaultBrightness
-                    OliveEngine.setNativeCameraBrightness(defaultBrightness)
-                }
-
-                if (gainRange != null && gainRange.size >= 3) {
-                    minAnalogGain = gainRange[0]
-                    maxAnalogGain = gainRange[1]
-                    val realGain = OliveEngine.getNativeCameraGain()
-                    currentGain = if (!realGain.isNaN() && realGain > 0) {
-                        realGain
-                    } else {
-                        gainRange[2]
-                    }
-                }
+                uvcBrightnessMin = 0
+                uvcBrightnessMax = 100
+                minAnalogGain = 0f
+                maxAnalogGain = 100f
 
                 updateUvcStacking(1)
                 startPolling()
@@ -526,6 +524,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setExposure(us: Float) {
         currentExposure = us
         viewModelScope.launch(Dispatchers.IO) {
+            if (engineMode == EngineMode.UVC) {
+                uvcWrapper?.setExposure(us.toInt())
+            }
             OliveEngine.setNativeCameraExposure(us.toInt())
         }
     }
@@ -539,25 +540,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun fetchRealtimeSettings() {
-        if (engineMode == EngineMode.NATIVE || engineMode == EngineMode.UVC) {
+        if (engineMode == EngineMode.NATIVE) {
             val gain = OliveEngine.getNativeCameraGain()
             if (!gain.isNaN() && gain > 0) {
                 currentGain = gain
             }
-            val brightness = OliveEngine.getNativeCameraBrightness()
-            if (brightness != 0) { // Assuming 0 is a default/uninitialized, or we can just set it
-                currentUvcBrightness = brightness
+            val focus = OliveEngine.getNativeCameraFocus()
+            if (!focus.isNaN() && focus >= 0f) {
+                currentFocus = focus
             }
-            if (engineMode == EngineMode.NATIVE) {
-                val focus = OliveEngine.getNativeCameraFocus()
-                if (!focus.isNaN() && focus >= 0f) {
-                    currentFocus = focus
-                }
-                val zoom = OliveEngine.getNativeCameraZoomRatio()
-                if (!zoom.isNaN() && zoom > 0f) {
-                    settingsManager.zoomRatio = zoom
-                }
-                hotPixelMode = OliveEngine.getNativeCameraHotPixelMode()
+            val zoom = OliveEngine.getNativeCameraZoomRatio()
+            if (!zoom.isNaN() && zoom > 0f) {
+                settingsManager.zoomRatio = zoom
+            }
+            hotPixelMode = OliveEngine.getNativeCameraHotPixelMode()
+        } else if (engineMode == EngineMode.UVC) {
+            val hwGain = uvcWrapper?.getHardwareGain()
+            if (hwGain != null && hwGain in 0..100) {
+                currentGain = hwGain.toFloat()
+            }
+            val hwBrightness = uvcWrapper?.getHardwareBrightness()
+            if (hwBrightness != null && hwBrightness in 0..100) {
+                currentUvcBrightness = hwBrightness
             }
         }
     }
@@ -845,11 +849,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         engineMode = EngineMode.STOPPED
         stopPolling()
+        frameBuffer = null
 
         cedarClient?.shutdown()
         cedarClient = null
         activeBluetoothProxy?.stop()
         activeBluetoothProxy = null
+        uvcWrapper?.release()
+        uvcWrapper = null
     }
 
     override fun onCleared() {

@@ -7,6 +7,7 @@ use std::thread;
 
 pub mod android_camera;
 pub mod android_imu;
+pub mod android_uvc_camera;
 
 static RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static TELESCOPE_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
@@ -15,6 +16,8 @@ static ENGINE_STATE: Mutex<
     Option<std::sync::Arc<std::sync::RwLock<olive_engine::engine::EngineStateData>>>,
 > = Mutex::new(None);
 static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
+static UVC_CAMERA_RECEIVER: Mutex<Option<std::sync::Arc<android_uvc_camera::AndroidUvcCamera>>> =
+    Mutex::new(None);
 static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 static LX200_CONTROLLER: Mutex<
     Option<std::sync::Arc<std::sync::RwLock<olive_engine::telescope_server::Lx200Controller>>>,
@@ -133,213 +136,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_initJni(
             }
         }
     }
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startEngine(
-    mut env: JNIEnv,
-    _class: JClass,
-    fd: jint,
-    raw_descriptors: jni::objects::JByteArray,
-    motion_sensor_mode: jint,
-    uvc_fps: jint,
-    extractor: jni::objects::JString,
-    downsample_mode: jint,
-    latitude: jni::sys::jdouble,
-    longitude: jni::sys::jdouble,
-    time_ms: jni::sys::jlong,
-    settings_manager: jni::objects::JObject,
-    auto_mode: jni::sys::jboolean,
-) {
-    let jvm = env.get_java_vm().unwrap();
-    let settings_mgr = env.new_global_ref(&settings_manager).unwrap();
-    let storage: Option<std::sync::Arc<dyn olive_imu::PersistentStorage>> =
-        Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
-
-    let fd = fd as i32;
-    let raw_desc_bytes = env.convert_byte_array(&raw_descriptors).ok();
-    let motion_sensor_mode = motion_sensor_mode as i32;
-    let target_fps = uvc_fps as u32;
-    let extractor_str: String = env.get_string(&extractor).unwrap().into();
-    let ext_type = if extractor_str == "Cedar" {
-        olive_engine::engine::Extractor::Cedar
-    } else {
-        olive_engine::engine::Extractor::Approximate
-    };
-
-    let mut runtime_lock = RUNTIME.lock().unwrap();
-    if runtime_lock.is_none() {
-        *runtime_lock = Some(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap(),
-        );
-    }
-    let rt = runtime_lock.as_ref().unwrap();
-
-    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-
-    if let Some(old_tx) = ENGINE_STOP_TX.lock().unwrap().replace(tx) {
-        let _ = old_tx.send(());
-    }
-
-    let rt_handle = rt.handle().clone();
-
-    let old_thread = MAIN_ENGINE_THREAD.lock().unwrap().take();
-
-    if let Some(handle) = old_thread {
-        let _ = handle.join();
-    }
-
-    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
-    let new_thread = thread::spawn(move || {
-        rt_handle.block_on(async {
-            use olive_engine::CameraTrait;
-            use olive_engine::control_server;
-            use olive_engine::engine::{Engine, EngineConfig};
-            use olive_engine::uvc_camera::Camera;
-            use std::sync::Arc;
-
-            let mut cam = Camera::with_fd(
-                target_fps,
-                true,
-                None,
-                Some(fd),
-                raw_desc_bytes,
-                false,
-                None,
-            );
-            if let Err(e) = cam.start_capture() {
-                log::error!("Failed to start UVC camera: {}", e);
-                return;
-            }
-            let camera: std::sync::Arc<dyn CameraTrait> = Arc::new(cam);
-            *CAMERA.lock().unwrap() = Some(camera.clone());
-
-            let config = EngineConfig {
-                gain: None,
-                target_centroids: 20,
-                database_path: "default_database.npz".to_string(),
-                isp: false,
-                bg_mode: olive_engine::engine::BgMode::Block,
-                extractor_type: ext_type,
-                crop: None,
-                downsample: downsample_mode as u8,
-                auto_mode: auto_mode != 0,
-                noise_filter: false,
-                initial_fov: None,
-                use_observer_location: true,
-            };
-            let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-            let mut initial_state = olive_engine::engine::EngineStateData::default();
-            if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
-                initial_state.client_latitude = Some(latitude);
-                initial_state.client_longitude = Some(longitude);
-            }
-            if time_ms > 0 {
-                use chrono::TimeZone;
-                initial_state.client_date = chrono::Utc.timestamp_millis_opt(time_ms).single();
-            }
-
-            let engine_state = Arc::new(std::sync::RwLock::new(initial_state));
-
-            let server_camera = camera.clone();
-            let server_client_connected = client_connected.clone();
-            let server_engine_state = engine_state.clone();
-
-            *crate::ENGINE_STATE.lock().unwrap() = Some(engine_state.clone());
-
-            let server_handle = tokio::spawn(async move {
-                control_server::start_server(
-                    server_camera,
-                    server_client_connected,
-                    server_engine_state,
-                )
-                .await;
-            });
-
-            use crate::android_imu::AndroidImu;
-
-            let imu_type = if motion_sensor_mode != 0 {
-                let mut imu_dev = AndroidImu::new(motion_sensor_mode);
-                if imu_dev.init().is_ok() {
-                    Some(olive_solve::ImuType::Custom(Box::new(imu_dev)))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            let mut telescope_runtime_lock = TELESCOPE_RUNTIME.lock().unwrap();
-            if telescope_runtime_lock.is_none() {
-                *telescope_runtime_lock = Some(
-                    tokio::runtime::Builder::new_multi_thread()
-                        .enable_all()
-                        .build()
-                        .unwrap(),
-                );
-            }
-            let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
-
-            let (alpaca_fd_tx, alpaca_fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
-            *ALPACA_FD_TX.lock().unwrap() = Some(alpaca_fd_tx);
-
-            let (alpaca_v6_fd_tx, alpaca_v6_fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
-            *ALPACA_V6_FD_TX.lock().unwrap() = Some(alpaca_v6_fd_tx);
-
-            let mut engine = Engine::new(
-                camera,
-                config,
-                client_connected,
-                engine_state,
-                imu_type,
-                Some(telescope_rt.handle().clone()),
-                storage,
-                Some(alpaca_fd_rx),
-                Some(alpaca_v6_fd_rx),
-            )
-            .await;
-
-            if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
-                engine
-                    .fused_solver
-                    .set_observer_location(latitude, longitude);
-            }
-
-            let _ = engine.fused_solver.start_imu();
-            *LX200_CONTROLLER.lock().unwrap() = Some(engine.lx200_controller.clone());
-            let is_running_clone = engine.is_running.clone();
-            let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
-
-            // Run engine in a separate thread since it might block
-            let engine_thread = std::thread::spawn(move || {
-                let handles = engine.start();
-                let _ = handles.0.join();
-                let _ = handles.1.join();
-            });
-
-            let _ = ready_tx.send(());
-
-            // Wait for stop signal
-            let _ = rx.await;
-            is_running_clone.store(false, std::sync::atomic::Ordering::Relaxed);
-            server_handle.abort();
-            let _ = server_handle.await;
-
-            if let Some(handle) = telescope_handle {
-                handle.abort();
-                let _ = handle.await;
-            }
-
-            let _ = engine_thread.join();
-        });
-    });
-
-    let _ = ready_rx.recv();
-    *MAIN_ENGINE_THREAD.lock().unwrap() = Some(new_thread);
 }
 
 #[unsafe(no_mangle)]
@@ -581,6 +377,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_stopEngine(_env: JNIEn
 
     // Clear globals immediately so UI doesn't see old data
     *CAMERA.lock().unwrap() = None;
+    *UVC_CAMERA_RECEIVER.lock().unwrap() = None;
     *ENGINE_STATE.lock().unwrap() = None;
 
     // We join here because Kotlin will now call this from a background thread.
@@ -1544,4 +1341,228 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getComets(
     env.new_string(output)
         .expect("Couldn't create java string!")
         .into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEngine(
+    mut env: JNIEnv,
+    _class: JClass,
+    width: jint,
+    height: jint,
+    motion_sensor_mode: jint,
+    extractor: jni::objects::JString,
+    downsample_mode: jni::sys::jint,
+    latitude: jni::sys::jdouble,
+    longitude: jni::sys::jdouble,
+    time_ms: jni::sys::jlong,
+    settings_manager: jni::objects::JObject,
+    auto_mode: jni::sys::jboolean,
+    fps: jint,
+    uvc_wrapper: jni::objects::JObject,
+) {
+    let jvm = env.get_java_vm().unwrap();
+    let jvm_for_uvc = env.get_java_vm().unwrap();
+    let wrapper_global = if !uvc_wrapper.is_null() {
+        Some(env.new_global_ref(&uvc_wrapper).unwrap())
+    } else {
+        None
+    };
+
+    let settings_mgr = env.new_global_ref(&settings_manager).unwrap();
+    let storage: Option<std::sync::Arc<dyn olive_imu::PersistentStorage>> =
+        Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
+
+    let motion_sensor_mode = motion_sensor_mode as i32;
+    let extractor_str: String = env.get_string(&extractor).unwrap().into();
+    let ext_type = if extractor_str == "Cedar" {
+        olive_engine::engine::Extractor::Cedar
+    } else {
+        olive_engine::engine::Extractor::Approximate
+    };
+
+    let mut runtime_lock = RUNTIME.lock().unwrap();
+    if runtime_lock.is_none() {
+        *runtime_lock = Some(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
+    }
+    let rt = runtime_lock.as_ref().unwrap();
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+
+    if let Some(old_tx) = ENGINE_STOP_TX.lock().unwrap().replace(tx) {
+        let _ = old_tx.send(());
+    }
+
+    let rt_handle = rt.handle().clone();
+
+    let old_thread = MAIN_ENGINE_THREAD.lock().unwrap().take();
+
+    if let Some(handle) = old_thread {
+        let _ = handle.join();
+    }
+
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+
+    let new_thread = std::thread::spawn(move || {
+        rt_handle.block_on(async {
+            use olive_engine::CameraTrait;
+            use olive_engine::control_server;
+            use olive_engine::engine::{Engine, EngineConfig};
+            use std::sync::Arc;
+
+            let uvc_cam = Arc::new(android_uvc_camera::AndroidUvcCamera::new(
+                width as u32,
+                height as u32,
+                fps as u32,
+                Some(jvm_for_uvc),
+                wrapper_global,
+            ));
+            *UVC_CAMERA_RECEIVER.lock().unwrap() = Some(uvc_cam.clone());
+            let camera: std::sync::Arc<dyn CameraTrait> = uvc_cam;
+            *CAMERA.lock().unwrap() = Some(camera.clone());
+
+            let config = EngineConfig {
+                gain: None,
+                target_centroids: 20,
+                database_path: "default_database.npz".to_string(),
+                isp: false,
+                bg_mode: olive_engine::engine::BgMode::Block,
+                extractor_type: ext_type,
+                crop: None,
+                downsample: downsample_mode as u8,
+                auto_mode: auto_mode != 0,
+                noise_filter: false,
+                initial_fov: camera.get_config().and_then(|c| c.initial_fov),
+                use_observer_location: true,
+            };
+            let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+            let mut initial_state = olive_engine::engine::EngineStateData::default();
+            if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
+                initial_state.client_latitude = Some(latitude);
+                initial_state.client_longitude = Some(longitude);
+            }
+            if time_ms > 0 {
+                use chrono::TimeZone;
+                initial_state.client_date = chrono::Utc.timestamp_millis_opt(time_ms).single();
+            }
+
+            let engine_state = Arc::new(std::sync::RwLock::new(initial_state));
+
+            let server_camera = camera.clone();
+            let server_client_connected = client_connected.clone();
+            let server_engine_state = engine_state.clone();
+
+            *crate::ENGINE_STATE.lock().unwrap() = Some(engine_state.clone());
+
+            let server_handle = tokio::spawn(async move {
+                control_server::start_server(
+                    server_camera,
+                    server_client_connected,
+                    server_engine_state,
+                )
+                .await;
+            });
+
+            use crate::android_imu::AndroidImu;
+
+            let imu_type = if motion_sensor_mode != 0 {
+                let mut imu_dev = AndroidImu::new(motion_sensor_mode);
+                if imu_dev.init().is_ok() {
+                    Some(olive_solve::ImuType::Custom(Box::new(imu_dev)))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let mut telescope_runtime_lock = TELESCOPE_RUNTIME.lock().unwrap();
+            if telescope_runtime_lock.is_none() {
+                *telescope_runtime_lock = Some(
+                    tokio::runtime::Builder::new_multi_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap(),
+                );
+            }
+            let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
+
+            let (alpaca_fd_tx, alpaca_fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
+            *ALPACA_FD_TX.lock().unwrap() = Some(alpaca_fd_tx);
+
+            let (alpaca_v6_fd_tx, alpaca_v6_fd_rx) = tokio::sync::mpsc::channel::<i32>(16);
+            *ALPACA_V6_FD_TX.lock().unwrap() = Some(alpaca_v6_fd_tx);
+
+            let mut engine = Engine::new(
+                camera,
+                config,
+                client_connected,
+                engine_state,
+                imu_type,
+                Some(telescope_rt.handle().clone()),
+                storage,
+                Some(alpaca_fd_rx),
+                Some(alpaca_v6_fd_rx),
+            )
+            .await;
+
+            if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
+                engine
+                    .fused_solver
+                    .set_observer_location(latitude, longitude);
+            }
+
+            let _ = engine.fused_solver.start_imu();
+            *LX200_CONTROLLER.lock().unwrap() = Some(engine.lx200_controller.clone());
+            let is_running_clone = engine.is_running.clone();
+            let telescope_handle = engine.telescope_server_handle.take();
+
+            let engine_thread = std::thread::spawn(move || {
+                let handles = engine.start();
+                let _ = handles.0.join();
+                let _ = handles.1.join();
+            });
+
+            let _ = ready_tx.send(());
+
+            let _ = rx.await;
+            is_running_clone.store(false, std::sync::atomic::Ordering::Relaxed);
+            server_handle.abort();
+            let _ = server_handle.await;
+
+            if let Some(handle) = telescope_handle {
+                handle.abort();
+                let _ = handle.await;
+            }
+
+            let _ = engine_thread.join();
+        });
+    });
+
+    let _ = ready_rx.recv();
+    *MAIN_ENGINE_THREAD.lock().unwrap() = Some(new_thread);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_pushExternalUvcFrame(
+    env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    buffer: jni::objects::JByteBuffer,
+    width: jni::sys::jint,
+    height: jni::sys::jint,
+    _timestamp: jni::sys::jlong,
+) {
+    if let Ok(data_ptr) = env.get_direct_buffer_address(&buffer) {
+        if let Ok(data_len) = env.get_direct_buffer_capacity(&buffer) {
+            let data_slice = unsafe { std::slice::from_raw_parts(data_ptr as *const u8, data_len) };
+            if let Some(cam) = UVC_CAMERA_RECEIVER.lock().unwrap().as_ref() {
+                cam.push_external_frame(data_slice, width as u32, height as u32);
+            }
+        }
+    }
 }
