@@ -29,9 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterCenterFocus
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.ModeNight
 import androidx.compose.material.icons.filled.SettingsBackupRestore
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -86,9 +84,6 @@ fun TunerScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            if (viewModel.engineMode == MainViewModel.EngineMode.CEDAR_REMOTE && viewModel.remoteDaylightMode) {
-                viewModel.updateRemoteDaylightMode(false)
-            }
         }
     }
 
@@ -349,18 +344,6 @@ fun TunerScreen(
                 onClick = { showResetAlignDialog = true }
             )
 
-            if (viewModel.engineMode == MainViewModel.EngineMode.CEDAR_REMOTE) {
-                Spacer(modifier = Modifier.width(32.dp))
-                IconBarItem(
-                    icon = if (viewModel.remoteDaylightMode) Icons.Default.ModeNight else Icons.Default.WbSunny,
-                    label = if (viewModel.remoteDaylightMode) stringResource(id = R.string.label_night) else stringResource(
-                        id = R.string.label_day
-                    ),
-                    enabled = !viewModel.remoteCalibrating && !viewModel.remoteSkipFocusActive,
-                    singleLine = true,
-                    onClick = { viewModel.updateRemoteDaylightMode(!viewModel.remoteDaylightMode) }
-                )
-            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -381,36 +364,34 @@ fun TunerScreen(
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
-                if (activeCameraSelection != "cedar" && viewModel.engineMode.name != "CEDAR_REMOTE") {
-                    var showHfrInfo by remember { mutableStateOf(false) }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            stringResource(id = R.string.info_hfr_label) + ": " + String.format(
-                                Locale.getDefault(),
-                                "%.2f",
-                                viewModel.engineStats.hfr
-                            ),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
+                var showHfrInfo by remember { mutableStateOf(false) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(id = R.string.info_hfr_label) + ": " + String.format(
+                            Locale.getDefault(),
+                            "%.2f",
+                            viewModel.engineStats.hfr
+                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    IconButton(
+                        onClick = { showHfrInfo = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = R.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        IconButton(
-                            onClick = { showHfrInfo = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = stringResource(id = R.string.cd_info),
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
                     }
-                    if (showHfrInfo) {
-                        InfoPopup(
-                            title = stringResource(id = R.string.info_hfr_label),
-                            onDismiss = { showHfrInfo = false }) {
-                            Text(stringResource(id = R.string.info_hfr))
-                        }
+                }
+                if (showHfrInfo) {
+                    InfoPopup(
+                        title = stringResource(id = R.string.info_hfr_label),
+                        onDismiss = { showHfrInfo = false }) {
+                        Text(stringResource(id = R.string.info_hfr))
                     }
                 }
             }
@@ -536,37 +517,35 @@ fun TuningControls(
     val gainLabel = if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) "ISO" else "Gain"
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        if (activeCameraSelection != "cedar" && viewModel.engineMode.name != "CEDAR_REMOTE") {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                IconButton(
-                    onClick = { showStarSensitivityInfo = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = stringResource(id = R.string.cd_info),
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-            Slider(
-                value = viewModel.starSensitivity,
-                enabled = settingsManager.cameraSettingsMode != "Auto",
-                onValueChange = {
-                    viewModel.updateStarSensitivity(it)
-                },
-                valueRange = 1f..100f,
-                modifier = Modifier.fillMaxWidth()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
             )
+            IconButton(
+                onClick = { showStarSensitivityInfo = true },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = stringResource(id = R.string.cd_info),
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
+        Slider(
+            value = viewModel.starSensitivity,
+            enabled = settingsManager.cameraSettingsMode != "Auto",
+            onValueChange = {
+                viewModel.updateStarSensitivity(it)
+            },
+            valueRange = 1f..100f,
+            modifier = Modifier.fillMaxWidth()
+        )
 
-        if (activeCameraSelection != "demo" && activeCameraSelection != "cedar" && viewModel.engineMode.name != "CEDAR_REMOTE") {
+        if (activeCameraSelection != "demo") {
             val maxZoom = remember {
                 var mZ = 1f
                 try {

@@ -55,22 +55,6 @@ class SettingsManager(context: Context) {
         get() = prefs.getFloat("zoom_ratio", 1.0f)
         set(value) = prefs.edit { putFloat("zoom_ratio", value) }
 
-    var cedarConnectionType: String
-        get() = prefs.getString("cedar_connection_type", "wifi") ?: "wifi"
-        set(value) = prefs.edit { putString("cedar_connection_type", value) }
-
-    var cedarWifiIp: String
-        get() = prefs.getString("cedar_wifi_ip", "192.168.4.1") ?: "192.168.4.1"
-        set(value) = prefs.edit { putString("cedar_wifi_ip", value) }
-
-    var cedarBtAddress: String
-        get() = prefs.getString("cedar_bt_address", "") ?: ""
-        set(value) = prefs.edit { putString("cedar_bt_address", value) }
-
-    var cedarBtName: String
-        get() = prefs.getString("cedar_bt_name", "Unknown Device") ?: "Unknown Device"
-        set(value) = prefs.edit { putString("cedar_bt_name", value) }
-
 
     /* These are used from the native layer. */
     @Keep

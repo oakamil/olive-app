@@ -3,7 +3,6 @@ package com.oakamil.olive
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.PictureInPictureParams
-import android.bluetooth.BluetoothManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -71,7 +70,6 @@ class MainActivity : ComponentActivity() {
     private var activeCameraSelection by mutableStateOf("internal")
     private var isStopping by mutableStateOf(false)
     private var isStarting by mutableStateOf(false)
-    private var showCedarErrorDialog by mutableStateOf(false)
 
     private var connectedDevice: UsbDevice? = null
 
@@ -282,40 +280,6 @@ class MainActivity : ComponentActivity() {
                                 onBack = { currentScreen = "main" }
                             )
                         }
-                    }
-                    if (showCedarErrorDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showCedarErrorDialog = false },
-                            title = {
-                                Text(
-                                    getString(R.string.title_connection_failed),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            text = {
-                                Text(
-                                    getString(R.string.msg_connection_failed),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            confirmButton = {
-                                Button(onClick = {
-                                    showCedarErrorDialog = false
-                                    toggleEngine() // Retry connection
-                                }) {
-                                    Text(getString(R.string.btn_retry))
-                                }
-                            },
-                            dismissButton = {
-                                OutlinedButton(onClick = {
-                                    showCedarErrorDialog = false
-                                    viewModel.stopEngineSync()
-                                }) {
-                                    Text(getString(R.string.btn_cancel))
-                                }
-                            },
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
                     }
 
 
@@ -591,9 +555,6 @@ class MainActivity : ComponentActivity() {
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ).apply {
-                if (Build.VERSION.SDK_INT >= 33) {
-                    add(Manifest.permission.NEARBY_WIFI_DEVICES)
-                }
                 if (Build.VERSION.SDK_INT >= 37) {
                     add("android.permission.ACCESS_LOCAL_NETWORK")
                 }
@@ -687,50 +648,6 @@ class MainActivity : ComponentActivity() {
                 } else {
                     Log.e("OliveUI", "UVC camera selected but none connected!")
                     viewModel.stopEngineSync()
-                }
-            } else if (activeCameraSelection == "cedar") {
-                try {
-                    val host = if (settingsManager.cedarConnectionType == "wifi") {
-                        settingsManager.cedarWifiIp
-                    } else {
-                        "127.0.0.1"
-                    }
-                    var port = 80
-
-                    if (settingsManager.cedarConnectionType == "bluetooth") {
-                        val adapter = getSystemService(BluetoothManager::class.java).adapter
-                        val device = adapter.getRemoteDevice(settingsManager.cedarBtAddress)
-                        // UUID matches cedar-server rfcomm
-                        val uuid = java.util.UUID.fromString("4e5d4c88-2965-423f-9111-28a506720760")
-                        val socket = withContext(Dispatchers.IO) {
-                            val s = device.createRfcommSocketToServiceRecord(uuid)
-                            try {
-                                s.connect()
-                                s
-                            } catch (e: Exception) {
-                                s.close()
-                                throw e
-                            }
-                        }
-                        val proxy = BluetoothGrpcProxy(socket)
-                        port = proxy.start()
-                        viewModel.activeBluetoothProxy = proxy
-                    } else {
-                        withContext(Dispatchers.IO) {
-                            java.net.Socket().use { socket ->
-                                socket.connect(java.net.InetSocketAddress(host, port), 2000)
-                            }
-                        }
-                    }
-
-                    viewModel.startCedarRemoteEngine(host, port, lat, lon)
-                    startBackgroundService("CEDAR_REMOTE")
-                    engineStarted = true
-                } catch (e: Exception) {
-                    Log.e("OliveUI", "Failed to start Cedar Remote Engine", e)
-                    viewModel.stopEngineSync()
-                    showCedarErrorDialog = true
-                    isStarting = false
                 }
             } else if (activeCameraSelection == "demo" || ContextCompat.checkSelfPermission(
                     this@MainActivity,

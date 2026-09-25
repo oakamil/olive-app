@@ -21,12 +21,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.abs
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     var uvcWrapper: UvcCameraWrapper? = null
 
-    enum class EngineMode { STOPPED, UVC, NATIVE, CEDAR_REMOTE }
+    enum class EngineMode { STOPPED, UVC, NATIVE }
 
     var engineMode by mutableStateOf(EngineMode.STOPPED)
         private set
@@ -58,8 +57,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var noiseReductionMode by mutableIntStateOf(0)
     var hotPixelMode by mutableIntStateOf(0)
     var supportedHotPixelModes by mutableStateOf<List<Int>>(emptyList())
-    var isRecording by mutableStateOf(false)
-    var isCameraConnecting by mutableStateOf(true)
 
     // UVC controls
     var uvcBrightnessMin by mutableIntStateOf(0)
@@ -69,38 +66,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var isCameraStuck by mutableStateOf(false)
     private var lastFrameReceivedRealtime = 0L
 
-    // Cedar remote frame parameters
-    var remoteBinningFactor: Int = 1
-    var remoteImageRectX: Int = 0
-    var remoteImageRectY: Int = 0
-    var remoteDaylightMode by mutableStateOf(false)
-        private set
-    var remoteCalibrating by mutableStateOf(false)
-        private set
-    var remoteSkipFocusActive by mutableStateOf(false)
-        private set
-
-    fun updateRemoteDaylightMode(enabled: Boolean) {
-        remoteDaylightMode = enabled
-        if (engineMode == EngineMode.CEDAR_REMOTE) {
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    val opSettings = cedar.CedarOuterClass.OperationSettings.newBuilder()
-                        .setDaylightMode(enabled)
-                        .build()
-                    cedarClient?.updateOperationSettings(opSettings)
-                } catch (e: Exception) {
-                    Log.e("MainViewModel", "Failed to set daylight mode", e)
-                }
-            }
-        }
-    }
-
     var starSensitivity by mutableFloatStateOf(50f)
     var uvcStacking by mutableIntStateOf(1)
 
-    var activeBluetoothProxy: BluetoothGrpcProxy? = null
-    var cedarClient: CedarClient? = null
 
     val currentSigma: Float
         get() {
@@ -375,7 +343,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             launch(Dispatchers.Main) {
                 uvcWrapper?.startZeroCopyStream()
-                kotlinx.coroutines.delay(300) // Wait for hardware to initialize limits
+                delay(300) // Wait for hardware to initialize limits
 
                 currentUvcBrightness = 50
                 OliveEngine.setNativeCameraBrightness(50)
@@ -402,127 +370,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 updateUvcStacking(1)
                 startPolling()
             }
-        }
-    }
-
-    fun startCedarRemoteEngine(
-        host: String,
-        port: Int,
-        lat: Double = INVALID_COORD,
-        lon: Double = INVALID_COORD,
-    ) {
-        latestFrame = null
-        lastFrameTimestamp = 0L
-        currentLat = lat
-        currentLon = lon
-        engineMode = EngineMode.CEDAR_REMOTE
-        updateRemoteStats(EngineStats(status = "Connecting..."))
-
-        val client = CedarClient(host, port)
-        client.connect()
-        cedarClient = client
-
-        // Push initial operation settings
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val settings = cedar.CedarOuterClass.OperationSettings.newBuilder()
-                    .build()
-                client.updateOperationSettings(settings)
-            } catch (e: Exception) {
-                val errorMsg = e.message ?: e.javaClass.simpleName
-                Log.e("MainViewModel", "Failed to update operation settings", e)
-                updateRemoteStats(EngineStats(status = "ErrSettings: ${errorMsg.take(20)}"))
-            }
-        }
-
-        frameJob = viewModelScope.launch(Dispatchers.IO) {
-            var lastFrameId = 0
-            while (isActive) {
-                try {
-                    val request = cedar.CedarOuterClass.FrameRequest.newBuilder()
-                        .setPrevFrameId(lastFrameId)
-                        .setNonBlocking(false)
-                        .build()
-                    val result = client.getFrame(request)
-                    lastFrameId = result.frameId
-
-                    val slewReq = if (result.hasSlewRequest()) result.slewRequest else null
-
-                    remoteCalibrating = result.calibrating
-                    remoteSkipFocusActive = result.skipFocusActive
-
-                    val stats = EngineStats(
-                        status = if (result.calibrating) "Calibrating" else if (result.hasPlateSolution()) "Solved" else "Solving",
-                        centroidCount = result.starCountMovingAverage.toInt(),
-                        exposureMs = result.exposureTime.seconds * 1000.0 + result.exposureTime.nanos / 1_000_000.0,
-                        postProcessMs = result.processingStats.detectOtherLatency.recent?.mean?.times(
-                            1000.0
-                        ) ?: 0.0,
-                        extractMs = result.processingStats.detectLatency.recent?.mean?.times(1000.0)
-                            ?: 0.0,
-                        solveMs = result.processingStats.solveLatency.recent?.mean?.times(1000.0)
-                            ?: 0.0,
-                        solveRateHz = if (result.processingStats.solveInterval.recent?.mean != null && result.processingStats.solveInterval.recent.mean > 0) 1.0 / result.processingStats.solveInterval.recent.mean else 0.0,
-                        hfr = 0.0,
-                        ra = if (result.hasPlateSolution()) result.plateSolution.imageSkyCoord.ra else null,
-                        dec = if (result.hasPlateSolution()) result.plateSolution.imageSkyCoord.dec else null,
-                        fov = if (result.hasPlateSolution()) result.plateSolution.fov else null,
-                        roll = if (result.hasPlateSolution()) result.plateSolution.roll else null,
-                        targetRa = if (slewReq != null && slewReq.hasTarget()) slewReq.target.ra else null,
-                        targetDec = if (slewReq != null && slewReq.hasTarget()) slewReq.target.dec else null,
-                        offsetRa = if (slewReq != null && slewReq.hasOffsetRotationAxis()) slewReq.offsetRotationAxis else null,
-                        offsetDec = if (slewReq != null && slewReq.hasOffsetTiltAxis()) slewReq.offsetTiltAxis else null,
-                        offsetAz = if (slewReq != null && slewReq.hasOffsetRotationAxis()) slewReq.offsetRotationAxis else null,
-                        offsetAlt = if (slewReq != null && slewReq.hasOffsetTiltAxis()) slewReq.offsetTiltAxis else null,
-                        offsetAngle = if (slewReq != null && slewReq.hasTargetAngle()) slewReq.targetAngle else null
-                    )
-                    updateRemoteStats(stats)
-
-                    if (result.hasImage()) {
-                        remoteBinningFactor =
-                            if (result.image.binningFactor > 0) result.image.binningFactor else 1
-                        if (result.image.hasRectangle()) {
-                            remoteImageRectX = result.image.rectangle.originX
-                            remoteImageRectY = result.image.rectangle.originY
-                        } else {
-                            remoteImageRectX = 0
-                            remoteImageRectY = 0
-                        }
-                    }
-
-                    if (result.hasImage() && result.image.imageData.size() > 0) {
-                        try {
-                            val bytes = result.image.imageData.toByteArray()
-                            val bmp =
-                                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            if (bmp != null) {
-                                updateRemoteFrame(bmp.asImageBitmap())
-                            }
-                        } catch (e: Exception) {
-                            Log.e("MainViewModel", "Failed to decode frame", e)
-                        }
-                    }
-                } catch (e: Exception) {
-                    val errorMsg = e.message ?: e.javaClass.simpleName
-                    Log.e("MainViewModel", "Error fetching cedar frame", e)
-                    val friendlyMsg = getApplication<Application>().getString(
-                        R.string.stat_error,
-                        errorMsg.take(15)
-                    )
-                    updateRemoteStats(EngineStats(status = friendlyMsg))
-                    delay(1000)
-                }
-            }
-        }
-    }
-
-    fun updateRemoteStats(stats: EngineStats) {
-        engineStats = stats
-    }
-
-    fun updateRemoteFrame(bitmap: ImageBitmap) {
-        viewModelScope.launch(Dispatchers.Main) {
-            latestFrame = bitmap
         }
     }
 
@@ -616,28 +463,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setGoToTarget(ra: Double, dec: Double, epoch: Double = 2000.0) {
-        if (engineMode == EngineMode.CEDAR_REMOTE) {
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    val coordBuilder = cedar_common.CedarCommon.CelestialCoord.newBuilder()
-                        .setRa(ra)
-                        .setDec(dec)
-                    if (abs(epoch - 2000.0) > 0.001) {
-                        coordBuilder.setEpoch(epoch)
-                    }
-                    val req = cedar.CedarOuterClass.ActionRequest.newBuilder()
-                        .setInitiateSlew(coordBuilder.build())
-                        .build()
-                    cedarClient?.initiateAction(req)
-                    Log.i(
-                        "MainViewModel",
-                        "GoTo Target set in Cedar: RA=$ra, Dec=$dec, Epoch=$epoch"
-                    )
-                } catch (e: Exception) {
-                    Log.e("MainViewModel", "Failed to set goto target", e)
-                }
-            }
-        } else if (isEngineRunning) {
+        if (isEngineRunning) {
             OliveEngine.setGoToTarget(ra, dec, epoch)
             Log.i("MainViewModel", "GoTo Target set in JNI: RA=$ra, Dec=$dec, Epoch=$epoch")
         } else {
@@ -646,13 +472,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun syncTelescope(ra: Double? = null, dec: Double? = null) {
-        if (engineMode == EngineMode.CEDAR_REMOTE) {
-            // Not implemented for remote right now
-            Log.w("MainViewModel", "syncTelescope not implemented for Cedar remote")
-        } else if (isEngineRunning) {
+        if (isEngineRunning) {
             if (ra != null && dec != null) {
                 OliveEngine.syncTelescopeToTarget(ra, dec)
-                Log.i("MainViewModel", "Sync Telescope to target requested in JNI: RA=$ra, Dec=$dec")
+                Log.i(
+                    "MainViewModel",
+                    "Sync Telescope to target requested in JNI: RA=$ra, Dec=$dec"
+                )
             } else {
                 OliveEngine.syncTelescope()
                 Log.i("MainViewModel", "Sync Telescope requested in JNI")
@@ -663,29 +489,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setAlignTargetPixel(x: Double, y: Double) {
-        if (engineMode == EngineMode.CEDAR_REMOTE) {
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    val fullX = x * remoteBinningFactor
-                    val fullY = y * remoteBinningFactor
-                    val coord = cedar.CedarOuterClass.ImageCoord.newBuilder()
-                        .setX(fullX)
-                        .setY(fullY)
-                        .build()
-                    val req = cedar.CedarOuterClass.ActionRequest.newBuilder()
-                        .setDesignateBoresight(coord)
-                        .build()
-                    cedarClient?.initiateAction(req)
-                    Log.i("MainViewModel", "Align Target set in Cedar: x=$x, y=$y")
-                } catch (e: Exception) {
-                    Log.e("MainViewModel", "Failed to set align target", e)
-                }
-            }
-        } else if (isEngineRunning) {
+        if (isEngineRunning) {
             OliveEngine.setAlignTargetPixel(x, y)
             Log.i("MainViewModel", "Align Target set in JNI: x=$x, y=$y")
         } else {
-            Log.w("MainViewModel", "Engine not running, cannot set Align Target: x=$x, y=$y")
+            Log.w("MainViewModel", "Engine not running, cannot set align target: x=$x, y=$y")
         }
     }
 
@@ -865,18 +673,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopEngineSync() {
-        if (isEngineRunning && engineMode != EngineMode.CEDAR_REMOTE) {
-            OliveEngine.stopEngine()
-        }
+        OliveEngine.stopEngine()
 
         engineMode = EngineMode.STOPPED
         stopPolling()
         frameBuffer = null
 
-        cedarClient?.shutdown()
-        cedarClient = null
-        activeBluetoothProxy?.stop()
-        activeBluetoothProxy = null
         uvcWrapper?.release()
         uvcWrapper = null
     }

@@ -17,15 +17,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SettingsBackupRestore
-import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -97,7 +94,6 @@ fun StartScreen(
     var showGuidanceModeInfo by remember { mutableStateOf(false) }
     var showMotionSensorInfo by remember { mutableStateOf(false) }
 
-    var showCedarSelectionDialog by remember { mutableStateOf(false) }
 
     val supportsRawMap = remember { mutableMapOf<String, Boolean>() }
 
@@ -272,69 +268,6 @@ fun StartScreen(
                 )
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { cameraSelection = "cedar" }
-                    .padding(vertical = 8.dp)
-            ) {
-                RadioButton(
-                    selected = cameraSelection == "cedar",
-                    onClick = { cameraSelection = "cedar" },
-                    colors = RadioButtonDefaults.colors(
-                        selectedColor = MaterialTheme.colorScheme.primary,
-                        unselectedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                    )
-                )
-                Text(
-                    text = stringResource(id = R.string.label_cedar_finder),
-                    modifier = Modifier.padding(start = 8.dp),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
-
-            if (cameraSelection == "cedar") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 56.dp, top = 8.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = { showCedarSelectionDialog = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.btn_select_device)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    val cedarType = settingsManager.cedarConnectionType
-                    if (cedarType == "wifi") {
-                        Icon(
-                            imageVector = Icons.Default.Wifi,
-                            contentDescription = "WiFi",
-                            tint = Color.Red
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = settingsManager.cedarWifiIp, color = Color.Red)
-                    } else if (cedarType == "bluetooth") {
-                        Icon(
-                            imageVector = Icons.Default.Bluetooth,
-                            contentDescription = "Bluetooth",
-                            tint = Color.Red
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = settingsManager.cedarBtName, color = Color.Red)
-                    }
-                }
-            }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -907,17 +840,15 @@ fun StartScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) { cameraSelectionContent() }
-                if (cameraSelection != "cedar") {
-                    Column(modifier = Modifier.weight(1f)) { otherSettingsContent() }
-                }
+
+                Column(modifier = Modifier.weight(1f)) { otherSettingsContent() }
             }
         } else {
             Column(modifier = Modifier.fillMaxWidth()) {
                 cameraSelectionContent()
-                if (cameraSelection != "cedar") {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    otherSettingsContent()
-                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+                otherSettingsContent()
             }
         }
 
@@ -985,12 +916,6 @@ fun StartScreen(
                 onDismiss = { showMotionSensorInfo = false }) {
                 Text(stringResource(id = R.string.info_motion_sensor))
             }
-        }
-        if (showCedarSelectionDialog) {
-            CedarDeviceSelectionDialog(
-                settingsManager = settingsManager,
-                onDismiss = { showCedarSelectionDialog = false }
-            )
         }
     }
 }
