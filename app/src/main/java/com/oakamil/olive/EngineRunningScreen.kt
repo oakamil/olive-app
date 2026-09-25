@@ -301,34 +301,6 @@ fun EngineRunningScreen(
             val fov = Math.toDegrees(effectiveFovRad)
             var tappedObject by remember { mutableStateOf<CatalogObject?>(null) }
 
-            var targetObjName by remember(
-                stats.targetRa,
-                stats.targetDec
-            ) { mutableStateOf<String?>(null) }
-            LaunchedEffect(stats.targetRa, stats.targetDec) {
-                if (stats.targetRa != null && stats.targetDec != null) {
-                    withContext(Dispatchers.IO) {
-                        val obj = viewModel.catalogDb.searchObjects(
-                            targetRa = stats.targetRa,
-                            targetDec = stats.targetDec,
-                            limit = 1,
-                            sortBy = "distance"
-                        ).firstOrNull()
-                        targetObjName = if (obj != null && AstrometryUtils.angularDistance(
-                                obj.ra,
-                                obj.dec,
-                                stats.targetRa,
-                                stats.targetDec
-                            ) < 0.5
-                        ) {
-                            obj.displayName
-                        } else {
-                            null
-                        }
-                    }
-                }
-            }
-
             var planets by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
             var comets by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
             var asteroids by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
@@ -341,6 +313,48 @@ fun EngineRunningScreen(
                         asteroids = viewModel.getAsteroids()
                     }
                     delay(300_000)
+                }
+            }
+
+            var targetObjName by remember(
+                stats.targetRa,
+                stats.targetDec
+            ) { mutableStateOf<String?>(null) }
+
+            LaunchedEffect(stats.targetRa, stats.targetDec, planets, comets, asteroids) {
+                if (stats.targetRa != null && stats.targetDec != null) {
+                    val targetRa = stats.targetRa
+                    val targetDec = stats.targetDec
+
+                    val solarSystemMatch = (planets + comets + asteroids).firstOrNull {
+                        AstrometryUtils.angularDistance(it.ra, it.dec, targetRa, targetDec) < 0.5
+                    }
+
+                    if (solarSystemMatch != null) {
+                        targetObjName = solarSystemMatch.displayName
+                    } else {
+                        withContext(Dispatchers.IO) {
+                            val obj = viewModel.catalogDb.searchObjects(
+                                targetRa = targetRa,
+                                targetDec = targetDec,
+                                limit = 1,
+                                sortBy = "distance"
+                            ).firstOrNull()
+                            targetObjName = if (obj != null && AstrometryUtils.angularDistance(
+                                    obj.ra,
+                                    obj.dec,
+                                    targetRa,
+                                    targetDec
+                                ) < 0.5
+                            ) {
+                                obj.displayName
+                            } else {
+                                null
+                            }
+                        }
+                    }
+                } else {
+                    targetObjName = null
                 }
             }
 
