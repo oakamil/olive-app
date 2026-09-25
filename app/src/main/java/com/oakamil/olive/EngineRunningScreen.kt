@@ -267,10 +267,13 @@ fun EngineRunningScreen(
 
             val frame = viewModel.latestFrame
             val roll = stats.roll ?: 0.0 // offsetAngle is for the guidance arrow, not image roll!
-            var uiRotation = roll.toFloat()
+            var lastValidUiRotation by remember { mutableFloatStateOf(roll.toFloat()) }
+            var uiRotation = lastValidUiRotation
             val lat = viewModel.currentLat
             val lon = viewModel.currentLon
-            if (stats.ra != null && stats.dec != null && lat != null && lon != null &&
+            val isPositionStale = stats.solvedCrop == "Failed" && !stats.isImuEstimate
+
+            if (!isPositionStale && stats.ra != null && stats.dec != null && lat != null && lon != null &&
                 lat != MainViewModel.INVALID_COORD && lon != MainViewModel.INVALID_COORD
             ) {
                 val lst =
@@ -281,7 +284,9 @@ fun EngineRunningScreen(
                     lat,
                     lst
                 )
-                uiRotation = (roll + q).toFloat()
+                val newRot = (roll + q).toFloat()
+                uiRotation = newRot
+                lastValidUiRotation = newRot
             }
             val ra = stats.ra
             val dec = stats.dec
@@ -565,8 +570,8 @@ fun EngineRunningScreen(
                             val boresightCanvasY =
                                 size.height / 2f + (targetPxY - bH / 2f) * fitPxScale
 
-                            // 2. Pre-filter and deduplicate celestial candidates visible in FOV (if plate solved)
-                            if (ra != null && dec != null) {
+                            // 2. Pre-filter and deduplicate celestial candidates visible in FOV (if plate solved and not stale)
+                            if (ra != null && dec != null && !isPositionStale) {
                                 val visibleCandidates = mutableListOf<VisibleCandidate>()
                                 for (obj in allObjects) {
                                     val isTarget = targetRaVal != null && targetDecVal != null &&
@@ -575,8 +580,10 @@ fun EngineRunningScreen(
                                                 obj.dec - targetDecVal
                                             ) < 0.05
 
-                                    val projRa = stats.centerRa ?: ra
-                                    val projDec = stats.centerDec ?: dec
+                                    val projRa =
+                                        if (stats.isImuEstimate || stats.centerRa == null) ra else stats.centerRa
+                                    val projDec =
+                                        if (stats.isImuEstimate || stats.centerDec == null) dec else stats.centerDec
 
                                     val dist = AstrometryUtils.angularDistance(
                                         obj.ra, obj.dec, projRa, projDec
@@ -586,9 +593,9 @@ fun EngineRunningScreen(
                                     }
 
                                     val projCx =
-                                        if (stats.centerRa != null) cx else boresightCanvasX
+                                        if (!stats.isImuEstimate && stats.centerRa != null) cx else boresightCanvasX
                                     val projCy =
-                                        if (stats.centerDec != null) cy else boresightCanvasY
+                                        if (!stats.isImuEstimate && stats.centerDec != null) cy else boresightCanvasY
 
                                     val proj = AstrometryUtils.projectToScreen(
                                         obj.ra,
@@ -1019,12 +1026,18 @@ fun EngineRunningScreen(
                                         stats.dec,
                                         stats.fov,
                                         stats.targetRa,
-                                        stats.targetDec
+                                        stats.targetDec,
+                                        stats.isImuEstimate,
+                                        stats.solvedCrop
                                     ) {
-                                        if (stats.fov == null) false
+                                        val isStale =
+                                            stats.solvedCrop == "Failed" && !stats.isImuEstimate
+                                        if (stats.fov == null || isStale) false
                                         else {
-                                            val projRa = stats.centerRa ?: stats.ra
-                                            val projDec = stats.centerDec ?: stats.dec
+                                            val projRa =
+                                                if (stats.isImuEstimate || stats.centerRa == null) stats.ra else stats.centerRa
+                                            val projDec =
+                                                if (stats.isImuEstimate || stats.centerDec == null) stats.dec else stats.centerDec
                                             if (projRa == null || projDec == null) false
                                             else {
                                                 var raDiff = abs(stats.targetRa - projRa)
