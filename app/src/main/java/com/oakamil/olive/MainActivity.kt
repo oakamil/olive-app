@@ -2,17 +2,12 @@ package com.oakamil.olive
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.bluetooth.BluetoothManager
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
 import android.location.Location
 import android.location.LocationManager
@@ -55,7 +50,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.CoroutineScope
+import com.jiangdg.usb.USBMonitor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -69,25 +64,7 @@ import java.util.Collections
 import kotlin.coroutines.resume
 
 class MainActivity : ComponentActivity() {
-    // We MUST explicitly release all claimed interfaces before closing the UsbDeviceConnection.
-    // Failing to do so causes a native resource leak in the Android kernel's USB stack,
-    // which prevents the camera from being reopened until it is physically unplugged.
-    private fun releaseAndCloseUsbConnection(conn: UsbDeviceConnection?, device: UsbDevice?) {
-        conn?.let { oldConn ->
-            if (device != null) {
-                for (i in 0 until device.interfaceCount) {
-                    try {
-                        oldConn.releaseInterface(device.getInterface(i))
-                    } catch (_: Exception) {
-                    }
-                }
-            }
-            oldConn.close()
-        }
-    }
-
-    private lateinit var usbManager: UsbManager
-    private val ACTION_USB_PERMISSION = "com.oakamil.olive.USB_PERMISSION"
+    private var usbMonitor: USBMonitor? = null
     private lateinit var settingsManager: SettingsManager
 
     private var isCameraConnected by mutableStateOf(false)
@@ -96,8 +73,6 @@ class MainActivity : ComponentActivity() {
     private var isStarting by mutableStateOf(false)
     private var showCedarErrorDialog by mutableStateOf(false)
 
-    private var uvcConnection: UsbDeviceConnection? = null
-    private var currentUvcDevice: UsbDevice? = null
     private var connectedDevice: UsbDevice? = null
 
     private var currentScreen by mutableStateOf("main")
@@ -124,70 +99,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-    private val usbReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
-                ACTION_USB_PERMISSION -> {
-                    synchronized(this) {
-                        val device: UsbDevice? =
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                intent.getParcelableExtra(
-                                    UsbManager.EXTRA_DEVICE,
-                                    UsbDevice::class.java
-                                )
-                            } else {
-                                @Suppress("DEPRECATION")
-                                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                            }
-
-                        if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                            device?.apply {
-                                startUvcCameraEngine(this)
-                            }
-                        } else {
-                            viewModel.stopEngineSync()
-                            isStarting = false
-                        }
-                    }
-                }
-
-                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
-                    checkForCameras()
-                    if (isCameraConnected && !viewModel.isEngineRunning) {
-                        updateCameraSelection("external")
-                    }
-                }
-
-                UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                    val device: UsbDevice? =
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            intent.getParcelableExtra(
-                                UsbManager.EXTRA_DEVICE,
-                                UsbDevice::class.java
-                            )
-                        } else {
-                            @Suppress("DEPRECATION")
-                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                        }
-                    Log.d("OliveUI", "USB Device Detached: ${device?.deviceName}")
-
-                    val wasActiveDevice =
-                        viewModel.engineMode == MainViewModel.EngineMode.UVC && (device == null || currentUvcDevice == null || device.deviceName == currentUvcDevice?.deviceName)
-
-                    checkForCameras()
-                    if (wasActiveDevice) {
-                        Log.w(
-                            "OliveUI",
-                            "Active UVC camera detached! Stopping engine."
-                        )
-                        if (!isStopping) {
-                            toggleEngine()
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     private fun copyAssetDatabase() {
         val assetName = "default_database.npz"
@@ -229,21 +140,9 @@ class MainActivity : ComponentActivity() {
 
         settingsManager = SettingsManager(this.applicationContext)
         activeCameraSelection = settingsManager.cameraSelection
-        usbManager = getSystemService(USB_SERVICE) as UsbManager
 
-        val filter = IntentFilter().apply {
-            addAction(ACTION_USB_PERMISSION)
-            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
-            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
-        }
 
-        ContextCompat.registerReceiver(
-            this,
-            usbReceiver,
-            filter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-
+        initUsbMonitor()
         checkForCameras()
 
         if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED && isCameraConnected) {
@@ -472,9 +371,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Re-dispatch USB intents to our receiver if the OS brings us to front
+        // Bypass USBMonitor's broken polling loop by catching the OS intent directly
         if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
-            usbReceiver.onReceive(this, intent)
+            checkForCameras()
+            if (isCameraConnected) {
+                updateCameraSelection("external")
+            }
         }
     }
 
@@ -545,20 +447,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(usbReceiver)
+        viewModel.uvcWrapper?.release()
+        viewModel.uvcWrapper = null
+
         if (viewModel.isEngineRunning) {
-            CoroutineScope(Dispatchers.IO).launch {
+            kotlinx.coroutines.runBlocking(Dispatchers.IO) {
                 viewModel.stopEngineSync()
-                releaseAndCloseUsbConnection(uvcConnection, currentUvcDevice)
-                uvcConnection = null
-                currentUvcDevice = null
             }
             stopBackgroundService()
-        } else {
-            releaseAndCloseUsbConnection(uvcConnection, currentUvcDevice)
-            uvcConnection = null
-            currentUvcDevice = null
         }
+
+        usbMonitor?.unregister()
+        usbMonitor?.destroy()
     }
 
     private fun updateCameraSelection(selection: String) {
@@ -567,8 +467,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkForCameras() {
-        val deviceList: HashMap<String, UsbDevice> = usbManager.deviceList
-        val camera = deviceList.values.firstOrNull { isUvcDevice(it) }
+        val deviceList = usbMonitor?.deviceList?.filterIsInstance<UsbDevice>() ?: emptyList()
+        val camera = deviceList.firstOrNull { isUvcDevice(it) }
         if (camera != null) {
             isCameraConnected = true
             connectedDevice = camera
@@ -680,9 +580,8 @@ class MainActivity : ComponentActivity() {
                 withContext(Dispatchers.IO) {
                     viewModel.stopEngineSync()
                 }
-                releaseAndCloseUsbConnection(uvcConnection, currentUvcDevice)
-                uvcConnection = null
-                currentUvcDevice = null
+                viewModel.uvcWrapper?.release()
+                viewModel.uvcWrapper = null
                 stopBackgroundService()
                 isStopping = false
             }
@@ -782,19 +681,9 @@ class MainActivity : ComponentActivity() {
                 checkForCameras() // Ensure connectedDevice is up to date
                 val device = connectedDevice
                 if (device != null) {
-                    if (usbManager.hasPermission(device)) {
-                        startUvcCameraEngine(device, lat, lon, timeMs)
-                        engineStarted = true
-                    } else {
-                        val intent = PendingIntent.getBroadcast(
-                            this@MainActivity,
-                            0,
-                            Intent(ACTION_USB_PERMISSION).apply { setPackage(packageName) },
-                            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                        )
-                        usbManager.requestPermission(device, intent)
-                        engineStarted = true // Pending permission, don't turn off isStarting yet
-                    }
+                    // USBMonitor handles both requesting permission AND initiating connection if already granted
+                    usbMonitor?.requestPermission(device)
+                    engineStarted = true // Pending permission or connection, keep isStarting true
                 } else {
                     Log.e("OliveUI", "UVC camera selected but none connected!")
                     viewModel.stopEngineSync()
@@ -866,108 +755,69 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startUvcCameraEngine(
-        device: UsbDevice,
-        lat: Double = MainViewModel.INVALID_COORD,
-        lon: Double = MainViewModel.INVALID_COORD,
-        timeMs: Long = 0L
-    ) {
-        lifecycleScope.launch {
-            val connection = withContext(Dispatchers.IO) {
-                if (viewModel.isEngineRunning) {
-                    viewModel.stopEngineSync()
-                }
 
-                releaseAndCloseUsbConnection(uvcConnection, currentUvcDevice)
-                uvcConnection = null
-                currentUvcDevice = null
-
-                // ---------------------------------------------------------
-                // WAKE-UP HACK: The "Double Open" Trick
-                // ---------------------------------------------------------
-                // If the phone was idle, the USB port may have been suspended by the OS.
-                // Many astronomy cameras do not fully wake up their image sensors from
-                // suspend, leading to successful negotiation but zero frames delivered.
-                // By briefly opening, claiming, releasing, and closing the device, we force
-                // the Android kernel to send a reset signal down the USB bus, shocking the
-                // camera firmware awake before we perform the actual open.
-                val tempConn = usbManager.openDevice(device)
-                if (tempConn != null) {
-                    for (i in 0 until device.interfaceCount) {
-                        try {
-                            tempConn.claimInterface(device.getInterface(i), true)
-                        } catch (_: Exception) {
-                        }
-                    }
-                    for (i in 0 until device.interfaceCount) {
-                        try {
-                            tempConn.releaseInterface(device.getInterface(i))
-                        } catch (_: Exception) {
-                        }
-                    }
-                    tempConn.close()
-                    delay(100) // Give the camera's capacitors/firmware time to settle
-                }
-                // ---------------------------------------------------------
-
-                val conn = usbManager.openDevice(device)
-                if (conn != null) {
-                    var hasVideoInterface = false
-                    var videoClaimFailed = false
-                    var anyClaimed = false
-
-                    for (i in 0 until device.interfaceCount) {
-                        val intf = device.getInterface(i)
-                        val isVideo = intf.interfaceClass == 14 // USB_CLASS_VIDEO
-                        if (isVideo) hasVideoInterface = true
-
-                        val claimed = try {
-                            conn.claimInterface(intf, true)
-                        } catch (_: Exception) {
-                            false
-                        }
-
-                        if (claimed) {
-                            anyClaimed = true
-                        } else if (isVideo) {
-                            videoClaimFailed = true
-                        }
-                    }
-
-                    // Must succeed if all video interfaces claimed; for vendor devices without class 14, at least one claimed interface is needed
-                    val canProceed = if (hasVideoInterface) !videoClaimFailed else anyClaimed
-
-                    if (canProceed) {
-                        val fd = conn.fileDescriptor
-                        if (fd == -1) {
-                            releaseAndCloseUsbConnection(conn, device)
-                            return@withContext null
-                        }
-                        uvcConnection = conn
-                        currentUvcDevice = device
-                        val rawDesc = conn.rawDescriptors
-                        viewModel.startUvcEngine(fd, rawDesc, lat, lon, timeMs)
-                    } else {
-                        releaseAndCloseUsbConnection(conn, device)
-                        return@withContext null
-                    }
-                }
-                conn
+    private fun initUsbMonitor() {
+        usbMonitor = USBMonitor.getInstance(this)
+        usbMonitor?.setOnDeviceConnectListener(object : USBMonitor.OnDeviceConnectListener {
+            override fun onAttach(device: UsbDevice?) {
+                runOnUiThread { checkForCameras() }
             }
-            if (connection != null) {
-                startBackgroundService("UVC")
-            } else {
-                isStarting = false
-                usbManager.requestPermission(
-                    device,
-                    PendingIntent.getBroadcast(
-                        this@MainActivity,
-                        0,
-                        Intent(ACTION_USB_PERMISSION).apply { setPackage(packageName) },
-                        PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                    )
-                )
+
+            override fun onDetach(device: UsbDevice?) {
+                runOnUiThread { checkForCameras() }
             }
-        }
+
+            override fun onConnect(
+                device: UsbDevice?,
+                ctrlBlock: USBMonitor.UsbControlBlock?,
+                createNew: Boolean
+            ) {
+                if (device != null && ctrlBlock != null) {
+                    viewModel.uvcWrapper?.release()
+                    val wrapper = UvcCameraWrapper(this@MainActivity, device)
+                    wrapper.initialize(ctrlBlock, viewModel.settingsManager.uvcFps.coerceAtLeast(1))
+                    viewModel.uvcWrapper = wrapper
+
+                    if (isStarting) {
+                        lifecycleScope.launch {
+                            val loc = if (cachedLocation == null || cachedLocation == Pair(
+                                    MainViewModel.INVALID_COORD,
+                                    MainViewModel.INVALID_COORD
+                                )
+                            ) {
+                                getClientLocation()
+                            } else {
+                                cachedLocation!!
+                            }
+                            viewModel.startUvcEngine(
+                                loc.first,
+                                loc.second,
+                                System.currentTimeMillis()
+                            )
+                            startBackgroundService("UVC")
+                        }
+                    }
+                }
+            }
+
+            override fun onDisconnect(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
+                viewModel.uvcWrapper?.release()
+                viewModel.uvcWrapper = null
+                if (viewModel.engineMode == MainViewModel.EngineMode.UVC) {
+                    if (!isStopping) {
+                        runOnUiThread { toggleEngine() }
+                    }
+                }
+            }
+
+            override fun onCancel(device: UsbDevice?) {
+                runOnUiThread {
+                    isStarting = false
+                }
+            }
+        })
+        usbMonitor?.register()
     }
+
+
 }
