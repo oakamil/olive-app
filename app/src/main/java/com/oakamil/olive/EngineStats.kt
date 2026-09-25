@@ -4,6 +4,8 @@ data class EngineStats(
     val status: String = "Idle",
     val ra: Double? = null,
     val dec: Double? = null,
+    val centerRa: Double? = null,
+    val centerDec: Double? = null,
     val roll: Double? = null,
     val fov: Double? = null,
     val centroidCount: Int = 0,
@@ -21,5 +23,8 @@ data class EngineStats(
     val targetRa: Double? = null,
     val targetDec: Double? = null,
     val isImuEstimate: Boolean = false,
-    val solvedCrop: String? = null
+    val solvedCrop: String? = null,
+    val targetPixelX: Double? = null,
+    val targetPixelY: Double? = null,
+    val distortion: Double? = null
 )

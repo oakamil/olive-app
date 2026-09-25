@@ -45,14 +45,11 @@
     <string name="btn_start_engine">Start Engine</string>
     <string name="btn_stopping">Stopping …</string>
     <string name="btn_starting">Starting …</string>
-    <string name="btn_back">Back</string>
     <string name="btn_continue">Continue</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_save">Save</string>
     <string name="btn_retry">Retry</string>
     <string name="btn_entering_pip">Entering PIP …</string>
-    <string name="btn_pip_mode">Picture-in-Picture Mode</string>
-    <string name="catalog_info_button">Catalog Info</string>
 
     <!-- Control labels -->
     <string name="label_star_sensitivity">Star Sensitivity</string>
@@ -60,8 +57,6 @@
     <string name="label_exposure">Exposure</string>
     <string name="label_stacking_frames">Stacking (Frames)</string>
     <string name="label_brightness">Brightness</string>
-    <string name="label_iso">ISO</string>
-    <string name="label_gain">Gain</string>
     <string name="label_focus">Focus</string>
     <string name="label_noise_reduction">Noise Reduction</string>
     <string name="label_hot_pixel_mode">Hot Pixel Mode</string>
@@ -76,7 +71,6 @@
     <string name="label_internal_camera">Internal Camera</string>
     <string name="label_demo_camera">Demo Camera</string>
     <string name="label_camera">Camera</string>
-    <string name="label_fps">Target Frame Rate</string>
     <string name="label_no_external_camera">No External Camera Detected</string>
 
     <!-- Setting Values -->
@@ -113,7 +107,6 @@
     <string name="crop_right">Right</string>
     <string name="crop_full">Full</string>
     <string name="crop_failed">Failed</string>
-    <string name="stat_ip_address">IP Address</string>
     <string name="stat_error">Error: %s</string>
 
     <!-- Cedar Finder Labels -->
@@ -135,7 +128,6 @@
     <string name="cd_close">Close</string>
     <string name="cd_live_preview">Live Preview</string>
     <string name="cd_target">Target</string>
-    <string name="cd_pip_mode">Enter Picture-in-Picture Mode</string>
 
     <!-- Permissions Dialog -->
     <string name="title_permissions_required">Permissions Required</string>
@@ -185,11 +177,6 @@
     <string name="filter_visibility">Visibility</string>
     <string name="filter_object_type">Object Type</string>
     <string name="filter_magnitude_limit">Magnitude Limit</string>
-    <string name="sort_distance">distance</string>
-    <string name="sort_brightness">brightness</string>
-    <string name="sort_name">name</string>
-    <string name="sort_catalog_id">catalog ID</string>
-    <string name="vis_above_horizon">Above Horizon</string>
     <string name="type_all_types">All Types</string>
     <string name="type_star">Star</string>
     <string name="type_galaxy">Galaxy</string>
@@ -203,11 +190,6 @@
     <string name="type_globular_cluster">Globular Cluster</string>
     <string name="type_open_cluster">Open Cluster</string>
     <string name="type_planetary_nebula">Planetary Nebula</string>
-    <string name="mag_no_limit">No Limit</string>
-    <string name="mag_naked_eye">Naked Eye (&lt; 6)</string>
-    <string name="mag_binoculars">Binoculars (&lt; 9)</string>
-    <string name="mag_small_scope">Small Scope (&lt; 12)</string>
-    <string name="mag_large_scope">Large Scope (&lt; 15)</string>
     <string name="status_no_objects">No objects found</string>
     <string name="btn_load_more">Load More</string>
     <string name="cd_selected">Selected</string>
@@ -259,4 +241,14 @@
     <string name="body_battery_optimization">To continue tracking in the background while using a planetarium app, please allow unrestricted battery usage for Olive in the App Info settings. Otherwise, Android may freeze the connection.</string>
     <string name="btn_open_settings">Open Settings</string>
     <string name="btn_skip">Skip</string>
+    <string name="no_target">No Target</string>
+    <string name="label_designation">Designation</string>
+    <string name="label_type">Type</string>
+    <string name="label_magnitude">Magnitude</string>
+    <string name="label_constellation">Constellation</string>
+    <string name="value_not_available">N/A</string>
+    <string name="format_ra_dec">RA %1$s Dec %2$s</string>
+    <string name="target_label_format">Target (%1$.2f, %2$.2f)</string>
+    <string name="stat_ip_address">IP Address</string>
+    <string name="msg_confirm_alignment">Are you sure you want to sync the telescope\'s coordinates to this target?</string>
 </resources>

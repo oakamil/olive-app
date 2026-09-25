@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,7 +54,8 @@ fun GuidanceDisplay(
     stats: EngineStats,
     isAltAz: Boolean,
     isLowPowerMode: Boolean = false,
-    isImuEnabled: Boolean = false
+    isImuEnabled: Boolean = false,
+    isCompactLayout: Boolean = false
 ) {
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -110,7 +112,62 @@ fun GuidanceDisplay(
             )
 
             Box(modifier = Modifier.fillMaxSize()) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                if (isCompactLayout) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            if (isAltAz) {
+                                DirectionArrow(if (displayTilt > 0.0) 270 else 90, false, isLowPowerMode)
+                            } else {
+                                BasicText(
+                                    text = if (displayTilt > 0) stringResource(id = R.string.label_north) else stringResource(id = R.string.label_south),
+                                    style = indicatorStyle,
+                                    softWrap = false,
+                                    autoSize = TextAutoSize.StepBased()
+                                )
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1.5f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            BasicText(
+                                text = String.format(Locale.getDefault(), "%-+6.1f", displayTilt),
+                                style = offsetStyle,
+                                softWrap = false,
+                                autoSize = TextAutoSize.StepBased()
+                            )
+                        }
+                        Box(modifier = Modifier.weight(2f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            if (stats.offsetAngle == null && displayAngle != null && (stats.status == "Solving" || stats.status == "Slewing")) {
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxSize(0.5f), strokeWidth = 4.dp)
+                            } else if (stats.offsetAngle != null && abs(stats.offsetAngle) >= 0.05) {
+                                TargetArrow(stats.offsetAngle, isLowPowerMode)
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1.5f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            BasicText(
+                                text = String.format(Locale.getDefault(), "%+6.1f", displayRot),
+                                style = offsetStyle,
+                                softWrap = false,
+                                autoSize = TextAutoSize.StepBased()
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            if (isAltAz) {
+                                DirectionArrow(if (displayRot > 0.0) 0 else 180, true, isLowPowerMode)
+                            } else {
+                                BasicText(
+                                    text = if (displayRot > 0) stringResource(id = R.string.label_east) else stringResource(id = R.string.label_west),
+                                    style = indicatorStyle,
+                                    softWrap = false,
+                                    autoSize = TextAutoSize.StepBased()
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Column(modifier = Modifier.fillMaxSize()) {
                     Row(
                         modifier = Modifier
                             .weight(1f)
@@ -265,11 +322,20 @@ fun GuidanceDisplay(
                         }
                     }
                 }
+                }
             }
         } else {
-            CircularProgressIndicator(
-                color = MaterialTheme.colorScheme.primary
-            )
+            if (isCompactLayout) {
+                Text(
+                    text = stringResource(R.string.no_target),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            } else {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
 
         if (isImuEnabled && (stats.ra != null || stats.isImuEstimate)) {
