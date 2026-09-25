@@ -266,19 +266,111 @@ fun TunerScreen(
                             )
                     )
 
-                    if (alignTargetX != null && alignTargetY != null) {
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer(
-                                    scaleX = scale * baseScale,
-                                    scaleY = scale * baseScale,
-                                    translationX = offset.x,
-                                    translationY = offset.y,
-                                    rotationZ = imageRotation
-                                )
-                        ) {
-                            val fitPxScale = minOf(size.width / bW, size.height / bH)
+                    val currentBoresightX: Float
+                    val currentBoresightY: Float
+                    if (viewModel.engineStats.targetPixelX != null && viewModel.engineStats.targetPixelY != null) {
+                        currentBoresightX = viewModel.engineStats.targetPixelX!!.toFloat()
+                        currentBoresightY = viewModel.engineStats.targetPixelY!!.toFloat()
+                    } else {
+                        val alignPixelStr = settingsManager.getString("target_pixel")
+                        var savedX: Float? = null
+                        var savedY: Float? = null
+                        if (alignPixelStr != null) {
+                            val parts = alignPixelStr.split(",")
+                            if (parts.size == 2) {
+                                savedX = parts[0].trim().toFloatOrNull()
+                                savedY = parts[1].trim().toFloatOrNull()
+                            }
+                        }
+                        currentBoresightX = savedX ?: (bW / 2f)
+                        currentBoresightY = savedY ?: (bH / 2f)
+                    }
+
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = scale * baseScale,
+                                scaleY = scale * baseScale,
+                                translationX = offset.x,
+                                translationY = offset.y,
+                                rotationZ = imageRotation
+                            )
+                    ) {
+                        val fitPxScale = minOf(size.width / bW, size.height / bH)
+
+                        // Draw current boresight
+                        val boresightCanvasX = center.x + (currentBoresightX - bW / 2f) * fitPxScale
+                        val boresightCanvasY = center.y + (currentBoresightY - bH / 2f) * fitPxScale
+
+                        val s = 32f / (scale * baseScale)
+                        val arm = 14f / (scale * baseScale)
+                        val bracketStroke = 3f / (scale * baseScale)
+                        val darkRed = Color(0xFFAA0000)
+
+                        // ┌ Top-Left
+                        drawLine(
+                            darkRed,
+                            Offset(boresightCanvasX - s, boresightCanvasY - s),
+                            Offset(boresightCanvasX - s + arm, boresightCanvasY - s),
+                            strokeWidth = bracketStroke,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                        drawLine(
+                            darkRed,
+                            Offset(boresightCanvasX - s, boresightCanvasY - s),
+                            Offset(boresightCanvasX - s, boresightCanvasY - s + arm),
+                            strokeWidth = bracketStroke,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                        // ┐ Top-Right
+                        drawLine(
+                            darkRed,
+                            Offset(boresightCanvasX + s, boresightCanvasY - s),
+                            Offset(boresightCanvasX + s - arm, boresightCanvasY - s),
+                            strokeWidth = bracketStroke,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                        drawLine(
+                            darkRed,
+                            Offset(boresightCanvasX + s, boresightCanvasY - s),
+                            Offset(boresightCanvasX + s, boresightCanvasY - s + arm),
+                            strokeWidth = bracketStroke,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                        // └ Bottom-Left
+                        drawLine(
+                            darkRed,
+                            Offset(boresightCanvasX - s, boresightCanvasY + s),
+                            Offset(boresightCanvasX - s + arm, boresightCanvasY + s),
+                            strokeWidth = bracketStroke,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                        drawLine(
+                            darkRed,
+                            Offset(boresightCanvasX - s, boresightCanvasY + s),
+                            Offset(boresightCanvasX - s, boresightCanvasY + s - arm),
+                            strokeWidth = bracketStroke,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                        // ┘ Bottom-Right
+                        drawLine(
+                            darkRed,
+                            Offset(boresightCanvasX + s, boresightCanvasY + s),
+                            Offset(boresightCanvasX + s - arm, boresightCanvasY + s),
+                            strokeWidth = bracketStroke,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                        drawLine(
+                            darkRed,
+                            Offset(boresightCanvasX + s, boresightCanvasY + s),
+                            Offset(boresightCanvasX + s, boresightCanvasY + s - arm),
+                            strokeWidth = bracketStroke,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+
+                        // Conditionally draw the preview target pixel when tapping
+                        if (alignTargetX != null && alignTargetY != null) {
                             val canvasX = center.x + (alignTargetX!! - bW / 2f) * fitPxScale
                             val canvasY = center.y + (alignTargetY!! - bH / 2f) * fitPxScale
                             val crosshairSize = 40f / (scale * baseScale)
