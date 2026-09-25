@@ -267,7 +267,7 @@ fun EngineRunningScreen(
 
             val frame = viewModel.latestFrame
             val roll = stats.roll ?: 0.0 // offsetAngle is for the guidance arrow, not image roll!
-            var uiRotation = -roll.toFloat()
+            var uiRotation = roll.toFloat()
             val lat = viewModel.currentLat
             val lon = viewModel.currentLon
             if (stats.ra != null && stats.dec != null && lat != null && lon != null &&
@@ -281,7 +281,7 @@ fun EngineRunningScreen(
                     lat,
                     lst
                 )
-                uiRotation = (-roll + q).toFloat()
+                uiRotation = (roll + q).toFloat()
             }
             val ra = stats.ra
             val dec = stats.dec
