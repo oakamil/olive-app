@@ -44,7 +44,19 @@ data class CatalogObject(
         get() = if (commonName.isNullOrBlank() || isFakeCommonName) designation else commonName
 
     val designation: String
-        get() = if (catalogLabel == "Str" || catalogLabel == "Planet" || catalogLabel == "Solar System") catalogEntry else "$catalogLabel $catalogEntry"
+        get() = when (catalogLabel) {
+            "Str", "Planet", "Solar System" -> {
+                catalogEntry
+            }
+
+            in listOf("M", "NGC", "IC", "C", "Col") -> {
+                catalogLabel + catalogEntry
+            }
+
+            else -> {
+                "$catalogLabel $catalogEntry"
+            }
+        }
 }
 
 class CatalogDatabaseHelper(private val context: Context) :
@@ -340,7 +352,7 @@ class CatalogDatabaseHelper(private val context: Context) :
                         statement.bindDouble(10, incl)
                         statement.executeInsert()
                     } catch (ex: Exception) {
-                        Log.e(TAG, "Error parsing comet line: \$line", ex)
+                        Log.e(TAG, $$"Error parsing comet line: $line", ex)
                     }
                 }
                 database.setTransactionSuccessful()
@@ -368,6 +380,7 @@ class CatalogDatabaseHelper(private val context: Context) :
         lon: Double? = null,
         targetRa: Double? = null,
         targetDec: Double? = null,
+        maxDistanceDegrees: Double? = null,
         limit: Int = 300,
         offset: Int = 0
     ): List<CatalogObject> {
@@ -423,17 +436,22 @@ class CatalogDatabaseHelper(private val context: Context) :
             selection += " AND $clause"
         }
 
-        if (catalogFilter != null && catalogFilter != "All Objects" && catalogFilter != "Solar System") {
-            if (catalogFilter == "Nearest Objects") {
-                if (targetRa != null && targetDec != null) {
-                    val c = cos(Math.toRadians(targetDec))
-                    val maxDistSq = 10.0 * 10.0
-                    selection += " AND ((((ra - $targetRa) * $c) * ((ra - $targetRa) * $c) + (dec - $targetDec) * (dec - $targetDec)) <= $maxDistSq)"
-                }
-            } else {
-                selection += " AND catalog_label = ?"
-                args.add(catalogFilter)
+        val radius = maxDistanceDegrees ?: if (catalogFilter == "Nearest Objects") 10.0 else null
+        if (radius != null && targetRa != null && targetDec != null) {
+            val c = cos(Math.toRadians(targetDec)).coerceAtLeast(0.01)
+            val maxDistSq = radius * radius
+            val deltaRa = radius / c
+
+            selection += " AND (dec BETWEEN ${targetDec - radius} AND ${targetDec + radius})"
+            if (targetRa - deltaRa >= 0.0 && targetRa + deltaRa <= 360.0) {
+                selection += " AND (ra BETWEEN ${targetRa - deltaRa} AND ${targetRa + deltaRa})"
             }
+            selection += " AND ((((ra - $targetRa) * $c) * ((ra - $targetRa) * $c) + (dec - $targetDec) * (dec - $targetDec)) <= $maxDistSq)"
+        }
+
+        if (catalogFilter != null && catalogFilter != "All Objects" && catalogFilter != "Solar System" && catalogFilter != "Nearest Objects") {
+            selection += " AND catalog_label = ?"
+            args.add(catalogFilter)
         }
 
         if (magLimit != null) {
@@ -479,16 +497,16 @@ class CatalogDatabaseHelper(private val context: Context) :
                 "WHEN 'Arp' THEN 10 " +
                 "ELSE 11 END"
 
-        val orderBy = when {
-            sortBy == "distance" && targetRa != null && targetDec != null -> {
+        val orderBy = when (sortBy) {
+            "distance" if targetRa != null && targetDec != null -> {
                 val c = cos(Math.toRadians(targetDec))
                 val c2 = c * c
                 "((ra - $targetRa) * (ra - $targetRa) * $c2) + ((dec - $targetDec) * (dec - $targetDec)) ASC"
             }
 
-            sortBy == "name" -> "(common_name IS NULL OR common_name = '') ASC, common_name ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
-            sortBy == "brightness" -> "magnitude IS NULL ASC, magnitude ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
-            sortBy == "catalog ID" -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
+            "name" -> "(common_name IS NULL OR common_name = '') ASC, common_name ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
+            "brightness" -> "magnitude IS NULL ASC, magnitude ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
+            "catalog ID" -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
             else -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
         }
 

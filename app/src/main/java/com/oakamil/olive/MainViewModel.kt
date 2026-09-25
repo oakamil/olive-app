@@ -130,6 +130,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 status = obj.optString("status", "Idle"),
                 ra = if (obj.isNull("ra")) null else obj.getDouble("ra"),
                 dec = if (obj.isNull("dec")) null else obj.getDouble("dec"),
+                centerRa = if (obj.isNull("center_ra")) null else obj.getDouble("center_ra"),
+                centerDec = if (obj.isNull("center_dec")) null else obj.getDouble("center_dec"),
                 roll = if (obj.isNull("roll")) null else obj.getDouble("roll"),
                 fov = if (obj.isNull("fov")) null else obj.getDouble("fov"),
                 centroidCount = obj.optInt("centroids", 0),
@@ -147,7 +149,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 targetRa = if (obj.isNull("target_ra")) null else obj.getDouble("target_ra"),
                 targetDec = if (obj.isNull("target_dec")) null else obj.getDouble("target_dec"),
                 isImuEstimate = obj.optBoolean("is_imu_estimate", false),
-                solvedCrop = if (obj.isNull("solved_crop")) null else obj.getString("solved_crop")
+                solvedCrop = if (obj.isNull("solved_crop")) null else obj.getString("solved_crop"),
+                targetPixelX = if (obj.isNull("target_pixel_x")) null else obj.getDouble("target_pixel_x"),
+                targetPixelY = if (obj.isNull("target_pixel_y")) null else obj.getDouble("target_pixel_y"),
+                distortion = if (obj.isNull("distortion")) null else obj.getDouble("distortion")
             )
 
             // Removed syncing tuning sliders here to allow them to reflect user-selected values
@@ -637,6 +642,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Log.i("MainViewModel", "GoTo Target set in JNI: RA=$ra, Dec=$dec, Epoch=$epoch")
         } else {
             Log.w("MainViewModel", "Engine not running, cannot set GoTo Target: RA=$ra, Dec=$dec")
+        }
+    }
+
+    fun syncTelescope(ra: Double? = null, dec: Double? = null) {
+        if (engineMode == EngineMode.CEDAR_REMOTE) {
+            // Not implemented for remote right now
+            Log.w("MainViewModel", "syncTelescope not implemented for Cedar remote")
+        } else if (isEngineRunning) {
+            if (ra != null && dec != null) {
+                OliveEngine.syncTelescopeToTarget(ra, dec)
+                Log.i("MainViewModel", "Sync Telescope to target requested in JNI: RA=$ra, Dec=$dec")
+            } else {
+                OliveEngine.syncTelescope()
+                Log.i("MainViewModel", "Sync Telescope requested in JNI")
+            }
+        } else {
+            Log.w("MainViewModel", "Engine not running, cannot sync telescope")
         }
     }
 
