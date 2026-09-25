@@ -1092,7 +1092,7 @@ fun EngineRunningScreen(
             StatsDisplay(viewModel.engineStats)
 
             Spacer(modifier = Modifier.height(16.dp))
-            if (activeCameraSelection != "cedar" && viewModel.engineMode.name != "CEDAR_REMOTE") {
+            if (activeCameraSelection != "cedar") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "${stringResource(R.string.stat_ip_address)}: $detectedIpAddress",
@@ -1115,7 +1115,7 @@ fun EngineRunningScreen(
 
         @Composable
         fun SlidersContent() {
-            if (activeCameraSelection == "cedar" || viewModel.engineMode.name == "CEDAR_REMOTE") return
+            if (activeCameraSelection == "cedar") return
 
             Column(
                 modifier = Modifier
