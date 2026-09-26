@@ -153,21 +153,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     settings_manager: jni::objects::JObject,
     auto_mode: jni::sys::jboolean,
 ) {
-    let zoom_ratio_method = env
-        .get_method_id("com/oakamil/olive/SettingsManager", "getZoomRatio", "()F")
-        .unwrap();
-    let _zoom_ratio_val = unsafe {
-        env.call_method_unchecked(
-            &settings_manager,
-            zoom_ratio_method,
-            jni::signature::ReturnType::Primitive(jni::signature::Primitive::Float),
-            &[],
-        )
-        .unwrap()
-        .f()
-        .unwrap()
-    };
-
     let jvm = env.get_java_vm().unwrap();
     let settings_mgr = env.new_global_ref(&settings_manager).unwrap();
     let storage: Option<std::sync::Arc<dyn olive_imu::PersistentStorage>> =
