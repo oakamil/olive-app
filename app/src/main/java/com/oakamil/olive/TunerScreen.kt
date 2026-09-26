@@ -659,12 +659,11 @@ fun TuningControls(
             }
 
             if (maxZoom > 1f) {
-                var zoomRatio by remember { mutableFloatStateOf(settingsManager.zoomRatio) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         stringResource(id = R.string.label_zoom) + ": " + stringResource(
                             id = R.string.format_zoom,
-                            String.format(Locale.getDefault(), "%.1f", zoomRatio)
+                            String.format(Locale.getDefault(), "%.1f", viewModel.currentZoom)
                         ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onBackground
@@ -679,12 +678,10 @@ fun TuningControls(
                     }
                 }
                 Slider(
-                    value = zoomRatio,
+                    value = viewModel.currentZoom,
                     enabled = settingsManager.cameraSettingsMode != "Auto",
                     onValueChange = {
-                        zoomRatio = it
-                        settingsManager.zoomRatio = it
-                        OliveEngine.setNativeCameraZoomRatio(it)
+                        viewModel.setZoom(it)
                     },
                     valueRange = 1f..5f,
                     modifier = Modifier.fillMaxWidth()

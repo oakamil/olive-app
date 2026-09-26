@@ -172,6 +172,10 @@ impl CameraTrait for AndroidCamera {
         self.send_command(CaptureCommand::SetFocus(distance));
     }
 
+    fn get_focus(&self) -> Option<f32> {
+        Some(f32::from_bits(self.current_focus.load(Ordering::Relaxed)))
+    }
+
     fn set_noise_reduction(&self, mode: u8) {
         self.current_nr.store(mode as u32, Ordering::Relaxed);
         self.send_command(CaptureCommand::SetNoiseReduction(mode));
