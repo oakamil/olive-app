@@ -54,6 +54,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var minAnalogGain by mutableFloatStateOf(100f)
     var maxAnalogGain by mutableFloatStateOf(3200f)
     var currentFocus by mutableFloatStateOf(0.0f)
+    var currentZoom by mutableFloatStateOf(1.0f)
     var noiseReductionMode by mutableIntStateOf(0)
     var hotPixelMode by mutableIntStateOf(0)
     var supportedHotPixelModes by mutableStateOf<List<Int>>(emptyList())
@@ -244,17 +245,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val forcedExtractor = if (isAutoSettings) "Olive" else settingsManager.extractor
             val forcedCameraId = if (isAutoSettings && cameraId != "demo") "0" else cameraId
 
-            if (cameraId != "demo") {
-                val expUs = if (isAutoSettings) {
-                    val fps = settingsManager.internalFps.coerceAtLeast(1)
-                    1000000 / fps
-                } else {
-                    currentExposure.toInt()
-                }
-                currentExposure = expUs.toFloat()
-                OliveEngine.setNativeCameraExposure(expUs)
-            }
-
             OliveEngine.startNativeCameraEngine(
                 motionSensorMode,
                 forcedExtractor,
@@ -267,36 +257,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 settingsManager,
                 isAutoSettings
             )
-            OliveEngine.setEngineSigma(currentSigma)
-            OliveEngine.setEngineStrictMatch(false) // Phone camera has wide FOV, needs generous thresholds
 
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.NATIVE
 
                 val gainRange = OliveEngine.getNativeCameraGainRange()
-                if (gainRange != null && gainRange.size >= 3) {
-                    minAnalogGain = gainRange[0]
-                    maxAnalogGain = gainRange[1]
-                    val defaultGain = gainRange[2]
-                    setGain(defaultGain)
-
-                    settingsManager.zoomRatio = 1f
-                    OliveEngine.setNativeCameraZoomRatio(1f)
-
-                    setFocus(0.0f)
-                    val defExp = if (isAutoSettings) {
-                        val fps = settingsManager.internalFps.coerceAtLeast(1)
-                        1000000 / fps
-                    } else {
-                        OliveEngine.getNativeCameraExposure()
-                    }
-                    setExposure(defExp.toFloat())
-                    setNoiseReduction(0)
-                    val hpModes = OliveEngine.getNativeCameraSupportedHotPixelModes()
-                    supportedHotPixelModes = hpModes.toList()
-                    updateHotPixelMode(0)
-                    updateUvcStacking(1)
+                val (minG, maxG, defaultG) = if (gainRange != null && gainRange.size >= 3) {
+                    Triple(gainRange[0], gainRange[1], gainRange[2])
+                } else {
+                    Triple(100f, 3200f, 3200f)
                 }
+                minAnalogGain = minG
+                maxAnalogGain = maxG
+
+                if (isAutoSettings) {
+                    setGain(defaultG)
+                    setZoom(1.0f)
+                    setFocus(0.0f)
+                    setNoiseReduction(0)
+                    updateHotPixelMode(0)
+
+                    val fps = settingsManager.internalFps.coerceAtLeast(1)
+                    setExposure((1000000 / fps).toFloat())
+
+                    updateStarSensitivity(50f)
+                    updateUvcStacking(1)
+                } else {
+                    var savedGain = settingsManager.manualGain
+                    if (savedGain < 0f) savedGain = defaultG
+                    savedGain = savedGain.coerceIn(minAnalogGain, maxAnalogGain)
+                    setGain(savedGain)
+
+                    setZoom(settingsManager.manualZoomRatio)
+                    setFocus(settingsManager.manualFocus)
+                    setNoiseReduction(settingsManager.manualNoiseReduction)
+                    updateHotPixelMode(settingsManager.manualHotPixelMode)
+                    setExposure(settingsManager.manualExposureUs)
+
+                    updateStarSensitivity(settingsManager.manualStarSensitivity)
+                    updateUvcStacking(settingsManager.manualUvcStacking)
+                }
+
+                supportedHotPixelModes =
+                    OliveEngine.getNativeCameraSupportedHotPixelModes().toList()
+                OliveEngine.setEngineSigma(currentSigma)
+                OliveEngine.setEngineStrictMatch(false) // Phone camera has wide FOV, needs generous thresholds
                 startPolling()
             }
         }
@@ -321,10 +326,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 OliveEngine.stopEngine()
             }
 
-            val fps = settingsManager.uvcFps.coerceAtLeast(1)
-            currentExposure = (1000000f / fps)
-            OliveEngine.setNativeCameraExposure(currentExposure.toInt())
-
             val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
             OliveEngine.startExternalCameraEngine(
                 uvcWrapper?.previewWidth ?: 640,
@@ -342,24 +343,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
 
             launch(Dispatchers.Main) {
-                uvcWrapper?.startZeroCopyStream()
-                delay(300) // Wait for hardware to initialize limits
-
-                currentUvcBrightness = 50
-                OliveEngine.setNativeCameraBrightness(50)
-
-                val hwGain = uvcWrapper?.getHardwareGain()
-                if (hwGain != null && hwGain in 0..100) {
-                    currentGain = hwGain.toFloat()
-                    OliveEngine.setNativeCameraGain(hwGain.toFloat())
-                }
-
-                OliveEngine.updateUvcStacking(uvcStacking)
-            }
-            OliveEngine.setEngineSigma(currentSigma)
-            OliveEngine.setEngineStrictMatch(true) // SC2210 has tight FOV, use strict thresholds
-
-            launch(Dispatchers.Main) {
                 engineMode = EngineMode.UVC
 
                 uvcBrightnessMin = 0
@@ -367,7 +350,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 minAnalogGain = 0f
                 maxAnalogGain = 100f
 
-                updateUvcStacking(1)
+                uvcWrapper?.startZeroCopyStream()
+                delay(300) // Wait for hardware to initialize limits
+
+                if (isAutoSettings) {
+                    val fps = settingsManager.uvcFps.coerceAtLeast(1)
+                    setExposure((1000000 / fps).toFloat())
+
+                    updateStarSensitivity(50f)
+                    updateUvcStacking(1)
+                    setUvcBrightness(50)
+
+                    val hwGain = uvcWrapper?.getHardwareGain()
+                    if (hwGain != null && hwGain in 0..100) {
+                        setGain(hwGain.toFloat())
+                    }
+                } else {
+                    setExposure(settingsManager.manualExposureUs)
+                    updateStarSensitivity(settingsManager.manualStarSensitivity)
+                    updateUvcStacking(settingsManager.manualUvcStacking)
+                    setUvcBrightness(settingsManager.manualUvcBrightness)
+
+                    var savedGain = settingsManager.manualGain
+                    if (savedGain < 0f) savedGain = 50f
+                    savedGain = savedGain.coerceIn(0f, 100f)
+                    setGain(savedGain)
+                }
+
+                OliveEngine.setEngineSigma(currentSigma)
+                OliveEngine.setEngineStrictMatch(true) // SC2210 has tight FOV, use strict thresholds
+
                 startPolling()
             }
         }
@@ -375,6 +387,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setExposure(us: Float) {
         currentExposure = us
+        if (settingsManager.cameraSettingsMode == "Manual") {
+            settingsManager.manualExposureUs = us
+        }
         viewModelScope.launch(Dispatchers.IO) {
             if (engineMode == EngineMode.UVC) {
                 uvcWrapper?.setExposure(us.toInt())
@@ -385,6 +400,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateStarSensitivity(s: Float) {
         starSensitivity = s
+        if (settingsManager.cameraSettingsMode == "Manual") {
+            settingsManager.manualStarSensitivity = s
+        }
         val sigma = currentSigma
         viewModelScope.launch(Dispatchers.IO) {
             OliveEngine.setEngineSigma(sigma)
@@ -393,23 +411,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun fetchRealtimeSettings() {
         if (engineMode == EngineMode.NATIVE) {
-            val gain = OliveEngine.getNativeCameraGain()
-            if (!gain.isNaN() && gain > 0) {
-                currentGain = gain
-            }
-            val focus = OliveEngine.getNativeCameraFocus()
-            if (!focus.isNaN() && focus >= 0f) {
-                currentFocus = focus
-            }
-            val zoom = OliveEngine.getNativeCameraZoomRatio()
-            if (!zoom.isNaN() && zoom > 0f) {
-                settingsManager.zoomRatio = zoom
+            if (settingsManager.cameraSettingsMode == "Auto") {
+                val gain = OliveEngine.getNativeCameraGain()
+                if (!gain.isNaN() && gain > 0) {
+                    currentGain = gain
+                }
             }
             hotPixelMode = OliveEngine.getNativeCameraHotPixelMode()
         } else if (engineMode == EngineMode.UVC) {
-            val hwGain = uvcWrapper?.getHardwareGain()
-            if (hwGain != null && hwGain in 0..100) {
-                currentGain = hwGain.toFloat()
+            if (settingsManager.cameraSettingsMode == "Auto") {
+                val hwGain = uvcWrapper?.getHardwareGain()
+                if (hwGain != null && hwGain in 0..100) {
+                    currentGain = hwGain.toFloat()
+                }
             }
             val hwBrightness = uvcWrapper?.getHardwareBrightness()
             if (hwBrightness != null && hwBrightness in 0..100) {
@@ -418,8 +432,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setZoom(zoom: Float) {
+        currentZoom = zoom
+        if (settingsManager.cameraSettingsMode == "Manual") {
+            settingsManager.manualZoomRatio = zoom
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            OliveEngine.setNativeCameraZoomRatio(zoom)
+        }
+    }
+
     fun setGain(gain: Float) {
         currentGain = gain
+        if (settingsManager.cameraSettingsMode == "Manual") {
+            settingsManager.manualGain = gain
+        }
         viewModelScope.launch(Dispatchers.IO) {
             OliveEngine.setNativeCameraGain(gain)
         }
@@ -427,6 +454,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setFocus(focus: Float) {
         currentFocus = focus
+        if (settingsManager.cameraSettingsMode == "Manual") {
+            settingsManager.manualFocus = focus
+        }
         viewModelScope.launch(Dispatchers.IO) {
             OliveEngine.setNativeCameraFocus(focus)
         }
@@ -434,6 +464,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setNoiseReduction(mode: Int) {
         noiseReductionMode = mode
+        if (settingsManager.cameraSettingsMode == "Manual") {
+            settingsManager.manualNoiseReduction = mode
+        }
         viewModelScope.launch(Dispatchers.IO) {
             OliveEngine.setNativeCameraNoiseReduction(mode)
         }
@@ -441,6 +474,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateHotPixelMode(mode: Int) {
         hotPixelMode = mode
+        if (settingsManager.cameraSettingsMode == "Manual") {
+            settingsManager.manualHotPixelMode = mode
+        }
         viewModelScope.launch(Dispatchers.IO) {
             OliveEngine.setNativeCameraHotPixelMode(mode)
         }
@@ -448,6 +484,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setUvcBrightness(brightness: Int) {
         currentUvcBrightness = brightness
+        if (settingsManager.cameraSettingsMode == "Manual") {
+            settingsManager.manualUvcBrightness = brightness
+        }
         viewModelScope.launch(Dispatchers.IO) {
             OliveEngine.setNativeCameraBrightness(brightness)
         }
@@ -459,6 +498,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateUvcStacking(frames: Int) {
         uvcStacking = frames.coerceIn(1, 10)
+        if (settingsManager.cameraSettingsMode == "Manual") {
+            settingsManager.manualUvcStacking = uvcStacking
+        }
         OliveEngine.updateUvcStacking(uvcStacking)
     }
 

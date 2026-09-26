@@ -51,10 +51,41 @@ class SettingsManager(context: Context) {
         }
         set(value) = prefs.edit { putString("internal_camera_id", value) }
 
-    var zoomRatio: Float
-        get() = prefs.getFloat("zoom_ratio", 1.0f)
-        set(value) = prefs.edit { putFloat("zoom_ratio", value) }
+    var manualZoomRatio: Float
+        get() = prefs.getFloat("manual_zoom_ratio", 1.0f)
+        set(value) = prefs.edit { putFloat("manual_zoom_ratio", value) }
 
+    var manualExposureUs: Float
+        get() = prefs.getFloat("manual_exposure_us", 33000f)
+        set(value) = prefs.edit { putFloat("manual_exposure_us", value) }
+
+    var manualGain: Float
+        get() = prefs.getFloat("manual_gain", -1f)
+        set(value) = prefs.edit { putFloat("manual_gain", value) }
+
+    var manualFocus: Float
+        get() = prefs.getFloat("manual_focus", 0.0f)
+        set(value) = prefs.edit { putFloat("manual_focus", value) }
+
+    var manualStarSensitivity: Float
+        get() = prefs.getFloat("manual_star_sensitivity", 50f)
+        set(value) = prefs.edit { putFloat("manual_star_sensitivity", value) }
+
+    var manualUvcStacking: Int
+        get() = prefs.getInt("manual_uvc_stacking", 1)
+        set(value) = prefs.edit { putInt("manual_uvc_stacking", value) }
+
+    var manualNoiseReduction: Int
+        get() = prefs.getInt("manual_noise_reduction", 0)
+        set(value) = prefs.edit { putInt("manual_noise_reduction", value) }
+
+    var manualHotPixelMode: Int
+        get() = prefs.getInt("manual_hot_pixel_mode", 0)
+        set(value) = prefs.edit { putInt("manual_hot_pixel_mode", value) }
+
+    var manualUvcBrightness: Int
+        get() = prefs.getInt("manual_uvc_brightness", 50)
+        set(value) = prefs.edit { putInt("manual_uvc_brightness", value) }
 
     /* These are used from the native layer. */
     @Keep
