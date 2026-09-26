@@ -421,8 +421,14 @@ class MainActivity : ComponentActivity() {
             stopBackgroundService()
         }
 
-        usbMonitor?.unregister()
-        usbMonitor?.destroy()
+        try {
+            usbMonitor?.unregister()
+            usbMonitor?.destroy()
+        } catch (e: Exception) {
+            Log.w("OliveUI", "Error destroying USBMonitor in onDestroy", e)
+        } finally {
+            usbMonitor = null
+        }
     }
 
     private fun updateCameraSelection(selection: String) {
@@ -431,7 +437,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkForCameras() {
-        val deviceList = usbMonitor?.deviceList?.filterIsInstance<UsbDevice>() ?: emptyList()
+        if (isFinishing || isDestroyed) return
+        val usbManager = getSystemService(USB_SERVICE) as? UsbManager
+        val deviceList = usbManager?.deviceList?.values?.toList() ?: emptyList()
         val camera = deviceList.firstOrNull { isUvcDevice(it) }
         if (camera != null) {
             isCameraConnected = true
@@ -642,6 +650,9 @@ class MainActivity : ComponentActivity() {
                 checkForCameras() // Ensure connectedDevice is up to date
                 val device = connectedDevice
                 if (device != null) {
+                    if (usbMonitor == null || usbMonitor?.isRegistered != true) {
+                        initUsbMonitor()
+                    }
                     // USBMonitor handles both requesting permission AND initiating connection if already granted
                     usbMonitor?.requestPermission(device)
                     engineStarted = true // Pending permission or connection, keep isStarting true
@@ -674,14 +685,23 @@ class MainActivity : ComponentActivity() {
 
 
     private fun initUsbMonitor() {
-        usbMonitor = USBMonitor.getInstance(this)
-        usbMonitor?.setOnDeviceConnectListener(object : USBMonitor.OnDeviceConnectListener {
+        val monitor = USBMonitor.getInstance(applicationContext)
+        usbMonitor = monitor
+        monitor.setOnDeviceConnectListener(object : USBMonitor.OnDeviceConnectListener {
             override fun onAttach(device: UsbDevice?) {
-                runOnUiThread { checkForCameras() }
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        checkForCameras()
+                    }
+                }
             }
 
             override fun onDetach(device: UsbDevice?) {
-                runOnUiThread { checkForCameras() }
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        checkForCameras()
+                    }
+                }
             }
 
             override fun onConnect(
@@ -733,7 +753,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         })
-        usbMonitor?.register()
+        try {
+            monitor.register()
+        } catch (e: Exception) {
+            Log.e("OliveUI", "Failed to register USBMonitor", e)
+        }
     }
 
 
