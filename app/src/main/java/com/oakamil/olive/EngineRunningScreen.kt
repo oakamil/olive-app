@@ -145,7 +145,7 @@ fun EngineRunningScreen(
 
     LaunchedEffect(lastInteractionTime, showCatalog) {
         if (!showCatalog) {
-            delay(30_000)
+            delay(60_000)
             isLowPowerMode = true
         }
     }
