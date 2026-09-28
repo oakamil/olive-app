@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -111,8 +112,24 @@ fun SkyCatalogDialog(
     var selectedCategory by viewModel::catalogSelectedCategory
     var sortBy by viewModel::catalogSortBy
     var magLimit by viewModel::catalogMagLimit
-    var typeFilter by viewModel::catalogTypeFilter
+    var typeFilters by viewModel::catalogTypeFilters
     var visibilityFilter by viewModel::catalogVisibilityFilter
+
+    val catalogTypeOptions = listOf(
+        "Asterism",
+        "Asteroid",
+        "Cluster + Nebula",
+        "Comet",
+        "Dark Nebula",
+        "Double Star",
+        "Galaxy",
+        "Globular Cluster",
+        "Nebula",
+        "Open Cluster",
+        "Planet",
+        "Planetary Nebula",
+        "Star"
+    )
 
     var showSettingsMenu by remember { mutableStateOf(false) }
     var cometsRefreshTrigger by remember { mutableIntStateOf(0) }
@@ -215,6 +232,7 @@ fun SkyCatalogDialog(
                         cosLat = cos(latRad)
                     }
 
+                    val isAllTypes = typeFilters.size >= catalogTypeOptions.size
                     val allPlanets =
                         if (selectedCategory == "Solar System" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects") viewModel.getPlanets() else emptyList()
                     val filteredPlanets = allPlanets.filter { p ->
@@ -226,14 +244,15 @@ fun SkyCatalogDialog(
                                 ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
                             if (altCondition <= 0) passes = false
                         }
-                        if (typeFilter != "All Types" && typeFilter != "Planet") passes = false
+                        if (!isAllTypes && "Planet" !in typeFilters && p.objectType !in typeFilters) passes =
+                            false
                         if (searchQuery.isNotBlank() && !p.displayName.contains(
                                 searchQuery,
                                 ignoreCase = true
                             )
                         ) passes = false
                         val limit = magLimit
-                        if (limit != null && p.magnitude != null && p.magnitude > limit) passes =
+                        if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
                             false
                         if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
                             if (angularDistance(currentRa, currentDec, p.ra, p.dec) > 10.0) passes =
@@ -256,7 +275,7 @@ fun SkyCatalogDialog(
                                 catalogFilter = filter,
                                 sortBy = sortBy,
                                 magLimit = magLimit,
-                                typeFilter = typeFilter,
+                                typeFilters = if (isAllTypes) null else typeFilters,
                                 visibilityFilter = visibilityFilter,
                                 lat = viewModel.currentLat,
                                 lon = viewModel.currentLon,
@@ -279,7 +298,7 @@ fun SkyCatalogDialog(
                                     ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
                                 if (altCondition <= 0) passes = false
                             }
-                            if (typeFilter != "All Types" && typeFilter != "Asteroid") passes =
+                            if (!isAllTypes && "Asteroid" !in typeFilters && p.objectType !in typeFilters) passes =
                                 false
                             if (searchQuery.isNotBlank() && !p.displayName.contains(
                                     searchQuery,
@@ -287,7 +306,7 @@ fun SkyCatalogDialog(
                                 )
                             ) passes = false
                             val limit = magLimit
-                            if (limit != null && p.magnitude != null && p.magnitude > limit) passes =
+                            if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
                                 false
                             if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
                                 if (angularDistance(
@@ -313,14 +332,15 @@ fun SkyCatalogDialog(
                                     ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
                                 if (altCondition <= 0) passes = false
                             }
-                            if (typeFilter != "All Types" && typeFilter != "Comet") passes = false
+                            if (!isAllTypes && "Comet" !in typeFilters && p.objectType !in typeFilters) passes =
+                                false
                             if (searchQuery.isNotBlank() && !p.displayName.contains(
                                     searchQuery,
                                     ignoreCase = true
                                 )
                             ) passes = false
                             val limit = magLimit
-                            if (limit != null && p.magnitude != null && p.magnitude > limit) passes =
+                            if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
                                 false
                             if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
                                 if (angularDistance(
@@ -418,7 +438,7 @@ fun SkyCatalogDialog(
         selectedCategory,
         sortBy,
         magLimit,
-        typeFilter,
+        typeFilters,
         visibilityFilter,
         cometsRefreshTrigger
     ) {
@@ -580,7 +600,7 @@ fun SkyCatalogDialog(
                                             trailingIcon = {
                                                 if (sortBy == option) {
                                                     Icon(
-                                                        Default.Check,
+                                                        Default.RadioButtonChecked,
                                                         contentDescription = "Selected",
                                                         modifier = Modifier.size(16.dp)
                                                     )
@@ -605,7 +625,7 @@ fun SkyCatalogDialog(
                                             trailingIcon = {
                                                 if (visibilityFilter == option) {
                                                     Icon(
-                                                        Default.Check,
+                                                        Default.RadioButtonChecked,
                                                         contentDescription = "Selected",
                                                         modifier = Modifier.size(16.dp)
                                                     )
@@ -636,7 +656,7 @@ fun SkyCatalogDialog(
                                             trailingIcon = {
                                                 if (magLimit == value) {
                                                     Icon(
-                                                        Default.Check,
+                                                        Default.RadioButtonChecked,
                                                         contentDescription = stringResource(R.string.cd_selected),
                                                         modifier = Modifier.size(16.dp)
                                                     )
@@ -651,25 +671,33 @@ fun SkyCatalogDialog(
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    val typeOptions = listOf(
-                                        "All Types",
-                                        "Asterism",
-                                        "Cluster + Nebula",
-                                        "Dark Nebula",
-                                        "Double Star",
-                                        "Galaxy",
-                                        "Globular Cluster",
-                                        "Nebula",
-                                        "Open Cluster",
-                                        "Planetary Nebula",
-                                        "Star"
+                                    val allTypesSelected =
+                                        typeFilters.size >= catalogTypeOptions.size
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.type_all_types)) },
+                                        onClick = {
+                                            typeFilters = if (allTypesSelected) {
+                                                emptySet()
+                                            } else {
+                                                catalogTypeOptions.toSet()
+                                            }
+                                        },
+                                        trailingIcon = {
+                                            if (allTypesSelected) {
+                                                Icon(
+                                                    Default.Check,
+                                                    contentDescription = stringResource(R.string.cd_selected),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
                                     )
-                                    typeOptions.forEach { type ->
+                                    catalogTypeOptions.forEach { type ->
+                                        val isSelected = type in typeFilters
                                         DropdownMenuItem(
                                             text = {
                                                 Text(
                                                     when (type) {
-                                                        "All Types" -> stringResource(R.string.type_all_types)
                                                         "Star" -> stringResource(R.string.type_star)
                                                         "Galaxy" -> stringResource(R.string.type_galaxy)
                                                         "Nebula" -> stringResource(R.string.type_nebula)
@@ -689,10 +717,14 @@ fun SkyCatalogDialog(
                                                 )
                                             },
                                             onClick = {
-                                                typeFilter = type
+                                                typeFilters = if (isSelected) {
+                                                    typeFilters - type
+                                                } else {
+                                                    typeFilters + type
+                                                }
                                             },
                                             trailingIcon = {
-                                                if (typeFilter == type) {
+                                                if (isSelected) {
                                                     Icon(
                                                         Default.Check,
                                                         contentDescription = stringResource(R.string.cd_selected),

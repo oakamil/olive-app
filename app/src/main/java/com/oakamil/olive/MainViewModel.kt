@@ -39,14 +39,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var currentLat by mutableStateOf<Double?>(null)
     var currentLon by mutableStateOf<Double?>(null)
 
+    val settingsManager = SettingsManager(application)
+    val catalogDb = CatalogDatabaseHelper(application)
+
     // Catalog State
     var catalogSearchQuery by mutableStateOf("")
-    var catalogSelectedCategory by mutableStateOf("Nearest Objects")
-    var catalogSortBy by mutableStateOf("catalog ID")
-    var catalogMagLimit by mutableStateOf<Double?>(null)
-    var catalogTypeFilter by mutableStateOf("All Types")
-    var catalogVisibilityFilter by mutableStateOf("Above Horizon")
-    var landscapeKeyboardOnRight by mutableStateOf(true)
+
+    private val _catalogSelectedCategory = mutableStateOf(settingsManager.catalogSelectedCategory)
+    var catalogSelectedCategory: String
+        get() = _catalogSelectedCategory.value
+        set(value) {
+            _catalogSelectedCategory.value = value
+            settingsManager.catalogSelectedCategory = value
+        }
+
+    private val _catalogSortBy = mutableStateOf(settingsManager.catalogSortBy)
+    var catalogSortBy: String
+        get() = _catalogSortBy.value
+        set(value) {
+            _catalogSortBy.value = value
+            settingsManager.catalogSortBy = value
+        }
+
+    private val _catalogMagLimit = mutableStateOf<Double?>(settingsManager.catalogMagLimit)
+    var catalogMagLimit: Double?
+        get() = _catalogMagLimit.value
+        set(value) {
+            _catalogMagLimit.value = value
+            settingsManager.catalogMagLimit = value
+        }
+
+    private val _catalogTypeFilters = mutableStateOf(settingsManager.catalogTypeFilters)
+    var catalogTypeFilters: Set<String>
+        get() = _catalogTypeFilters.value
+        set(value) {
+            _catalogTypeFilters.value = value
+            settingsManager.catalogTypeFilters = value
+        }
+
+    private val _catalogVisibilityFilter = mutableStateOf(settingsManager.catalogVisibilityFilter)
+    var catalogVisibilityFilter: String
+        get() = _catalogVisibilityFilter.value
+        set(value) {
+            _catalogVisibilityFilter.value = value
+            settingsManager.catalogVisibilityFilter = value
+        }
+
+    private val _landscapeKeyboardOnRight = mutableStateOf(settingsManager.landscapeKeyboardOnRight)
+    var landscapeKeyboardOnRight: Boolean
+        get() = _landscapeKeyboardOnRight.value
+        set(value) {
+            _landscapeKeyboardOnRight.value = value
+            settingsManager.landscapeKeyboardOnRight = value
+        }
 
     // Tuning state
     var currentExposure by mutableFloatStateOf(33000f)
@@ -83,9 +128,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var statsJob: Job? = null
     private var frameJob: Job? = null
-
-    val settingsManager = SettingsManager(application)
-    val catalogDb = CatalogDatabaseHelper(application)
 
     fun getAvailableInternalCameras(): String {
         return OliveEngine.getAvailableInternalCameras()
@@ -733,5 +775,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         const val INVALID_COORD = 200.0
         const val CAMERA_STUCK_TIMEOUT_MS = 5000L
+        val DEFAULT_CATALOG_TYPE_FILTERS = setOf(
+            "Asterism", "Asteroid", "Cluster + Nebula", "Comet", "Dark Nebula",
+            "Double Star", "Galaxy", "Globular Cluster", "Nebula", "Open Cluster",
+            "Planet", "Planetary Nebula", "Star"
+        )
     }
 }

@@ -367,7 +367,18 @@ fun EngineRunningScreen(
             val fovGridKey =
                 floor(fovVal / 5.0) // Only re-trigger on major zoom changes
 
-            LaunchedEffect(raGridKey, decGridKey, fovGridKey) {
+            val currentTypeFilters = viewModel.catalogTypeFilters
+            val currentMagLimit = viewModel.catalogMagLimit
+            val isAllTypes =
+                currentTypeFilters.size >= MainViewModel.DEFAULT_CATALOG_TYPE_FILTERS.size
+
+            LaunchedEffect(
+                raGridKey,
+                decGridKey,
+                fovGridKey,
+                currentTypeFilters,
+                currentMagLimit
+            ) {
                 if (ra != null && dec != null) {
                     withContext(Dispatchers.IO) {
                         // Screen corner is at ~0.707x FOV from center.
@@ -377,6 +388,8 @@ fun EngineRunningScreen(
                             targetRa = ra,
                             targetDec = dec,
                             maxDistanceDegrees = searchRadius,
+                            magLimit = currentMagLimit,
+                            typeFilters = if (isAllTypes) null else currentTypeFilters,
                             visibilityFilter = "Any",
                             sortBy = "brightness",
                             limit = 250
@@ -387,7 +400,39 @@ fun EngineRunningScreen(
             }
 
             val targetLabelFormat = stringResource(R.string.target_label_format)
-            val allObjects = (planets + comets + asteroids + visibleDsos).toMutableList()
+
+            val filteredPlanets = remember(planets, currentTypeFilters, currentMagLimit) {
+                planets.filter { p ->
+                    val passesType =
+                        isAllTypes || "Planet" in currentTypeFilters || p.objectType in currentTypeFilters
+                    val passesMag =
+                        currentMagLimit == null || (p.magnitude != null && p.magnitude <= currentMagLimit)
+                    passesType && passesMag
+                }
+            }
+
+            val filteredComets = remember(comets, currentTypeFilters, currentMagLimit) {
+                comets.filter { c ->
+                    val passesType =
+                        isAllTypes || "Comet" in currentTypeFilters || c.objectType in currentTypeFilters
+                    val passesMag =
+                        currentMagLimit == null || (c.magnitude != null && c.magnitude <= currentMagLimit)
+                    passesType && passesMag
+                }
+            }
+
+            val filteredAsteroids = remember(asteroids, currentTypeFilters, currentMagLimit) {
+                asteroids.filter { a ->
+                    val passesType =
+                        isAllTypes || "Asteroid" in currentTypeFilters || a.objectType in currentTypeFilters
+                    val passesMag =
+                        currentMagLimit == null || (a.magnitude != null && a.magnitude <= currentMagLimit)
+                    passesType && passesMag
+                }
+            }
+
+            val allObjects =
+                (filteredPlanets + filteredComets + filteredAsteroids + visibleDsos).toMutableList()
             val targetRaVal = stats.targetRa
             val targetDecVal = stats.targetDec
             if (targetRaVal != null && targetDecVal != null) {
