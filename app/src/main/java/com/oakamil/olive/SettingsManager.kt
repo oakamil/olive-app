@@ -87,6 +87,50 @@ class SettingsManager(context: Context) {
         get() = prefs.getInt("manual_uvc_brightness", 50)
         set(value) = prefs.edit { putInt("manual_uvc_brightness", value) }
 
+    var catalogSortBy: String
+        get() = prefs.getString("catalog_sort_by", "catalog ID") ?: "catalog ID"
+        set(value) = prefs.edit { putString("catalog_sort_by", value) }
+
+    var catalogVisibilityFilter: String
+        get() = prefs.getString("catalog_visibility_filter", "Above Horizon") ?: "Above Horizon"
+        set(value) = prefs.edit { putString("catalog_visibility_filter", value) }
+
+    var catalogMagLimit: Double?
+        get() {
+            return if (prefs.contains("catalog_mag_limit")) {
+                prefs.getFloat("catalog_mag_limit", 0f).toDouble()
+            } else {
+                null
+            }
+        }
+        set(value) {
+            prefs.edit {
+                if (value != null) {
+                    putFloat("catalog_mag_limit", value.toFloat())
+                } else {
+                    remove("catalog_mag_limit")
+                }
+            }
+        }
+
+    var catalogTypeFilters: Set<String>
+        get() {
+            if (!prefs.contains("catalog_type_filters")) {
+                return MainViewModel.DEFAULT_CATALOG_TYPE_FILTERS
+            }
+            val set = prefs.getStringSet("catalog_type_filters", null)
+            return set?.toSet() ?: MainViewModel.DEFAULT_CATALOG_TYPE_FILTERS
+        }
+        set(value) = prefs.edit { putStringSet("catalog_type_filters", value.toSet()) }
+
+    var catalogSelectedCategory: String
+        get() = prefs.getString("catalog_selected_category", "Nearest Objects") ?: "Nearest Objects"
+        set(value) = prefs.edit { putString("catalog_selected_category", value) }
+
+    var landscapeKeyboardOnRight: Boolean
+        get() = prefs.getBoolean("landscape_keyboard_on_right", true)
+        set(value) = prefs.edit { putBoolean("landscape_keyboard_on_right", value) }
+
     /* These are used from the native layer. */
     @Keep
     fun getString(key: String): String? {

@@ -374,7 +374,7 @@ class CatalogDatabaseHelper(private val context: Context) :
         catalogFilter: String? = null,
         sortBy: String = "catalog ID",
         magLimit: Double? = null,
-        typeFilter: String? = null,
+        typeFilters: Set<String>? = null,
         visibilityFilter: String = "Above Horizon",
         lat: Double? = null,
         lon: Double? = null,
@@ -455,13 +455,18 @@ class CatalogDatabaseHelper(private val context: Context) :
         }
 
         if (magLimit != null) {
-            selection += " AND (magnitude IS NULL OR magnitude <= ?)"
+            selection += " AND (magnitude IS NOT NULL AND magnitude <= ?)"
             args.add(magLimit.toString())
         }
 
-        if (typeFilter != null && typeFilter != "All Types") {
-            selection += " AND object_type = ?"
-            args.add(typeFilter)
+        if (typeFilters != null) {
+            if (typeFilters.isEmpty()) {
+                selection += " AND 0 = 1"
+            } else {
+                val placeholders = typeFilters.joinToString(",") { "?" }
+                selection += " AND object_type IN ($placeholders)"
+                args.addAll(typeFilters)
+            }
         }
 
         if (visibilityFilter == "Above Horizon" && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
