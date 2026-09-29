@@ -646,6 +646,17 @@ class MainActivity : ComponentActivity() {
             val timeMs = System.currentTimeMillis()
             var engineStarted = false
 
+            launch {
+                delay(5000L) // Wait for USB permission & engine startup
+                if (isStarting) {
+                    Log.w("OliveUI", "Engine startup timed out! Cleaning up.")
+                    isStarting = false
+                    withContext(Dispatchers.IO) {
+                        viewModel.stopEngineSync()
+                    }
+                }
+            }
+
             if (activeCameraSelection == "external") {
                 checkForCameras() // Ensure connectedDevice is up to date
                 val device = connectedDevice
@@ -711,7 +722,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 if (device != null && ctrlBlock != null) {
                     viewModel.uvcWrapper?.release()
-                    val wrapper = UvcCameraWrapper(this@MainActivity, device)
+                    val wrapper = UvcCameraWrapper()
                     wrapper.initialize(ctrlBlock, viewModel.settingsManager.uvcFps.coerceAtLeast(1))
                     viewModel.uvcWrapper = wrapper
 

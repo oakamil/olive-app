@@ -433,9 +433,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settingsManager.manualExposureUs = us
         }
         viewModelScope.launch(Dispatchers.IO) {
-            if (engineMode == EngineMode.UVC) {
-                uvcWrapper?.setExposure(us.toInt())
-            }
             OliveEngine.setNativeCameraExposure(us.toInt())
         }
     }
