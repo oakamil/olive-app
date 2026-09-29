@@ -12,6 +12,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -81,6 +83,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.BaselineShift.Companion.Superscript
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -88,6 +92,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Calendar
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.acos
@@ -675,6 +680,13 @@ fun SkyCatalogDialog(
                                         typeFilters.size >= catalogTypeOptions.size
                                     DropdownMenuItem(
                                         text = { Text(stringResource(R.string.type_all_types)) },
+                                        leadingIcon = {
+                                            Icon(
+                                                CustomIcons.Checklist,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        },
                                         onClick = {
                                             typeFilters = if (allTypesSelected) {
                                                 emptySet()
@@ -695,6 +707,10 @@ fun SkyCatalogDialog(
                                     catalogTypeOptions.forEach { type ->
                                         val isSelected = type in typeFilters
                                         DropdownMenuItem(
+                                            leadingIcon = {
+                                                val (iVec, iCol) = getIconAndColorForType(type)
+                                                Icon(iVec, contentDescription = null, tint = iCol)
+                                            },
                                             text = {
                                                 Text(
                                                     when (type) {
@@ -902,11 +918,42 @@ fun SkyCatalogDialog(
                                                 obj.magnitude
                                             )
                                         }" else if (obj.catalogLabel == "Planet") "" else "Mag: N/A"
-                                        val text = listOfNotNull(
-                                            obj.designation.takeIf { it.isNotBlank() },
-                                            localizedType,
-                                            magText.takeIf { it.isNotBlank() }).joinToString(" | ")
-                                        Text(text)
+                                        @OptIn(ExperimentalLayoutApi::class)
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                val (iVec, iCol) = obj.getIconAndColor()
+                                                Icon(
+                                                    imageVector = iVec,
+                                                    contentDescription = null,
+                                                    tint = iCol,
+                                                    modifier = Modifier
+                                                        .size(16.dp)
+                                                        .padding(end = 4.dp)
+                                                )
+                                                Text(
+                                                    text = localizedType,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            if (obj.designation.isNotBlank()) {
+                                                Text(
+                                                    text = obj.designation,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            if (magText.isNotBlank()) {
+                                                Text(
+                                                    text = magText,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
                                     },
                                     trailingContent = {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1568,9 +1615,9 @@ fun GotoRaDecPopup(
                     val epoch = if (epochIsJ2000) {
                         2000.0
                     } else {
-                        val cal = java.util.Calendar.getInstance()
-                        val year = cal.get(java.util.Calendar.YEAR)
-                        val dayOfYear = cal.get(java.util.Calendar.DAY_OF_YEAR)
+                        val cal = Calendar.getInstance()
+                        val year = cal.get(Calendar.YEAR)
+                        val dayOfYear = cal.get(Calendar.DAY_OF_YEAR)
                         val isLeapYear = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
                         val daysInYear = if (isLeapYear) 366 else 365
                         val epochDecimal = year + (dayOfYear.toDouble() / daysInYear.toDouble())
@@ -1618,7 +1665,7 @@ fun CoordinateBox(
         Text(
             text = suffix,
             style = if (isDeclination) {
-                MaterialTheme.typography.bodyLarge.copy(baselineShift = androidx.compose.ui.text.style.BaselineShift.Superscript)
+                MaterialTheme.typography.bodyLarge.copy(baselineShift = Superscript)
             } else {
                 MaterialTheme.typography.labelSmall
             },
