@@ -1,16 +1,13 @@
 package com.oakamil.olive
 
-import android.content.Context
 import android.graphics.SurfaceTexture
-import android.hardware.usb.UsbDevice
 import android.util.Log
 import android.view.Surface
+import androidx.annotation.Keep
 import com.jiangdg.usb.USBMonitor
-import com.jiangdg.uvc.IFrameCallback
 import com.jiangdg.uvc.UVCCamera
-import java.nio.ByteBuffer
 
-class UvcCameraWrapper(private val context: Context, private val device: UsbDevice) {
+class UvcCameraWrapper() {
     var uvcCameraInstance: UVCCamera? = null
     var previewWidth: Int = 640
         private set
@@ -85,7 +82,6 @@ class UvcCameraWrapper(private val context: Context, private val device: UsbDevi
                         )
                         previewWidth = fallbackSize.width
                         previewHeight = fallbackSize.height
-                        initialized = true
                         break
                     } catch (_: Exception) {
                         try {
@@ -99,7 +95,6 @@ class UvcCameraWrapper(private val context: Context, private val device: UsbDevi
                             )
                             previewWidth = fallbackSize.width
                             previewHeight = fallbackSize.height
-                            initialized = true
                             break
                         } catch (_: Exception) {
                         }
@@ -116,25 +111,26 @@ class UvcCameraWrapper(private val context: Context, private val device: UsbDevi
         }
     }
 
+    private var isPreviewRunning = false
+
     fun startZeroCopyStream() {
-        uvcCameraInstance?.setFrameCallback(object : IFrameCallback {
-            override fun onFrame(frame: ByteBuffer?) {
-                if (frame != null && frame.isDirect) {
-                    OliveEngine.pushExternalUvcFrame(
-                        frame,
-                        previewWidth,
-                        previewHeight,
-                        System.currentTimeMillis()
-                    )
-                }
+        uvcCameraInstance?.setFrameCallback({ frame ->
+            if (frame != null && frame.isDirect) {
+                OliveEngine.pushExternalUvcFrame(
+                    frame,
+                    previewWidth,
+                    previewHeight,
+                    System.currentTimeMillis()
+                )
             }
         }, UVCCamera.PIXEL_FORMAT_NV21)
         uvcCameraInstance?.startPreview()
+        isPreviewRunning = true
 
         // Configure camera for astronomy after stream starts
         try {
             // 1. Disable AWB via public API
-            uvcCameraInstance?.setAutoWhiteBlance(false)
+            uvcCameraInstance?.autoWhiteBlance = false
 
             // 2. Force Manual / Shutter Priority AE via reflection
             val ptrField = UVCCamera::class.java.getDeclaredField("mNativePtr")
@@ -162,23 +158,34 @@ class UvcCameraWrapper(private val context: Context, private val device: UsbDevi
         }
     }
 
-    fun setExposure(exposureUs: Int) {
-        // Shutter speed bound to stream framerate on UVC wrapper
-    }
-
+    // Used from native
+    @Keep
     fun setGain(gain: Int) {
         uvcCameraInstance?.updateCameraParams()
         uvcCameraInstance?.gain = gain
     }
 
+    // Used from native
+    @Keep
     fun setBrightness(brightness: Int) {
         uvcCameraInstance?.updateCameraParams()
         uvcCameraInstance?.brightness = brightness
     }
 
     fun release() {
-        uvcCameraInstance?.stopPreview()
-        uvcCameraInstance?.destroy()
+        if (isPreviewRunning) {
+            try {
+                uvcCameraInstance?.stopPreview()
+            } catch (e: Exception) {
+                Log.w("UvcCameraWrapper", "Error stopping preview", e)
+            }
+            isPreviewRunning = false
+        }
+        try {
+            uvcCameraInstance?.destroy()
+        } catch (e: Exception) {
+            Log.w("UvcCameraWrapper", "Error destroying camera", e)
+        }
         uvcCameraInstance = null
 
         dummySurface?.release()

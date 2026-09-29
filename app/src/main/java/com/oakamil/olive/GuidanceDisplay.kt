@@ -118,134 +118,18 @@ fun GuidanceDisplay(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                            if (isAltAz) {
-                                DirectionArrow(if (displayTilt > 0.0) 270 else 90, false, isLowPowerMode)
-                            } else {
-                                BasicText(
-                                    text = if (displayTilt > 0) stringResource(id = R.string.label_north) else stringResource(id = R.string.label_south),
-                                    style = indicatorStyle,
-                                    softWrap = false,
-                                    autoSize = TextAutoSize.StepBased()
-                                )
-                            }
-                        }
-                        Box(modifier = Modifier.weight(1.5f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                            BasicText(
-                                text = String.format(Locale.getDefault(), "%-+6.1f", displayTilt),
-                                style = offsetStyle,
-                                softWrap = false,
-                                autoSize = TextAutoSize.StepBased()
-                            )
-                        }
-                        Box(modifier = Modifier.weight(2f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                            if (stats.offsetAngle == null && displayAngle != null && (stats.status == "Solving" || stats.status == "Slewing")) {
-                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxSize(0.5f), strokeWidth = 4.dp)
-                            } else if (stats.offsetAngle != null && abs(stats.offsetAngle) >= 0.05) {
-                                TargetArrow(stats.offsetAngle, isLowPowerMode)
-                            }
-                        }
-                        Box(modifier = Modifier.weight(1.5f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                            BasicText(
-                                text = String.format(Locale.getDefault(), "%+6.1f", displayRot),
-                                style = offsetStyle,
-                                softWrap = false,
-                                autoSize = TextAutoSize.StepBased()
-                            )
-                        }
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                            if (isAltAz) {
-                                DirectionArrow(if (displayRot > 0.0) 0 else 180, true, isLowPowerMode)
-                            } else {
-                                BasicText(
-                                    text = if (displayRot > 0) stringResource(id = R.string.label_east) else stringResource(id = R.string.label_west),
-                                    style = indicatorStyle,
-                                    softWrap = false,
-                                    autoSize = TextAutoSize.StepBased()
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(end = 4.dp)
-                                .fillMaxSize(),
-                            contentAlignment = Alignment.BottomCenter
-                        ) {
-                            BasicText(
-                                text = String.format(Locale.getDefault(), "%-+6.1f", displayTilt),
-                                style = offsetStyle,
-                                softWrap = false,
-                                autoSize = TextAutoSize.StepBased()
-                            )
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(start = 4.dp)
-                                .fillMaxSize(),
-                            contentAlignment = Alignment.BottomCenter
-                        ) {
-                            BasicText(
-                                text = String.format(Locale.getDefault(), "%+6.1f", displayRot),
-                                style = offsetStyle,
-                                softWrap = false,
-                                autoSize = TextAutoSize.StepBased()
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .weight(1.5f)
-                            .fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(4.dp)
                                 .fillMaxHeight(),
-                            contentAlignment = Alignment.TopStart
+                            contentAlignment = Alignment.Center
                         ) {
                             if (isAltAz) {
-                                Column(modifier = Modifier.fillMaxSize()) {
-                                    Row(
-                                        modifier = Modifier
-                                            .weight(2f)
-                                            .fillMaxWidth()
-                                    ) {
-                                        DirectionArrow(
-                                            if (displayTilt > 0.0) 270 else 90,
-                                            false,
-                                            isLowPowerMode
-                                        )
-                                    }
-                                    Row(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxWidth()
-                                    ) {
-                                        BasicText(
-                                            text = stringResource(id = R.string.label_alt),
-                                            style = indicatorStyle,
-                                            softWrap = false,
-                                            autoSize = TextAutoSize.StepBased()
-                                        )
-                                    }
-                                }
+                                DirectionArrow(
+                                    if (displayTilt > 0.0) 270 else 90,
+                                    false,
+                                    isLowPowerMode
+                                )
                             } else {
                                 BasicText(
                                     text = if (displayTilt > 0) stringResource(id = R.string.label_north) else stringResource(
@@ -257,7 +141,19 @@ fun GuidanceDisplay(
                                 )
                             }
                         }
-
+                        Box(
+                            modifier = Modifier
+                                .weight(1.5f)
+                                .fillMaxHeight(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            BasicText(
+                                text = String.format(Locale.getDefault(), "%-+6.1f", displayTilt),
+                                style = offsetStyle,
+                                softWrap = false,
+                                autoSize = TextAutoSize.StepBased()
+                            )
+                        }
                         Box(
                             modifier = Modifier
                                 .weight(2f)
@@ -268,50 +164,40 @@ fun GuidanceDisplay(
                                 CircularProgressIndicator(
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.fillMaxSize(0.5f),
-                                    strokeWidth = 8.dp
+                                    strokeWidth = 4.dp
                                 )
                             } else if (stats.offsetAngle != null && abs(stats.offsetAngle) >= 0.05) {
                                 TargetArrow(stats.offsetAngle, isLowPowerMode)
                             }
                         }
-
+                        Box(
+                            modifier = Modifier
+                                .weight(1.5f)
+                                .fillMaxHeight(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            BasicText(
+                                text = String.format(Locale.getDefault(), "%+6.1f", displayRot),
+                                style = offsetStyle,
+                                softWrap = false,
+                                autoSize = TextAutoSize.StepBased()
+                            )
+                        }
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(4.dp)
                                 .fillMaxHeight(),
-                            contentAlignment = Alignment.TopEnd
+                            contentAlignment = Alignment.Center
                         ) {
                             if (isAltAz) {
-                                Column(modifier = Modifier.fillMaxSize()) {
-                                    Row(
-                                        modifier = Modifier
-                                            .weight(2f)
-                                            .fillMaxWidth()
-                                    ) {
-                                        DirectionArrow(
-                                            if (displayRot > 0.0) 0 else 180,
-                                            true,
-                                            isLowPowerMode
-                                        )
-                                    }
-                                    Row(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.Center
-                                    ) {
-                                        BasicText(
-                                            text = " " + stringResource(id = R.string.label_az),
-                                            style = indicatorStyle,
-                                            softWrap = false,
-                                            autoSize = TextAutoSize.StepBased()
-                                        )
-                                    }
-                                }
+                                DirectionArrow(
+                                    if (displayRot > 0.0) 0 else 180,
+                                    true,
+                                    isLowPowerMode
+                                )
                             } else {
                                 BasicText(
-                                    text = " " + if (displayRot > 0) stringResource(id = R.string.label_east) else stringResource(
+                                    text = if (displayRot > 0) stringResource(id = R.string.label_east) else stringResource(
                                         id = R.string.label_west
                                     ),
                                     style = indicatorStyle,
@@ -321,7 +207,166 @@ fun GuidanceDisplay(
                             }
                         }
                     }
-                }
+                } else {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 4.dp)
+                                    .fillMaxSize(),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                BasicText(
+                                    text = String.format(
+                                        Locale.getDefault(),
+                                        "%-+6.1f",
+                                        displayTilt
+                                    ),
+                                    style = offsetStyle,
+                                    softWrap = false,
+                                    autoSize = TextAutoSize.StepBased()
+                                )
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 4.dp)
+                                    .fillMaxSize(),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                BasicText(
+                                    text = String.format(Locale.getDefault(), "%+6.1f", displayRot),
+                                    style = offsetStyle,
+                                    softWrap = false,
+                                    autoSize = TextAutoSize.StepBased()
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .weight(1.5f)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(4.dp)
+                                    .fillMaxHeight(),
+                                contentAlignment = Alignment.TopStart
+                            ) {
+                                if (isAltAz) {
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        Row(
+                                            modifier = Modifier
+                                                .weight(2f)
+                                                .fillMaxWidth()
+                                        ) {
+                                            DirectionArrow(
+                                                if (displayTilt > 0.0) 270 else 90,
+                                                false,
+                                                isLowPowerMode
+                                            )
+                                        }
+                                        Row(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxWidth()
+                                        ) {
+                                            BasicText(
+                                                text = stringResource(id = R.string.label_alt),
+                                                style = indicatorStyle,
+                                                softWrap = false,
+                                                autoSize = TextAutoSize.StepBased()
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    BasicText(
+                                        text = if (displayTilt > 0) stringResource(id = R.string.label_north) else stringResource(
+                                            id = R.string.label_south
+                                        ),
+                                        style = indicatorStyle,
+                                        softWrap = false,
+                                        autoSize = TextAutoSize.StepBased()
+                                    )
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(2f)
+                                    .fillMaxHeight(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (stats.offsetAngle == null && displayAngle != null && (stats.status == "Solving" || stats.status == "Slewing")) {
+                                    CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.fillMaxSize(0.5f),
+                                        strokeWidth = 8.dp
+                                    )
+                                } else if (stats.offsetAngle != null && abs(stats.offsetAngle) >= 0.05) {
+                                    TargetArrow(stats.offsetAngle, isLowPowerMode)
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(4.dp)
+                                    .fillMaxHeight(),
+                                contentAlignment = Alignment.TopEnd
+                            ) {
+                                if (isAltAz) {
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        Row(
+                                            modifier = Modifier
+                                                .weight(2f)
+                                                .fillMaxWidth()
+                                        ) {
+                                            DirectionArrow(
+                                                if (displayRot > 0.0) 0 else 180,
+                                                true,
+                                                isLowPowerMode
+                                            )
+                                        }
+                                        Row(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            BasicText(
+                                                text = " " + stringResource(id = R.string.label_az),
+                                                style = indicatorStyle,
+                                                softWrap = false,
+                                                autoSize = TextAutoSize.StepBased()
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    BasicText(
+                                        text = " " + if (displayRot > 0) stringResource(id = R.string.label_east) else stringResource(
+                                            id = R.string.label_west
+                                        ),
+                                        style = indicatorStyle,
+                                        softWrap = false,
+                                        autoSize = TextAutoSize.StepBased()
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -371,6 +416,10 @@ fun DirectionArrow(rotation: Int, alignRight: Boolean, isOutlined: Boolean) {
         modifier = Modifier
             .fillMaxSize()
             .drawWithCache {
+                if (size.minDimension <= 0f) {
+                    return@drawWithCache onDrawBehind {}
+                }
+
                 val radius = size.minDimension / 2.5f
                 var shapeCenterX = size.minDimension / 2
                 if (alignRight) {
