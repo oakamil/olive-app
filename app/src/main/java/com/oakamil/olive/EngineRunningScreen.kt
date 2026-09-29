@@ -60,14 +60,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin.Companion.Round
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -138,6 +140,7 @@ fun EngineRunningScreen(
     var showCatalog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val catalogPainters = rememberCatalogPainters()
     var isLowPowerMode by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -511,426 +514,729 @@ fun EngineRunningScreen(
                         .aspectRatio(1f)
                         .clipToBounds()
                 ) {
-                    if (frame != null) {
-                        Image(
-                            bitmap = frame,
-                            contentDescription = stringResource(id = R.string.cd_live_preview),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .scale(1.414f)
-                                .graphicsLayer { rotationZ = uiRotation }
-                        )
-                    }
-
-                    if (frame != null) {
-                        val textMeasurer = rememberTextMeasurer()
-                        val primaryColor = MaterialTheme.colorScheme.primary
-
-                        val currentUiRotation by rememberUpdatedState(
-                            uiRotation
-                        )
-                        val placedScreenItems =
-                            remember { mutableListOf<PlacedScreenItem>() }
-
-                        val alignTargetPixel = remember(
-                            stats.targetPixelX,
-                            stats.targetPixelY,
-                            settingsManager.getString("target_pixel"),
-                            frame.width,
-                            frame.height
-                        ) {
-                            if (stats.targetPixelX != null && stats.targetPixelY != null) {
-                                Pair(stats.targetPixelX, stats.targetPixelY)
-                            } else {
-                                val alignPixelStr = settingsManager.getString("target_pixel")
-                                if (alignPixelStr != null) {
-                                    val parts = alignPixelStr.split(",")
-                                    if (parts.size == 2) {
-                                        val px = parts[0].trim().toDoubleOrNull()
-                                        val py = parts[1].trim().toDoubleOrNull()
-                                        if (px != null && py != null) Pair(px, py) else null
-                                    } else null
+                    val currentUiRotation by rememberUpdatedState(uiRotation)
+                    val alignTargetPixel = remember(
+                        stats.targetPixelX,
+                        stats.targetPixelY,
+                        settingsManager.getString("target_pixel"),
+                        frame?.width,
+                        frame?.height
+                    ) {
+                        if (stats.targetPixelX != null && stats.targetPixelY != null) {
+                            Pair(stats.targetPixelX, stats.targetPixelY)
+                        } else {
+                            val alignPixelStr = settingsManager.getString("target_pixel")
+                            if (alignPixelStr != null) {
+                                val parts = alignPixelStr.split(",")
+                                if (parts.size == 2) {
+                                    val px = parts[0].trim().toDoubleOrNull()
+                                    val py = parts[1].trim().toDoubleOrNull()
+                                    if (px != null && py != null) Pair(px, py) else null
                                 } else null
-                            }
-                        }
-
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .scale(1.414f)
-                                .graphicsLayer { rotationZ = uiRotation }
-                                .pointerInput(Unit) {
-                                    detectTapGestures { tapOffset ->
-                                        val cx = size.width / 2f
-                                        val cy = size.height / 2f
-                                        val rad = Math.toRadians(currentUiRotation.toDouble())
-                                        val cosRot = cos(rad).toFloat()
-                                        val sinRot = sin(rad).toFloat()
-
-                                        val tsx =
-                                            cx + (tapOffset.x - cx) * cosRot - (tapOffset.y - cy) * sinRot
-                                        val tsy =
-                                            cy + (tapOffset.x - cx) * sinRot + (tapOffset.y - cy) * cosRot
-                                        val tapScreen = Offset(tsx, tsy)
-
-                                        var closest: CatalogObject? = null
-                                        var minDist = 30f
-
-                                        for (item in placedScreenItems) {
-                                            val hitText = item.labelRect?.inflate(12f)
-                                                ?.contains(tapScreen) == true
-                                            if (hitText) {
-                                                closest = item.obj
-                                                break
-                                            }
-                                            val dist = hypot(item.screenX - tsx, item.screenY - tsy)
-                                            if (dist < minDist) {
-                                                minDist = dist
-                                                closest = item.obj
-                                            }
-                                        }
-
-                                        if (closest != null) {
-                                            tappedObject = closest
-                                        }
-                                    }
-                                }
-                        ) {
-                            placedScreenItems.clear()
-                            val placedLabelRects = mutableListOf<Rect>()
-                            val placedReticleRects = mutableListOf<Rect>()
-
-                            val visibleMinX = (size.width - size.width / 1.414f) / 2f
-                            val visibleMaxX = size.width - visibleMinX
-                            val visibleMinY = (size.height - size.height / 1.414f) / 2f
-                            val visibleMaxY = size.height - visibleMinY
-                            val margin = visibleMinX + 5f
-                            val maxBoundX = size.width - margin
-                            val maxBoundY = size.height - margin
-
-                            val cx = size.width / 2f
-                            val cy = size.height / 2f
-                            val rad = Math.toRadians(uiRotation.toDouble())
-                            val cosRot = cos(rad).toFloat()
-                            val sinRot = sin(rad).toFloat()
-
-                            fun reticleZone(sx: Float, sy: Float, radius: Float = 16f) =
-                                Rect(sx - radius, sy - radius, sx + radius, sy + radius)
-
-                            // 1. Render boresight at the alignment pixel in DarkRed (large "crop free" style)
-                            val bW = frame.width.toFloat()
-                            val bH = frame.height.toFloat()
-                            val targetPxX = (alignTargetPixel?.first ?: (bW / 2.0)).toFloat()
-                            val targetPxY = (alignTargetPixel?.second ?: (bH / 2.0)).toFloat()
-                            val fitPxScale = maxOf(size.width / bW, size.height / bH)
-                            val boresightCanvasX =
-                                size.width / 2f + (targetPxX - bW / 2f) * fitPxScale
-                            val boresightCanvasY =
-                                size.height / 2f + (targetPxY - bH / 2f) * fitPxScale
-
-                            // 2. Pre-filter and deduplicate celestial candidates visible in FOV (if plate solved and not stale)
-                            if (ra != null && dec != null && !isPositionStale) {
-                                val visibleCandidates = mutableListOf<VisibleCandidate>()
-                                for (obj in allObjects) {
-                                    val isTarget = targetRaVal != null && targetDecVal != null &&
-                                            hypot(
-                                                obj.ra - targetRaVal,
-                                                obj.dec - targetDecVal
-                                            ) < 0.05
-
-                                    val projRa =
-                                        if (stats.isImuEstimate || stats.centerRa == null) ra else stats.centerRa
-                                    val projDec =
-                                        if (stats.isImuEstimate || stats.centerDec == null) dec else stats.centerDec
-
-                                    val dist = AstrometryUtils.angularDistance(
-                                        obj.ra, obj.dec, projRa, projDec
-                                    )
-                                    if (dist > fov * 1.5) {
-                                        continue
-                                    }
-
-                                    val projCx =
-                                        if (!stats.isImuEstimate && stats.centerRa != null) cx else boresightCanvasX
-                                    val projCy =
-                                        if (!stats.isImuEstimate && stats.centerDec != null) cy else boresightCanvasY
-
-                                    val proj = AstrometryUtils.projectToScreen(
-                                        obj.ra,
-                                        obj.dec,
-                                        projRa,
-                                        projDec,
-                                        roll,
-                                        fov,
-                                        size.width,
-                                        size.height,
-                                        frame.width,
-                                        frame.height,
-                                        projCx,
-                                        projCy,
-                                        stats.distortion
-                                    ) ?: continue
-
-                                    val (x, y) = proj
-                                    if (x !in visibleMinX..visibleMaxX || y !in visibleMinY..visibleMaxY) {
-                                        continue
-                                    }
-
-                                    val sx = cx + (x - cx) * cosRot - (y - cy) * sinRot
-                                    val sy = cy + (x - cx) * sinRot + (y - cy) * cosRot
-
-                                    // Deduplicate co-located catalog objects within 25px
-                                    val isDuplicate = visibleCandidates.any {
-                                        hypot(it.screenX - sx, it.screenY - sy) < 25f
-                                    }
-                                    if (!isDuplicate || isTarget) {
-                                        visibleCandidates.add(
-                                            VisibleCandidate(
-                                                obj,
-                                                x,
-                                                y,
-                                                sx,
-                                                sy,
-                                                isTarget
-                                            )
-                                        )
-                                    }
-                                }
-
-                                var labelsPlaced = 0
-                                val maxLabels = 20
-
-                                for (cand in visibleCandidates) {
-                                    if (labelsPlaced >= maxLabels && !cand.isTarget) break
-
-                                    val candReticleBox = reticleZone(
-                                        cand.screenX,
-                                        cand.screenY,
-                                        if (cand.isTarget) 20f else 16f
-                                    )
-
-                                    // Avoid drawing a reticle through any already-placed label (unless it's the target)
-                                    if (!cand.isTarget && placedLabelRects.any {
-                                            it.overlaps(
-                                                candReticleBox
-                                            )
-                                        }) {
-                                        continue
-                                    }
-
-                                    val labelText = cand.obj.displayName
-                                    val textLayout = textMeasurer.measure(
-                                        text = labelText,
-                                        style = TextStyle(
-                                            fontWeight = if (cand.isTarget) FontWeight.Bold else FontWeight.Normal,
-                                            fontSize = if (cand.isTarget) 15.sp else 13.sp
-                                        )
-                                    )
-                                    val textW = textLayout.size.width.toFloat()
-                                    val textH = textLayout.size.height.toFloat()
-
-                                    // Candidate positions relative to the star in screen space: (dx, dy)
-                                    // 24px offset for bold target reticle, 20px for regular reticle
-                                    val offsetDist = if (cand.isTarget) 24f else 20f
-                                    val candidateOffsets = listOf(
-                                        Offset(offsetDist, -textH / 2f),          // Right
-                                        Offset(-offsetDist - textW, -textH / 2f), // Left
-                                        Offset(-textW / 2f, offsetDist),          // Bottom
-                                        Offset(-textW / 2f, -offsetDist - textH)  // Top
-                                    )
-
-                                    var acceptedOffset: Offset? = null
-
-                                    for (offset in candidateOffsets) {
-                                        val left = cand.screenX + offset.x
-                                        val top = cand.screenY + offset.y
-                                        val right = left + textW
-                                        val bottom = top + textH
-
-                                        // Check screen bounds
-                                        if (left < margin || right > maxBoundX || top < margin || bottom > maxBoundY) {
-                                            continue
-                                        }
-
-                                        val screenTextRect = Rect(left, top, right, bottom)
-                                        val paddedTextRect = screenTextRect.inflate(8f)
-
-                                        // 1. Collision check: Must not overlap any already-placed label
-                                        if (placedLabelRects.any { paddedTextRect.overlaps(it) }) {
-                                            continue
-                                        }
-
-                                        // 2. Collision check: Must not overlap any already-placed reticle circle
-                                        if (placedReticleRects.any { paddedTextRect.overlaps(it) }) {
-                                            continue
-                                        }
-
-                                        // 3. Collision check: Must not overlap the reticle zone of ANY other visible candidate star
-                                        var collidesWithOtherStar = false
-                                        for (other in visibleCandidates) {
-                                            if (other === cand) continue
-                                            val otherReticle = reticleZone(
-                                                other.screenX,
-                                                other.screenY,
-                                                if (other.isTarget) 20f else 16f
-                                            )
-                                            if (paddedTextRect.overlaps(otherReticle)) {
-                                                collidesWithOtherStar = true
-                                                break
-                                            }
-                                        }
-                                        if (collidesWithOtherStar) {
-                                            continue
-                                        }
-
-                                        acceptedOffset = offset
-                                        break
-                                    }
-
-                                    val objColor = if (cand.isTarget) Color.Red else primaryColor
-
-                                    if (acceptedOffset != null) {
-                                        // 1. Draw reticle circle (bolded for target object)
-                                        drawCircle(
-                                            color = objColor,
-                                            radius = if (cand.isTarget) 14f else 10f,
-                                            center = Offset(cand.canvasX, cand.canvasY),
-                                            style = Stroke(width = if (cand.isTarget) 3.5f else 2f)
-                                        )
-
-                                        // 2. Draw label text upright (bolded for target object)
-                                        val localPos = Offset(
-                                            cand.canvasX + acceptedOffset.x,
-                                            cand.canvasY + acceptedOffset.y
-                                        )
-                                        rotate(
-                                            degrees = -uiRotation,
-                                            pivot = Offset(cand.canvasX, cand.canvasY)
-                                        ) {
-                                            drawText(
-                                                textLayoutResult = textLayout,
-                                                color = objColor,
-                                                topLeft = localPos
-                                            )
-                                        }
-
-                                        // 3. Register placed screen rectangles
-                                        val screenLeft = cand.screenX + acceptedOffset.x
-                                        val screenTop = cand.screenY + acceptedOffset.y
-                                        val placedLabel = Rect(
-                                            screenLeft,
-                                            screenTop,
-                                            screenLeft + textW,
-                                            screenTop + textH
-                                        )
-                                        placedLabelRects.add(placedLabel)
-                                        placedReticleRects.add(candReticleBox)
-
-                                        placedScreenItems.add(
-                                            PlacedScreenItem(
-                                                cand.obj,
-                                                cand.screenX,
-                                                cand.screenY,
-                                                placedLabel
-                                            )
-                                        )
-                                        labelsPlaced++
-                                    } else if (cand.isTarget) {
-                                        // If target is in FOV but label couldn't fit at edge of screen,
-                                        // still guarantee the target reticle is drawn bold and tappable!
-                                        drawCircle(
-                                            color = objColor,
-                                            radius = 14f,
-                                            center = Offset(cand.canvasX, cand.canvasY),
-                                            style = Stroke(width = 3.5f)
-                                        )
-                                        placedReticleRects.add(candReticleBox)
-                                        placedScreenItems.add(
-                                            PlacedScreenItem(
-                                                cand.obj,
-                                                cand.screenX,
-                                                cand.screenY,
-                                                null
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                            rotate(
-                                degrees = -uiRotation,
-                                pivot = Offset(boresightCanvasX, boresightCanvasY)
-                            ) {
-                                val s = 32f  // Half-size for 64x64px box
-                                val arm = 14f // Corner arm length
-                                val stroke = 3f
-
-                                // ┌ Top-Left
-                                drawLine(
-                                    DarkRed,
-                                    Offset(boresightCanvasX - s, boresightCanvasY - s),
-                                    Offset(boresightCanvasX - s + arm, boresightCanvasY - s),
-                                    strokeWidth = stroke,
-                                    cap = StrokeCap.Round
-                                )
-                                drawLine(
-                                    DarkRed,
-                                    Offset(boresightCanvasX - s, boresightCanvasY - s),
-                                    Offset(boresightCanvasX - s, boresightCanvasY - s + arm),
-                                    strokeWidth = stroke,
-                                    cap = StrokeCap.Round
-                                )
-
-                                // ┐ Top-Right
-                                drawLine(
-                                    DarkRed,
-                                    Offset(boresightCanvasX + s, boresightCanvasY - s),
-                                    Offset(boresightCanvasX + s - arm, boresightCanvasY - s),
-                                    strokeWidth = stroke,
-                                    cap = StrokeCap.Round
-                                )
-                                drawLine(
-                                    DarkRed,
-                                    Offset(boresightCanvasX + s, boresightCanvasY - s),
-                                    Offset(boresightCanvasX + s, boresightCanvasY - s + arm),
-                                    strokeWidth = stroke,
-                                    cap = StrokeCap.Round
-                                )
-
-                                // └ Bottom-Left
-                                drawLine(
-                                    DarkRed,
-                                    Offset(boresightCanvasX - s, boresightCanvasY + s),
-                                    Offset(boresightCanvasX - s + arm, boresightCanvasY + s),
-                                    strokeWidth = stroke,
-                                    cap = StrokeCap.Round
-                                )
-                                drawLine(
-                                    DarkRed,
-                                    Offset(boresightCanvasX - s, boresightCanvasY + s),
-                                    Offset(boresightCanvasX - s, boresightCanvasY + s - arm),
-                                    strokeWidth = stroke,
-                                    cap = StrokeCap.Round
-                                )
-
-                                // ┘ Bottom-Right
-                                drawLine(
-                                    DarkRed,
-                                    Offset(boresightCanvasX + s, boresightCanvasY + s),
-                                    Offset(boresightCanvasX + s - arm, boresightCanvasY + s),
-                                    strokeWidth = stroke,
-                                    cap = StrokeCap.Round
-                                )
-                                drawLine(
-                                    DarkRed,
-                                    Offset(boresightCanvasX + s, boresightCanvasY + s),
-                                    Offset(boresightCanvasX + s, boresightCanvasY + s - arm),
-                                    strokeWidth = stroke,
-                                    cap = StrokeCap.Round
-                                )
-                            }
+                            } else null
                         }
                     }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val bW = frame?.width?.toFloat() ?: 1f
+                                val bH = frame?.height?.toFloat() ?: 1f
+                                val targetPxX = (alignTargetPixel?.first ?: (bW / 2.0)).toFloat()
+                                val targetPxY = (alignTargetPixel?.second ?: (bH / 2.0)).toFloat()
+                                val baseScale = maxOf(size.width / bW, size.height / bH)
+
+                                val fovZoom = if ((stats.fov ?: 0.0) > 0) ((stats.fov
+                                    ?: 0.0) / 15.0).toFloat() else 1f
+                                val reqScaleX =
+                                    if (targetPxX > 0 && targetPxX < bW) size.width / (2f * minOf(
+                                        targetPxX,
+                                        bW - targetPxX
+                                    )) else 0f
+                                val reqScaleY =
+                                    if (targetPxY > 0 && targetPxY < bH) size.height / (2f * minOf(
+                                        targetPxY,
+                                        bH - targetPxY
+                                    )) else 0f
+                                val boresightZoom = maxOf(reqScaleX, reqScaleY)
+
+                                val smartScale = maxOf(fovZoom, boresightZoom).coerceIn(1f, 3f)
+
+                                val dx = targetPxX - (bW / 2f)
+                                val dy = targetPxY - (bH / 2f)
+                                var tx = -dx * baseScale * smartScale
+                                var ty = -dy * baseScale * smartScale
+
+                                val maxTx =
+                                    maxOf(0f, (bW * baseScale * smartScale - size.width) / 2f)
+                                val maxTy =
+                                    maxOf(0f, (bH * baseScale * smartScale - size.height) / 2f)
+                                tx = tx.coerceIn(-maxTx, maxTx)
+                                ty = ty.coerceIn(-maxTy, maxTy)
+
+                                val rad = Math.toRadians(currentUiRotation.toDouble())
+                                val cosR = cos(rad).toFloat()
+                                val sinR = sin(rad).toFloat()
+                                val screenTx = tx * cosR - ty * sinR
+                                val screenTy = tx * sinR + ty * cosR
+
+                                translationX = screenTx
+                                translationY = screenTy
+                                rotationZ = currentUiRotation
+                                scaleX = smartScale * 1.414f
+                                scaleY = smartScale * 1.414f
+                            }
+                    ) {
+                        if (frame != null) {
+                            Image(
+                                bitmap = frame,
+                                contentDescription = stringResource(id = R.string.cd_live_preview),
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        if (frame != null) {
+                            val textMeasurer = rememberTextMeasurer()
+                            val primaryColor = MaterialTheme.colorScheme.primary
+
+
+                            val placedScreenItems =
+                                remember { mutableListOf<PlacedScreenItem>() }
+
+
+
+                            Canvas(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer { blendMode = BlendMode.Screen }
+                                    .pointerInput(Unit) {
+                                        detectTapGestures { tapOffset ->
+                                            val cx = size.width / 2f
+                                            val cy = size.height / 2f
+                                            val rad = Math.toRadians(currentUiRotation.toDouble())
+                                            val cosRot = cos(rad).toFloat()
+                                            val sinRot = sin(rad).toFloat()
+
+                                            val tsx =
+                                                cx + (tapOffset.x - cx) * cosRot - (tapOffset.y - cy) * sinRot
+                                            val tsy =
+                                                cy + (tapOffset.x - cx) * sinRot + (tapOffset.y - cy) * cosRot
+                                            val tapScreen = Offset(tsx, tsy)
+
+                                            var closest: CatalogObject? = null
+                                            var minDist = 30f
+
+                                            for (item in placedScreenItems) {
+                                                val hitText = item.labelRect?.inflate(12f)
+                                                    ?.contains(tapScreen) == true
+                                                if (hitText) {
+                                                    closest = item.obj
+                                                    break
+                                                }
+                                                val dist =
+                                                    hypot(item.screenX - tsx, item.screenY - tsy)
+                                                if (dist < minDist) {
+                                                    minDist = dist
+                                                    closest = item.obj
+                                                }
+                                            }
+
+                                            if (closest != null) {
+                                                tappedObject = closest
+                                            }
+                                        }
+                                    }
+                            ) {
+                                placedScreenItems.clear()
+                                val placedLabelRects = mutableListOf<Rect>()
+                                val placedReticleRects = mutableListOf<Rect>()
+
+                                val bW = frame.width.toFloat()
+                                val bH = frame.height.toFloat()
+                                val targetPxX = (alignTargetPixel?.first ?: (bW / 2.0)).toFloat()
+                                val targetPxY = (alignTargetPixel?.second ?: (bH / 2.0)).toFloat()
+                                val fitPxScale = maxOf(size.width / bW, size.height / bH)
+
+                                val fovZoom = if ((stats.fov ?: 0.0) > 0) ((stats.fov
+                                    ?: 0.0) / 15.0).toFloat() else 1f
+                                val reqScaleX =
+                                    if (targetPxX > 0 && targetPxX < bW) size.width / (2f * minOf(
+                                        targetPxX,
+                                        bW - targetPxX
+                                    )) else 0f
+                                val reqScaleY =
+                                    if (targetPxY > 0 && targetPxY < bH) size.height / (2f * minOf(
+                                        targetPxY,
+                                        bH - targetPxY
+                                    )) else 0f
+                                val smartScale =
+                                    maxOf(fovZoom, maxOf(reqScaleX, reqScaleY)).coerceIn(1f, 3f)
+                                val invS = 1f / smartScale
+
+                                val dxPan = targetPxX - (bW / 2f)
+                                val dyPan = targetPxY - (bH / 2f)
+                                var txPan = -dxPan * fitPxScale * smartScale
+                                var tyPan = -dyPan * fitPxScale * smartScale
+                                val maxTxPan =
+                                    maxOf(0f, (bW * fitPxScale * smartScale - size.width) / 2f)
+                                val maxTyPan =
+                                    maxOf(0f, (bH * fitPxScale * smartScale - size.height) / 2f)
+                                txPan = txPan.coerceIn(-maxTxPan, maxTxPan)
+                                tyPan = tyPan.coerceIn(-maxTyPan, maxTyPan)
+
+                                val cx = size.width / 2f
+                                val cy = size.height / 2f
+                                val rad = Math.toRadians(currentUiRotation.toDouble())
+                                val cosRot = cos(rad).toFloat()
+                                val sinRot = sin(rad).toFloat()
+
+                                val screenTx = txPan * cosRot - tyPan * sinRot
+                                val screenTy = txPan * sinRot + tyPan * cosRot
+
+                                val finalScale = smartScale * 1.414f
+                                val p1 = Offset(
+                                    cx + (0f - cx - screenTx) / finalScale,
+                                    cy + (0f - cy - screenTy) / finalScale
+                                )
+                                val p2 = Offset(
+                                    cx + (size.width - cx - screenTx) / finalScale,
+                                    cy + (0f - cy - screenTy) / finalScale
+                                )
+                                val p3 = Offset(
+                                    cx + (size.width - cx - screenTx) / finalScale,
+                                    cy + (size.height - cy - screenTy) / finalScale
+                                )
+                                val p4 = Offset(
+                                    cx + (0f - cx - screenTx) / finalScale,
+                                    cy + (size.height - cy - screenTy) / finalScale
+                                )
+
+                                val visibleMinX = minOf(p1.x, p2.x, p3.x, p4.x)
+                                val visibleMaxX = maxOf(p1.x, p2.x, p3.x, p4.x)
+                                val visibleMinY = minOf(p1.y, p2.y, p3.y, p4.y)
+                                val visibleMaxY = maxOf(p1.y, p2.y, p3.y, p4.y)
+
+                                val marginCanvas = 10f / finalScale
+                                val clampMinX = visibleMinX + marginCanvas
+                                val clampMinY = visibleMinY + marginCanvas
+                                val clampMaxX = visibleMaxX - marginCanvas
+                                val clampMaxY = visibleMaxY - marginCanvas
+
+                                fun reticleZone(sx: Float, sy: Float, radius: Float) =
+                                    Rect(sx - radius, sy - radius, sx + radius, sy + radius)
+
+                                // 1. Render boresight at the alignment pixel in DarkRed (large "crop free" style)
+                                val boresightCanvasX =
+                                    size.width / 2f + (targetPxX - bW / 2f) * fitPxScale
+                                val boresightCanvasY =
+                                    size.height / 2f + (targetPxY - bH / 2f) * fitPxScale
+
+                                // 2. Pre-filter and deduplicate celestial candidates visible in FOV (if plate solved and not stale)
+                                if (ra != null && dec != null && !isPositionStale) {
+                                    val visibleCandidates = mutableListOf<VisibleCandidate>()
+                                    for (obj in allObjects) {
+                                        val isTarget =
+                                            targetRaVal != null && targetDecVal != null &&
+                                                    hypot(
+                                                        obj.ra - targetRaVal,
+                                                        obj.dec - targetDecVal
+                                                    ) < 0.05
+
+                                        val projRa =
+                                            if (stats.isImuEstimate || stats.centerRa == null) ra else stats.centerRa
+                                        val projDec =
+                                            if (stats.isImuEstimate || stats.centerDec == null) dec else stats.centerDec
+
+                                        val dist = AstrometryUtils.angularDistance(
+                                            obj.ra, obj.dec, projRa, projDec
+                                        )
+                                        if (dist > fov * 1.5) {
+                                            continue
+                                        }
+
+                                        val projCx =
+                                            if (!stats.isImuEstimate && stats.centerRa != null) cx else boresightCanvasX
+                                        val projCy =
+                                            if (!stats.isImuEstimate && stats.centerDec != null) cy else boresightCanvasY
+
+                                        val proj = AstrometryUtils.projectToScreen(
+                                            obj.ra,
+                                            obj.dec,
+                                            projRa,
+                                            projDec,
+                                            roll,
+                                            fov,
+                                            size.width,
+                                            size.height,
+                                            frame.width,
+                                            frame.height,
+                                            projCx,
+                                            projCy,
+                                            stats.distortion
+                                        ) ?: continue
+
+                                        val (x, y) = proj
+                                        val sx = cx + (x - cx) * cosRot - (y - cy) * sinRot
+                                        val sy = cy + (x - cx) * sinRot + (y - cy) * cosRot
+
+                                        if (sx !in visibleMinX..visibleMaxX || sy !in visibleMinY..visibleMaxY) {
+                                            continue
+                                        }
+
+                                        // Deduplicate co-located catalog objects within 25px
+                                        val isDuplicate = visibleCandidates.any {
+                                            hypot(it.screenX - sx, it.screenY - sy) < 25f
+                                        }
+                                        if (!isDuplicate || isTarget) {
+                                            visibleCandidates.add(
+                                                VisibleCandidate(
+                                                    obj,
+                                                    x,
+                                                    y,
+                                                    sx,
+                                                    sy,
+                                                    isTarget
+                                                )
+                                            )
+                                        }
+                                    }
+
+                                    var labelsPlaced = 0
+                                    val maxLabels = 20
+
+                                    for (cand in visibleCandidates) {
+                                        if (labelsPlaced >= maxLabels && !cand.isTarget) break
+
+                                        val candReticleBox = reticleZone(
+                                            cand.screenX,
+                                            cand.screenY,
+                                            (if (cand.isTarget) 20f else 16f) * invS
+                                        )
+
+                                        // Avoid drawing a reticle through any already-placed label (unless it's the target)
+                                        if (!cand.isTarget && placedLabelRects.any {
+                                                it.overlaps(
+                                                    candReticleBox
+                                                )
+                                            }) {
+                                            continue
+                                        }
+
+                                        val labelText = cand.obj.displayName
+                                        val textLayout = textMeasurer.measure(
+                                            text = labelText,
+                                            style = TextStyle(
+                                                fontWeight = if (cand.isTarget) FontWeight.Bold else FontWeight.Normal,
+                                                fontSize = if (cand.isTarget) 15.sp else 13.sp
+                                            )
+                                        )
+                                        val textW = textLayout.size.width.toFloat() * invS
+                                        val textH = textLayout.size.height.toFloat() * invS
+
+                                        // Candidate positions relative to the star in screen space: (dx, dy)
+                                        // 18px offset for bold target reticle, 14px for regular reticle
+                                        val offsetDist = (if (cand.isTarget) 18f else 14f) * invS
+                                        val candidateOffsets = listOf(
+                                            Offset(offsetDist, -textH / 2f),          // Right
+                                            Offset(-offsetDist - textW, -textH / 2f), // Left
+                                            Offset(-textW / 2f, offsetDist),          // Bottom
+                                            Offset(-textW / 2f, -offsetDist - textH), // Top
+                                            Offset(
+                                                offsetDist,
+                                                offsetDist
+                                            ),           // Bottom-Right
+                                            Offset(-offsetDist - textW, offsetDist),  // Bottom-Left
+                                            Offset(offsetDist, -offsetDist - textH),  // Top-Right
+                                            Offset(
+                                                -offsetDist - textW,
+                                                -offsetDist - textH
+                                            ) // Top-Left
+                                        )
+
+                                        var acceptedOffset: Offset? = null
+
+                                        for (offset in candidateOffsets) {
+                                            val left = cand.screenX + offset.x
+                                            val top = cand.screenY + offset.y
+                                            val right = left + textW
+                                            val bottom = top + textH
+
+                                            // Check screen bounds
+                                            if (left < clampMinX || right > clampMaxX || top < clampMinY || bottom > clampMaxY) {
+                                                continue
+                                            }
+
+                                            val screenTextRect = Rect(left, top, right, bottom)
+                                            val paddedTextRect = screenTextRect.inflate(8f * invS)
+
+                                            // 1. Collision check: Must not overlap any already-placed label
+                                            if (placedLabelRects.any { paddedTextRect.overlaps(it) }) {
+                                                continue
+                                            }
+
+                                            // 2. Collision check: Must not overlap any already-placed reticle circle
+                                            if (placedReticleRects.any { paddedTextRect.overlaps(it) }) {
+                                                continue
+                                            }
+
+                                            // 3. Collision check: Must not overlap the reticle zone of ANY other visible candidate star
+                                            var collidesWithOtherStar = false
+                                            for (other in visibleCandidates) {
+                                                if (other === cand) continue
+                                                val otherReticle = reticleZone(
+                                                    other.screenX,
+                                                    other.screenY,
+                                                    if (other.isTarget) 20f else 16f
+                                                )
+                                                if (paddedTextRect.overlaps(otherReticle)) {
+                                                    collidesWithOtherStar = true
+                                                    break
+                                                }
+                                            }
+                                            if (collidesWithOtherStar) {
+                                                continue
+                                            }
+
+                                            acceptedOffset = offset
+                                            break
+                                        }
+
+                                        val objColor =
+                                            if (cand.isTarget) Color.Red else primaryColor
+
+                                        if (acceptedOffset != null) {
+                                            val centerPt = Offset(cand.canvasX, cand.canvasY)
+                                            scale(scaleX = invS, scaleY = invS, pivot = centerPt) {
+                                                // 1. Draw reticle icon (and target box)
+                                                val (iconVector, defaultColor) = cand.obj.getIconAndColor()
+                                                val iconColor =
+                                                    if (cand.isTarget) Color.Red else defaultColor
+                                                val iconPainter = catalogPainters[iconVector]
+                                                val iconSize = 24f
+
+                                                rotate(
+                                                    degrees = -currentUiRotation,
+                                                    pivot = centerPt
+                                                ) {
+                                                    if (iconPainter != null) {
+                                                        translate(
+                                                            left = centerPt.x - iconSize / 2f,
+                                                            top = centerPt.y - iconSize / 2f
+                                                        ) {
+                                                            with(iconPainter) {
+                                                                draw(
+                                                                    size = androidx.compose.ui.geometry.Size(
+                                                                        iconSize,
+                                                                        iconSize
+                                                                    ),
+                                                                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                                                                        iconColor
+                                                                    )
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    if (cand.isTarget) {
+                                                        drawRect(
+                                                            color = Color.Red,
+                                                            topLeft = Offset(
+                                                                centerPt.x - 14f,
+                                                                centerPt.y - 14f
+                                                            ),
+                                                            size = androidx.compose.ui.geometry.Size(
+                                                                28f,
+                                                                28f
+                                                            ),
+                                                            style = Stroke(width = 3.5f)
+                                                        )
+                                                    }
+                                                }
+
+                                                // 2. Draw label text upright (bolded for target object)
+                                                val unscaledDx = acceptedOffset.x / invS
+                                                val unscaledDy = acceptedOffset.y / invS
+                                                val localPos = Offset(
+                                                    cand.canvasX + unscaledDx,
+                                                    cand.canvasY + unscaledDy
+                                                )
+                                                rotate(
+                                                    degrees = -currentUiRotation,
+                                                    pivot = centerPt
+                                                ) {
+                                                    drawText(
+                                                        textLayoutResult = textLayout,
+                                                        color = objColor,
+                                                        topLeft = localPos
+                                                    )
+                                                }
+                                            }
+
+                                            // 3. Register placed screen rectangles
+                                            val screenLeft = cand.screenX + acceptedOffset.x
+                                            val screenTop = cand.screenY + acceptedOffset.y
+                                            val placedLabel = Rect(
+                                                screenLeft,
+                                                screenTop,
+                                                screenLeft + textW,
+                                                screenTop + textH
+                                            )
+                                            placedLabelRects.add(placedLabel)
+                                            placedReticleRects.add(candReticleBox)
+
+                                            placedScreenItems.add(
+                                                PlacedScreenItem(
+                                                    cand.obj,
+                                                    cand.screenX,
+                                                    cand.screenY,
+                                                    placedLabel
+                                                )
+                                            )
+                                            labelsPlaced++
+                                        } else if (cand.isTarget) {
+                                            // If target is in FOV but label couldn't fit at edge of screen,
+                                            // still guarantee the target reticle is drawn bold and tappable!
+                                            val (iconVector, _) = cand.obj.getIconAndColor()
+                                            val iconColor = Color.Red
+                                            val iconPainter = catalogPainters[iconVector]
+                                            val iconSize = 20f
+                                            val centerPt = Offset(cand.canvasX, cand.canvasY)
+
+                                            scale(scaleX = invS, scaleY = invS, pivot = centerPt) {
+                                                rotate(
+                                                    degrees = -currentUiRotation,
+                                                    pivot = centerPt
+                                                ) {
+                                                    if (iconPainter != null) {
+                                                        translate(
+                                                            left = centerPt.x - iconSize / 2f,
+                                                            top = centerPt.y - iconSize / 2f
+                                                        ) {
+                                                            with(iconPainter) {
+                                                                draw(
+                                                                    size = androidx.compose.ui.geometry.Size(
+                                                                        iconSize,
+                                                                        iconSize
+                                                                    ),
+                                                                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                                                                        iconColor
+                                                                    )
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    drawRect(
+                                                        color = Color.Red,
+                                                        topLeft = Offset(
+                                                            centerPt.x - 14f,
+                                                            centerPt.y - 14f
+                                                        ),
+                                                        size = androidx.compose.ui.geometry.Size(
+                                                            28f,
+                                                            28f
+                                                        ),
+                                                        style = Stroke(width = 3.5f)
+                                                    )
+                                                }
+                                            }
+                                            placedReticleRects.add(candReticleBox)
+                                            placedScreenItems.add(
+                                                PlacedScreenItem(
+                                                    cand.obj,
+                                                    cand.screenX,
+                                                    cand.screenY,
+                                                    null
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                                val dx = targetPxX - (bW / 2f)
+                                val dy = targetPxY - (bH / 2f)
+                                var tx = -dx * fitPxScale * smartScale
+                                var ty = -dy * fitPxScale * smartScale
+                                val maxTx =
+                                    maxOf(0f, (bW * fitPxScale * smartScale - size.width) / 2f)
+                                val maxTy =
+                                    maxOf(0f, (bH * fitPxScale * smartScale - size.height) / 2f)
+                                tx = tx.coerceIn(-maxTx, maxTx)
+                                ty = ty.coerceIn(-maxTy, maxTy)
+
+                                val screenBx = size.width / 2f + tx + dx * fitPxScale * smartScale
+                                val screenBy = size.height / 2f + ty + dy * fitPxScale * smartScale
+
+                                val isOffScreen =
+                                    screenBx < 0 || screenBx > size.width || screenBy < 0 || screenBy > size.height
+
+                                if (isOffScreen) {
+                                    // Draw edge-clamped chevron indicator pointing toward the boresight
+                                    val rad = Math.toRadians(currentUiRotation.toDouble())
+                                    val cosR = cos(rad).toFloat()
+                                    val sinR = sin(rad).toFloat()
+                                    val screenDx =
+                                        (dx * fitPxScale * smartScale * cosR - dy * fitPxScale * smartScale * sinR)
+                                    val screenDy =
+                                        (dx * fitPxScale * smartScale * sinR + dy * fitPxScale * smartScale * cosR)
+
+                                    val pad = 40f
+                                    val fX = if (abs(screenDx) > 0) (size.width / 2f - pad) / abs(
+                                        screenDx
+                                    ) else Float.MAX_VALUE
+                                    val fY = if (abs(screenDy) > 0) (size.height / 2f - pad) / abs(
+                                        screenDy
+                                    ) else Float.MAX_VALUE
+                                    val f = minOf(fX, fY)
+
+                                    val clampedX = size.width / 2f + screenDx * f
+                                    val clampedY = size.height / 2f + screenDy * f
+
+                                    val angle = Math.toDegrees(
+                                        kotlin.math.atan2(
+                                            screenDy.toDouble(),
+                                            screenDx.toDouble()
+                                        )
+                                    ).toFloat()
+                                    rotate(degrees = angle, pivot = Offset(clampedX, clampedY)) {
+                                        val arm = 20f
+                                        val stroke = 6f
+                                        val clr = Color.Red
+                                        // Chevron 1
+                                        drawLine(
+                                            clr,
+                                            Offset(clampedX, clampedY),
+                                            Offset(clampedX - arm, clampedY - arm),
+                                            strokeWidth = stroke,
+                                            cap = StrokeCap.Round
+                                        )
+                                        drawLine(
+                                            clr,
+                                            Offset(clampedX, clampedY),
+                                            Offset(clampedX - arm, clampedY + arm),
+                                            strokeWidth = stroke,
+                                            cap = StrokeCap.Round
+                                        )
+                                        // Chevron 2
+                                        val off = 15f
+                                        drawLine(
+                                            clr,
+                                            Offset(clampedX - off, clampedY),
+                                            Offset(clampedX - off - arm, clampedY - arm),
+                                            strokeWidth = stroke,
+                                            cap = StrokeCap.Round
+                                        )
+                                        drawLine(
+                                            clr,
+                                            Offset(clampedX - off, clampedY),
+                                            Offset(clampedX - off - arm, clampedY + arm),
+                                            strokeWidth = stroke,
+                                            cap = StrokeCap.Round
+                                        )
+                                    }
+                                } else {
+                                    rotate(
+                                        degrees = -currentUiRotation,
+                                        pivot = Offset(boresightCanvasX, boresightCanvasY)
+                                    ) {
+                                        scale(
+                                            scaleX = invS,
+                                            scaleY = invS,
+                                            pivot = Offset(boresightCanvasX, boresightCanvasY)
+                                        ) {
+                                            val s = 32f  // Half-size for 64x64px box
+                                            val arm = 14f // Corner arm length
+                                            val stroke = 3f
+
+                                            // ┌ Top-Left
+                                            drawLine(
+                                                DarkRed,
+                                                Offset(boresightCanvasX - s, boresightCanvasY - s),
+                                                Offset(
+                                                    boresightCanvasX - s + arm,
+                                                    boresightCanvasY - s
+                                                ),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round
+                                            )
+                                            drawLine(
+                                                DarkRed,
+                                                Offset(boresightCanvasX - s, boresightCanvasY - s),
+                                                Offset(
+                                                    boresightCanvasX - s,
+                                                    boresightCanvasY - s + arm
+                                                ),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round
+                                            )
+                                            // ┐ Top-Right
+                                            drawLine(
+                                                DarkRed,
+                                                Offset(boresightCanvasX + s, boresightCanvasY - s),
+                                                Offset(
+                                                    boresightCanvasX + s - arm,
+                                                    boresightCanvasY - s
+                                                ),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round
+                                            )
+                                            drawLine(
+                                                DarkRed,
+                                                Offset(boresightCanvasX + s, boresightCanvasY - s),
+                                                Offset(
+                                                    boresightCanvasX + s,
+                                                    boresightCanvasY - s + arm
+                                                ),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round
+                                            )
+                                            // └ Bottom-Left
+                                            drawLine(
+                                                DarkRed,
+                                                Offset(boresightCanvasX - s, boresightCanvasY + s),
+                                                Offset(
+                                                    boresightCanvasX - s + arm,
+                                                    boresightCanvasY + s
+                                                ),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round
+                                            )
+                                            drawLine(
+                                                DarkRed,
+                                                Offset(boresightCanvasX - s, boresightCanvasY + s),
+                                                Offset(
+                                                    boresightCanvasX - s,
+                                                    boresightCanvasY + s - arm
+                                                ),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round
+                                            )
+                                            // ┘ Bottom-Right
+                                            drawLine(
+                                                DarkRed,
+                                                Offset(boresightCanvasX + s, boresightCanvasY + s),
+                                                Offset(
+                                                    boresightCanvasX + s - arm,
+                                                    boresightCanvasY + s
+                                                ),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round
+                                            )
+                                            drawLine(
+                                                DarkRed,
+                                                Offset(boresightCanvasX + s, boresightCanvasY + s),
+                                                Offset(
+                                                    boresightCanvasX + s,
+                                                    boresightCanvasY + s - arm
+                                                ),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } // close inner Box
+                    } // close if (frame != null)
 
                     val obj = tappedObject
                     if (obj != null) {
