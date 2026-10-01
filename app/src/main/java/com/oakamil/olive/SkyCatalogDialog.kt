@@ -499,7 +499,7 @@ fun SkyCatalogDialog(
                                                 IconButton(onClick = {
                                                     showInfoForCategory = category
                                                 }) {
-                                                    Icon(Default.Info, contentDescription = "Info")
+                                                    Icon(Default.Info, contentDescription = stringResource(R.string.cd_info))
                                                 }
                                             }
                                         }
@@ -574,7 +574,7 @@ fun SkyCatalogDialog(
                                                 if (sortBy == option) {
                                                     Icon(
                                                         Default.RadioButtonChecked,
-                                                        contentDescription = "Selected",
+                                                        contentDescription = stringResource(R.string.cd_selected),
                                                         modifier = Modifier.size(16.dp)
                                                     )
                                                 }
@@ -599,7 +599,7 @@ fun SkyCatalogDialog(
                                                 if (visibilityFilter == option) {
                                                     Icon(
                                                         Default.RadioButtonChecked,
-                                                        contentDescription = "Selected",
+                                                        contentDescription = stringResource(R.string.cd_selected),
                                                         modifier = Modifier.size(16.dp)
                                                     )
                                                 }
@@ -1695,7 +1695,7 @@ fun NightVisionNumpad(
                         if (key == "→") {
                             Icon(
                                 imageVector = Filled.ArrowForward,
-                                contentDescription = "Next",
+                                contentDescription = stringResource(R.string.cd_next),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         } else {

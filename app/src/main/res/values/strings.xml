@@ -250,4 +250,19 @@
     <string name="msg_confirm_alignment">Are you sure you want to sync the telescope\'s coordinates to this target?</string>
     <string name="btn_cancel_goto">Cancel GoTo target</string>
     <string name="btn_recenter">Recenter camera view</string>
+
+    <string name="title_engine_info">Engine Info</string>
+    <string name="cd_solve_status">Solve Status</string>
+    <string name="cd_stars">Stars</string>
+    <string name="cd_pipeline_time">Pipeline Time</string>
+
+    <string name="format_pipeline_ms">%1$dms</string>
+    <string name="format_pipeline_s">%1$.1fs</string>
+    <string name="format_high_sens">%1$s (HS)</string>
+    <string name="label_screen_brightness">Screen Brightness</string>
+    <string name="format_percent">%1$s: %2$d%%</string>
+    <string name="format_exposure_seconds">%1$s: %2$.1f s</string>
+    <string name="cd_next">Next</string>
+    <string name="cd_imu_estimate">IMU Estimate</string>
+    <string name="cd_plate_solving">Plate Solving</string>
 </resources>
