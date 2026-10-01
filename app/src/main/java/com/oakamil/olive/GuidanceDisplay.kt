@@ -393,14 +393,14 @@ fun GuidanceDisplay(
                 if (stats.isImuEstimate) {
                     Icon(
                         imageVector = Icons.Outlined.Sensors,
-                        contentDescription = "IMU Estimate",
+                        contentDescription = stringResource(R.string.cd_imu_estimate),
                         tint = DarkRed,
                         modifier = Modifier.size(12.dp)
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Outlined.PhotoCamera,
-                        contentDescription = "Plate Solving",
+                        contentDescription = stringResource(R.string.cd_plate_solving),
                         tint = DarkRed,
                         modifier = Modifier.size(12.dp)
                     )

@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -20,11 +21,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -36,7 +37,11 @@ import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -81,6 +86,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -537,9 +543,10 @@ fun EngineRunningScreen(
                     }
 
                     BoxWithConstraints(
-                        modifier = Modifier
-                            .fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
+                        val density = LocalDensity.current
                         val screenSize =
                             Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
                         val bW = frame?.width?.toFloat() ?: 1f
@@ -551,12 +558,12 @@ fun EngineRunningScreen(
                         val fovZoom = if ((stats.fov ?: 0.0) > 0) ((stats.fov
                             ?: 0.0) / 15.0).toFloat() else 1f
                         val reqScaleX =
-                            if (targetPxX > 0 && targetPxX < bW) screenSize.width / (2f * minOf(
+                            if (targetPxX > 0 && targetPxX < bW) screenSize.width / (2f * baseScale * minOf(
                                 targetPxX,
                                 bW - targetPxX
                             )) else 0f
                         val reqScaleY =
-                            if (targetPxY > 0 && targetPxY < bH) screenSize.height / (2f * minOf(
+                            if (targetPxY > 0 && targetPxY < bH) screenSize.height / (2f * baseScale * minOf(
                                 targetPxY,
                                 bH - targetPxY
                             )) else 0f
@@ -571,15 +578,17 @@ fun EngineRunningScreen(
                         var tx = -dx * baseScale * finalScale
                         var ty = -dy * baseScale * finalScale
 
-                        val maxTx = maxOf(0f, (bW * baseScale * finalScale - screenSize.width) / 2f)
-                        val maxTy =
-                            maxOf(0f, (bH * baseScale * finalScale - screenSize.height) / 2f)
-                        tx = tx.coerceIn(-maxTx, maxTx)
-                        ty = ty.coerceIn(-maxTy, maxTy)
-
                         val rad = Math.toRadians(currentUiRotation.toDouble())
                         val cosR = cos(rad).toFloat()
                         val sinR = sin(rad).toFloat()
+                        val rotSw = abs(screenSize.width * cosR) + abs(screenSize.height * sinR)
+                        val rotSh = abs(screenSize.width * sinR) + abs(screenSize.height * cosR)
+
+                        val maxTx = maxOf(0f, (bW * baseScale * finalScale - rotSw) / 2f)
+                        val maxTy = maxOf(0f, (bH * baseScale * finalScale - rotSh) / 2f)
+                        tx = tx.coerceIn(-maxTx, maxTx)
+                        ty = ty.coerceIn(-maxTy, maxTy)
+
                         val screenTx = tx * cosR - ty * sinR
                         val screenTy = tx * sinR + ty * cosR
 
@@ -594,21 +603,21 @@ fun EngineRunningScreen(
                         val rotatedHeight = abs(bW * sin(currentUiRotationRad)) + abs(
                             bH * cos(currentUiRotationRad)
                         )
-                        val fitScale = minOf(
+                        val coverScale = maxOf(
                             screenSize.width / rotatedWidth,
                             screenSize.height / rotatedHeight
                         ).toFloat()
-                        val minManualScale = minOf(1f, fitScale / (baseScale * finalScale))
+                        val minManualScale = coverScale / (baseScale * finalScale)
 
                         val clampedManualScale = maxOf(manualScale, minManualScale)
                         val currentEffectiveScale = finalScale * clampedManualScale
                         val currentMaxBoundTx = maxOf(
                             0f,
-                            (bW * baseScale * currentEffectiveScale - screenSize.width) / 2f
+                            (bW * baseScale * currentEffectiveScale - rotSw) / 2f
                         )
                         val currentMaxBoundTy = maxOf(
                             0f,
-                            (bH * baseScale * currentEffectiveScale - screenSize.height) / 2f
+                            (bH * baseScale * currentEffectiveScale - rotSh) / 2f
                         )
 
                         LaunchedEffect(
@@ -624,10 +633,14 @@ fun EngineRunningScreen(
                             }
                             val intendedTx = screenTx + manualOffset.x
                             val intendedTy = screenTy + manualOffset.y
+                            val screenDxClamp =
+                                currentMaxBoundTx * abs(cosR) + currentMaxBoundTy * abs(sinR)
+                            val screenDyClamp =
+                                currentMaxBoundTx * abs(sinR) + currentMaxBoundTy * abs(cosR)
                             val clampedTx =
-                                intendedTx.coerceIn(-currentMaxBoundTx, currentMaxBoundTx)
+                                intendedTx.coerceIn(-screenDxClamp, screenDxClamp)
                             val clampedTy =
-                                intendedTy.coerceIn(-currentMaxBoundTy, currentMaxBoundTy)
+                                intendedTy.coerceIn(-screenDyClamp, screenDyClamp)
                             if (clampedTx != intendedTx || clampedTy != intendedTy) {
                                 manualOffset = Offset(
                                     clampedTx - screenTx,
@@ -637,12 +650,14 @@ fun EngineRunningScreen(
                         }
 
                         if (frame != null) {
+                            val imgWidthDp = with(density) { (bW * baseScale).toDp() }
+                            val imgHeightDp = with(density) { (bH * baseScale).toDp() }
                             Image(
                                 bitmap = frame,
                                 contentDescription = stringResource(id = R.string.cd_live_preview),
-                                contentScale = ContentScale.Crop,
+                                contentScale = ContentScale.FillBounds,
                                 modifier = Modifier
-                                    .fillMaxSize()
+                                    .requiredSize(imgWidthDp, imgHeightDp)
                                     .graphicsLayer {
                                         translationX = screenTx + manualOffset.x
                                         translationY = screenTy + manualOffset.y
@@ -687,14 +702,31 @@ fun EngineRunningScreen(
                                                     5f
                                                 )
                                                 val effectiveScale = currentFinalScale * manualScale
+                                                val rotSw =
+                                                    abs(currentScreenSize.width * currentCosR) + abs(
+                                                        currentScreenSize.height * currentSinR
+                                                    )
+                                                val rotSh =
+                                                    abs(currentScreenSize.width * currentSinR) + abs(
+                                                        currentScreenSize.height * currentCosR
+                                                    )
                                                 val maxBoundTx = maxOf(
                                                     0f,
-                                                    (currentBW * currentBaseScale * effectiveScale - currentScreenSize.width) / 2f
+                                                    (currentBW * currentBaseScale * effectiveScale - rotSw) / 2f
                                                 )
                                                 val maxBoundTy = maxOf(
                                                     0f,
-                                                    (currentBH * currentBaseScale * effectiveScale - currentScreenSize.height) / 2f
+                                                    (currentBH * currentBaseScale * effectiveScale - rotSh) / 2f
                                                 )
+                                                val screenDxClamp =
+                                                    maxBoundTx * abs(currentCosR) + maxBoundTy * abs(
+                                                        currentSinR
+                                                    )
+                                                val screenDyClamp =
+                                                    maxBoundTx * abs(currentSinR) + maxBoundTy * abs(
+                                                        currentCosR
+                                                    )
+
                                                 val centerOffset = centroid - Offset(
                                                     currentScreenSize.width / 2f,
                                                     currentScreenSize.height / 2f
@@ -705,12 +737,12 @@ fun EngineRunningScreen(
                                                 val intendedTy = currentScreenTy + adjustedPan.y
                                                 manualOffset = Offset(
                                                     x = intendedTx.coerceIn(
-                                                        -maxBoundTx,
-                                                        maxBoundTx
+                                                        -screenDxClamp,
+                                                        screenDxClamp
                                                     ) - currentScreenTx,
                                                     y = intendedTy.coerceIn(
-                                                        -maxBoundTy,
-                                                        maxBoundTy
+                                                        -screenDyClamp,
+                                                        screenDyClamp
                                                     ) - currentScreenTy
                                                 )
                                             }
@@ -1487,28 +1519,29 @@ fun EngineRunningScreen(
 
         @Composable
         fun StatsContent() {
-            StatsDisplay(viewModel.engineStats)
+            var showFullStats by remember { mutableStateOf(false) }
 
-            Spacer(modifier = Modifier.height(16.dp))
-            if (activeCameraSelection != "cedar") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "${stringResource(R.string.stat_ip_address)}: $detectedIpAddress",
-                        color = MaterialTheme.colorScheme.onBackground
+            CollapsedStatsDisplay(stats = viewModel.engineStats) {
+                showFullStats = true
+            }
+
+            if (showFullStats) {
+                InfoPopup(
+                    title = stringResource(R.string.title_engine_info),
+                    onDismiss = { showFullStats = false }
+                ) {
+                    StatsDisplay(
+                        stats = viewModel.engineStats,
+                        detectedIpAddress = detectedIpAddress,
+                        activeCameraSelection = activeCameraSelection,
+                        onInfoClick = {
+                            showFullStats = false
+                            showTelescopeControlInfo = true
+                        }
                     )
-                    IconButton(
-                        onClick = { showTelescopeControlInfo = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = stringResource(id = R.string.cd_info),
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
                 }
             }
+
         }
 
         @Composable
@@ -1540,7 +1573,11 @@ fun EngineRunningScreen(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Screen Brightness: ${(screenBrightness * 100).toInt()}%",
+                        stringResource(
+                            R.string.format_percent,
+                            stringResource(R.string.label_screen_brightness),
+                            (screenBrightness * 100).toInt()
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onBackground
                     )
@@ -1555,7 +1592,11 @@ fun EngineRunningScreen(
                 if (settingsManager.cameraSettingsMode != "Auto") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
+                            stringResource(
+                                R.string.format_percent,
+                                stringResource(R.string.label_star_sensitivity),
+                                viewModel.starSensitivity.toInt()
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onBackground
                         )
@@ -1647,13 +1688,11 @@ fun EngineRunningScreen(
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "Exposure: ${
-                                    String.format(
-                                        Locale.getDefault(),
-                                        "%.1f",
-                                        mainScreenExposure
-                                    )
-                                } s",
+                                stringResource(
+                                    R.string.format_exposure_seconds,
+                                    stringResource(R.string.stat_exposure),
+                                    mainScreenExposure
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onBackground
                             )
@@ -1821,14 +1860,12 @@ fun EngineRunningScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .verticalScrollWithScrollbar(rememberScrollState())
-                                        .defaultMinSize(minHeight = maxHeight),
-                                    verticalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Column {
                                         StatsContent()
                                     }
                                     Column {
-                                        Spacer(modifier = Modifier.height(24.dp))
+                                        Spacer(modifier = Modifier.height(8.dp))
                                         SlidersContent()
                                     }
                                 }
@@ -1850,7 +1887,7 @@ fun EngineRunningScreen(
                 } else {
                     MainVideoContent()
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -1866,14 +1903,12 @@ fun EngineRunningScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .verticalScrollWithScrollbar(rememberScrollState())
-                                        .defaultMinSize(minHeight = maxHeight),
-                                    verticalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Column {
                                         StatsContent()
                                     }
                                     Column {
-                                        Spacer(modifier = Modifier.height(24.dp))
+                                        Spacer(modifier = Modifier.height(8.dp))
                                         SlidersContent()
                                     }
                                 }
@@ -1964,102 +1999,251 @@ fun DigitalClock() {
 }
 
 @Composable
-fun StatsDisplay(stats: EngineStats) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+fun CollapsedStatsDisplay(stats: EngineStats, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f)),
+        shape = RoundedCornerShape(16.dp)
     ) {
-        // Left Column: Status, Stars, RA, Dec
-        Column(
-            modifier = Modifier.weight(1f),
-            horizontalAlignment = Alignment.Start
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                stringResource(id = R.string.stat_status) + ": ${
-                    when (stats.status) {
-                        "Solving" -> stringResource(id = R.string.stat_solving)
-                        "Slewing" -> stringResource(id = R.string.stat_slewing)
-                        "Idle" -> stringResource(id = R.string.stat_idle)
-                        "Camera Mode" -> stringResource(id = R.string.btn_camera_mode)
-                        else -> stats.status
-                    }
-                }",
-                color = MaterialTheme.colorScheme.primary
+            val isGoodSolve =
+                stats.solvedCrop != "Failed" && !stats.isImuEstimate && stats.solvedCrop != null
+            val primaryColor = MaterialTheme.colorScheme.primary
+
+            @Composable
+            fun StatCol(top: @Composable () -> Unit, bottom: String) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    top()
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = bottom,
+                        color = primaryColor,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+
+            // 1. Status
+            StatCol(
+                top = {
+                    Icon(
+                        if (isGoodSolve) Icons.Outlined.Check else Icons.Outlined.ErrorOutline,
+                        contentDescription = stringResource(R.string.cd_solve_status),
+                        tint = primaryColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                bottom = " "
             )
-            Text(
-                stringResource(id = R.string.stat_star_count) + ": ${stats.centroidCount}",
-                color = MaterialTheme.colorScheme.onBackground
+
+            // 2. Stars
+            StatCol(
+                top = {
+                    Icon(
+                        Icons.Outlined.StarOutline,
+                        contentDescription = stringResource(R.string.cd_stars),
+                        modifier = Modifier.size(20.dp),
+                        tint = primaryColor
+                    )
+                },
+                bottom = "${stats.centroidCount}"
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(stringResource(id = R.string.stat_ra) + ": " + (stats.ra?.let {
-                String.format(
-                    Locale.getDefault(),
-                    "%.4f",
-                    it
-                )
-            } ?: "-"),
-                color = MaterialTheme.colorScheme.onBackground)
-            Text(stringResource(id = R.string.stat_dec) + ": " + (stats.dec?.let {
-                String.format(
-                    Locale.getDefault(),
-                    "%.4f",
-                    it
-                )
-            } ?: "-"),
-                color = MaterialTheme.colorScheme.onBackground)
-            stats.fov?.let { fovVal ->
+
+            // 3. RA
+            StatCol(
+                top = {
+                    Text(
+                        stringResource(R.string.stat_ra),
+                        fontWeight = FontWeight.Bold,
+                        color = primaryColor,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                },
+                bottom = stats.ra?.let { String.format(Locale.US, "%.1f", it) } ?: "-"
+            )
+
+            // 4. Dec
+            StatCol(
+                top = {
+                    Text(
+                        stringResource(R.string.stat_dec),
+                        fontWeight = FontWeight.Bold,
+                        color = primaryColor,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                },
+                bottom = stats.dec?.let { String.format(Locale.US, "%.1f", it) } ?: "-"
+            )
+
+            // 5. Exposure
+            StatCol(
+                top = {
+                    Icon(
+                        Icons.Outlined.PhotoCamera,
+                        contentDescription = stringResource(R.string.stat_exposure),
+                        modifier = Modifier.size(20.dp),
+                        tint = primaryColor
+                    )
+                },
+                bottom = "${round(stats.exposureMs).toInt()}"
+            )
+
+            // 6. Pipeline
+            val pipelineTotalMs = stats.postProcessMs + stats.extractMs + stats.solveMs
+            val pipelineStr = if (pipelineTotalMs < 100.0) {
+                stringResource(R.string.format_pipeline_ms, round(pipelineTotalMs).toInt())
+            } else {
+                stringResource(R.string.format_pipeline_s, pipelineTotalMs / 1000f)
+            }
+            StatCol(
+                top = {
+                    Icon(
+                        Icons.Outlined.HourglassEmpty,
+                        contentDescription = stringResource(R.string.cd_pipeline_time),
+                        modifier = Modifier.size(20.dp),
+                        tint = primaryColor
+                    )
+                },
+                bottom = pipelineStr
+            )
+        }
+    }
+}
+
+@Composable
+fun StatsDisplay(
+    stats: EngineStats,
+    detectedIpAddress: String,
+    activeCameraSelection: String,
+    onInfoClick: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row {
+            Text(stringResource(id = R.string.stat_status), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                when (stats.status) {
+                    "Solving" -> stringResource(id = R.string.stat_solving)
+                    "Slewing" -> stringResource(id = R.string.stat_slewing)
+                    "Idle" -> stringResource(id = R.string.stat_idle)
+                    "Camera Mode" -> stringResource(id = R.string.btn_camera_mode)
+                    else -> stats.status
+                }
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Row {
+            Text(stringResource(id = R.string.stat_star_count), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("${stats.centroidCount}")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row {
+            Text(stringResource(id = R.string.ra_j2000_label), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(stats.ra?.let { formatRa(it) } ?: "-")
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row {
+            Text(stringResource(id = R.string.dec_j2000_label), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(stats.dec?.let { formatDec(it) } ?: "-")
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+
+        stats.fov?.let { fovVal ->
+            Row {
+                Text(stringResource(id = R.string.stat_fov), fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    stringResource(id = R.string.stat_fov) + ": " +
-                            stringResource(
-                                id = R.string.format_degree,
-                                String.format(Locale.getDefault(), "%.2f", fovVal)
-                            ),
-                    color = MaterialTheme.colorScheme.onBackground
+                    stringResource(
+                        id = R.string.format_degree,
+                        String.format(Locale.US, "%.2f", fovVal)
+                    )
                 )
             }
         }
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // Right Column: Performance metrics
-        Column(
-            modifier = Modifier.weight(1f),
-            horizontalAlignment = Alignment.Start
-        ) {
+        Row {
+            Text(stringResource(id = R.string.stat_exposure), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
-                stringResource(id = R.string.stat_exposure) + ": " + stringResource(
+                stringResource(
                     id = R.string.format_ms,
-                    String.format(Locale.getDefault(), "%.2f", stats.exposureMs)
-                ),
-                color = MaterialTheme.colorScheme.onBackground
+                    String.format(Locale.US, "%.2f", stats.exposureMs)
+                )
             )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row {
+            Text(stringResource(id = R.string.stat_post_process), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
-                stringResource(id = R.string.stat_post_process) + ": " + stringResource(
+                stringResource(
                     id = R.string.format_ms,
-                    String.format(Locale.getDefault(), "%.1f", stats.postProcessMs)
-                ),
-                color = MaterialTheme.colorScheme.onBackground
+                    String.format(Locale.US, "%.1f", stats.postProcessMs)
+                )
             )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row {
+            Text(stringResource(id = R.string.stat_extraction), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
-                stringResource(id = R.string.stat_extraction) + ": " + stringResource(
+                stringResource(
                     id = R.string.format_ms,
-                    String.format(Locale.getDefault(), "%.1f", stats.extractMs)
-                ),
-                color = MaterialTheme.colorScheme.onBackground
+                    String.format(Locale.US, "%.1f", stats.extractMs)
+                )
             )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row {
+            Text(stringResource(id = R.string.stat_solve), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
-                stringResource(id = R.string.stat_solve) + ": " + stringResource(
+                stringResource(
                     id = R.string.format_ms,
-                    String.format(Locale.getDefault(), "%.1f", stats.solveMs)
-                ),
-                color = MaterialTheme.colorScheme.onBackground
+                    String.format(Locale.US, "%.1f", stats.solveMs)
+                )
             )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row {
+            Text(stringResource(id = R.string.stat_solve_rate), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
-                stringResource(id = R.string.stat_solve_rate) + ": " + stringResource(
+                stringResource(
                     id = R.string.format_hz,
-                    String.format(Locale.getDefault(), "%.2f", stats.solveRateHz)
-                ),
-                color = MaterialTheme.colorScheme.onBackground
+                    String.format(Locale.US, "%.1f", stats.solveRateHz)
+                )
             )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
 
+        Row {
+            Text(stringResource(id = R.string.stat_last_solve), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(4.dp))
             val cropString = when (stats.solvedCrop) {
                 "Center" -> stringResource(id = R.string.crop_center)
                 "Top" -> stringResource(id = R.string.crop_top)
@@ -2068,20 +2252,61 @@ fun StatsDisplay(stats: EngineStats) {
                 "Right" -> stringResource(id = R.string.crop_right)
                 "Full" -> stringResource(id = R.string.crop_full)
                 "Failed" -> stringResource(id = R.string.crop_failed)
-                "CenterHighSens" -> stringResource(id = R.string.crop_center) + " (HS)"
-                "TopHighSens" -> stringResource(id = R.string.crop_top) + " (HS)"
-                "BottomHighSens" -> stringResource(id = R.string.crop_bottom) + " (HS)"
-                "LeftHighSens" -> stringResource(id = R.string.crop_left) + " (HS)"
-                "RightHighSens" -> stringResource(id = R.string.crop_right) + " (HS)"
-                "FullHighSens" -> stringResource(id = R.string.crop_full) + " (HS)"
-                else -> ""
-            }
-            if (cropString.isNotEmpty()) {
-                Text(
-                    stringResource(id = R.string.stat_last_solve) + ": " + cropString,
-                    color = MaterialTheme.colorScheme.onBackground
+                "CenterHighSens" -> stringResource(
+                    id = R.string.format_high_sens,
+                    stringResource(id = R.string.crop_center)
                 )
+
+                "TopHighSens" -> stringResource(
+                    id = R.string.format_high_sens,
+                    stringResource(id = R.string.crop_top)
+                )
+
+                "BottomHighSens" -> stringResource(
+                    id = R.string.format_high_sens,
+                    stringResource(id = R.string.crop_bottom)
+                )
+
+                "LeftHighSens" -> stringResource(
+                    id = R.string.format_high_sens,
+                    stringResource(id = R.string.crop_left)
+                )
+
+                "RightHighSens" -> stringResource(
+                    id = R.string.format_high_sens,
+                    stringResource(id = R.string.crop_right)
+                )
+
+                "FullHighSens" -> stringResource(
+                    id = R.string.format_high_sens,
+                    stringResource(id = R.string.crop_full)
+                )
+
+                else -> stats.solvedCrop ?: "-"
+            }
+            Text(cropString)
+        }
+
+        if (activeCameraSelection != "cedar") {
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.stat_ip_address), fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(detectedIpAddress)
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = onInfoClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(id = R.string.cd_info),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }
 }
+
