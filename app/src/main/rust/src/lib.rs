@@ -943,6 +943,26 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setGoToTarget(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_clearGoToTarget(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+) {
+    if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
+        if let Ok(mut state) = state_arc.write() {
+            state.requested_target_ra = None;
+            state.requested_target_dec = None;
+            state.requested_target_epoch = None;
+            state.target_ra = None;
+            state.target_dec = None;
+            state.requested_target_clear = true;
+            log::info!("Target slew cleared via JNI");
+        }
+    } else {
+        log::warn!("clearGoToTarget called but ENGINE_STATE is not initialized");
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setAlignTargetPixel(
     _env: jni::JNIEnv,
     _class: jni::objects::JClass,
@@ -985,7 +1005,11 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_syncTelescopeToTarget(
         if let Ok(mut state) = state_arc.write() {
             state.requested_sync_coords = Some((ra as f64, dec as f64));
             state.requested_sync = true;
-            log::info!("Sync telescope to target ({}, {}) requested via JNI", ra, dec);
+            log::info!(
+                "Sync telescope to target ({}, {}) requested via JNI",
+                ra,
+                dec
+            );
         }
     } else {
         log::warn!("syncTelescopeToTarget called but ENGINE_STATE is not initialized");

@@ -375,6 +375,7 @@ class CatalogDatabaseHelper(private val context: Context) :
         sortBy: String = "catalog ID",
         magLimit: Double? = null,
         typeFilters: Set<String>? = null,
+        starFilter: Boolean? = null,
         visibilityFilter: String = "Above Horizon",
         lat: Double? = null,
         lon: Double? = null,
@@ -469,6 +470,14 @@ class CatalogDatabaseHelper(private val context: Context) :
             }
         }
 
+        if (starFilter != null) {
+            selection += if (starFilter) {
+                " AND object_type LIKE '%Star%'"
+            } else {
+                " AND object_type NOT LIKE '%Star%'"
+            }
+        }
+
         if (visibilityFilter == "Above Horizon" && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
             val timeMs = System.currentTimeMillis()
             val daysSinceJ2000 = (timeMs - 946728000000.0) / 86400000.0
@@ -510,7 +519,7 @@ class CatalogDatabaseHelper(private val context: Context) :
             }
 
             "name" -> "(common_name IS NULL OR common_name = '') ASC, common_name ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
-            "brightness" -> "magnitude IS NULL ASC, magnitude ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
+            "brightness" -> "magnitude IS NULL ASC, magnitude ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
             "catalog ID" -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
             else -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
         }

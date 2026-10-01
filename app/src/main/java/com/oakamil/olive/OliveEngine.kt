@@ -86,6 +86,7 @@ object OliveEngine {
     ): String
 
     external fun setGoToTarget(ra: Double, dec: Double, epoch: Double)
+    external fun clearGoToTarget()
     external fun setAlignTargetPixel(x: Double, y: Double)
     external fun syncTelescope()
     external fun syncTelescopeToTarget(ra: Double, dec: Double)
