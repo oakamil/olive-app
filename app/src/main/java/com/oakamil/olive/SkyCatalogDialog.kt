@@ -145,13 +145,7 @@ fun SkyCatalogDialog(
     var showRaDecForObj by remember { mutableStateOf<CatalogObject?>(null) }
     var showGotoRaDecPopup by remember { mutableStateOf(false) }
 
-    val categories = listOf(
-        "Nearest Objects", "All Objects", "Solar System", "Bright Stars",
-        "Messier", "Caldwell", "Collinder", "NGC", "IC", "Asteroids", "Comets",
-        "Herschel 400", "Barnard", "Sharpless", "Abell", "Arp",
-        "SAC Asterisms", "SAC Doubles", "SAC Red Stars", "TAAS 200",
-        "Harris", "RASC Doubles", "EGC"
-    )
+
 
     val categoryToShortCode = mapOf(
         "Messier" to "M",
@@ -382,33 +376,7 @@ fun SkyCatalogDialog(
                             }
 
                             "catalog ID" -> {
-                                val categoryPriority = { obj: CatalogObject ->
-                                    when (obj.catalogLabel) {
-                                        "Planet", "Moon", "Solar System" -> categories.indexOf("Solar System")
-                                        "Str" -> categories.indexOf("Bright Stars")
-                                        "M" -> categories.indexOf("Messier")
-                                        "C" -> categories.indexOf("Caldwell")
-                                        "Col" -> categories.indexOf("Collinder")
-                                        "NGC" -> categories.indexOf("NGC")
-                                        "IC" -> categories.indexOf("IC")
-                                        "Asteroid" -> categories.indexOf("Asteroids")
-                                        "Comet" -> categories.indexOf("Comets")
-                                        "H" -> categories.indexOf("Herschel 400")
-                                        "B" -> categories.indexOf("Barnard")
-                                        "Sh2" -> categories.indexOf("Sharpless")
-                                        "Abl" -> categories.indexOf("Abell")
-                                        "Arp" -> categories.indexOf("Arp")
-                                        "SaA" -> categories.indexOf("SAC Asterisms")
-                                        "SaM" -> categories.indexOf("SAC Doubles")
-                                        "SaR" -> categories.indexOf("SAC Red Stars")
-                                        "Ta2" -> categories.indexOf("TAAS 200")
-                                        "Har" -> categories.indexOf("Harris")
-                                        "RDS" -> categories.indexOf("RASC Doubles")
-                                        "EGC" -> categories.indexOf("EGC")
-                                        else -> 999
-                                    }
-                                }
-                                combinedList.sortWith(compareBy<CatalogObject> { categoryPriority(it) }
+                                combinedList.sortWith(compareBy<CatalogObject> { getCatalogPriority(it) }
                                     .thenBy { if (it.objectType == "Planet" || it.objectType == "Moon") it.id else 0 }
                                     .thenBy { it.catalogEntry.toIntOrNull() ?: Int.MAX_VALUE }
                                     .thenBy { it.catalogEntry })
@@ -498,7 +466,7 @@ fun SkyCatalogDialog(
                         )
                         HorizontalDivider()
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(categories) { category ->
+                            items(catalogCategories) { category ->
                                 NavigationDrawerItem(
                                     label = {
                                         Row(
