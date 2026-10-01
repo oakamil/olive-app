@@ -61,7 +61,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settingsManager.catalogSortBy = value
         }
 
-    private val _catalogMagLimit = mutableStateOf<Double?>(settingsManager.catalogMagLimit)
+    private val _catalogMagLimit = mutableStateOf(settingsManager.catalogMagLimit)
     var catalogMagLimit: Double?
         get() = _catalogMagLimit.value
         set(value) {
@@ -549,6 +549,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Log.i("MainViewModel", "GoTo Target set in JNI: RA=$ra, Dec=$dec, Epoch=$epoch")
         } else {
             Log.w("MainViewModel", "Engine not running, cannot set GoTo Target: RA=$ra, Dec=$dec")
+        }
+    }
+
+    fun clearGoToTarget() {
+        if (isEngineRunning) {
+            OliveEngine.clearGoToTarget()
+            Log.i("MainViewModel", "GoTo Target cleared in JNI")
+        } else {
+            Log.w("MainViewModel", "Engine not running, cannot clear GoTo Target")
         }
     }
 

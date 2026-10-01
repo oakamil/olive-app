@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FilterCenterFocus
@@ -41,8 +43,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -391,18 +395,32 @@ fun EngineRunningScreen(
                     withContext(Dispatchers.IO) {
                         // Screen corner is at ~0.707x FOV from center.
                         // 0.9x FOV gives us a 0.2x buffer matching our step size.
-                        val searchRadius = fovVal * 0.9
+                        val searchRadius = fovVal * 0.65
+
+                        val stars = viewModel.catalogDb.searchObjects(
+                            targetRa = ra,
+                            targetDec = dec,
+                            maxDistanceDegrees = searchRadius,
+                            magLimit = currentMagLimit,
+                            typeFilters = if (isAllTypes) null else currentTypeFilters,
+                            starFilter = true,
+                            visibilityFilter = "Any",
+                            sortBy = "brightness",
+                            limit = 400
+                        )
+
                         val dsos = viewModel.catalogDb.searchObjects(
                             targetRa = ra,
                             targetDec = dec,
                             maxDistanceDegrees = searchRadius,
                             magLimit = currentMagLimit,
                             typeFilters = if (isAllTypes) null else currentTypeFilters,
+                            starFilter = false,
                             visibilityFilter = "Any",
                             sortBy = "brightness",
-                            limit = 250
+                            limit = 400
                         )
-                        visibleDsos = dsos
+                        visibleDsos = stars + dsos
                     }
                 }
             }
@@ -547,6 +565,7 @@ fun EngineRunningScreen(
                         val smartScale = maxOf(fovZoom, boresightZoom).coerceIn(1f, 3f)
                         val finalScale = smartScale * UI_SCALE
 
+
                         val dx = targetPxX - (bW / 2f)
                         val dy = targetPxY - (bH / 2f)
                         var tx = -dx * baseScale * finalScale
@@ -564,6 +583,59 @@ fun EngineRunningScreen(
                         val screenTx = tx * cosR - ty * sinR
                         val screenTy = tx * sinR + ty * cosR
 
+                        var manualScale by remember { mutableFloatStateOf(1f) }
+                        var manualOffset by remember { mutableStateOf(Offset.Zero) }
+                        var isManuallyPanned by remember { mutableStateOf(false) }
+
+                        val currentUiRotationRad = Math.toRadians(currentUiRotation.toDouble())
+                        val rotatedWidth = abs(bW * cos(currentUiRotationRad)) + abs(
+                            bH * sin(currentUiRotationRad)
+                        )
+                        val rotatedHeight = abs(bW * sin(currentUiRotationRad)) + abs(
+                            bH * cos(currentUiRotationRad)
+                        )
+                        val fitScale = minOf(
+                            screenSize.width / rotatedWidth,
+                            screenSize.height / rotatedHeight
+                        ).toFloat()
+                        val minManualScale = minOf(1f, fitScale / (baseScale * finalScale))
+
+                        val clampedManualScale = maxOf(manualScale, minManualScale)
+                        val currentEffectiveScale = finalScale * clampedManualScale
+                        val currentMaxBoundTx = maxOf(
+                            0f,
+                            (bW * baseScale * currentEffectiveScale - screenSize.width) / 2f
+                        )
+                        val currentMaxBoundTy = maxOf(
+                            0f,
+                            (bH * baseScale * currentEffectiveScale - screenSize.height) / 2f
+                        )
+
+                        LaunchedEffect(
+                            minManualScale,
+                            clampedManualScale,
+                            currentMaxBoundTx,
+                            currentMaxBoundTy,
+                            screenTx,
+                            screenTy
+                        ) {
+                            if (manualScale < minManualScale) {
+                                manualScale = minManualScale
+                            }
+                            val intendedTx = screenTx + manualOffset.x
+                            val intendedTy = screenTy + manualOffset.y
+                            val clampedTx =
+                                intendedTx.coerceIn(-currentMaxBoundTx, currentMaxBoundTx)
+                            val clampedTy =
+                                intendedTy.coerceIn(-currentMaxBoundTy, currentMaxBoundTy)
+                            if (clampedTx != intendedTx || clampedTy != intendedTy) {
+                                manualOffset = Offset(
+                                    clampedTx - screenTx,
+                                    clampedTy - screenTy
+                                )
+                            }
+                        }
+
                         if (frame != null) {
                             Image(
                                 bitmap = frame,
@@ -572,11 +644,11 @@ fun EngineRunningScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .graphicsLayer {
-                                        translationX = screenTx
-                                        translationY = screenTy
+                                        translationX = screenTx + manualOffset.x
+                                        translationY = screenTy + manualOffset.y
                                         rotationZ = currentUiRotation
-                                        scaleX = finalScale
-                                        scaleY = finalScale
+                                        scaleX = finalScale * clampedManualScale
+                                        scaleY = finalScale * clampedManualScale
                                     }
                             )
 
@@ -596,11 +668,54 @@ fun EngineRunningScreen(
                             val currentBW by rememberUpdatedState(bW)
                             val currentBH by rememberUpdatedState(bH)
                             val currentScreenSize by rememberUpdatedState(screenSize)
+                            val currentManualScale by rememberUpdatedState(clampedManualScale)
+                            val currentMinManualScale by rememberUpdatedState(minManualScale)
+                            val currentManualOffset by rememberUpdatedState(manualOffset)
 
                             Canvas(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .graphicsLayer { blendMode = BlendMode.Screen }
+                                    .pointerInput(Unit) {
+                                        detectTransformGestures { centroid, pan, zoom, _ ->
+                                            if (zoom != 1f || pan != Offset.Zero) {
+                                                isManuallyPanned = true
+                                                val oldScale =
+                                                    maxOf(manualScale, currentMinManualScale)
+                                                manualScale = (oldScale * zoom).coerceIn(
+                                                    currentMinManualScale,
+                                                    5f
+                                                )
+                                                val effectiveScale = currentFinalScale * manualScale
+                                                val maxBoundTx = maxOf(
+                                                    0f,
+                                                    (currentBW * currentBaseScale * effectiveScale - currentScreenSize.width) / 2f
+                                                )
+                                                val maxBoundTy = maxOf(
+                                                    0f,
+                                                    (currentBH * currentBaseScale * effectiveScale - currentScreenSize.height) / 2f
+                                                )
+                                                val centerOffset = centroid - Offset(
+                                                    currentScreenSize.width / 2f,
+                                                    currentScreenSize.height / 2f
+                                                )
+                                                val adjustedPan =
+                                                    (manualOffset + centerOffset) * (manualScale / oldScale) - centerOffset + pan
+                                                val intendedTx = currentScreenTx + adjustedPan.x
+                                                val intendedTy = currentScreenTy + adjustedPan.y
+                                                manualOffset = Offset(
+                                                    x = intendedTx.coerceIn(
+                                                        -maxBoundTx,
+                                                        maxBoundTx
+                                                    ) - currentScreenTx,
+                                                    y = intendedTy.coerceIn(
+                                                        -maxBoundTy,
+                                                        maxBoundTy
+                                                    ) - currentScreenTy
+                                                )
+                                            }
+                                        }
+                                    }
                                     .pointerInput(Unit) {
                                         detectTapGestures { tapOffset ->
                                             var closest: CatalogObject? = null
@@ -628,14 +743,18 @@ fun EngineRunningScreen(
                                             } else {
                                                 val cx = currentScreenSize.width / 2f
                                                 val cy = currentScreenSize.height / 2f
-                                                val rx = tapOffset.x - currentScreenTx
-                                                val ry = tapOffset.y - currentScreenTy
+                                                val rx =
+                                                    tapOffset.x - currentScreenTx - currentManualOffset.x
+                                                val ry =
+                                                    tapOffset.y - currentScreenTy - currentManualOffset.y
                                                 val px =
                                                     cx + (rx - cx) * currentCosR + (ry - cy) * currentSinR
                                                 val py =
                                                     cy - (rx - cx) * currentSinR + (ry - cy) * currentCosR
-                                                val ix = cx + (px - cx) / currentFinalScale
-                                                val iy = cy + (py - cy) / currentFinalScale
+                                                val effectiveScale =
+                                                    currentFinalScale * currentManualScale
+                                                val ix = cx + (px - cx) / effectiveScale
+                                                val iy = cy + (py - cy) / effectiveScale
                                                 val tpx =
                                                     (ix - cx) / currentBaseScale + currentBW / 2f
                                                 val tpy =
@@ -657,11 +776,15 @@ fun EngineRunningScreen(
                                 val cy = screenSize.height / 2f
 
                                 fun toPhysical(x: Float, y: Float): Offset {
-                                    val px = cx + (x - cx) * finalScale
-                                    val py = cy + (y - cy) * finalScale
+                                    val effectiveScale = finalScale * clampedManualScale
+                                    val px = cx + (x - cx) * effectiveScale
+                                    val py = cy + (y - cy) * effectiveScale
                                     val rx = cx + (px - cx) * cosR - (py - cy) * sinR
                                     val ry = cy + (px - cx) * sinR + (py - cy) * cosR
-                                    return Offset(rx + screenTx, ry + screenTy)
+                                    return Offset(
+                                        rx + screenTx + manualOffset.x,
+                                        ry + screenTy + manualOffset.y
+                                    )
                                 }
 
                                 val boresightProjX = cx + (targetPxX - bW / 2f) * baseScale
@@ -1116,6 +1239,37 @@ fun EngineRunningScreen(
                                 }
                             }
                         }
+
+                        // Removing qualifier causes a compilation error
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = isManuallyPanned,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                        ) {
+                            OutlinedIconButton(
+                                onClick = {
+                                    manualScale = 1f
+                                    manualOffset = Offset.Zero
+                                    isManuallyPanned = false
+                                },
+                                border = BorderStroke(
+                                    1.5.dp,
+                                    Color.Red
+                                ),
+                                colors = IconButtonDefaults.outlinedIconButtonColors(
+                                    contentColor = Color.Red,
+                                    containerColor = Color.Transparent
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FilterCenterFocus,
+                                    contentDescription = stringResource(R.string.btn_recenter),
+                                    tint = Color.Red
+                                )
+                            }
+                        }
                     }
 
                     val obj = tappedObject
@@ -1296,6 +1450,18 @@ fun EngineRunningScreen(
                                                 dist < stats.fov * 0.75
                                             }
                                         }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    IconButton(
+                                        onClick = { viewModel.clearGoToTarget() },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.Cancel,
+                                            contentDescription = stringResource(R.string.btn_cancel_goto),
+                                            tint = Color.Red
+                                        )
                                     }
 
                                     if (isTargetVisible) {

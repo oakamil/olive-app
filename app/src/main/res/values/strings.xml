@@ -248,4 +248,6 @@
     <string name="target_label_format">Target (%1$.2f, %2$.2f)</string>
     <string name="stat_ip_address">IP Address</string>
     <string name="msg_confirm_alignment">Are you sure you want to sync the telescope\'s coordinates to this target?</string>
+    <string name="btn_cancel_goto">Cancel GoTo target</string>
+    <string name="btn_recenter">Recenter camera view</string>
 </resources>
