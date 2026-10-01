@@ -401,7 +401,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     updateStarSensitivity(50f)
                     updateUvcStacking(1)
-                    setUvcBrightness(50)
+                    setUvcBrightness(10)
 
                     val hwGain = uvcWrapper?.getHardwareGain()
                     if (hwGain != null && hwGain in 0..100) {

@@ -138,3 +138,45 @@ object CustomIcons {
         }
     }
 }
+
+val catalogCategories = listOf(
+    "Nearest Objects", "All Objects", "Solar System", "Bright Stars",
+    "Messier", "Caldwell", "Collinder", "NGC", "IC", "Asteroids", "Comets",
+    "Herschel 400", "Barnard", "Sharpless", "Abell", "Arp",
+    "SAC Asterisms", "SAC Doubles", "SAC Red Stars", "TAAS 200",
+    "Harris", "RASC Doubles", "EGC"
+)
+
+fun getCatalogPriority(obj: CatalogObject): Int {
+    return when (obj.catalogLabel) {
+        "Planet", "Moon", "Solar System" -> catalogCategories.indexOf("Solar System")
+        "Str" -> catalogCategories.indexOf("Bright Stars")
+        "M" -> catalogCategories.indexOf("Messier")
+        "C" -> catalogCategories.indexOf("Caldwell")
+        "Col" -> catalogCategories.indexOf("Collinder")
+        "NGC" -> catalogCategories.indexOf("NGC")
+        "IC" -> catalogCategories.indexOf("IC")
+        "Asteroid" -> catalogCategories.indexOf("Asteroids")
+        "Comet" -> catalogCategories.indexOf("Comets")
+        "H" -> catalogCategories.indexOf("Herschel 400")
+        "B" -> catalogCategories.indexOf("Barnard")
+        "Sh2" -> catalogCategories.indexOf("Sharpless")
+        "Abl" -> catalogCategories.indexOf("Abell")
+        "Arp" -> catalogCategories.indexOf("Arp")
+        "SaA" -> catalogCategories.indexOf("SAC Asterisms")
+        "SaM" -> catalogCategories.indexOf("SAC Doubles")
+        "SaR" -> catalogCategories.indexOf("SAC Red Stars")
+        "Ta2" -> catalogCategories.indexOf("TAAS 200")
+        "Har" -> catalogCategories.indexOf("Harris")
+        "RDS" -> catalogCategories.indexOf("RASC Doubles")
+        "EGC" -> catalogCategories.indexOf("EGC")
+        else -> {
+            when (obj.objectType) {
+                "Planet", "Moon" -> catalogCategories.indexOf("Solar System")
+                "Asteroid" -> catalogCategories.indexOf("Asteroids")
+                "Comet" -> catalogCategories.indexOf("Comets")
+                else -> 999
+            }
+        }
+    }
+}
