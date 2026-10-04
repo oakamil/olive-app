@@ -50,6 +50,7 @@ object OliveEngine {
     external fun getNativeCameraExposure(): Int
     external fun getNativeCameraGainRange(): FloatArray?
     external fun getNativeCameraGain(): Float
+    external fun getNativeCameraNoiseReduction(): Int
     external fun getNativeCameraBrightnessRange(): IntArray?
     external fun getNativeCameraBrightness(): Int
     external fun setNativeCameraBrightness(brightness: Int)

@@ -17,7 +17,7 @@ use std::time::{Duration, SystemTime};
 
 const INITIAL_EXPOSURE_US: i32 = 250_000;
 const MIN_EXPOSURE_US: i32 = 16_667;
-const MAX_EXPOSURE_US: i32 = 2_000_000;
+const MAX_EXPOSURE_US: i32 = 5_000_000;
 
 pub static CURRENT_HOT_PIXEL_MODE: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(0);
@@ -67,7 +67,8 @@ struct ImageReaderContext {
     white_level: f32,
     black_level: f32,
     format: i32,
-    frame_exposures: Arc<Mutex<std::collections::VecDeque<(i64, i32)>>>,
+    frame_exposures: Arc<Mutex<std::collections::VecDeque<(i64, i32, f32, i64)>>>,
+    prev_sensor_ts: Arc<std::sync::atomic::AtomicI64>,
 }
 
 pub struct AndroidCamera {
@@ -179,6 +180,27 @@ impl CameraTrait for AndroidCamera {
     fn set_noise_reduction(&self, mode: u8) {
         self.current_nr.store(mode as u32, Ordering::Relaxed);
         self.send_command(CaptureCommand::SetNoiseReduction(mode));
+    }
+
+    fn get_noise_reduction(&self) -> u8 {
+        self.current_nr.load(Ordering::Relaxed) as u8
+    }
+
+    fn set_hot_pixel_mode(&self, mode: u8) {
+        CURRENT_HOT_PIXEL_MODE.store(mode as u32, Ordering::Relaxed);
+    }
+
+    fn get_hot_pixel_mode(&self) -> u8 {
+        CURRENT_HOT_PIXEL_MODE.load(Ordering::Relaxed) as u8
+    }
+
+    fn supports_hot_pixel_mode(&self) -> bool {
+        let modes = SUPPORTED_HOT_PIXEL_MODES.lock().unwrap();
+        modes.iter().any(|&m| m > 0)
+    }
+
+    fn supports_noise_reduction(&self) -> bool {
+        true
     }
 
     fn set_zoom(&self, zoom: f32) {
@@ -1074,11 +1096,17 @@ impl AndroidCamera {
                 AImage_getTimestamp(image, &mut timestamp);
 
                 let mut actual_exp_us = target_exp_us;
+                let mut actual_gain = 100.0; // fallback
+                let mut actual_interval_us = 0;
+                let mut metadata_valid = false;
 
                 {
                     let mut queue = ctx.frame_exposures.lock().unwrap();
-                    if let Some(pos) = queue.iter().position(|&(ts, _)| ts == timestamp) {
+                    if let Some(pos) = queue.iter().position(|&(ts, _, _, _)| ts == timestamp) {
                         actual_exp_us = queue[pos].1;
+                        actual_gain = queue[pos].2;
+                        actual_interval_us = queue[pos].3;
+                        metadata_valid = true;
                         queue.drain(0..=pos);
                     }
                 }
@@ -1090,7 +1118,10 @@ impl AndroidCamera {
                     height: ctx.height,
                     timestamp: SystemTime::now(),
                     exposure_time_us: actual_exp_us,
+                    gain: actual_gain,
                     post_process_time: receive_time.elapsed(),
+                    frame_interval_us: actual_interval_us,
+                    metadata_valid,
                 }));
                 ctx.store.cvar.notify_all();
 
@@ -1142,10 +1173,29 @@ impl AndroidCamera {
                 exposure_ns = *entry.data.i64_.offset(0);
             }
 
+            let mut actual_gain: f32 = 100.0;
+            if ACameraMetadata_getConstEntry(
+                result,
+                acamera_metadata_tag::ACAMERA_SENSOR_SENSITIVITY.0 as u32,
+                &mut entry,
+            ) == camera_status_t::ACAMERA_OK
+                && entry.count > 0
+            {
+                actual_gain = *entry.data.i32_.offset(0) as f32;
+            }
+
             if timestamp > 0 && exposure_ns > 0 {
+                let prev = ctx
+                    .prev_sensor_ts
+                    .swap(timestamp, std::sync::atomic::Ordering::Relaxed);
+                let interval_us = if prev > 0 {
+                    (timestamp - prev) / 1000
+                } else {
+                    0
+                };
                 let exposure_us = (exposure_ns / 1000) as i32;
                 let mut queue = ctx.frame_exposures.lock().unwrap();
-                queue.push_back((timestamp, exposure_us));
+                queue.push_back((timestamp, exposure_us, actual_gain, interval_us));
                 if queue.len() > 30 {
                     queue.pop_front();
                 }
@@ -1208,9 +1258,10 @@ impl AndroidCamera {
                 &mut image_reader,
             );
 
-            let frame_exposures = Arc::new(Mutex::new(
-                std::collections::VecDeque::<(i64, i32)>::with_capacity(30),
-            ));
+            let frame_exposures =
+                Arc::new(Mutex::new(
+                    std::collections::VecDeque::<(i64, i32, f32, i64)>::with_capacity(30),
+                ));
 
             let mut reader_context = Box::new(ImageReaderContext {
                 store: Arc::clone(&store),
@@ -1221,6 +1272,7 @@ impl AndroidCamera {
                 black_level: config.black_level,
                 format: config.format,
                 frame_exposures: Arc::clone(&frame_exposures),
+                prev_sensor_ts: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             });
 
             let mut listener = AImageReader_ImageListener {

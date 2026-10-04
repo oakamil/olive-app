@@ -720,7 +720,7 @@ fun TuningControls(
                     onValueChange = {
                         viewModel.setExposure(it)
                     },
-                    valueRange = 16667f..2000000f,
+                    valueRange = 16667f..5000000f,
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
@@ -860,7 +860,8 @@ fun TuningControls(
                             selected = viewModel.noiseReductionMode == index,
                             onClick = {
                                 viewModel.setNoiseReduction(index)
-                            }
+                            },
+                            enabled = settingsManager.cameraSettingsMode != "Auto"
                         )
                         Text(
                             name,
@@ -900,7 +901,7 @@ fun TuningControls(
                             onClick = {
                                 viewModel.updateHotPixelMode(index)
                             },
-                            enabled = isSupported
+                            enabled = isSupported && settingsManager.cameraSettingsMode != "Auto"
                         )
                         Text(
                             name,
