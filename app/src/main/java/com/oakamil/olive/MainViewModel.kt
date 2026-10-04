@@ -166,7 +166,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 distortion = if (obj.isNull("distortion")) null else obj.getDouble("distortion")
             )
 
-            // Removed syncing tuning sliders here to allow them to reflect user-selected values
+            if (settingsManager.cameraSettingsMode == "Auto" && !obj.isNull("current_sigma")) {
+                val currentSigmaVal = obj.getDouble("current_sigma").toFloat()
+                starSensitivity = 100f * (5.0f - currentSigmaVal) / 3.0f
+            }
         } catch (_: Exception) {
             // Ignore parse errors, engine might be returning empty string
         }
@@ -228,6 +231,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (isActive) {
                 try {
                     updateStats()
+                    fetchRealtimeSettings()
                 } catch (e: Exception) {
                     Log.e("MainViewModel", "Error in updateStats: ${e.message}")
                 }
@@ -313,16 +317,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 maxAnalogGain = maxG
 
                 if (isAutoSettings) {
-                    setGain(defaultG)
                     setZoom(1.0f)
                     setFocus(0.0f)
-                    setNoiseReduction(0)
-                    updateHotPixelMode(0)
-
-                    val fps = settingsManager.internalFps.coerceAtLeast(1)
-                    setExposure((1000000 / fps).toFloat())
-
-                    updateStarSensitivity(50f)
                     updateUvcStacking(1)
                 } else {
                     var savedGain = settingsManager.manualGain
@@ -342,7 +338,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 supportedHotPixelModes =
                     OliveEngine.getNativeCameraSupportedHotPixelModes().toList()
-                OliveEngine.setEngineSigma(currentSigma)
+                if (!isAutoSettings) {
+                    OliveEngine.setEngineSigma(currentSigma)
+                }
                 OliveEngine.setEngineStrictMatch(false) // Phone camera has wide FOV, needs generous thresholds
                 startPolling()
             }
@@ -401,7 +399,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     updateStarSensitivity(50f)
                     updateUvcStacking(1)
-                    setUvcBrightness(10)
+
+                    uvcWrapper?.resetHardwareBrightness()
+                    val defaultBrightness = uvcWrapper?.getHardwareBrightness() ?: 50
+                    setUvcBrightness(defaultBrightness)
 
                     val hwGain = uvcWrapper?.getHardwareGain()
                     if (hwGain != null && hwGain in 0..100) {
@@ -455,6 +456,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (!gain.isNaN() && gain > 0) {
                     currentGain = gain
                 }
+                val exp = OliveEngine.getNativeCameraExposure()
+                if (exp > 0) {
+                    currentExposure = exp.toFloat()
+                }
+                noiseReductionMode = OliveEngine.getNativeCameraNoiseReduction()
             }
             hotPixelMode = OliveEngine.getNativeCameraHotPixelMode()
         } else if (engineMode == EngineMode.UVC) {

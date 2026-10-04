@@ -93,7 +93,10 @@ impl AndroidUvcCamera {
                 height,
                 timestamp,
                 exposure_time_us: total_exposure_us as i32,
+                gain: 1.0,
                 post_process_time: std::time::Duration::from_millis(0),
+                frame_interval_us: 0,
+                metadata_valid: true,
             };
 
             let mut lock = self.last_image.lock().unwrap();

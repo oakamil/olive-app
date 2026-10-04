@@ -235,6 +235,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 crop: None,
                 downsample: downsample_mode as u8,
                 auto_mode: auto_mode != 0 && internal_camera_id_str != "demo",
+                is_adaptive_camera: internal_camera_id_str != "demo",
                 noise_filter: true,
                 initial_fov: camera.get_config().and_then(|c| c.initial_fov),
                 use_observer_location: internal_camera_id_str != "demo",
@@ -1476,6 +1477,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
                 crop: None,
                 downsample: downsample_mode as u8,
                 auto_mode: auto_mode != 0,
+                is_adaptive_camera: false,
                 noise_filter: false,
                 initial_fov: camera.get_config().and_then(|c| c.initial_fov),
                 use_observer_location: true,
@@ -1605,5 +1607,17 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_pushExternalUvcFrame(
                 cam.push_external_frame(data_slice, width as u32, height as u32);
             }
         }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraNoiseReduction(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jint {
+    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_noise_reduction() as i32
+    } else {
+        0
     }
 }

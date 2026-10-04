@@ -344,7 +344,7 @@ fun StartScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            if (cameraSelection == "external" || (cameraSelection == "internal" && cameraSettingsMode == "Auto")) {
+            if (cameraSelection == "external") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         stringResource(id = R.string.label_camera_frame_rate),
