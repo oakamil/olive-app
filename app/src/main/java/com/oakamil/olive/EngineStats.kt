@@ -23,6 +23,7 @@ data class EngineStats(
     val targetRa: Double? = null,
     val targetDec: Double? = null,
     val isImuEstimate: Boolean = false,
+    val isMirrored: Boolean? = null,
     val solvedCrop: String? = null,
     val targetPixelX: Double? = null,
     val targetPixelY: Double? = null,
