@@ -1111,6 +1111,16 @@ impl AndroidCamera {
                     }
                 }
 
+                if !metadata_valid {
+                    // Only warn occasionally to avoid log spam if it completely breaks
+                    if timestamp % 10 == 0 {
+                        log::warn!(
+                            "Frame timestamp {} missing metadata - dropping telemetry",
+                            timestamp
+                        );
+                    }
+                }
+
                 let mut lock = ctx.store.image.lock().unwrap();
                 *lock = Some(Arc::new(Image {
                     data: image_data,
