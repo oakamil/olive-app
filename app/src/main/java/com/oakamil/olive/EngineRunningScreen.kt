@@ -1555,19 +1555,29 @@ fun EngineRunningScreen(
             ) {
                 val initialBrightness = remember {
                     try {
-                        Settings.System.getInt(
+                        Settings.System.getFloat(
                             context.contentResolver,
-                            Settings.System.SCREEN_BRIGHTNESS
-                        ) / 255f
+                            "screen_brightness_float"
+                        )
                     } catch (_: Exception) {
-                        0.5f
+                        try {
+                            Settings.System.getInt(
+                                context.contentResolver,
+                                Settings.System.SCREEN_BRIGHTNESS
+                            ) / 255f
+                        } catch (_: Exception) {
+                            0.5f
+                        }
                     }
                 }
                 var screenBrightness by remember { mutableFloatStateOf(initialBrightness) }
+                var brightnessChanged by remember { mutableStateOf(false) }
 
-                LaunchedEffect(screenBrightness) {
-                    activity?.window?.attributes = activity.window?.attributes?.apply {
-                        this.screenBrightness = screenBrightness
+                LaunchedEffect(screenBrightness, brightnessChanged) {
+                    if (brightnessChanged) {
+                        activity?.window?.attributes = activity.window?.attributes?.apply {
+                            this.screenBrightness = screenBrightness
+                        }
                     }
                 }
 
@@ -1584,7 +1594,10 @@ fun EngineRunningScreen(
                 }
                 Slider(
                     value = screenBrightness,
-                    onValueChange = { screenBrightness = it },
+                    onValueChange = {
+                        brightnessChanged = true
+                        screenBrightness = it
+                    },
                     valueRange = 0f..1f,
                     modifier = Modifier.fillMaxWidth()
                 )
