@@ -160,6 +160,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 targetRa = if (obj.isNull("target_ra")) null else obj.getDouble("target_ra"),
                 targetDec = if (obj.isNull("target_dec")) null else obj.getDouble("target_dec"),
                 isImuEstimate = obj.optBoolean("is_imu_estimate", false),
+                isMirrored = if (obj.isNull("is_mirrored")) null else obj.getBoolean("is_mirrored"),
                 solvedCrop = if (obj.isNull("solved_crop")) null else obj.getString("solved_crop"),
                 targetPixelX = if (obj.isNull("target_pixel_x")) null else obj.getDouble("target_pixel_x"),
                 targetPixelY = if (obj.isNull("target_pixel_y")) null else obj.getDouble("target_pixel_y"),

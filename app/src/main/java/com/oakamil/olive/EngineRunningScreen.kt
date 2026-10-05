@@ -552,7 +552,9 @@ fun EngineRunningScreen(
                             Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
                         val bW = frame?.width?.toFloat() ?: 1f
                         val bH = frame?.height?.toFloat() ?: 1f
-                        val targetPxX = (alignTargetPixel?.first ?: (bW / 2.0)).toFloat()
+                        val rawTargetPxX = (alignTargetPixel?.first ?: (bW / 2.0)).toFloat()
+                        val targetPxX =
+                            if (stats.isMirrored == true) bW - rawTargetPxX else rawTargetPxX
                         val targetPxY = (alignTargetPixel?.second ?: (bH / 2.0)).toFloat()
                         val baseScale = maxOf(screenSize.width / bW, screenSize.height / bH)
 
@@ -663,7 +665,8 @@ fun EngineRunningScreen(
                                         translationX = screenTx + manualOffset.x
                                         translationY = screenTy + manualOffset.y
                                         rotationZ = currentUiRotation
-                                        scaleX = finalScale * clampedManualScale
+                                        val mirrorMult = if (stats.isMirrored == true) -1f else 1f
+                                        scaleX = finalScale * clampedManualScale * mirrorMult
                                         scaleY = finalScale * clampedManualScale
                                     }
                             )
@@ -786,7 +789,10 @@ fun EngineRunningScreen(
                                                     cy - (rx - cx) * currentSinR + (ry - cy) * currentCosR
                                                 val effectiveScale =
                                                     currentFinalScale * currentManualScale
-                                                val ix = cx + (px - cx) / effectiveScale
+                                                val mirrorMult =
+                                                    if (stats.isMirrored == true) -1f else 1f
+                                                val ix =
+                                                    cx + (px - cx) / (effectiveScale * mirrorMult)
                                                 val iy = cy + (py - cy) / effectiveScale
                                                 val tpx =
                                                     (ix - cx) / currentBaseScale + currentBW / 2f
