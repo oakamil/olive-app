@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.HourglassEmpty
+import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.AlertDialog
@@ -2054,7 +2055,9 @@ fun CollapsedStatsDisplay(stats: EngineStats, onClick: () -> Unit) {
             StatCol(
                 top = {
                     Icon(
-                        if (isGoodSolve) Icons.Outlined.Check else Icons.Outlined.ErrorOutline,
+                        if (stats.status == "Calibrating") Icons.Outlined.Loop
+                        else if (isGoodSolve) Icons.Outlined.Check
+                        else Icons.Outlined.ErrorOutline,
                         contentDescription = stringResource(R.string.cd_solve_status),
                         tint = primaryColor,
                         modifier = Modifier.size(20.dp)
