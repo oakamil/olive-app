@@ -87,6 +87,10 @@ pub struct AndroidCamera {
 }
 
 impl CameraTrait for AndroidCamera {
+    fn get_exposure_range(&self) -> Option<(i32, i32)> {
+        Some((16_667, 2_000_000))
+    }
+
     fn get_config(&self) -> Option<CameraConfig> {
         self.config.lock().unwrap().as_ref().map(|c| CameraConfig {
             model: format!("Android_Cam_{}", c.id),
