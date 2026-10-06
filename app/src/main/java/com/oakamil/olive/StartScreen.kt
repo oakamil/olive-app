@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -81,7 +82,8 @@ fun StartScreen(
     var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
     var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
-    var motionSensorMode by remember { mutableIntStateOf(settingsManager.motionSensorMode) }
+    var explicitMotionSensorMode by remember { mutableStateOf(if (settingsManager.hasExplicitMotionSensorMode) settingsManager.motionSensorMode else null) }
+    val motionSensorMode = explicitMotionSensorMode ?: if (cameraSelection == "internal") 3 else 0
 
 
     var showCameraSelectionInfo by remember { mutableStateOf(false) }
@@ -112,8 +114,7 @@ fun StartScreen(
         sensorMode,
         downsampling,
         internalCameraId,
-        guidanceMode,
-        motionSensorMode
+        guidanceMode
     ) {
         settingsManager.cameraSelection = cameraSelection
         settingsManager.cameraSettingsMode = cameraSettingsMode
@@ -124,7 +125,6 @@ fun StartScreen(
         settingsManager.downsampling = downsampling
         settingsManager.internalCameraId = internalCameraId
         settingsManager.guidanceMode = guidanceMode
-        settingsManager.motionSensorMode = motionSensorMode
     }
 
     LaunchedEffect(internalCameraId) {
@@ -324,21 +324,83 @@ fun StartScreen(
                         "Auto" to stringResource(id = R.string.value_auto),
                         "Manual" to stringResource(id = R.string.value_manual)
                     ).forEach { (value, label) ->
-                        RadioButton(
-                            selected = cameraSettingsMode == value,
-                            onClick = {
-                                cameraSettingsMode = value
-                            },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary,
-                                unselectedColor = MaterialTheme.colorScheme.onBackground
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clickable { cameraSettingsMode = value }
+                                .padding(end = 16.dp)
+                        ) {
+                            RadioButton(
+                                selected = cameraSettingsMode == value,
+                                onClick = { cameraSettingsMode = value },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary,
+                                    unselectedColor = MaterialTheme.colorScheme.onBackground
+                                )
                             )
-                        )
-                        Text(
-                            label,
-                            modifier = Modifier.padding(start = 8.dp, end = 16.dp),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
+                            Text(
+                                label,
+                                modifier = Modifier.padding(start = 4.dp),
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+
+                            if (value == "Auto" && cameraSelection == "internal" && cameraSettingsMode == "Auto") {
+                                var showResetCameraCalibrationDialog by remember {
+                                    mutableStateOf(
+                                        false
+                                    )
+                                }
+                                var hasCameraProfile by remember {
+                                    mutableStateOf(
+                                        settingsManager.getString(
+                                            "night_profile_Android_Cam_$internalCameraId"
+                                        ) != null
+                                    )
+                                }
+
+                                LaunchedEffect(internalCameraId) {
+                                    hasCameraProfile =
+                                        settingsManager.getString("night_profile_Android_Cam_$internalCameraId") != null
+                                }
+
+                                if (showResetCameraCalibrationDialog) {
+                                    AlertDialog(
+                                        onDismissRequest = {
+                                            showResetCameraCalibrationDialog = false
+                                        },
+                                        title = { Text(stringResource(R.string.title_reset_calibration)) },
+                                        text = { Text(stringResource(R.string.inst_reset_camera_calibration)) },
+                                        confirmButton = {
+                                            Button(onClick = {
+                                                showResetCameraCalibrationDialog = false
+                                                settingsManager.removeString("night_profile_Android_Cam_$internalCameraId")
+                                                hasCameraProfile = false
+                                            }) {
+                                                Text(stringResource(R.string.btn_confirm))
+                                            }
+                                        },
+                                        dismissButton = {
+                                            OutlinedButton(onClick = {
+                                                showResetCameraCalibrationDialog = false
+                                            }) {
+                                                Text(stringResource(id = R.string.btn_cancel))
+                                            }
+                                        }
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(16.dp))
+                                IconBarItem(
+                                    icon = Icons.Default.SettingsBackupRestore,
+                                    label = stringResource(id = R.string.btn_reset),
+                                    singleLine = true,
+                                    onClick = {
+                                        showResetCameraCalibrationDialog = true
+                                    },
+                                    enabled = hasCameraProfile
+                                )
+                            }
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
@@ -765,12 +827,18 @@ fun StartScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .clickable { motionSensorMode = value }
+                                .clickable {
+                                    explicitMotionSensorMode = value
+                                    settingsManager.motionSensorMode = value
+                                }
                                 .padding(end = 16.dp)
                         ) {
                             RadioButton(
                                 selected = motionSensorMode == value,
-                                onClick = { motionSensorMode = value },
+                                onClick = {
+                                    explicitMotionSensorMode = value
+                                    settingsManager.motionSensorMode = value
+                                },
                                 colors = RadioButtonDefaults.colors(
                                     selectedColor = MaterialTheme.colorScheme.primary,
                                     unselectedColor = MaterialTheme.colorScheme.onBackground
