@@ -168,6 +168,7 @@
     <string name="inst_reset_alignment">The alignment will be reset to the center of the camera\'s field of view.</string>
     <string name="title_reset_calibration">Reset Calibration</string>
     <string name="inst_reset_calibration">The calibration data for the motion sensor will be removed.</string>
+    <string name="inst_reset_camera_calibration">The saved Auto settings for this camera will be removed, requiring the app to learn them again.</string>
     
     <!-- Filter and Sort Strings -->
     <string name="filter_sort_by">Sort By</string>
@@ -220,7 +221,7 @@
     <string name="type_asteroid">Asteroid</string>
     <string name="type_comet">Comet</string>
     <string name="label_camera_settings">Camera Settings</string>
-    <string name="info_camera_settings">Set if the engine dynamically chooses the camera settings including effective exposure.</string>
+    <string name="info_camera_settings">In Auto mode the engine dynamically chooses the camera settings including effective exposure. &lt;br&gt;&lt;br&gt;The app automatically saves successful Auto settings for the phone\'s internal camera. Use the reset button to clear these saved settings and start over if they are no longer working.</string>
     <string name="label_camera_frame_rate">Camera Frame Rate</string>
     <string name="info_camera_frame_rate">Sets the frame rate and base exposure time for the camera.</string>
     <string name="info_internal_camera">Choose the phone camera to use for imaging.</string>
@@ -262,6 +263,10 @@
     <string name="label_screen_brightness">Screen Brightness</string>
     <string name="format_percent">%1$s: %2$d%%</string>
     <string name="format_exposure_seconds">%1$s: %2$.1f s</string>
+    <string name="format_label_value_string">%1$s: %2$s</string>
+    <string name="format_time_sec">%1$d sec</string>
+    <string name="format_time_min">%1$s min</string>
+    <string name="label_low_power_timeout">Low-Power Timeout</string>
     <string name="cd_next">Next</string>
     <string name="cd_imu_estimate">IMU Estimate</string>
     <string name="cd_plate_solving">Plate Solving</string>

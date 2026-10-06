@@ -24,8 +24,20 @@ class SettingsManager(context: Context) {
         get() = prefs.getString("guidance_mode", "alt_az") ?: "alt_az"
         set(value) = prefs.edit { putString("guidance_mode", value) }
 
+    var lowPowerTimeoutSeconds: Int
+        get() = prefs.getInt("low_power_timeout_seconds", 60)
+        set(value) = prefs.edit { putInt("low_power_timeout_seconds", value) }
+
+    val hasExplicitMotionSensorMode: Boolean
+        get() = prefs.contains("motion_sensor_mode")
+
     var motionSensorMode: Int
-        get() = prefs.getInt("motion_sensor_mode", 0)
+        get() {
+            if (prefs.contains("motion_sensor_mode")) {
+                return prefs.getInt("motion_sensor_mode", 0)
+            }
+            return if (cameraSelection == "internal") 3 else 0
+        }
         set(value) = prefs.edit { putInt("motion_sensor_mode", value) }
 
     var uvcFps: Int

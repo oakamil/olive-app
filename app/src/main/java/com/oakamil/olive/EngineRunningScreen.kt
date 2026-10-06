@@ -60,6 +60,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -158,13 +159,14 @@ fun EngineRunningScreen(
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val catalogPainters = rememberCatalogPainters()
     var isLowPowerMode by remember { mutableStateOf(false) }
+    var lowPowerTimeoutSeconds by remember { mutableIntStateOf(settingsManager.lowPowerTimeoutSeconds) }
 
     val context = LocalContext.current
     val activity = context as? Activity
 
-    LaunchedEffect(lastInteractionTime, showCatalog) {
-        if (!showCatalog) {
-            delay(60_000)
+    LaunchedEffect(lastInteractionTime, showCatalog, lowPowerTimeoutSeconds) {
+        if (!showCatalog && lowPowerTimeoutSeconds > 0) {
+            delay(lowPowerTimeoutSeconds * 1000L)
             isLowPowerMode = true
         }
     }
@@ -1606,6 +1608,40 @@ fun EngineRunningScreen(
                         screenBrightness = it
                     },
                     valueRange = 0f..1f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val formattedTime = when (lowPowerTimeoutSeconds) {
+                        0 -> stringResource(R.string.value_off)
+                        in 1..59 -> stringResource(R.string.format_time_sec, lowPowerTimeoutSeconds)
+                        else -> {
+                            val mins = lowPowerTimeoutSeconds / 60.0
+                            val minStr =
+                                if (mins % 1.0 == 0.0) mins.toInt().toString() else mins.toString()
+                            stringResource(R.string.format_time_min, minStr)
+                        }
+                    }
+                    val labelText = stringResource(
+                        R.string.format_label_value_string,
+                        stringResource(R.string.label_low_power_timeout),
+                        formattedTime
+                    )
+                    Text(
+                        labelText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+                Slider(
+                    value = lowPowerTimeoutSeconds.toFloat(),
+                    onValueChange = {
+                        val newTimeout = it.toInt()
+                        lowPowerTimeoutSeconds = newTimeout
+                        settingsManager.lowPowerTimeoutSeconds = newTimeout
+                    },
+                    valueRange = 0f..300f,
+                    steps = 9,
                     modifier = Modifier.fillMaxWidth()
                 )
 
