@@ -29,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeJoin.Companion.Round
-import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -43,9 +42,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.graphics.shapes.CornerRounding
-import androidx.graphics.shapes.RoundedPolygon
-import androidx.graphics.shapes.toPath
+
 import java.util.Locale
 import kotlin.math.abs
 
@@ -120,7 +117,7 @@ fun GuidanceDisplay(
                     ) {
                         Box(
                             modifier = Modifier
-                                .weight(1f)
+                                .weight(if (isAltAz) 1f else 0.6f)
                                 .fillMaxHeight(),
                             contentAlignment = Alignment.Center
                         ) {
@@ -132,9 +129,9 @@ fun GuidanceDisplay(
                                 )
                             } else {
                                 BasicText(
-                                    text = if (displayTilt > 0) stringResource(id = R.string.label_north) else stringResource(
-                                        id = R.string.label_south
-                                    ),
+                                    text = (if (displayTilt > 0) stringResource(id = R.string.label_north_compact) else stringResource(
+                                        id = R.string.label_south_compact
+                                    )) + " ",
                                     style = indicatorStyle,
                                     softWrap = false,
                                     autoSize = TextAutoSize.StepBased()
@@ -143,7 +140,7 @@ fun GuidanceDisplay(
                         }
                         Box(
                             modifier = Modifier
-                                .weight(1.5f)
+                                .weight(if (isAltAz) 1.5f else 1.9f)
                                 .fillMaxHeight(),
                             contentAlignment = Alignment.Center
                         ) {
@@ -172,7 +169,7 @@ fun GuidanceDisplay(
                         }
                         Box(
                             modifier = Modifier
-                                .weight(1.5f)
+                                .weight(if (isAltAz) 1.5f else 1.9f)
                                 .fillMaxHeight(),
                             contentAlignment = Alignment.Center
                         ) {
@@ -185,7 +182,7 @@ fun GuidanceDisplay(
                         }
                         Box(
                             modifier = Modifier
-                                .weight(1f)
+                                .weight(if (isAltAz) 1f else 0.6f)
                                 .fillMaxHeight(),
                             contentAlignment = Alignment.Center
                         ) {
@@ -197,8 +194,8 @@ fun GuidanceDisplay(
                                 )
                             } else {
                                 BasicText(
-                                    text = if (displayRot > 0) stringResource(id = R.string.label_east) else stringResource(
-                                        id = R.string.label_west
+                                    text = " " + if (displayRot > 0) stringResource(id = R.string.label_east_compact) else stringResource(
+                                        id = R.string.label_west_compact
                                     ),
                                     style = indicatorStyle,
                                     softWrap = false,
@@ -427,27 +424,28 @@ fun DirectionArrow(rotation: Int, alignRight: Boolean, isOutlined: Boolean) {
                 }
                 val shapeCenterY = size.minDimension / 2
 
-                val roundedPolygon = RoundedPolygon(
-                    numVertices = 3,
-                    radius = radius,
-                    centerX = shapeCenterX,
-                    centerY = shapeCenterY,
-                    rounding = CornerRounding(
-                        size.minDimension / 12.5f,
-                    )
-                )
-                val roundedPolygonPath = roundedPolygon.toPath().asComposePath()
+                val trianglePath = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(shapeCenterX + radius, shapeCenterY)
+                    lineTo(shapeCenterX - radius * 0.5f, shapeCenterY - radius * 0.866f)
+                    lineTo(shapeCenterX - radius * 0.5f, shapeCenterY + radius * 0.866f)
+                    close()
+                }
+
+                val paint = androidx.compose.ui.graphics.Paint().apply {
+                    color = PureRed
+                    style =
+                        if (isOutlined) androidx.compose.ui.graphics.PaintingStyle.Stroke else androidx.compose.ui.graphics.PaintingStyle.Fill
+                    strokeWidth = size.minDimension / 50f
+                    pathEffect =
+                        androidx.compose.ui.graphics.PathEffect.cornerPathEffect(size.minDimension / 12.5f)
+                }
 
                 onDrawBehind {
                     rotate(
                         degrees = rotation.toFloat(),
                         pivot = Offset(shapeCenterX, shapeCenterY)
                     ) {
-                        drawPath(
-                            path = roundedPolygonPath,
-                            color = PureRed,
-                            style = if (isOutlined) Stroke(width = size.minDimension / 50f) else Fill
-                        )
+                        drawContext.canvas.drawPath(trianglePath, paint)
                     }
                 }
             }

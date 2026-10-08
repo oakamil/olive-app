@@ -149,6 +149,10 @@
     <string name="label_south">South</string>
     <string name="label_east">East</string>
     <string name="label_west">West</string>
+    <string name="label_north_compact">N</string>
+    <string name="label_south_compact">S</string>
+    <string name="label_east_compact">E</string>
+    <string name="label_west_compact">W</string>
 
     <!-- Catalog and Alignment Strings -->
     <string name="title_sky_catalog">Sky Catalog</string>

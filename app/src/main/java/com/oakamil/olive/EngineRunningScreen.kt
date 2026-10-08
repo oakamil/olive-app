@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -164,6 +165,88 @@ fun EngineRunningScreen(
     val context = LocalContext.current
     val activity = context as? Activity
 
+    val stats = viewModel.engineStats
+
+    var planets by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
+    var comets by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
+    var asteroids by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            withContext(Dispatchers.IO) {
+                planets = viewModel.getPlanets()
+                comets = viewModel.getComets()
+                asteroids = viewModel.getAsteroids()
+            }
+            delay(300_000)
+        }
+    }
+
+    var targetObjName by remember(
+        stats.targetRa,
+        stats.targetDec
+    ) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(stats.targetRa, stats.targetDec, planets, comets, asteroids) {
+        if (stats.targetRa != null && stats.targetDec != null) {
+            val targetRa = stats.targetRa
+            val targetDec = stats.targetDec
+
+            val solarSystemMatch = (planets + comets + asteroids).firstOrNull {
+                AstrometryUtils.angularDistance(it.ra, it.dec, targetRa, targetDec) < 0.5
+            }
+
+            if (solarSystemMatch != null) {
+                targetObjName = solarSystemMatch.displayName
+            } else {
+                withContext(Dispatchers.IO) {
+                    val obj = viewModel.catalogDb.searchObjects(
+                        targetRa = targetRa,
+                        targetDec = targetDec,
+                        limit = 1,
+                        sortBy = "distance"
+                    ).firstOrNull()
+                    targetObjName = if (obj != null && AstrometryUtils.angularDistance(
+                            obj.ra,
+                            obj.dec,
+                            targetRa,
+                            targetDec
+                        ) < 0.5
+                    ) {
+                        obj.displayName
+                    } else {
+                        null
+                    }
+                }
+            }
+        } else {
+            targetObjName = null
+        }
+    }
+
+    var showSyncDialog by remember { mutableStateOf(false) }
+
+    if (showSyncDialog) {
+        AlertDialog(
+            onDismissRequest = { showSyncDialog = false },
+            title = { Text(stringResource(R.string.title_confirm_alignment)) },
+            text = { Text(stringResource(R.string.msg_confirm_alignment)) },
+            confirmButton = {
+                Button(onClick = {
+                    showSyncDialog = false
+                    viewModel.syncTelescope(stats.targetRa, stats.targetDec)
+                }) {
+                    Text(stringResource(R.string.btn_confirm))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showSyncDialog = false }) {
+                    Text(stringResource(id = R.string.btn_cancel))
+                }
+            }
+        )
+    }
+
     LaunchedEffect(lastInteractionTime, showCatalog, lowPowerTimeoutSeconds) {
         if (!showCatalog && lowPowerTimeoutSeconds > 0) {
             delay(lowPowerTimeoutSeconds * 1000L)
@@ -220,21 +303,7 @@ fun EngineRunningScreen(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(modifier = Modifier.alpha(controlsAlpha)) {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    Text(
-                        "Olive Finder",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
+
 
         @Composable
         fun GuidanceContent() {
@@ -261,31 +330,136 @@ fun EngineRunningScreen(
         }
 
         @Composable
-        fun MainVideoContent() {
-            var showSyncDialog by remember { mutableStateOf(false) }
-            val stats = viewModel.engineStats
+        fun CompactInfoArea() {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+                    .padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    GuidanceDisplay(
+                        viewModel.engineStats,
+                        settingsManager.guidanceMode == "alt_az",
+                        isLowPowerMode,
+                        settingsManager.motionSensorMode != 0,
+                        isCompactLayout = true
+                    )
+                }
 
-            if (showSyncDialog) {
-                AlertDialog(
-                    onDismissRequest = { showSyncDialog = false },
-                    title = { Text(stringResource(R.string.title_confirm_alignment)) },
-                    text = { Text(stringResource(R.string.msg_confirm_alignment)) },
-                    confirmButton = {
-                        Button(onClick = {
-                            showSyncDialog = false
-                            viewModel.syncTelescope(stats.targetRa, stats.targetDec)
-                        }) {
-                            Text(stringResource(R.string.btn_confirm))
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (stats.targetRa != null && stats.targetDec != null) {
+                        val targetName = targetObjName ?: stringResource(
+                            R.string.format_ra_dec,
+                            String.format(Locale.US, "%.2f", stats.targetRa),
+                            String.format(Locale.US, "%.2f", stats.targetDec)
+                        )
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.Black.copy(
+                                    alpha = 0.6f
+                                )
+                            )
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = targetName,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                val isTargetVisible = remember(
+                                    stats.centerRa,
+                                    stats.centerDec,
+                                    stats.ra,
+                                    stats.dec,
+                                    stats.fov,
+                                    stats.targetRa,
+                                    stats.targetDec,
+                                    stats.isImuEstimate,
+                                    stats.solvedCrop
+                                ) {
+                                    val isStale =
+                                        stats.solvedCrop == "Failed" && !stats.isImuEstimate
+                                    if (stats.fov == null || isStale) false
+                                    else {
+                                        val projRa =
+                                            if (stats.isImuEstimate || stats.centerRa == null) stats.ra else stats.centerRa
+                                        val projDec =
+                                            if (stats.isImuEstimate || stats.centerDec == null) stats.dec else stats.centerDec
+                                        if (projRa == null || projDec == null) false
+                                        else {
+                                            var raDiff = abs(stats.targetRa - projRa)
+                                            if (raDiff > 180.0) raDiff = 360.0 - raDiff
+                                            val decDiff = abs(stats.targetDec - projDec)
+                                            val dist = hypot(
+                                                raDiff * cos(Math.toRadians(projDec)),
+                                                decDiff
+                                            )
+                                            dist < stats.fov * 0.75
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+                                IconButton(
+                                    onClick = { viewModel.clearGoToTarget() },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Cancel,
+                                        contentDescription = stringResource(R.string.btn_cancel_goto),
+                                        tint = Color.Red
+                                    )
+                                }
+
+                                if (isTargetVisible) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    IconButton(
+                                        onClick = { showSyncDialog = true },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.FilterCenterFocus,
+                                            contentDescription = stringResource(R.string.btn_align),
+                                            tint = Color.Red
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    },
-                    dismissButton = {
-                        OutlinedButton(onClick = { showSyncDialog = false }) {
-                            Text(stringResource(id = R.string.btn_cancel))
-                        }
+                    } else {
+                        Text(
+                            text = "Status: ${stats.status}",
+                            color = MaterialTheme.colorScheme.onBackground,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
-                )
+                }
             }
+        }
 
+        @Composable
+        fun MainVideoContent() {
             val frame = viewModel.latestFrame
             val roll = stats.roll ?: 0.0 // offsetAngle is for the guidance arrow, not image roll!
             var lastValidUiRotation by remember { mutableFloatStateOf(roll.toFloat()) }
@@ -322,62 +496,6 @@ fun EngineRunningScreen(
             val fov = Math.toDegrees(effectiveFovRad)
             var tappedObject by remember { mutableStateOf<CatalogObject?>(null) }
 
-            var planets by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
-            var comets by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
-            var asteroids by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
-
-            LaunchedEffect(Unit) {
-                while (isActive) {
-                    withContext(Dispatchers.IO) {
-                        planets = viewModel.getPlanets()
-                        comets = viewModel.getComets()
-                        asteroids = viewModel.getAsteroids()
-                    }
-                    delay(300_000)
-                }
-            }
-
-            var targetObjName by remember(
-                stats.targetRa,
-                stats.targetDec
-            ) { mutableStateOf<String?>(null) }
-
-            LaunchedEffect(stats.targetRa, stats.targetDec, planets, comets, asteroids) {
-                if (stats.targetRa != null && stats.targetDec != null) {
-                    val targetRa = stats.targetRa
-                    val targetDec = stats.targetDec
-
-                    val solarSystemMatch = (planets + comets + asteroids).firstOrNull {
-                        AstrometryUtils.angularDistance(it.ra, it.dec, targetRa, targetDec) < 0.5
-                    }
-
-                    if (solarSystemMatch != null) {
-                        targetObjName = solarSystemMatch.displayName
-                    } else {
-                        withContext(Dispatchers.IO) {
-                            val obj = viewModel.catalogDb.searchObjects(
-                                targetRa = targetRa,
-                                targetDec = targetDec,
-                                limit = 1,
-                                sortBy = "distance"
-                            ).firstOrNull()
-                            targetObjName = if (obj != null && AstrometryUtils.angularDistance(
-                                    obj.ra,
-                                    obj.dec,
-                                    targetRa,
-                                    targetDec
-                                ) < 0.5
-                            ) {
-                                obj.displayName
-                            } else {
-                                null
-                            }
-                        }
-                    }
-                } else {
-                    targetObjName = null
-                }
-            }
 
             var visibleDsos by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
 
@@ -514,13 +632,24 @@ fun EngineRunningScreen(
                 }.thenBy { it.magnitude ?: 99.0 }
             )
 
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = if (isLandscape) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
                 // 2. Camera Feed
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clipToBounds()
+                    modifier = if (isLandscape) {
+                        Modifier
+                            .weight(1f) // Binds strictly to available height
+                            .aspectRatio(1f)
+                            .clipToBounds()
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clipToBounds()
+                    }
                 ) {
                     val currentUiRotation by rememberUpdatedState(uiRotation)
                     val alignTargetPixel = remember(
@@ -1403,125 +1532,9 @@ fun EngineRunningScreen(
                     }
                 }
 
-                // 3. Info area below camera (fixed height to prevent layout shifts)
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(116.dp)
-                        .padding(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        GuidanceDisplay(
-                            viewModel.engineStats,
-                            settingsManager.guidanceMode == "alt_az",
-                            isLowPowerMode,
-                            settingsManager.motionSensorMode != 0,
-                            isCompactLayout = true
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (stats.targetRa != null && stats.targetDec != null) {
-                            val targetName = targetObjName ?: stringResource(
-                                R.string.format_ra_dec,
-                                String.format(Locale.US, "%.2f", stats.targetRa),
-                                String.format(Locale.US, "%.2f", stats.targetDec)
-                            )
-
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = Color.Black.copy(
-                                        alpha = 0.6f
-                                    )
-                                )
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                                ) {
-                                    Text(
-                                        text = targetName,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    )
-                                    val isTargetVisible = remember(
-                                        stats.centerRa,
-                                        stats.centerDec,
-                                        stats.ra,
-                                        stats.dec,
-                                        stats.fov,
-                                        stats.targetRa,
-                                        stats.targetDec,
-                                        stats.isImuEstimate,
-                                        stats.solvedCrop
-                                    ) {
-                                        val isStale =
-                                            stats.solvedCrop == "Failed" && !stats.isImuEstimate
-                                        if (stats.fov == null || isStale) false
-                                        else {
-                                            val projRa =
-                                                if (stats.isImuEstimate || stats.centerRa == null) stats.ra else stats.centerRa
-                                            val projDec =
-                                                if (stats.isImuEstimate || stats.centerDec == null) stats.dec else stats.centerDec
-                                            if (projRa == null || projDec == null) false
-                                            else {
-                                                var raDiff = abs(stats.targetRa - projRa)
-                                                if (raDiff > 180.0) raDiff = 360.0 - raDiff
-                                                val decDiff = abs(stats.targetDec - projDec)
-                                                val dist = hypot(
-                                                    raDiff * cos(Math.toRadians(projDec)),
-                                                    decDiff
-                                                )
-                                                dist < stats.fov * 0.75
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    IconButton(
-                                        onClick = { viewModel.clearGoToTarget() },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.Cancel,
-                                            contentDescription = stringResource(R.string.btn_cancel_goto),
-                                            tint = Color.Red
-                                        )
-                                    }
-
-                                    if (isTargetVisible) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        IconButton(
-                                            onClick = { showSyncDialog = true },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.FilterCenterFocus,
-                                                contentDescription = stringResource(R.string.btn_align),
-                                                tint = Color.Red
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                // 3. Info area below camera
+                if (!isLandscape) {
+                    CompactInfoArea()
                 }
             }
         }
@@ -1909,6 +1922,9 @@ fun EngineRunningScreen(
                 ) {
                     Box(modifier = Modifier.alpha(controlsAlpha)) {
                         Column(modifier = Modifier.fillMaxSize()) {
+                            if (!isLowPowerMode) {
+                                CompactInfoArea()
+                            }
                             BoxWithConstraints(
                                 modifier = Modifier.weight(1f)
                             ) {
