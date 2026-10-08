@@ -83,8 +83,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.BaselineShift.Companion.Superscript
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -144,7 +144,6 @@ fun SkyCatalogDialog(
     var searchResults by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     var showRaDecForObj by remember { mutableStateOf<CatalogObject?>(null) }
     var showGotoRaDecPopup by remember { mutableStateOf(false) }
-
 
 
     val categoryToShortCode = mapOf(
@@ -376,7 +375,11 @@ fun SkyCatalogDialog(
                             }
 
                             "catalog ID" -> {
-                                combinedList.sortWith(compareBy<CatalogObject> { getCatalogPriority(it) }
+                                combinedList.sortWith(compareBy<CatalogObject> {
+                                    getCatalogPriority(
+                                        it
+                                    )
+                                }
                                     .thenBy { if (it.objectType == "Planet" || it.objectType == "Moon") it.id else 0 }
                                     .thenBy { it.catalogEntry.toIntOrNull() ?: Int.MAX_VALUE }
                                     .thenBy { it.catalogEntry })
@@ -499,7 +502,10 @@ fun SkyCatalogDialog(
                                                 IconButton(onClick = {
                                                     showInfoForCategory = category
                                                 }) {
-                                                    Icon(Default.Info, contentDescription = stringResource(R.string.cd_info))
+                                                    Icon(
+                                                        Default.Info,
+                                                        contentDescription = stringResource(R.string.cd_info)
+                                                    )
                                                 }
                                             }
                                         }
@@ -779,7 +785,6 @@ fun SkyCatalogDialog(
                         IconBarItem(
                             icon = Default.GpsFixed,
                             label = stringResource(R.string.label_ra_dec),
-                            singleLine = true,
                             onClick = { showGotoRaDecPopup = true }
                         )
                     }
@@ -986,7 +991,6 @@ fun SkyCatalogDialog(
                                                     IconBarItem(
                                                         icon = Default.GpsFixed,
                                                         label = stringResource(R.string.btn_goto),
-                                                        singleLine = true,
                                                         onClick = {
                                                             onGoTo(
                                                                 obj.ra,

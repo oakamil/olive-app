@@ -1,6 +1,5 @@
 package com.oakamil.olive
 
-import android.content.res.Configuration
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,7 +22,6 @@ import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -47,7 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -70,9 +67,6 @@ fun StartScreen(
     onCameraSelectionChanged: (String) -> Unit,
     onToggleEngine: () -> Unit
 ) {
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
     var cameraSelection by remember { mutableStateOf(activeCameraSelection) }
     var cameraSettingsMode by remember { mutableStateOf(settingsManager.cameraSettingsMode) }
     var internalFps by remember { mutableIntStateOf(settingsManager.internalFps) }
@@ -177,7 +171,6 @@ fun StartScreen(
                 },
                 enabled = !isStopping && !isStarting,
                 isLoading = isStarting || isStopping,
-                singleLine = true,
                 iconSize = 36.dp,
                 onClick = onToggleEngine,
                 modifier = Modifier.weight(1f, fill = false)
@@ -393,7 +386,6 @@ fun StartScreen(
                                 IconBarItem(
                                     icon = Icons.Default.SettingsBackupRestore,
                                     label = stringResource(id = R.string.btn_reset),
-                                    singleLine = true,
                                     onClick = {
                                         showResetCameraCalibrationDialog = true
                                     },
@@ -888,7 +880,6 @@ fun StartScreen(
                                     IconBarItem(
                                         icon = Icons.Default.SettingsBackupRestore,
                                         label = stringResource(id = R.string.btn_reset),
-                                        singleLine = true,
                                         onClick = {
                                             showResetCalibrationDialog = true
                                         },
@@ -902,22 +893,11 @@ fun StartScreen(
             }
         }
 
-        if (isLandscape) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Column(modifier = Modifier.weight(1f)) { cameraSelectionContent() }
+        Column(modifier = Modifier.fillMaxWidth()) {
+            cameraSelectionContent()
 
-                Column(modifier = Modifier.weight(1f)) { otherSettingsContent() }
-            }
-        } else {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                cameraSelectionContent()
-
-                Spacer(modifier = Modifier.height(24.dp))
-                otherSettingsContent()
-            }
+            Spacer(modifier = Modifier.height(24.dp))
+            otherSettingsContent()
         }
 
 

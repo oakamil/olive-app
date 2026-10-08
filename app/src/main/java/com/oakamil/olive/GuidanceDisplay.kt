@@ -28,6 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.PaintingStyle
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeJoin.Companion.Round
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -42,7 +46,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
 import java.util.Locale
 import kotlin.math.abs
 
@@ -134,7 +137,7 @@ fun GuidanceDisplay(
                                     )) + " ",
                                     style = indicatorStyle,
                                     softWrap = false,
-                                    autoSize = TextAutoSize.StepBased()
+                                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
                                 )
                             }
                         }
@@ -148,7 +151,7 @@ fun GuidanceDisplay(
                                 text = String.format(Locale.getDefault(), "%-+6.1f", displayTilt),
                                 style = offsetStyle,
                                 softWrap = false,
-                                autoSize = TextAutoSize.StepBased()
+                                autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
                             )
                         }
                         Box(
@@ -177,7 +180,7 @@ fun GuidanceDisplay(
                                 text = String.format(Locale.getDefault(), "%+6.1f", displayRot),
                                 style = offsetStyle,
                                 softWrap = false,
-                                autoSize = TextAutoSize.StepBased()
+                                autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
                             )
                         }
                         Box(
@@ -199,7 +202,7 @@ fun GuidanceDisplay(
                                     ),
                                     style = indicatorStyle,
                                     softWrap = false,
-                                    autoSize = TextAutoSize.StepBased()
+                                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
                                 )
                             }
                         }
@@ -228,7 +231,7 @@ fun GuidanceDisplay(
                                     ),
                                     style = offsetStyle,
                                     softWrap = false,
-                                    autoSize = TextAutoSize.StepBased()
+                                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
                                 )
                             }
 
@@ -243,7 +246,7 @@ fun GuidanceDisplay(
                                     text = String.format(Locale.getDefault(), "%+6.1f", displayRot),
                                     style = offsetStyle,
                                     softWrap = false,
-                                    autoSize = TextAutoSize.StepBased()
+                                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
                                 )
                             }
                         }
@@ -284,7 +287,7 @@ fun GuidanceDisplay(
                                                 text = stringResource(id = R.string.label_alt),
                                                 style = indicatorStyle,
                                                 softWrap = false,
-                                                autoSize = TextAutoSize.StepBased()
+                                                autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
                                             )
                                         }
                                     }
@@ -295,7 +298,7 @@ fun GuidanceDisplay(
                                         ),
                                         style = indicatorStyle,
                                         softWrap = false,
-                                        autoSize = TextAutoSize.StepBased()
+                                        autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
                                     )
                                 }
                             }
@@ -347,7 +350,7 @@ fun GuidanceDisplay(
                                                 text = " " + stringResource(id = R.string.label_az),
                                                 style = indicatorStyle,
                                                 softWrap = false,
-                                                autoSize = TextAutoSize.StepBased()
+                                                autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
                                             )
                                         }
                                     }
@@ -358,7 +361,7 @@ fun GuidanceDisplay(
                                         ),
                                         style = indicatorStyle,
                                         softWrap = false,
-                                        autoSize = TextAutoSize.StepBased()
+                                        autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
                                     )
                                 }
                             }
@@ -424,20 +427,20 @@ fun DirectionArrow(rotation: Int, alignRight: Boolean, isOutlined: Boolean) {
                 }
                 val shapeCenterY = size.minDimension / 2
 
-                val trianglePath = androidx.compose.ui.graphics.Path().apply {
+                val trianglePath = Path().apply {
                     moveTo(shapeCenterX + radius, shapeCenterY)
                     lineTo(shapeCenterX - radius * 0.5f, shapeCenterY - radius * 0.866f)
                     lineTo(shapeCenterX - radius * 0.5f, shapeCenterY + radius * 0.866f)
                     close()
                 }
 
-                val paint = androidx.compose.ui.graphics.Paint().apply {
+                val paint = Paint().apply {
                     color = PureRed
                     style =
-                        if (isOutlined) androidx.compose.ui.graphics.PaintingStyle.Stroke else androidx.compose.ui.graphics.PaintingStyle.Fill
+                        if (isOutlined) PaintingStyle.Stroke else PaintingStyle.Fill
                     strokeWidth = size.minDimension / 50f
                     pathEffect =
-                        androidx.compose.ui.graphics.PathEffect.cornerPathEffect(size.minDimension / 12.5f)
+                        PathEffect.cornerPathEffect(size.minDimension / 12.5f)
                 }
 
                 onDrawBehind {

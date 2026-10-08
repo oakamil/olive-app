@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -314,14 +315,14 @@ fun TunerScreen(
                             Offset(boresightCanvasX - s, boresightCanvasY - s),
                             Offset(boresightCanvasX - s + arm, boresightCanvasY - s),
                             strokeWidth = bracketStroke,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            cap = StrokeCap.Round
                         )
                         drawLine(
                             darkRed,
                             Offset(boresightCanvasX - s, boresightCanvasY - s),
                             Offset(boresightCanvasX - s, boresightCanvasY - s + arm),
                             strokeWidth = bracketStroke,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            cap = StrokeCap.Round
                         )
                         // ┐ Top-Right
                         drawLine(
@@ -329,14 +330,14 @@ fun TunerScreen(
                             Offset(boresightCanvasX + s, boresightCanvasY - s),
                             Offset(boresightCanvasX + s - arm, boresightCanvasY - s),
                             strokeWidth = bracketStroke,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            cap = StrokeCap.Round
                         )
                         drawLine(
                             darkRed,
                             Offset(boresightCanvasX + s, boresightCanvasY - s),
                             Offset(boresightCanvasX + s, boresightCanvasY - s + arm),
                             strokeWidth = bracketStroke,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            cap = StrokeCap.Round
                         )
                         // └ Bottom-Left
                         drawLine(
@@ -344,14 +345,14 @@ fun TunerScreen(
                             Offset(boresightCanvasX - s, boresightCanvasY + s),
                             Offset(boresightCanvasX - s + arm, boresightCanvasY + s),
                             strokeWidth = bracketStroke,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            cap = StrokeCap.Round
                         )
                         drawLine(
                             darkRed,
                             Offset(boresightCanvasX - s, boresightCanvasY + s),
                             Offset(boresightCanvasX - s, boresightCanvasY + s - arm),
                             strokeWidth = bracketStroke,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            cap = StrokeCap.Round
                         )
                         // ┘ Bottom-Right
                         drawLine(
@@ -359,14 +360,14 @@ fun TunerScreen(
                             Offset(boresightCanvasX + s, boresightCanvasY + s),
                             Offset(boresightCanvasX + s - arm, boresightCanvasY + s),
                             strokeWidth = bracketStroke,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            cap = StrokeCap.Round
                         )
                         drawLine(
                             darkRed,
                             Offset(boresightCanvasX + s, boresightCanvasY + s),
                             Offset(boresightCanvasX + s, boresightCanvasY + s - arm),
                             strokeWidth = bracketStroke,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            cap = StrokeCap.Round
                         )
 
                         // Conditionally draw the preview target pixel when tapping
@@ -423,7 +424,6 @@ fun TunerScreen(
                 icon = Icons.Default.FilterCenterFocus,
                 label = stringResource(R.string.btn_align),
                 enabled = alignTargetX != null && alignTargetY != null,
-                singleLine = true,
                 onClick = { showAlignDialog = true }
             )
 
@@ -432,7 +432,6 @@ fun TunerScreen(
             IconBarItem(
                 icon = Icons.Default.SettingsBackupRestore,
                 label = stringResource(R.string.btn_reset),
-                singleLine = true,
                 onClick = { showResetAlignDialog = true }
             )
 

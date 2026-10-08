@@ -6,11 +6,13 @@ import android.provider.Settings
 import android.text.format.DateFormat
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,6 +34,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FilterCenterFocus
@@ -51,6 +56,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
@@ -70,7 +76,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -97,6 +102,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -352,15 +358,14 @@ fun EngineRunningScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (stats.targetRa != null && stats.targetDec != null) {
+                if (stats.targetRa != null && stats.targetDec != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         val targetName = targetObjName ?: stringResource(
                             R.string.format_ra_dec,
                             String.format(Locale.US, "%.2f", stats.targetRa),
@@ -379,13 +384,23 @@ fun EngineRunningScreen(
                                 horizontalArrangement = Arrangement.Center,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                             ) {
-                                Text(
+                                val baseStyle =
+                                    LocalTextStyle.current.merge(
+                                        MaterialTheme.typography.titleMedium
+                                    )
+                                BasicText(
                                     text = targetName,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    style = baseStyle.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    ),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false)
+                                    modifier = Modifier.weight(1f, fill = false),
+                                    autoSize = TextAutoSize.StepBased(
+                                        minFontSize = 10.sp,
+                                        maxFontSize = baseStyle.fontSize
+                                    )
                                 )
                                 val isTargetVisible = remember(
                                     stats.centerRa,
@@ -447,12 +462,6 @@ fun EngineRunningScreen(
                                 }
                             }
                         }
-                    } else {
-                        Text(
-                            text = "Status: ${stats.status}",
-                            color = MaterialTheme.colorScheme.onBackground,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
                     }
                 }
             }
@@ -1517,7 +1526,6 @@ fun EngineRunningScreen(
                                     IconBarItem(
                                         icon = Icons.Default.GpsFixed,
                                         label = stringResource(R.string.btn_goto),
-                                        singleLine = true,
                                         onClick = {
                                             viewModel.setGoToTarget(
                                                 obj.ra,
@@ -1532,10 +1540,7 @@ fun EngineRunningScreen(
                     }
                 }
 
-                // 3. Info area below camera
-                if (!isLandscape) {
-                    CompactInfoArea()
-                }
+
             }
         }
 
@@ -1831,10 +1836,11 @@ fun EngineRunningScreen(
                     .fillMaxWidth()
                     .padding(top = 8.dp, bottom = 0.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
                 // Catalog
                 IconBarItem(
+                    modifier = Modifier.weight(1f),
                     icon = Icons.Default.AutoAwesome,
                     label = stringResource(R.string.btn_catalog),
                     onClick = { showCatalog = true }
@@ -1842,6 +1848,7 @@ fun EngineRunningScreen(
 
                 // Camera / Align
                 IconBarItem(
+                    modifier = Modifier.weight(1f),
                     icon = Icons.Outlined.PhotoCamera,
                     label = stringResource(id = R.string.btn_camera_align),
                     onClick = {
@@ -1875,6 +1882,7 @@ fun EngineRunningScreen(
 
                 // Picture in Picture
                 IconBarItem(
+                    modifier = Modifier.weight(1f),
                     icon = Icons.Default.PictureInPicture,
                     label = if (isEnteringPip) stringResource(id = R.string.btn_entering_pip) else "Picture\nin Picture",
                     enabled = !isEnteringPip,
@@ -1890,6 +1898,7 @@ fun EngineRunningScreen(
 
                 // Stop Engine
                 IconBarItem(
+                    modifier = Modifier.weight(1f),
                     icon = Icons.Outlined.Cancel,
                     label = when {
                         isStopping -> stringResource(id = R.string.btn_stopping)
@@ -1902,94 +1911,122 @@ fun EngineRunningScreen(
             }
         }
 
-        if (isLandscape) {
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    if (isLowPowerMode) {
-                        GuidanceContent()
-                    } else {
-                        MainVideoContent()
-                    }
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(modifier = Modifier.alpha(controlsAlpha)) {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            if (!isLowPowerMode) {
-                                CompactInfoArea()
-                            }
-                            BoxWithConstraints(
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .verticalScrollWithScrollbar(rememberScrollState())
-                                ) {
-                                    Column {
-                                        StatsContent()
-                                    }
-                                    Column {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        SlidersContent()
-                                    }
-                                }
-                            }
-                            ActionButtons()
+
+        @Composable
+        fun CameraOrGuidance(isLowPowerMode: Boolean, modifier: Modifier = Modifier) {
+            val ratio = if (isLowPowerMode) 16f / 9f else 1f
+            Crossfade(
+                targetState = isLowPowerMode,
+                label = "cameraFade",
+                modifier = modifier
+            ) { lowPower ->
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier.aspectRatio(ratio),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (lowPower) {
+                            GuidanceContent()
+                        } else {
+                            MainVideoContent()
                         }
                     }
-                    if (isLowPowerMode) {
+                }
+            }
+        }
+
+        @Composable
+        fun ControlsArea(
+            isLowPowerMode: Boolean,
+            alphaValue: Float,
+            scrollState: ScrollState
+        ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = alphaValue }
+                        .pointerInput(isLowPowerMode) {
+                            if (isLowPowerMode) {
+                                awaitPointerEventScope {
+                                    while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                }
+                            }
+                        }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScrollWithScrollbar(scrollState)
+                    ) {
+                        CompactInfoArea()
+                        Spacer(Modifier.height(8.dp))
+                        StatsContent()
+                        Spacer(Modifier.height(8.dp))
+                        SlidersContent()
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    ActionButtons()
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                if (isLowPowerMode) {
+                    Box(Modifier.graphicsLayer { alpha = (1f - alphaValue).coerceIn(0f, 1f) }) {
                         DigitalClock()
                     }
                 }
             }
-        } else {
-            Column(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                if (isLowPowerMode) {
-                    GuidanceContent()
-                } else {
-                    MainVideoContent()
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize(),
-                    contentAlignment = Alignment.Center
+        }
+
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            val isWideLayout = maxWidth >= 600.dp || (maxWidth > maxHeight && maxHeight < 500.dp)
+
+            if (isWideLayout) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Box(modifier = Modifier.alpha(controlsAlpha)) {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            BoxWithConstraints(
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .verticalScrollWithScrollbar(rememberScrollState())
-                                ) {
-                                    Column {
-                                        StatsContent()
-                                    }
-                                    Column {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        SlidersContent()
-                                    }
-                                }
-                            }
-                            ActionButtons()
-                        }
+                    // Camera gets half width, sized natively to largest square possible
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight(), contentAlignment = Alignment.Center
+                    ) {
+                        CameraOrGuidance(isLowPowerMode, Modifier.fillMaxSize())
                     }
-                    if (isLowPowerMode) {
-                        DigitalClock()
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        ControlsArea(isLowPowerMode, controlsAlpha, rememberScrollState())
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // 1. Camera Box (Takes max 50% height, wrapped tightly to its aspect ratio)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CameraOrGuidance(isLowPowerMode, Modifier.fillMaxSize())
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // 2. Controls Box (Takes the remaining 50%+ space)
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        ControlsArea(isLowPowerMode, controlsAlpha, rememberScrollState())
                     }
                 }
             }
@@ -2099,12 +2136,19 @@ fun CollapsedStatsDisplay(stats: EngineStats, onClick: () -> Unit) {
                 ) {
                     top()
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(
+                    val baseStyle =
+                        LocalTextStyle.current.merge(MaterialTheme.typography.labelMedium)
+                    BasicText(
                         text = bottom,
-                        color = primaryColor,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = baseStyle.copy(
+                            color = primaryColor,
+                            textAlign = TextAlign.Center
+                        ),
                         maxLines = 1,
-                        softWrap = false
+                        autoSize = TextAutoSize.StepBased(
+                            minFontSize = 4.sp,
+                            maxFontSize = baseStyle.fontSize
+                        )
                     )
                 }
             }
