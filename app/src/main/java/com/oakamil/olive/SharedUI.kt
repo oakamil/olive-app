@@ -8,15 +8,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun IconBarItem(
@@ -25,9 +30,8 @@ fun IconBarItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    singleLine: Boolean = false,
     isLoading: Boolean = false,
-    iconSize: androidx.compose.ui.unit.Dp = 28.dp
+    iconSize: Dp = 28.dp
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -37,7 +41,7 @@ fun IconBarItem(
             .padding(start = 4.dp, top = 4.dp, end = 4.dp, bottom = 0.dp)
     ) {
         if (isLoading) {
-            androidx.compose.material3.CircularProgressIndicator(
+            CircularProgressIndicator(
                 modifier = Modifier.size(iconSize),
                 color = MaterialTheme.colorScheme.primary,
                 strokeWidth = 3.dp
@@ -53,17 +57,25 @@ fun IconBarItem(
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        Text(
+        val baseStyle = LocalTextStyle.current.merge(MaterialTheme.typography.labelSmall)
+        val forceSingleLine = !label.contains(" ")
+
+        BasicText(
             text = label,
-            color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
-                alpha = 0.38f
+            style = baseStyle.copy(
+                color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
+                    alpha = 0.38f
+                ),
+                textAlign = TextAlign.Center
             ),
-            style = MaterialTheme.typography.labelSmall,
-            textAlign = TextAlign.Center,
-            minLines = if (singleLine) 1 else 2,
-            maxLines = if (singleLine) 1 else 2,
+            minLines = if (forceSingleLine) 1 else 2,
+            maxLines = if (forceSingleLine) 1 else 2,
             modifier = Modifier
-                .wrapContentHeight(Alignment.CenterVertically)
+                .wrapContentHeight(Alignment.CenterVertically),
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = 4.sp,
+                maxFontSize = baseStyle.fontSize
+            )
         )
     }
 }
