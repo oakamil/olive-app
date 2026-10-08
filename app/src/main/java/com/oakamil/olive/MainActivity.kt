@@ -534,7 +534,7 @@ class MainActivity : ComponentActivity() {
         val serviceIntent = Intent(this, OliveService::class.java).apply {
             putExtra("ENGINE_MODE", mode)
         }
-        ContextCompat.startForegroundService(this, serviceIntent)
+        startService(serviceIntent)
     }
 
     private fun stopBackgroundService() {
