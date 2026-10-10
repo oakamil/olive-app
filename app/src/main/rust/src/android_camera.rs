@@ -1710,7 +1710,16 @@ impl AndroidCamera {
 
             info!("Android NDK capture thread stopping. Cleaning up...");
             ACameraCaptureSession_stopRepeating(session);
-            ACameraCaptureSession_close(session);
+
+            // ACameraCaptureSession_close has a known double-free bug on Android 10 (API 29)
+            // when closed just before ACameraDevice_close.
+            let api_level = unsafe { ndk_sys::android_get_device_api_level() };
+            if api_level == 29 {
+                info!("Skipping ACameraCaptureSession_close due to Android 10 NDK bug");
+            } else {
+                ACameraCaptureSession_close(session);
+            }
+
             ACaptureRequest_free(request);
             ACaptureSessionOutput_free(output);
             ACaptureSessionOutputContainer_free(output_container);
