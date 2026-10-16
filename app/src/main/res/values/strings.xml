@@ -49,6 +49,7 @@
     <string name="btn_cancel">Cancel</string>
     <string name="btn_save">Save</string>
     <string name="btn_retry">Retry</string>
+    <string name="btn_refresh">Refresh</string>
     <string name="btn_entering_pip">Entering PIP …</string>
 
     <!-- Control labels -->
@@ -127,8 +128,8 @@
     <string name="cd_target">Target</string>
 
     <!-- Permissions Dialog -->
-    <string name="title_permissions_required">Permissions Required</string>
-    <string name="desc_permissions_required">Olive Finder needs Location, Camera, and Local Network permissions to operate the telescope engine and allow other devices to connect.</string>
+    <string name="title_permissions_required">Camera Permission</string>
+    <string name="desc_permissions_required">Olive Finder needs Camera permission to operate the telescope engine.</string>
 
     <!-- Foreground Service Notification -->
     <string name="notif_engine_title">Olive Astro Engine</string>
@@ -274,4 +275,25 @@
     <string name="cd_next">Next</string>
     <string name="cd_imu_estimate">IMU Estimate</string>
     <string name="cd_plate_solving">Plate Solving</string>
+
+    <!-- Location Section -->
+    <string name="label_location">Observer Location</string>
+    <string name="info_location">Location is required to calculate sky coordinates and operate the engine.</string>
+    <string name="format_coordinate">%1$.2f° %2$s, %3$.2f° %4$s</string>
+    <string name="dir_north">N</string>
+    <string name="dir_south">S</string>
+    <string name="dir_east">E</string>
+    <string name="dir_west">W</string>
+    <string name="status_location_not_set">Location not set</string>
+    <string name="label_current_location">Location: %1$s</string>
+    <string name="btn_edit_location">Edit</string>
+
+    <!-- Location Dialog -->
+    <string name="title_observer_location">Observer Location</string>
+    <string name="label_latitude">Latitude</string>
+    <string name="label_longitude">Longitude</string>
+    <string name="title_location_permission_required">Location Permission</string>
+    <string name="desc_location_permission_required">Location permission is required to determine your observer coordinates in Auto mode. Please grant Location permission in Settings, or set coordinates manually.</string>
+    <string name="title_location_services_disabled">Location Services Disabled</string>
+    <string name="desc_location_services_disabled">Location services are turned off on your device. Please turn on Location in system settings to use Auto mode.</string>
 </resources>

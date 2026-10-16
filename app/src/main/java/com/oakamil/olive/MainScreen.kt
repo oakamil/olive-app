@@ -14,7 +14,8 @@ fun MainScreen(
     onCameraSelectionChanged: (String) -> Unit,
     onNavigateToTuner: () -> Unit,
     onEnterPipMode: () -> Unit,
-    onToggleEngine: () -> Unit
+    onToggleEngine: () -> Unit,
+    onRefreshLocation: () -> Unit = {}
 ) {
     if (viewModel.isEngineRunning) {
         EngineRunningScreen(
@@ -37,7 +38,8 @@ fun MainScreen(
             isStopping = isStopping,
             isStarting = isStarting,
             onCameraSelectionChanged = onCameraSelectionChanged,
-            onToggleEngine = onToggleEngine
+            onToggleEngine = onToggleEngine,
+            onRefreshLocation = onRefreshLocation
         )
     }
 }

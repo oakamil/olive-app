@@ -36,8 +36,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var engineStats by mutableStateOf(EngineStats())
         private set
 
+    enum class LocationRefreshStatus { IDLE, REFRESHING, SUCCESS, FAILURE }
+
     var currentLat by mutableStateOf<Double?>(null)
     var currentLon by mutableStateOf<Double?>(null)
+    val hasValidLocation: Boolean
+        get() = isValidCoordinate(currentLat, currentLon)
+    var showLocationDialog by mutableStateOf(false)
+    var locationRefreshStatus by mutableStateOf(LocationRefreshStatus.IDLE)
 
     val settingsManager = SettingsManager(application)
     val catalogDb = CatalogDatabaseHelper(application)
@@ -595,10 +601,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getPlanets(): List<CatalogObject> {
+        val lat = currentLat ?: return emptyList()
+        val lon = currentLon ?: return emptyList()
+        if (!isValidCoordinate(lat, lon)) return emptyList()
+
         val bspPath = getApplication<Application>().getDatabasePath("de421.bsp").absolutePath
         val timeMs = System.currentTimeMillis()
-        val lat = currentLat ?: 0.0
-        val lon = currentLon ?: 0.0
 
         val json = OliveEngine.getPlanets(bspPath, timeMs, lat, lon)
         if (json.isBlank() || json == "[]") return emptyList()
@@ -649,10 +657,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getAsteroids(): List<CatalogObject> {
+        val lat = currentLat ?: return emptyList()
+        val lon = currentLon ?: return emptyList()
+        if (!isValidCoordinate(lat, lon)) return emptyList()
+
         val bspPath = getApplication<Application>().getDatabasePath("de421.bsp").absolutePath
         val timeMs = System.currentTimeMillis()
-        val lat = currentLat ?: 0.0
-        val lon = currentLon ?: 0.0
         val asteroidsJson = catalogDb.getAsteroidsJson()
 
         val json = OliveEngine.getAsteroids(bspPath, timeMs, lat, lon, asteroidsJson)
@@ -703,10 +713,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getComets(): List<CatalogObject> {
+        val lat = currentLat ?: return emptyList()
+        val lon = currentLon ?: return emptyList()
+        if (!isValidCoordinate(lat, lon)) return emptyList()
+
         val bspPath = getApplication<Application>().getDatabasePath("de421.bsp").absolutePath
         val timeMs = System.currentTimeMillis()
-        val lat = currentLat ?: 0.0
-        val lon = currentLon ?: 0.0
         val cometsJson = catalogDb.getCometsJson()
 
         val json = OliveEngine.getComets(bspPath, timeMs, lat, lon, cometsJson)
@@ -788,6 +800,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         const val INVALID_COORD = 200.0
         const val CAMERA_STUCK_TIMEOUT_MS = 5000L
+
+        fun isValidCoordinate(lat: Double?, lon: Double?): Boolean {
+            if (lat == null || lon == null) return false
+            return lat in -90.0..90.0 && lon in -180.0..180.0
+        }
+
         val DEFAULT_CATALOG_TYPE_FILTERS = setOf(
             "Asterism", "Asteroid", "Cluster + Nebula", "Comet", "Dark Nebula",
             "Double Star", "Galaxy", "Globular Cluster", "Nebula", "Open Cluster",

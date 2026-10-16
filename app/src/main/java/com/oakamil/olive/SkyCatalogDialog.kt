@@ -1612,6 +1612,7 @@ fun CoordinateBox(
     value: String,
     isFocused: Boolean,
     suffix: String,
+    placeholder: String = "00",
     onClick: () -> Unit
 ) {
     val borderColor =
@@ -1629,7 +1630,7 @@ fun CoordinateBox(
     ) {
         val isDeclination = suffix == "°" || suffix == "'" || suffix == "\""
         Text(
-            text = value.ifEmpty { "00" },
+            text = value.ifEmpty { placeholder },
             style = MaterialTheme.typography.bodyLarge,
             color = if (value.isEmpty()) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
             modifier = Modifier.alignByBaseline()

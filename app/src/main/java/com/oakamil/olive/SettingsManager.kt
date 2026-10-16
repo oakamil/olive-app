@@ -143,6 +143,27 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean("landscape_keyboard_on_right", true)
         set(value) = prefs.edit { putBoolean("landscape_keyboard_on_right", value) }
 
+    var locationMode: String
+        get() = prefs.getString("location_mode", "Auto") ?: "Auto"
+        set(value) = prefs.edit { putString("location_mode", value) }
+
+    fun saveLocation(latitude: Float, longitude: Float) {
+        prefs.edit {
+            putFloat("saved_latitude", latitude)
+            putFloat("saved_longitude", longitude)
+        }
+    }
+
+    val savedLocation: Pair<Double, Double>?
+        get() {
+            if (!prefs.contains("saved_latitude") || !prefs.contains("saved_longitude")) return null
+            val lat = prefs.getFloat("saved_latitude", 0f)
+            val lon = prefs.getFloat("saved_longitude", 0f)
+            return if (lat in -90.0f..90.0f && lon in -180.0f..180.0f) {
+                Pair(lat.toDouble(), lon.toDouble())
+            } else null
+        }
+
     /* These are used from the native layer. */
     @Keep
     fun getString(key: String): String? {

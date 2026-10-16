@@ -13,6 +13,7 @@ import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
@@ -31,7 +32,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,23 +44,26 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.location.LocationManagerCompat
 import androidx.core.net.toUri
-import androidx.core.os.CancellationSignal
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.jiangdg.usb.USBMonitor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.Collections
 import kotlin.coroutines.resume
+import kotlin.math.round
 
 class MainActivity : ComponentActivity() {
     private var usbMonitor: USBMonitor? = null
@@ -77,23 +80,75 @@ class MainActivity : ComponentActivity() {
     private var isInPipMode by mutableStateOf(false)
 
     private val viewModel: MainViewModel by viewModels()
-    private var cachedLocation: Pair<Double, Double>? = null
     private var detectedIpAddress by mutableStateOf("127.0.0.1")
     private var showPermissionDialog by mutableStateOf(false)
+    private var showLocationPermissionDialog by mutableStateOf(false)
+    private var showLocationServicesDisabledDialog by mutableStateOf(false)
     private var showBatteryOptimizationDialog by mutableStateOf(false)
+    private var showLocationRequiredDialog by mutableStateOf(false)
+    private var pendingLocationRefresh = false
+    private var startupTimeoutJob: Job? = null
+    private var locationFetchJob: Job? = null
+
+    private val locationPermissions = arrayOf(
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    )
+
+    private val hasLocationPermission: Boolean
+        get() = locationPermissions.any {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
 
 
     init {
         System.loadLibrary("olive_jni")
     }
 
-    private val requestLocationAndCameraLauncher =
+    private fun getRequiredEnginePermissions(): List<String> {
+        val permissions = mutableListOf<String>()
+        if (activeCameraSelection == "internal") {
+            permissions.add(Manifest.permission.CAMERA)
+        }
+        return permissions
+    }
+
+    private val requestCameraLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             val allGranted = permissions.entries.all { it.value }
             if (allGranted) {
                 executeStartEngine()
             } else {
                 isStarting = false
+                showPermissionDialog = true
+            }
+        }
+
+    private val requestLocationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            val granted = permissions.values.any { it }
+            if (granted) {
+                if (pendingLocationRefresh) {
+                    pendingLocationRefresh = false
+                    val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+                    if (!LocationManagerCompat.isLocationEnabled(locationManager)) {
+                        showLocationServicesDisabledDialog = true
+                    } else {
+                        fetchLocation(isManualRefresh = true)
+                    }
+                } else {
+                    fetchLocation(isManualRefresh = false)
+                }
+            } else {
+                val wasPending = pendingLocationRefresh
+                pendingLocationRefresh = false
+                viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.IDLE
+                val shouldShowRationale = locationPermissions.any {
+                    ActivityCompat.shouldShowRequestPermissionRationale(this@MainActivity, it)
+                }
+                if (wasPending && !shouldShowRationale) {
+                    showLocationPermissionDialog = true
+                }
             }
         }
 
@@ -119,6 +174,72 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun fetchLocation(isManualRefresh: Boolean = false) {
+        if (isManualRefresh) {
+            if (viewModel.locationRefreshStatus != MainViewModel.LocationRefreshStatus.IDLE) return
+            viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.REFRESHING
+            locationFetchJob?.cancel()
+        } else {
+            if (locationFetchJob?.isActive == true) return
+        }
+
+        locationFetchJob = lifecycleScope.launch {
+            val startTime = System.currentTimeMillis()
+            try {
+                val loc = getFreshLocation()
+                if (isManualRefresh) {
+                    val elapsed = System.currentTimeMillis() - startTime
+                    if (elapsed < 500L) {
+                        delay(500L - elapsed)
+                    }
+                }
+
+                if (MainViewModel.isValidCoordinate(loc.first, loc.second)) {
+                    val rLat = round(loc.first * 100.0) / 100.0
+                    val rLon = round(loc.second * 100.0) / 100.0
+                    if (settingsManager.locationMode == "Auto") {
+                        viewModel.currentLat = rLat
+                        viewModel.currentLon = rLon
+                        settingsManager.saveLocation(rLat.toFloat(), rLon.toFloat())
+                    }
+                    if (isManualRefresh) {
+                        viewModel.locationRefreshStatus =
+                            MainViewModel.LocationRefreshStatus.SUCCESS
+                        delay(1500L)
+                    }
+                } else if (isManualRefresh) {
+                    viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.FAILURE
+                    delay(1500L)
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e("OliveUI", "Error fetching location", e)
+                if (isManualRefresh) {
+                    viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.FAILURE
+                    delay(1500L)
+                }
+            } finally {
+                if (isManualRefresh) {
+                    viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.IDLE
+                }
+            }
+        }
+    }
+
+    private fun handleRefreshLocation() {
+        if (hasLocationPermission) {
+            val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+            if (!LocationManagerCompat.isLocationEnabled(locationManager)) {
+                showLocationServicesDisabledDialog = true
+                return
+            }
+            fetchLocation(isManualRefresh = true)
+        } else {
+            pendingLocationRefresh = true
+            requestLocationPermissionLauncher.launch(locationPermissions)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -129,15 +250,22 @@ class MainActivity : ComponentActivity() {
             OliveEngine.initJni(filesDir.absolutePath)
         }
 
-        lifecycleScope.launch {
-            val loc = getClientLocation()
-            if (loc.first != MainViewModel.INVALID_COORD) {
-                cachedLocation = loc
-            }
-        }
-
         settingsManager = SettingsManager(this.applicationContext)
         activeCameraSelection = settingsManager.cameraSelection
+
+        settingsManager.savedLocation?.let { (lat, lon) ->
+            viewModel.currentLat = lat
+            viewModel.currentLon = lon
+        }
+
+        val prefs = getPreferences(MODE_PRIVATE)
+        val isFirstRunLocation = prefs.getBoolean("first_run_location_permission", true)
+        if (isFirstRunLocation) {
+            prefs.edit { putBoolean("first_run_location_permission", false) }
+            requestLocationPermissionLauncher.launch(locationPermissions)
+        } else if (settingsManager.locationMode == "Auto" && hasLocationPermission) {
+            fetchLocation(isManualRefresh = false)
+        }
 
 
         initUsbMonitor()
@@ -151,6 +279,8 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(viewModel.isEngineRunning) {
                 updateAutoPip(viewModel.isEngineRunning)
                 if (viewModel.isEngineRunning) {
+                    startupTimeoutJob?.cancel()
+                    startupTimeoutJob = null
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     isStarting = false
 
@@ -173,73 +303,129 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     if (showPermissionDialog) {
-                        AlertDialog(
-                            onDismissRequest = {
+                        val denied = getRequiredEnginePermissions().filter {
+                            ContextCompat.checkSelfPermission(
+                                this@MainActivity,
+                                it
+                            ) != PackageManager.PERMISSION_GRANTED
+                        }
+                        val shouldShowRationale = denied.any {
+                            ActivityCompat.shouldShowRequestPermissionRationale(
+                                this@MainActivity,
+                                it
+                            )
+                        }
+                        val prefs = getPreferences(MODE_PRIVATE)
+                        val isFirstRun = prefs.getBoolean("first_run_camera_permissions", true)
+                        val isPermanentlyDenied = !shouldShowRationale && !isFirstRun
+
+                        NightVisionDialog(
+                            title = stringResource(id = R.string.title_permissions_required),
+                            text = stringResource(id = R.string.desc_permissions_required),
+                            confirmButtonText = stringResource(
+                                id = if (isPermanentlyDenied) R.string.btn_open_settings else R.string.btn_continue
+                            ),
+                            onConfirm = { handlePermissionRequest() },
+                            onDismiss = {
                                 showPermissionDialog = false
                                 isStarting = false
-                            },
-                            title = { Text(stringResource(id = R.string.title_permissions_required)) },
-                            text = { Text(stringResource(id = R.string.desc_permissions_required)) },
-                            confirmButton = {
-                                TextButton(onClick = {
-                                    handlePermissionRequest()
-                                }) {
-                                    Text(stringResource(id = R.string.btn_continue))
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = {
-                                    showPermissionDialog = false
-                                    isStarting = false
-                                }) {
-                                    Text(stringResource(id = R.string.btn_cancel))
-                                }
                             }
                         )
                     }
 
+                    if (showLocationPermissionDialog) {
+                        NightVisionDialog(
+                            title = stringResource(id = R.string.title_location_permission_required),
+                            text = stringResource(id = R.string.desc_location_permission_required),
+                            confirmButtonText = stringResource(id = R.string.btn_open_settings),
+                            onConfirm = {
+                                showLocationPermissionDialog = false
+                                val intent =
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.fromParts("package", packageName, null)
+                                    }
+                                startActivity(intent)
+                            },
+                            onDismiss = { showLocationPermissionDialog = false }
+                        )
+                    }
+
+                    if (showLocationServicesDisabledDialog) {
+                        NightVisionDialog(
+                            title = stringResource(id = R.string.title_location_services_disabled),
+                            text = stringResource(id = R.string.desc_location_services_disabled),
+                            confirmButtonText = stringResource(id = R.string.btn_open_settings),
+                            onConfirm = {
+                                showLocationServicesDisabledDialog = false
+                                try {
+                                    val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                                    startActivity(intent)
+                                } catch (_: Exception) {
+                                }
+                            },
+                            dismissButtonText = stringResource(id = R.string.btn_cancel),
+                            onDismiss = { showLocationServicesDisabledDialog = false }
+                        )
+                    }
+
                     if (showBatteryOptimizationDialog) {
-                        AlertDialog(
-                            onDismissRequest = {
+                        NightVisionDialog(
+                            title = getString(R.string.title_battery_optimization),
+                            text = getString(R.string.body_battery_optimization),
+                            confirmButtonText = getString(R.string.btn_open_settings),
+                            onConfirm = {
                                 showBatteryOptimizationDialog = false
-                                isStarting = false
-                            },
-                            title = { Text(getString(R.string.title_battery_optimization)) },
-                            text = { Text(getString(R.string.body_battery_optimization)) },
-                            confirmButton = {
-                                TextButton(onClick = {
-                                    showBatteryOptimizationDialog = false
-                                    getPreferences(MODE_PRIVATE).edit {
-                                        putBoolean(
-                                            "has_prompted_battery_opt",
-                                            true
-                                        )
+                                getPreferences(MODE_PRIVATE).edit {
+                                    putBoolean(
+                                        "has_prompted_battery_opt",
+                                        true
+                                    )
+                                }
+                                val intent =
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = "package:$packageName".toUri()
                                     }
-                                    val intent =
-                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                            data = "package:$packageName".toUri()
-                                        }
-                                    try {
-                                        startActivity(intent)
-                                    } catch (_: Exception) {
-                                    }
-                                }) {
-                                    Text(getString(R.string.btn_open_settings))
+                                try {
+                                    startActivity(intent)
+                                } catch (_: Exception) {
                                 }
                             },
-                            dismissButton = {
-                                TextButton(onClick = {
-                                    showBatteryOptimizationDialog = false
-                                    getPreferences(MODE_PRIVATE).edit {
-                                        putBoolean(
-                                            "has_prompted_battery_opt",
-                                            true
-                                        )
-                                    }
-                                    executeStartEngine() // Skip settings and just start anyway
-                                }) {
-                                    Text(getString(R.string.btn_skip))
+                            dismissButtonText = getString(R.string.btn_skip),
+                            onDismiss = {
+                                showBatteryOptimizationDialog = false
+                                getPreferences(MODE_PRIVATE).edit {
+                                    putBoolean(
+                                        "has_prompted_battery_opt",
+                                        true
+                                    )
                                 }
+                                executeStartEngine() // Skip settings and just start anyway
+                            }
+                        )
+                    }
+
+                    if (showLocationRequiredDialog) {
+                        InfoPopup(
+                            title = stringResource(R.string.title_observer_location),
+                            onDismiss = { showLocationRequiredDialog = false }
+                        ) {
+                            Text(
+                                stringResource(R.string.info_location),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    if (viewModel.showLocationDialog) {
+                        LocationInputDialog(
+                            initialLat = viewModel.currentLat,
+                            initialLon = viewModel.currentLon,
+                            onDismiss = { viewModel.showLocationDialog = false },
+                            onSave = { lat, lon ->
+                                settingsManager.saveLocation(lat, lon)
+                                settingsManager.locationMode = "Manual"
+                                viewModel.currentLat = lat.toDouble()
+                                viewModel.currentLon = lon.toDouble()
                             }
                         )
                     }
@@ -270,7 +456,8 @@ class MainActivity : ComponentActivity() {
                                 onCameraSelectionChanged = { updateCameraSelection(it) },
                                 onNavigateToTuner = { currentScreen = "tuner" },
                                 onEnterPipMode = { enterPipMode() },
-                                onToggleEngine = { toggleEngine() }
+                                onToggleEngine = { toggleEngine() },
+                                onRefreshLocation = { handleRefreshLocation() }
                             )
 
                             "tuner" -> TunerScreen(
@@ -399,6 +586,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (settingsManager.locationMode == "Auto" && hasLocationPermission && !viewModel.hasValidLocation) {
+            fetchLocation(isManualRefresh = false)
+        }
         if (viewModel.isEngineRunning && !isStopping) {
             // Ensure engine is actually alive or restart if needed
             // For now just logged, but we could add auto-restart logic here
@@ -463,51 +653,93 @@ class MainActivity : ComponentActivity() {
         return false
     }
 
-    @Suppress("DEPRECATION")
-    @SuppressLint("MissingPermission")
-    private suspend fun getClientLocation(): Pair<Double, Double> =
-        suspendCancellableCoroutine { cont ->
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.ACCESS_FINE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
-                val lastGps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                val lastNetwork =
-                    locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
 
-                val bestLoc = if (lastGps != null && lastNetwork != null) {
-                    if (lastGps.time > lastNetwork.time) lastGps else lastNetwork
-                } else {
-                    lastGps ?: lastNetwork
+    @SuppressLint("MissingPermission")
+    private fun getLastKnownLocation(locationManager: LocationManager): Pair<Double, Double> {
+        return try {
+            val lastGps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            val lastNetwork = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            val bestLoc = if (lastGps != null && lastNetwork != null) {
+                if (lastGps.time > lastNetwork.time) lastGps else lastNetwork
+            } else {
+                lastGps ?: lastNetwork
+            }
+            if (bestLoc != null) {
+                Pair(bestLoc.latitude, bestLoc.longitude)
+            } else {
+                Pair(MainViewModel.INVALID_COORD, MainViewModel.INVALID_COORD)
+            }
+        } catch (_: Exception) {
+            Pair(MainViewModel.INVALID_COORD, MainViewModel.INVALID_COORD)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun getFreshLocation(): Pair<Double, Double> {
+        val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+        return withTimeoutOrNull(10000L) {
+            suspendCancellableCoroutine { cont ->
+                val cancellationSignal = CancellationSignal()
+                cont.invokeOnCancellation {
+                    cancellationSignal.cancel()
+                }
+                val executor = ContextCompat.getMainExecutor(this@MainActivity)
+                var hasResumed = false
+
+                val handleLocation: (Location?) -> Unit = { loc ->
+                    if (!hasResumed && loc != null && cont.isActive) {
+                        hasResumed = true
+                        cancellationSignal.cancel()
+                        cont.resume(Pair(loc.latitude, loc.longitude))
+                    }
                 }
 
-                if (bestLoc != null) {
-                    cont.resume(Pair(bestLoc.latitude, bestLoc.longitude))
+                val enabledProviders = mutableListOf<String>()
+                if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    enabledProviders.add(LocationManager.GPS_PROVIDER)
+                }
+                if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                    enabledProviders.add(LocationManager.NETWORK_PROVIDER)
+                }
+
+                if (enabledProviders.isEmpty()) {
+                    if (cont.isActive) {
+                        cont.resume(getLastKnownLocation(locationManager))
+                    }
                     return@suspendCancellableCoroutine
                 }
 
-                val executor = ContextCompat.getMainExecutor(this)
-                LocationManagerCompat.getCurrentLocation(
-                    locationManager,
-                    LocationManager.NETWORK_PROVIDER,
-                    null as CancellationSignal?,
-                    executor
-                ) { location: Location? ->
-                    if (location != null) {
-                        cont.resume(Pair(location.latitude, location.longitude))
-                    } else {
-                        cont.resume(Pair(MainViewModel.INVALID_COORD, MainViewModel.INVALID_COORD))
+                var pendingCount = enabledProviders.size
+                for (provider in enabledProviders) {
+                    try {
+                        LocationManagerCompat.getCurrentLocation(
+                            locationManager,
+                            provider,
+                            cancellationSignal,
+                            executor
+                        ) { location: Location? ->
+                            if (location != null) {
+                                handleLocation(location)
+                            } else {
+                                pendingCount--
+                                if (pendingCount <= 0 && !hasResumed && cont.isActive) {
+                                    hasResumed = true
+                                    cont.resume(getLastKnownLocation(locationManager))
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("OliveUI", "Failed to query location provider: $provider", e)
+                        pendingCount--
+                        if (pendingCount <= 0 && !hasResumed && cont.isActive) {
+                            hasResumed = true
+                            cont.resume(getLastKnownLocation(locationManager))
+                        }
                     }
                 }
-            } else {
-                cont.resume(Pair(MainViewModel.INVALID_COORD, MainViewModel.INVALID_COORD))
             }
-        }
+        } ?: getLastKnownLocation(locationManager)
+    }
 
     private fun getDeviceIpAddress(): String {
         try {
@@ -546,6 +778,8 @@ class MainActivity : ComponentActivity() {
         if (isStopping) return // Ignore if already stopping
 
         if (viewModel.isEngineRunning) {
+            startupTimeoutJob?.cancel()
+            startupTimeoutJob = null
             isStopping = true
             currentScreen = "main"
             lifecycleScope.launch {
@@ -558,17 +792,12 @@ class MainActivity : ComponentActivity() {
                 isStopping = false
             }
         } else {
-            isStarting = true
-            val permissions = mutableListOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ).apply {
-                if (Build.VERSION.SDK_INT >= 37) {
-                    add("android.permission.ACCESS_LOCAL_NETWORK")
-                }
+            if (!viewModel.hasValidLocation) {
+                showLocationRequiredDialog = true
+                return
             }
-            permissions.add(Manifest.permission.CAMERA)
 
+            val permissions = getRequiredEnginePermissions()
             val denied = permissions.filter {
                 ContextCompat.checkSelfPermission(
                     this,
@@ -576,8 +805,19 @@ class MainActivity : ComponentActivity() {
                 ) != PackageManager.PERMISSION_GRANTED
             }
             if (denied.isNotEmpty()) {
-                isStarting = false
-                showPermissionDialog = true
+                val shouldShowRationale = denied.any {
+                    ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+                }
+                val prefs = getPreferences(MODE_PRIVATE)
+                val isFirstRun = prefs.getBoolean("first_run_camera_permissions", true)
+
+                if (shouldShowRationale || isFirstRun) {
+                    prefs.edit { putBoolean("first_run_camera_permissions", false) }
+                    requestCameraLauncher.launch(denied.toTypedArray())
+                } else {
+                    isStarting = false
+                    showPermissionDialog = true
+                }
             } else {
                 executeStartEngine()
             }
@@ -585,18 +825,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handlePermissionRequest() {
-        val permissions = mutableListOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        ).apply {
-            if (Build.VERSION.SDK_INT >= 33) {
-                add(Manifest.permission.NEARBY_WIFI_DEVICES)
-            }
-            if (Build.VERSION.SDK_INT >= 37) {
-                add("android.permission.ACCESS_LOCAL_NETWORK")
-            }
-        }
-        permissions.add(Manifest.permission.CAMERA)
+        val permissions = getRequiredEnginePermissions()
         val denied = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
@@ -604,12 +833,12 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.shouldShowRequestPermissionRationale(this, it)
         }
         val prefs = getPreferences(MODE_PRIVATE)
-        val isFirstRun = prefs.getBoolean("first_run_permissions", true)
+        val isFirstRun = prefs.getBoolean("first_run_camera_permissions", true)
 
         if (shouldShowRationale || isFirstRun) {
-            prefs.edit { putBoolean("first_run_permissions", false) }
+            prefs.edit { putBoolean("first_run_camera_permissions", false) }
             showPermissionDialog = false
-            requestLocationAndCameraLauncher.launch(permissions.toTypedArray())
+            requestCameraLauncher.launch(denied.toTypedArray())
         } else {
             showPermissionDialog = false
             val intent =
@@ -621,6 +850,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun executeStartEngine() {
+        isStarting = true
         val prefs = getPreferences(MODE_PRIVATE)
         val hasPrompted = prefs.getBoolean("has_prompted_battery_opt", false)
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
@@ -632,21 +862,18 @@ class MainActivity : ComponentActivity() {
         }
 
         lifecycleScope.launch {
-            val loc = if (cachedLocation == null || cachedLocation == Pair(
-                    MainViewModel.INVALID_COORD,
-                    MainViewModel.INVALID_COORD
-                )
-            ) {
-                getClientLocation()
-            } else {
-                cachedLocation!!
+            val lat = viewModel.currentLat ?: 0.0
+            val lon = viewModel.currentLon ?: 0.0
+            if (!viewModel.hasValidLocation) {
+                isStarting = false
+                showLocationRequiredDialog = true
+                return@launch
             }
-            val lat = loc.first
-            val lon = loc.second
             val timeMs = System.currentTimeMillis()
             var engineStarted = false
 
-            launch {
+            startupTimeoutJob?.cancel()
+            startupTimeoutJob = lifecycleScope.launch {
                 delay(5000L) // Wait for USB permission & engine startup
                 if (isStarting) {
                     Log.w("OliveUI", "Engine startup timed out! Cleaning up.")
@@ -690,6 +917,8 @@ class MainActivity : ComponentActivity() {
 
             if (!engineStarted) {
                 isStarting = false
+                startupTimeoutJob?.cancel()
+                startupTimeoutJob = null
             }
         }
     }
@@ -728,18 +957,11 @@ class MainActivity : ComponentActivity() {
 
                     if (isStarting) {
                         lifecycleScope.launch {
-                            val loc = if (cachedLocation == null || cachedLocation == Pair(
-                                    MainViewModel.INVALID_COORD,
-                                    MainViewModel.INVALID_COORD
-                                )
-                            ) {
-                                getClientLocation()
-                            } else {
-                                cachedLocation!!
-                            }
+                            val lat = viewModel.currentLat ?: 0.0
+                            val lon = viewModel.currentLon ?: 0.0
                             viewModel.startUvcEngine(
-                                loc.first,
-                                loc.second,
+                                lat,
+                                lon,
                                 System.currentTimeMillis()
                             )
                             startBackgroundService("UVC")

@@ -16,8 +16,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.AlertDialog
@@ -55,6 +58,7 @@ import androidx.compose.ui.window.DialogProperties
 import org.json.JSONArray
 import java.text.NumberFormat
 import java.util.Locale
+import kotlin.math.abs
 
 @Composable
 fun StartScreen(
@@ -65,7 +69,8 @@ fun StartScreen(
     isStopping: Boolean,
     isStarting: Boolean,
     onCameraSelectionChanged: (String) -> Unit,
-    onToggleEngine: () -> Unit
+    onToggleEngine: () -> Unit,
+    onRefreshLocation: () -> Unit = {}
 ) {
     var cameraSelection by remember { mutableStateOf(activeCameraSelection) }
     var cameraSettingsMode by remember { mutableStateOf(settingsManager.cameraSettingsMode) }
@@ -76,6 +81,7 @@ fun StartScreen(
     var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
     var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
+    var locationMode by remember { mutableStateOf(settingsManager.locationMode) }
     var explicitMotionSensorMode by remember { mutableStateOf(if (settingsManager.hasExplicitMotionSensorMode) settingsManager.motionSensorMode else null) }
     val motionSensorMode = explicitMotionSensorMode ?: if (cameraSelection == "internal") 3 else 0
 
@@ -89,6 +95,7 @@ fun StartScreen(
     var showExtractorInfo by remember { mutableStateOf(false) }
     var showGuidanceModeInfo by remember { mutableStateOf(false) }
     var showMotionSensorInfo by remember { mutableStateOf(false) }
+    var showLocationInfo by remember { mutableStateOf(false) }
 
 
     val supportsRawMap = remember { mutableMapOf<String, Boolean>() }
@@ -129,8 +136,8 @@ fun StartScreen(
             }
         }
     }
-    LaunchedEffect(guidanceMode) {
-        settingsManager.guidanceMode = guidanceMode
+    LaunchedEffect(locationMode) {
+        settingsManager.locationMode = locationMode
     }
 
     // React to external camera plugging in
@@ -785,6 +792,141 @@ fun StartScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(id = R.string.label_location),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { showLocationInfo = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(id = R.string.cd_info),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            val currentLat = viewModel.currentLat
+            val currentLon = viewModel.currentLon
+            val currentCoordText = if (currentLat != null && currentLon != null &&
+                MainViewModel.isValidCoordinate(currentLat, currentLon)
+            ) {
+                val latDir =
+                    stringResource(if (currentLat >= 0) R.string.dir_north else R.string.dir_south)
+                val lonDir =
+                    stringResource(if (currentLon >= 0) R.string.dir_east else R.string.dir_west)
+                stringResource(
+                    R.string.label_current_location,
+                    stringResource(
+                        R.string.format_coordinate,
+                        abs(currentLat),
+                        latDir,
+                        abs(currentLon),
+                        lonDir
+                    )
+                )
+            } else {
+                stringResource(id = R.string.status_location_not_set)
+            }
+
+            Text(
+                text = currentCoordText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                // Auto Option
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clickable { locationMode = "Auto" }
+                        .padding(end = 8.dp)
+                ) {
+                    RadioButton(
+                        selected = locationMode == "Auto",
+                        onClick = { locationMode = "Auto" },
+                        colors = RadioButtonDefaults.colors(
+                            selectedColor = MaterialTheme.colorScheme.primary,
+                            unselectedColor = MaterialTheme.colorScheme.onBackground
+                        )
+                    )
+                    Text(
+                        stringResource(id = R.string.value_auto),
+                        modifier = Modifier.padding(start = 4.dp),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+
+                if (locationMode == "Auto") {
+                    val isRefreshing =
+                        viewModel.locationRefreshStatus == MainViewModel.LocationRefreshStatus.REFRESHING
+                    val refreshIcon = when (viewModel.locationRefreshStatus) {
+                        MainViewModel.LocationRefreshStatus.SUCCESS -> Icons.Default.Check
+                        MainViewModel.LocationRefreshStatus.FAILURE -> Icons.Default.Close
+                        else -> Icons.Default.Refresh
+                    }
+                    IconBarItem(
+                        icon = refreshIcon,
+                        label = stringResource(id = R.string.btn_refresh),
+                        isLoading = isRefreshing,
+                        enabled = true,
+                        onClick = {
+                            if (viewModel.locationRefreshStatus == MainViewModel.LocationRefreshStatus.IDLE) {
+                                onRefreshLocation()
+                            }
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                // Manual Option
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clickable { locationMode = "Manual" }
+                        .padding(end = 8.dp)
+                ) {
+                    RadioButton(
+                        selected = locationMode == "Manual",
+                        onClick = { locationMode = "Manual" },
+                        colors = RadioButtonDefaults.colors(
+                            selectedColor = MaterialTheme.colorScheme.primary,
+                            unselectedColor = MaterialTheme.colorScheme.onBackground
+                        )
+                    )
+                    Text(
+                        stringResource(id = R.string.value_manual),
+                        modifier = Modifier.padding(start = 4.dp),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+
+                if (locationMode == "Manual") {
+                    IconBarItem(
+                        icon = Icons.Default.Edit,
+                        label = stringResource(id = R.string.btn_edit_location),
+                        onClick = { viewModel.showLocationDialog = true }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             if (cameraSelection != "demo") {
                 Row(
                     verticalAlignment = Alignment.CenterVertically
@@ -963,6 +1105,13 @@ fun StartScreen(
                 title = stringResource(id = R.string.label_motion_sensor),
                 onDismiss = { showMotionSensorInfo = false }) {
                 Text(stringResource(id = R.string.info_motion_sensor))
+            }
+        }
+        if (showLocationInfo) {
+            InfoPopup(
+                title = stringResource(id = R.string.label_location),
+                onDismiss = { showLocationInfo = false }) {
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_location)))
             }
         }
     }
