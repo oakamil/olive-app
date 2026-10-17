@@ -1,10 +1,5 @@
 package com.oakamil.olive
 
-import android.content.Context
-import android.content.res.Configuration
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraManager
-import android.view.Surface
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -40,7 +35,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -56,11 +50,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
@@ -83,21 +75,14 @@ fun TunerScreen(
     var showAlignDialog by remember { mutableStateOf(false) }
     var showResetAlignDialog by remember { mutableStateOf(false) }
 
-    DisposableEffect(Unit) {
-        onDispose {
-        }
-    }
-
     BackHandler {
         viewModel.setEnginePaused(false)
         onBack()
     }
 
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val context = LocalContext.current
-    val view = LocalView.current
-    val displayRotation = view.display?.rotation ?: Surface.ROTATION_0
+    val windowController = LocalPlatformWindowController.current
+    val isLandscape = windowController.isLandscape
+    val displayRotationDegrees = windowController.getDisplayRotationDegrees()
 
     LaunchedEffect(Unit) {
         viewModel.fetchRealtimeSettings()
@@ -105,26 +90,10 @@ fun TunerScreen(
 
     val sensorOrientation = remember(viewModel.engineMode, settingsManager.internalCameraId) {
         if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) {
-            try {
-                val cameraManager =
-                    context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                val characteristics =
-                    cameraManager.getCameraCharacteristics(settingsManager.internalCameraId)
-                characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
-            } catch (_: Exception) {
-                90
-            }
+            windowController.getCameraSensorOrientation(settingsManager.internalCameraId)
         } else {
             0
         }
-    }
-
-    val displayRotationDegrees = when (displayRotation) {
-        Surface.ROTATION_0 -> 0
-        Surface.ROTATION_90 -> 90
-        Surface.ROTATION_180 -> 180
-        Surface.ROTATION_270 -> 270
-        else -> 0
     }
 
     val imageRotation = if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) {
@@ -301,8 +270,10 @@ fun TunerScreen(
                         val fitPxScale = minOf(size.width / bW, size.height / bH)
 
                         // Draw current boresight
-                        val boresightCanvasX = center.x + (currentBoresightX - bW / 2f) * fitPxScale
-                        val boresightCanvasY = center.y + (currentBoresightY - bH / 2f) * fitPxScale
+                        val boresightCanvasX =
+                            center.x + (currentBoresightX - bW / 2f) * fitPxScale
+                        val boresightCanvasY =
+                            center.y + (currentBoresightY - bH / 2f) * fitPxScale
 
                         val s = 32f / (scale * baseScale)
                         val arm = 14f / (scale * baseScale)
@@ -540,10 +511,12 @@ fun TunerScreen(
             confirmButton = {
                 Button(onClick = {
                     showAlignDialog = false
-                    if (alignTargetX != null && alignTargetY != null) {
+                    val targetX = alignTargetX
+                    val targetY = alignTargetY
+                    if (targetX != null && targetY != null) {
                         viewModel.setAlignTargetPixel(
-                            alignTargetX!!.toDouble(),
-                            alignTargetY!!.toDouble()
+                            targetX.toDouble(),
+                            targetY.toDouble()
                         )
                     }
                     alignTargetX = null
@@ -589,6 +562,7 @@ fun TunerScreen(
     }
 }
 
+@OptIn(ExperimentalTextApi::class)
 @Composable
 fun TuningControls(
     viewModel: MainViewModel,
@@ -610,7 +584,7 @@ fun TuningControls(
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Star Sensitivity: ${viewModel.starSensitivity.toInt()}%",
+                stringResource(id = R.string.label_star_sensitivity) + ": ${viewModel.starSensitivity.toInt()}%",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -653,6 +627,7 @@ fun TuningControls(
                         }
                     }
                 } catch (_: Exception) {
+                    // Ignore JSON parsing errors if internal camera FOV metadata is unavailable
                 }
                 mZ
             }
@@ -834,6 +809,7 @@ fun TuningControls(
                 }
                 Slider(
                     value = viewModel.currentFocus,
+                    enabled = settingsManager.cameraSettingsMode != "Auto",
                     onValueChange = {
                         viewModel.setFocus(it)
                     },

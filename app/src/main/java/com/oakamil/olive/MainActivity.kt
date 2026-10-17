@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,6 +88,7 @@ class MainActivity : ComponentActivity() {
     private var showBatteryOptimizationDialog by mutableStateOf(false)
     private var showLocationRequiredDialog by mutableStateOf(false)
     private var pendingLocationRefresh = false
+    private val windowController by lazy { AndroidWindowController(this) }
     private var startupTimeoutJob: Job? = null
     private var locationFetchJob: Job? = null
 
@@ -272,244 +274,250 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            LaunchedEffect(viewModel.isEngineRunning) {
-                updateAutoPip(viewModel.isEngineRunning)
-                if (viewModel.isEngineRunning) {
-                    startupTimeoutJob?.cancel()
-                    startupTimeoutJob = null
-                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    isStarting = false
+            CompositionLocalProvider(
+                LocalPlatformCapabilities provides AndroidPlatformCapabilities,
+                LocalPlatformWindowController provides windowController
+            ) {
+                LaunchedEffect(viewModel.isEngineRunning) {
+                    updateAutoPip(viewModel.isEngineRunning)
+                    if (viewModel.isEngineRunning) {
+                        startupTimeoutJob?.cancel()
+                        startupTimeoutJob = null
+                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        isStarting = false
 
-                    try {
-                        while (viewModel.isEngineRunning) {
-                            detectedIpAddress = getDeviceIpAddress()
-                            delay(10000)
-                        }
-                    } finally {
-                        // Cleanup if needed
-                    }
-                } else {
-                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                }
-            }
-
-            NightVisionTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    if (showPermissionDialog) {
-                        val denied = getRequiredEnginePermissions().filter {
-                            ContextCompat.checkSelfPermission(
-                                this@MainActivity,
-                                it
-                            ) != PackageManager.PERMISSION_GRANTED
-                        }
-                        val shouldShowRationale = denied.any {
-                            ActivityCompat.shouldShowRequestPermissionRationale(
-                                this@MainActivity,
-                                it
-                            )
-                        }
-                        val prefs = getPreferences(MODE_PRIVATE)
-                        val isFirstRun = prefs.getBoolean("first_run_camera_permissions", true)
-                        val isPermanentlyDenied = !shouldShowRationale && !isFirstRun
-
-                        NightVisionDialog(
-                            title = stringResource(id = R.string.title_permissions_required),
-                            text = stringResource(id = R.string.desc_permissions_required),
-                            confirmButtonText = stringResource(
-                                id = if (isPermanentlyDenied) R.string.btn_open_settings else R.string.btn_continue
-                            ),
-                            onConfirm = { handlePermissionRequest() },
-                            onDismiss = {
-                                showPermissionDialog = false
-                                isStarting = false
+                        try {
+                            while (viewModel.isEngineRunning) {
+                                detectedIpAddress = getDeviceIpAddress()
+                                delay(10000)
                             }
-                        )
-                    }
-
-                    if (showLocationPermissionDialog) {
-                        NightVisionDialog(
-                            title = stringResource(id = R.string.title_location_permission_required),
-                            text = stringResource(id = R.string.desc_location_permission_required),
-                            confirmButtonText = stringResource(id = R.string.btn_open_settings),
-                            onConfirm = {
-                                showLocationPermissionDialog = false
-                                val intent =
-                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                        data = Uri.fromParts("package", packageName, null)
-                                    }
-                                startActivity(intent)
-                            },
-                            onDismiss = { showLocationPermissionDialog = false }
-                        )
-                    }
-
-                    if (showLocationServicesDisabledDialog) {
-                        NightVisionDialog(
-                            title = stringResource(id = R.string.title_location_services_disabled),
-                            text = stringResource(id = R.string.desc_location_services_disabled),
-                            confirmButtonText = stringResource(id = R.string.btn_open_settings),
-                            onConfirm = {
-                                showLocationServicesDisabledDialog = false
-                                try {
-                                    val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-                                    startActivity(intent)
-                                } catch (_: Exception) {
-                                }
-                            },
-                            dismissButtonText = stringResource(id = R.string.btn_cancel),
-                            onDismiss = { showLocationServicesDisabledDialog = false }
-                        )
-                    }
-
-                    if (showBatteryOptimizationDialog) {
-                        NightVisionDialog(
-                            title = getString(R.string.title_battery_optimization),
-                            text = getString(R.string.body_battery_optimization),
-                            confirmButtonText = getString(R.string.btn_open_settings),
-                            onConfirm = {
-                                showBatteryOptimizationDialog = false
-                                getPreferences(MODE_PRIVATE).edit {
-                                    putBoolean(
-                                        "has_prompted_battery_opt",
-                                        true
-                                    )
-                                }
-                                val intent =
-                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                        data = "package:$packageName".toUri()
-                                    }
-                                try {
-                                    startActivity(intent)
-                                } catch (_: Exception) {
-                                }
-                            },
-                            dismissButtonText = getString(R.string.btn_skip),
-                            onDismiss = {
-                                showBatteryOptimizationDialog = false
-                                getPreferences(MODE_PRIVATE).edit {
-                                    putBoolean(
-                                        "has_prompted_battery_opt",
-                                        true
-                                    )
-                                }
-                                executeStartEngine() // Skip settings and just start anyway
-                            }
-                        )
-                    }
-
-                    if (showLocationRequiredDialog) {
-                        InfoPopup(
-                            title = stringResource(R.string.title_observer_location),
-                            onDismiss = { showLocationRequiredDialog = false }
-                        ) {
-                            Text(
-                                stringResource(R.string.info_location),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-
-                    if (viewModel.showLocationDialog) {
-                        LocationInputDialog(
-                            initialLat = viewModel.currentLat,
-                            initialLon = viewModel.currentLon,
-                            onDismiss = { viewModel.showLocationDialog = false },
-                            onSave = { lat, lon ->
-                                settingsManager.saveLocation(lat, lon)
-                                settingsManager.locationMode = "Manual"
-                                viewModel.currentLat = lat.toDouble()
-                                viewModel.currentLon = lon.toDouble()
-                            }
-                        )
-                    }
-
-                    if (isInPipMode) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(2.dp)
-                        ) {
-                            GuidanceDisplay(
-                                viewModel.engineStats,
-                                settingsManager.guidanceMode == "alt_az",
-                                false,
-                                settingsManager.motionSensorMode != 0
-                            )
+                        } finally {
+                            // Cleanup if needed
                         }
                     } else {
-                        when (currentScreen) {
-                            "main" -> MainScreen(
-                                viewModel = viewModel,
-                                settingsManager = settingsManager,
-                                isCameraConnected = isCameraConnected,
-                                activeCameraSelection = activeCameraSelection,
-                                isStopping = isStopping,
-                                isStarting = isStarting,
-                                detectedIpAddress = detectedIpAddress,
-                                onCameraSelectionChanged = { updateCameraSelection(it) },
-                                onNavigateToTuner = { currentScreen = "tuner" },
-                                onEnterPipMode = { enterPipMode() },
-                                onToggleEngine = { toggleEngine() },
-                                onRefreshLocation = { handleRefreshLocation() }
-                            )
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    }
+                }
 
-                            "tuner" -> TunerScreen(
-                                viewModel = viewModel,
-                                settingsManager = settingsManager,
-                                activeCameraSelection = activeCameraSelection,
-                                onBack = { currentScreen = "main" }
+                NightVisionTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        if (showPermissionDialog) {
+                            val denied = getRequiredEnginePermissions().filter {
+                                ContextCompat.checkSelfPermission(
+                                    this@MainActivity,
+                                    it
+                                ) != PackageManager.PERMISSION_GRANTED
+                            }
+                            val shouldShowRationale = denied.any {
+                                ActivityCompat.shouldShowRequestPermissionRationale(
+                                    this@MainActivity,
+                                    it
+                                )
+                            }
+                            val prefs = getPreferences(MODE_PRIVATE)
+                            val isFirstRun = prefs.getBoolean("first_run_camera_permissions", true)
+                            val isPermanentlyDenied = !shouldShowRationale && !isFirstRun
+
+                            NightVisionDialog(
+                                title = stringResource(id = R.string.title_permissions_required),
+                                text = stringResource(id = R.string.desc_permissions_required),
+                                confirmButtonText = stringResource(
+                                    id = if (isPermanentlyDenied) R.string.btn_open_settings else R.string.btn_continue
+                                ),
+                                onConfirm = { handlePermissionRequest() },
+                                onDismiss = {
+                                    showPermissionDialog = false
+                                    isStarting = false
+                                }
                             )
                         }
-                    }
 
+                        if (showLocationPermissionDialog) {
+                            NightVisionDialog(
+                                title = stringResource(id = R.string.title_location_permission_required),
+                                text = stringResource(id = R.string.desc_location_permission_required),
+                                confirmButtonText = stringResource(id = R.string.btn_open_settings),
+                                onConfirm = {
+                                    showLocationPermissionDialog = false
+                                    val intent =
+                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.fromParts("package", packageName, null)
+                                        }
+                                    startActivity(intent)
+                                },
+                                onDismiss = { showLocationPermissionDialog = false }
+                            )
+                        }
 
-                    if (viewModel.isCameraStuck && viewModel.isEngineRunning && !isStopping) {
-                        AlertDialog(
-                            onDismissRequest = { /* Force user choice */ },
-                            title = {
+                        if (showLocationServicesDisabledDialog) {
+                            NightVisionDialog(
+                                title = stringResource(id = R.string.title_location_services_disabled),
+                                text = stringResource(id = R.string.desc_location_services_disabled),
+                                confirmButtonText = stringResource(id = R.string.btn_open_settings),
+                                onConfirm = {
+                                    showLocationServicesDisabledDialog = false
+                                    try {
+                                        val intent =
+                                            Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                                        startActivity(intent)
+                                    } catch (_: Exception) {
+                                    }
+                                },
+                                dismissButtonText = stringResource(id = R.string.btn_cancel),
+                                onDismiss = { showLocationServicesDisabledDialog = false }
+                            )
+                        }
+
+                        if (showBatteryOptimizationDialog) {
+                            NightVisionDialog(
+                                title = getString(R.string.title_battery_optimization),
+                                text = getString(R.string.body_battery_optimization),
+                                confirmButtonText = getString(R.string.btn_open_settings),
+                                onConfirm = {
+                                    showBatteryOptimizationDialog = false
+                                    getPreferences(MODE_PRIVATE).edit {
+                                        putBoolean(
+                                            "has_prompted_battery_opt",
+                                            true
+                                        )
+                                    }
+                                    val intent =
+                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = "package:$packageName".toUri()
+                                        }
+                                    try {
+                                        startActivity(intent)
+                                    } catch (_: Exception) {
+                                    }
+                                },
+                                dismissButtonText = getString(R.string.btn_skip),
+                                onDismiss = {
+                                    showBatteryOptimizationDialog = false
+                                    getPreferences(MODE_PRIVATE).edit {
+                                        putBoolean(
+                                            "has_prompted_battery_opt",
+                                            true
+                                        )
+                                    }
+                                    executeStartEngine() // Skip settings and just start anyway
+                                }
+                            )
+                        }
+
+                        if (showLocationRequiredDialog) {
+                            InfoPopup(
+                                title = stringResource(R.string.title_observer_location),
+                                onDismiss = { showLocationRequiredDialog = false }
+                            ) {
                                 Text(
-                                    getString(R.string.title_camera_stuck),
+                                    stringResource(R.string.info_location),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                            },
-                            text = {
-                                Text(
-                                    getString(R.string.body_camera_stuck),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        }
+
+                        if (viewModel.showLocationDialog) {
+                            LocationInputDialog(
+                                initialLat = viewModel.currentLat,
+                                initialLon = viewModel.currentLon,
+                                onDismiss = { viewModel.showLocationDialog = false },
+                                onSave = { lat, lon ->
+                                    settingsManager.saveLocation(lat, lon)
+                                    settingsManager.locationMode = "Manual"
+                                    viewModel.currentLat = lat.toDouble()
+                                    viewModel.currentLon = lon.toDouble()
+                                }
+                            )
+                        }
+
+                        if (isInPipMode) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(2.dp)
+                            ) {
+                                GuidanceDisplay(
+                                    viewModel.engineStats,
+                                    settingsManager.guidanceMode == "alt_az",
+                                    false,
+                                    settingsManager.motionSensorMode != 0
                                 )
-                            },
-                            confirmButton = {
-                                Button(
-                                    onClick = {
-                                        val intent =
-                                            baseContext.packageManager.getLaunchIntentForPackage(
-                                                baseContext.packageName
-                                            )
-                                        val componentName = intent?.component
-                                        if (componentName != null) {
-                                            val restartIntent =
-                                                Intent.makeRestartActivityTask(componentName)
-                                            restartIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            baseContext.startActivity(restartIntent)
-                                            finishAffinity()
-                                        } else {
-                                            Runtime.getRuntime().exit(0)
+                            }
+                        } else {
+                            when (currentScreen) {
+                                "main" -> MainScreen(
+                                    viewModel = viewModel,
+                                    settingsManager = settingsManager,
+                                    isCameraConnected = isCameraConnected,
+                                    activeCameraSelection = activeCameraSelection,
+                                    isStopping = isStopping,
+                                    isStarting = isStarting,
+                                    detectedIpAddress = detectedIpAddress,
+                                    onCameraSelectionChanged = { updateCameraSelection(it) },
+                                    onNavigateToTuner = { currentScreen = "tuner" },
+                                    onEnterPipMode = { enterPipMode() },
+                                    onToggleEngine = { toggleEngine() },
+                                    onRefreshLocation = { handleRefreshLocation() }
+                                )
+
+                                "tuner" -> TunerScreen(
+                                    viewModel = viewModel,
+                                    settingsManager = settingsManager,
+                                    activeCameraSelection = activeCameraSelection,
+                                    onBack = { currentScreen = "main" }
+                                )
+                            }
+                        }
+
+
+                        if (viewModel.isCameraStuck && viewModel.isEngineRunning && !isStopping) {
+                            AlertDialog(
+                                onDismissRequest = { /* Force user choice */ },
+                                title = {
+                                    Text(
+                                        getString(R.string.title_camera_stuck),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                text = {
+                                    Text(
+                                        getString(R.string.body_camera_stuck),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            val intent =
+                                                baseContext.packageManager.getLaunchIntentForPackage(
+                                                    baseContext.packageName
+                                                )
+                                            val componentName = intent?.component
+                                            if (componentName != null) {
+                                                val restartIntent =
+                                                    Intent.makeRestartActivityTask(componentName)
+                                                restartIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                baseContext.startActivity(restartIntent)
+                                                finishAffinity()
+                                            } else {
+                                                Runtime.getRuntime().exit(0)
+                                            }
                                         }
+                                    ) {
+                                        Text(getString(R.string.btn_restart))
                                     }
-                                ) {
-                                    Text(getString(R.string.btn_restart))
-                                }
-                            },
-                            dismissButton = {
-                                OutlinedButton(onClick = { viewModel.dismissCameraStuckDialog() }) {
-                                    Text(getString(R.string.btn_cancel))
-                                }
-                            },
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
+                                },
+                                dismissButton = {
+                                    OutlinedButton(onClick = { viewModel.dismissCameraStuckDialog() }) {
+                                        Text(getString(R.string.btn_cancel))
+                                    }
+                                },
+                                containerColor = MaterialTheme.colorScheme.surface
+                            )
+                        }
                     }
                 }
             }
@@ -530,6 +538,7 @@ class MainActivity : ComponentActivity() {
     // Intercepts configuration changes so we can re-apply full screen
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        windowController.updateConfiguration(newConfig)
         hideSystemUI()
     }
 

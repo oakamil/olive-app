@@ -1,6 +1,5 @@
 package com.oakamil.olive
 
-import android.content.res.Configuration
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -78,7 +77,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
@@ -530,6 +528,9 @@ fun SkyCatalogDialog(
                     }
                 }
             ) {
+                val windowController = LocalPlatformWindowController.current
+                val isLandscape = windowController.isLandscape
+
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -595,7 +596,8 @@ fun SkyCatalogDialog(
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    val visibilityOptions = listOf("Above Horizon", "All Objects")
+                                    val visibilityOptions =
+                                        listOf("Above Horizon", "All Objects")
                                     visibilityOptions.forEach { option ->
                                         DropdownMenuItem(
                                             text = { Text(option) },
@@ -684,7 +686,11 @@ fun SkyCatalogDialog(
                                         DropdownMenuItem(
                                             leadingIcon = {
                                                 val (iVec, iCol) = getIconAndColorForType(type)
-                                                Icon(iVec, contentDescription = null, tint = iCol)
+                                                Icon(
+                                                    iVec,
+                                                    contentDescription = null,
+                                                    tint = iCol
+                                                )
                                             },
                                             text = {
                                                 Text(getLocalizedObjectType(type))
@@ -732,7 +738,12 @@ fun SkyCatalogDialog(
                                 onValueChange = {},
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text(stringResource(R.string.placeholder_search)) },
-                                leadingIcon = { Icon(Default.Search, contentDescription = null) },
+                                leadingIcon = {
+                                    Icon(
+                                        Default.Search,
+                                        contentDescription = null
+                                    )
+                                },
                                 singleLine = true,
                                 readOnly = true
                             )
@@ -771,9 +782,6 @@ fun SkyCatalogDialog(
                             onClick = { showGotoRaDecPopup = true }
                         )
                     }
-
-                    val isLandscape =
-                        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
                     val listContent: @Composable (Modifier) -> Unit = { modifier ->
                         val pageListState = rememberLazyListState()
@@ -856,7 +864,8 @@ fun SkyCatalogDialog(
                                     ) else ListItemDefaults.colors(),
                                     headlineContent = { Text(obj.displayName) },
                                     supportingContent = {
-                                        val localizedType = getLocalizedObjectType(obj.objectType)
+                                        val localizedType =
+                                            getLocalizedObjectType(obj.objectType)
                                         val magText = if (obj.magnitude != null) "Mag: ${
                                             String.format(
                                                 Locale.getDefault(),
@@ -943,7 +952,9 @@ fun SkyCatalogDialog(
                                                     ) {
                                                         Icon(
                                                             imageVector = Default.ArrowUpward,
-                                                            contentDescription = stringResource(R.string.cd_direction),
+                                                            contentDescription = stringResource(
+                                                                R.string.cd_direction
+                                                            ),
                                                             modifier = Modifier
                                                                 .rotate(bearing.toFloat())
                                                                 .size(24.dp)
@@ -1139,35 +1150,35 @@ fun SkyCatalogDialog(
         }
     }
 
-    if (showInfoForCategory != null) {
-        val titleText = showInfoForCategory!!
+    val currentCategoryInfo = showInfoForCategory
+    if (currentCategoryInfo != null) {
         InfoPopup(
-            title = titleText,
+            title = currentCategoryInfo,
             onDismiss = { showInfoForCategory = null }
         ) {
-            val shortCode = categoryToShortCode[titleText]
+            val shortCode = categoryToShortCode[currentCategoryInfo]
             val desc = catalogDescriptions[shortCode] ?: ""
             Text(desc)
         }
     }
 
-    if (showRaDecForObj != null) {
-        val obj = showRaDecForObj!!
+    val currentRaDecObj = showRaDecForObj
+    if (currentRaDecObj != null) {
         InfoPopup(
-            title = obj.displayName,
+            title = currentRaDecObj.displayName,
             onDismiss = { showRaDecForObj = null }
         ) {
             Column {
                 Row {
                     Text(stringResource(R.string.ra_j2000_label), fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(formatRa(obj.ra))
+                    Text(formatRa(currentRaDecObj.ra))
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Row {
                     Text(stringResource(R.string.dec_j2000_label), fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(formatDec(obj.dec))
+                    Text(formatDec(currentRaDecObj.dec))
                 }
             }
         }
