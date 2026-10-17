@@ -1462,6 +1462,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
                 fps as u32,
                 Some(jvm_for_uvc),
                 wrapper_global,
+                auto_mode != 0,
             ));
             *UVC_CAMERA_RECEIVER.lock().unwrap() = Some(uvc_cam.clone());
             let camera: std::sync::Arc<dyn CameraTrait> = uvc_cam;

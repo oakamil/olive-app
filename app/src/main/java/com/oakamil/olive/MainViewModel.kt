@@ -242,7 +242,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (e: Exception) {
                     Log.e("MainViewModel", "Error in updateStats: ${e.message}")
                 }
-                delay(100) // ~10Hz stats
+                delay(SCREEN_UPDATE_INTERVAL_MS)
             }
         }
 
@@ -261,7 +261,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isCameraStuck = true
                     }
                 }
-                delay(33) // ~30Hz frames
+                delay(SCREEN_UPDATE_INTERVAL_MS)
             }
         }
     }
@@ -407,19 +407,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     updateStarSensitivity(50f)
                     updateUvcStacking(1)
 
-                    uvcWrapper?.resetHardwareBrightness()
-                    val defaultBrightness = uvcWrapper?.getHardwareBrightness() ?: 50
-                    setUvcBrightness(defaultBrightness)
-
-                    val hwGain = uvcWrapper?.getHardwareGain()
-                    if (hwGain != null && hwGain in 0..100) {
-                        setGain(hwGain.toFloat())
-                    }
+                    // Auto mode: Kotlin does NOT touch brightness or gain at startup.
+                    // Rust autonomously calibrates baseline brightness, sets gain to 100f,
+                    // and locks calibration. fetchRealtimeSettings() automatically syncs to UI.
                 } else {
                     setExposure(settingsManager.manualExposureUs)
                     updateStarSensitivity(settingsManager.manualStarSensitivity)
                     updateUvcStacking(settingsManager.manualUvcStacking)
-                    setUvcBrightness(settingsManager.manualUvcBrightness)
+
+                    // Manual mode: preserve hardware brightness, apply manual gain
+                    val hwBrightness = uvcWrapper?.getHardwareBrightness()
+                    if (hwBrightness != null && hwBrightness in 0..100) {
+                        currentUvcBrightness = hwBrightness
+                    }
 
                     var savedGain = settingsManager.manualGain
                     if (savedGain < 0f) savedGain = 50f
@@ -800,6 +800,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         const val INVALID_COORD = 200.0
         const val CAMERA_STUCK_TIMEOUT_MS = 5000L
+        const val SCREEN_UPDATE_RATE_HZ = 10
+        const val SCREEN_UPDATE_INTERVAL_MS = 1000L / SCREEN_UPDATE_RATE_HZ
 
         fun isValidCoordinate(lat: Double?, lon: Double?): Boolean {
             if (lat == null || lon == null) return false
