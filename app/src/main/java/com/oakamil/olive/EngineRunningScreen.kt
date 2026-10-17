@@ -1,8 +1,5 @@
 package com.oakamil.olive
 
-import android.app.Activity
-import android.content.res.Configuration
-import android.provider.Settings
 import android.text.format.DateFormat
 import android.util.Log
 import androidx.activity.compose.BackHandler
@@ -92,11 +89,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -163,6 +160,7 @@ private const val LABEL_REDRAW_FOV_DELTA = 0.05
 private const val MAX_LABELS = 20
 private const val UI_SCALE = 1.5f
 
+@OptIn(ExperimentalTextApi::class)
 @Composable
 fun EngineRunningScreen(
     viewModel: MainViewModel,
@@ -189,8 +187,8 @@ fun EngineRunningScreen(
     val isLowPowerMode = viewModel.isLowPowerMode
     var lowPowerTimeoutSeconds by remember { mutableIntStateOf(settingsManager.lowPowerTimeoutSeconds) }
 
-    val context = LocalContext.current
-    val activity = context as? Activity
+    val capabilities = LocalPlatformCapabilities.current
+    val windowController = LocalPlatformWindowController.current
 
     val stats = viewModel.engineStats
 
@@ -287,18 +285,15 @@ fun EngineRunningScreen(
     }
 
     DisposableEffect(isLowPowerMode) {
-        activity?.window?.attributes = activity.window?.attributes?.apply {
-            preferredRefreshRate = if (isLowPowerMode) 30f else 0f
-        }
+        windowController.setPreferredRefreshRate(if (isLowPowerMode) 30f else 0f)
         onDispose { }
     }
 
     DisposableEffect(Unit) {
         onDispose {
             viewModel.isLowPowerMode = false
-            activity?.window?.attributes = activity.window?.attributes?.apply {
-                preferredRefreshRate = 0f
-            }
+            windowController.setPreferredRefreshRate(0f)
+            windowController.restoreScreenBrightness()
         }
     }
 
@@ -312,8 +307,7 @@ fun EngineRunningScreen(
         onToggleEngine()
     }
 
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isLandscape = windowController.isLandscape
 
     Column(
         modifier = Modifier
@@ -495,7 +489,8 @@ fun EngineRunningScreen(
         @Composable
         fun MainVideoContent() {
             val frame = viewModel.latestFrame
-            val roll = stats.roll ?: 0.0 // offsetAngle is for the guidance arrow, not image roll!
+            val roll =
+                stats.roll ?: 0.0 // offsetAngle is for the guidance arrow, not image roll!
             var lastValidUiRotation by remember { mutableFloatStateOf(roll.toFloat()) }
             var uiRotation = lastValidUiRotation
             val lat = viewModel.currentLat
@@ -624,7 +619,12 @@ fun EngineRunningScreen(
             val targetDecVal = stats.targetDec
             if (targetRaVal != null && targetDecVal != null) {
                 val hasTarget = allObjects.any {
-                    AstrometryUtils.angularDistance(it.ra, it.dec, targetRaVal, targetDecVal) < 0.05
+                    AstrometryUtils.angularDistance(
+                        it.ra,
+                        it.dec,
+                        targetRaVal,
+                        targetDecVal
+                    ) < 0.05
                 }
                 if (!hasTarget) {
                     val targetName = targetObjName ?: String.format(
@@ -714,7 +714,10 @@ fun EngineRunningScreen(
                     ) {
                         val density = LocalDensity.current
                         val screenSize =
-                            Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
+                            Size(
+                                constraints.maxWidth.toFloat(),
+                                constraints.maxHeight.toFloat()
+                            )
                         val bW = frame?.width?.toFloat() ?: 1f
                         val bH = frame?.height?.toFloat() ?: 1f
                         val rawTargetPxX = (alignTargetPixel?.first ?: (bW / 2.0)).toFloat()
@@ -830,7 +833,8 @@ fun EngineRunningScreen(
                                         translationX = screenTx + manualOffset.x
                                         translationY = screenTy + manualOffset.y
                                         rotationZ = currentUiRotation
-                                        val mirrorMult = if (stats.isMirrored == true) -1f else 1f
+                                        val mirrorMult =
+                                            if (stats.isMirrored == true) -1f else 1f
                                         scaleX = finalScale * clampedManualScale * mirrorMult
                                         scaleY = finalScale * clampedManualScale
                                     }
@@ -838,7 +842,8 @@ fun EngineRunningScreen(
 
                             val textMeasurer = rememberTextMeasurer()
                             val primaryColor = MaterialTheme.colorScheme.primary
-                            val placedScreenItems = remember { mutableListOf<PlacedScreenItem>() }
+                            val placedScreenItems =
+                                remember { mutableListOf<PlacedScreenItem>() }
                             val labelLayoutState = remember { LabelLayoutState() }
 
                             // Base UI scaling factor to preserve comfortable element sizing previously scaled by the 1.414 rotation safety margin
@@ -871,7 +876,8 @@ fun EngineRunningScreen(
                                                     currentMinManualScale,
                                                     5f
                                                 )
-                                                val effectiveScale = currentFinalScale * manualScale
+                                                val effectiveScale =
+                                                    currentFinalScale * manualScale
                                                 val rotSw =
                                                     abs(currentScreenSize.width * currentCosR) + abs(
                                                         currentScreenSize.height * currentSinR
@@ -924,8 +930,9 @@ fun EngineRunningScreen(
                                             var minDist = 40f * uiScale
 
                                             for (item in placedScreenItems) {
-                                                val hitText = item.labelRect?.inflate(12f * uiScale)
-                                                    ?.contains(tapOffset) == true
+                                                val hitText =
+                                                    item.labelRect?.inflate(12f * uiScale)
+                                                        ?.contains(tapOffset) == true
                                                 if (hitText) {
                                                     closest = item.obj
                                                     break
@@ -994,7 +1001,8 @@ fun EngineRunningScreen(
 
                                 val boresightProjX = cx + (targetPxX - bW / 2f) * baseScale
                                 val boresightProjY = cy + (targetPxY - bH / 2f) * baseScale
-                                val boresightPhysical = toPhysical(boresightProjX, boresightProjY)
+                                val boresightPhysical =
+                                    toPhysical(boresightProjX, boresightProjY)
 
                                 val ra = stats.ra
                                 val dec = stats.dec
@@ -1002,44 +1010,53 @@ fun EngineRunningScreen(
                                     stats.solvedCrop == "Failed" && !stats.isImuEstimate
 
                                 if (ra != null && dec != null && !isPositionStale) {
+                                    val lastRa = labelLayoutState.lastLayoutRa
+                                    val lastDec = labelLayoutState.lastLayoutDec
                                     val distMoved =
-                                        if (labelLayoutState.lastLayoutRa != null && labelLayoutState.lastLayoutDec != null) {
+                                        if (lastRa != null && lastDec != null) {
                                             AstrometryUtils.angularDistance(
                                                 ra,
                                                 dec,
-                                                labelLayoutState.lastLayoutRa!!,
-                                                labelLayoutState.lastLayoutDec!!
+                                                lastRa,
+                                                lastDec
                                             )
                                         } else {
                                             Double.MAX_VALUE
                                         }
 
-                                    val fovChanged = labelLayoutState.lastLayoutFov == null ||
-                                            abs(fov - labelLayoutState.lastLayoutFov!!) >= fov * LABEL_REDRAW_FOV_DELTA
+                                    val lastFov = labelLayoutState.lastLayoutFov
+                                    val fovChanged = lastFov == null ||
+                                            abs(fov - lastFov) >= fov * LABEL_REDRAW_FOV_DELTA
 
                                     val targetChanged =
                                         targetRaVal != labelLayoutState.lastTargetRa ||
                                                 targetDecVal != labelLayoutState.lastTargetDec
 
-                                    val scaleChanged = labelLayoutState.lastManualScale == null ||
-                                            abs(clampedManualScale - labelLayoutState.lastManualScale!!) / labelLayoutState.lastManualScale!! > 0.2f
+                                    val lastScale = labelLayoutState.lastManualScale
+                                    val scaleChanged =
+                                        lastScale == null ||
+                                                abs(clampedManualScale - lastScale) / lastScale > 0.2f
 
-                                    val rotationChanged = labelLayoutState.lastUiRotation == null ||
-                                            abs(currentUiRotation - labelLayoutState.lastUiRotation!!) > 5f
+                                    val lastRot = labelLayoutState.lastUiRotation
+                                    val rotationChanged =
+                                        lastRot == null ||
+                                                abs(currentUiRotation - lastRot) > 5f
 
                                     val objectsChanged =
                                         allObjects.size != labelLayoutState.lastAllObjectsCount
 
-                                    val shouldRelayout = labelLayoutState.activeLabels.isEmpty() ||
-                                            distMoved >= fov * LABEL_REDRAW_FOV_DELTA ||
-                                            fovChanged ||
-                                            targetChanged ||
-                                            scaleChanged ||
-                                            rotationChanged ||
-                                            objectsChanged
+                                    val shouldRelayout =
+                                        labelLayoutState.activeLabels.isEmpty() ||
+                                                distMoved >= fov * LABEL_REDRAW_FOV_DELTA ||
+                                                fovChanged ||
+                                                targetChanged ||
+                                                scaleChanged ||
+                                                rotationChanged ||
+                                                objectsChanged
 
                                     if (shouldRelayout) {
-                                        val visibleCandidates = mutableListOf<VisibleCandidate>()
+                                        val visibleCandidates =
+                                            mutableListOf<VisibleCandidate>()
                                         for (obj in allObjects) {
                                             val isTarget =
                                                 targetRaVal != null && targetDecVal != null && hypot(
@@ -1124,7 +1141,11 @@ fun EngineRunningScreen(
                                             )
 
                                             val collision =
-                                                placedReticleRects.any { it.overlaps(candReticleBox) }
+                                                placedReticleRects.any {
+                                                    it.overlaps(
+                                                        candReticleBox
+                                                    )
+                                                }
                                             if (!collision || cand.isTarget) {
                                                 validCandidates.add(cand)
                                                 placedReticleRects.add(candReticleBox)
@@ -1495,7 +1516,10 @@ fun EngineRunningScreen(
                                         )
                                     ).toFloat()
 
-                                    rotate(degrees = angle, pivot = Offset(clampedX, clampedY)) {
+                                    rotate(
+                                        degrees = angle,
+                                        pivot = Offset(clampedX, clampedY)
+                                    ) {
                                         val arm = 20f * uiScale
                                         val stroke = 6f * uiScale
                                         val clr = Color(0xFF8B0000)
@@ -1536,7 +1560,10 @@ fun EngineRunningScreen(
                                     val clr = Color(0xFF8B0000)
                                     drawLine(
                                         clr,
-                                        Offset(boresightPhysical.x - s, boresightPhysical.y - s),
+                                        Offset(
+                                            boresightPhysical.x - s,
+                                            boresightPhysical.y - s
+                                        ),
                                         Offset(
                                             boresightPhysical.x - s + arm,
                                             boresightPhysical.y - s
@@ -1544,7 +1571,10 @@ fun EngineRunningScreen(
                                     )
                                     drawLine(
                                         clr,
-                                        Offset(boresightPhysical.x - s, boresightPhysical.y - s),
+                                        Offset(
+                                            boresightPhysical.x - s,
+                                            boresightPhysical.y - s
+                                        ),
                                         Offset(
                                             boresightPhysical.x - s,
                                             boresightPhysical.y - s + arm
@@ -1552,7 +1582,10 @@ fun EngineRunningScreen(
                                     )
                                     drawLine(
                                         clr,
-                                        Offset(boresightPhysical.x + s, boresightPhysical.y - s),
+                                        Offset(
+                                            boresightPhysical.x + s,
+                                            boresightPhysical.y - s
+                                        ),
                                         Offset(
                                             boresightPhysical.x + s - arm,
                                             boresightPhysical.y - s
@@ -1560,7 +1593,10 @@ fun EngineRunningScreen(
                                     )
                                     drawLine(
                                         clr,
-                                        Offset(boresightPhysical.x + s, boresightPhysical.y - s),
+                                        Offset(
+                                            boresightPhysical.x + s,
+                                            boresightPhysical.y - s
+                                        ),
                                         Offset(
                                             boresightPhysical.x + s,
                                             boresightPhysical.y - s + arm
@@ -1568,7 +1604,10 @@ fun EngineRunningScreen(
                                     )
                                     drawLine(
                                         clr,
-                                        Offset(boresightPhysical.x - s, boresightPhysical.y + s),
+                                        Offset(
+                                            boresightPhysical.x - s,
+                                            boresightPhysical.y + s
+                                        ),
                                         Offset(
                                             boresightPhysical.x - s + arm,
                                             boresightPhysical.y + s
@@ -1576,7 +1615,10 @@ fun EngineRunningScreen(
                                     )
                                     drawLine(
                                         clr,
-                                        Offset(boresightPhysical.x - s, boresightPhysical.y + s),
+                                        Offset(
+                                            boresightPhysical.x - s,
+                                            boresightPhysical.y + s
+                                        ),
                                         Offset(
                                             boresightPhysical.x - s,
                                             boresightPhysical.y + s - arm
@@ -1584,7 +1626,10 @@ fun EngineRunningScreen(
                                     )
                                     drawLine(
                                         clr,
-                                        Offset(boresightPhysical.x + s, boresightPhysical.y + s),
+                                        Offset(
+                                            boresightPhysical.x + s,
+                                            boresightPhysical.y + s
+                                        ),
                                         Offset(
                                             boresightPhysical.x + s - arm,
                                             boresightPhysical.y + s
@@ -1592,7 +1637,10 @@ fun EngineRunningScreen(
                                     )
                                     drawLine(
                                         clr,
-                                        Offset(boresightPhysical.x + s, boresightPhysical.y + s),
+                                        Offset(
+                                            boresightPhysical.x + s,
+                                            boresightPhysical.y + s
+                                        ),
                                         Offset(
                                             boresightPhysical.x + s,
                                             boresightPhysical.y + s - arm
@@ -1668,7 +1716,13 @@ fun EngineRunningScreen(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     val mag =
-                                        obj.magnitude?.let { String.format(Locale.US, "%.2f", it) }
+                                        obj.magnitude?.let {
+                                            String.format(
+                                                Locale.US,
+                                                "%.2f",
+                                                it
+                                            )
+                                        }
                                             ?: stringResource(R.string.value_not_available)
                                     Text(mag)
                                 }
@@ -1763,31 +1817,13 @@ fun EngineRunningScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) {
-                val initialBrightness = remember {
-                    try {
-                        Settings.System.getFloat(
-                            context.contentResolver,
-                            "screen_brightness_float"
-                        )
-                    } catch (_: Exception) {
-                        try {
-                            Settings.System.getInt(
-                                context.contentResolver,
-                                Settings.System.SCREEN_BRIGHTNESS
-                            ) / 255f
-                        } catch (_: Exception) {
-                            0.5f
-                        }
-                    }
-                }
+                val initialBrightness = remember { windowController.getScreenBrightness() }
                 var screenBrightness by remember { mutableFloatStateOf(initialBrightness) }
                 var brightnessChanged by remember { mutableStateOf(false) }
 
                 LaunchedEffect(screenBrightness, brightnessChanged) {
                     if (brightnessChanged) {
-                        activity?.window?.attributes = activity.window?.attributes?.apply {
-                            this.screenBrightness = screenBrightness
-                        }
+                        windowController.setScreenBrightness(screenBrightness)
                     }
                 }
 
@@ -1815,11 +1851,16 @@ fun EngineRunningScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val formattedTime = when (lowPowerTimeoutSeconds) {
                         0 -> stringResource(R.string.value_off)
-                        in 1..59 -> stringResource(R.string.format_time_sec, lowPowerTimeoutSeconds)
+                        in 1..59 -> stringResource(
+                            R.string.format_time_sec,
+                            lowPowerTimeoutSeconds
+                        )
+
                         else -> {
                             val mins = lowPowerTimeoutSeconds / 60.0
                             val minStr =
-                                if (mins % 1.0 == 0.0) mins.toInt().toString() else mins.toString()
+                                if (mins % 1.0 == 0.0) mins.toInt()
+                                    .toString() else mins.toString()
                             stringResource(R.string.format_time_min, minStr)
                         }
                     }
@@ -1894,6 +1935,7 @@ fun EngineRunningScreen(
                                 }
                             }
                         } catch (_: Exception) {
+                            // Fallback to 1f if camera characteristics JSON parsing fails
                         }
                         mZ
                     }
@@ -2063,21 +2105,23 @@ fun EngineRunningScreen(
                     }
                 )
 
-                // Picture in Picture
-                IconBarItem(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Default.PictureInPicture,
-                    label = if (isEnteringPip) stringResource(id = R.string.btn_entering_pip) else "Picture\nin Picture",
-                    enabled = !isEnteringPip,
-                    onClick = {
-                        isEnteringPip = true
-                        onEnterPipMode()
-                        coroutineScope.launch {
-                            delay(1000)
-                            isEnteringPip = false
+                if (capabilities.supportsPip) {
+                    // Picture in Picture
+                    IconBarItem(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.PictureInPicture,
+                        label = if (isEnteringPip) stringResource(id = R.string.btn_entering_pip) else "Picture\nin Picture",
+                        enabled = !isEnteringPip,
+                        onClick = {
+                            isEnteringPip = true
+                            onEnterPipMode()
+                            coroutineScope.launch {
+                                delay(1000)
+                                isEnteringPip = false
+                            }
                         }
-                    }
-                )
+                    )
+                }
 
                 // Stop Engine
                 IconBarItem(
@@ -2165,7 +2209,8 @@ fun EngineRunningScreen(
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize()
         ) {
-            val isWideLayout = maxWidth >= 600.dp || (maxWidth > maxHeight && maxHeight < 500.dp)
+            val isWideLayout =
+                maxWidth >= 600.dp || (maxWidth > maxHeight && maxHeight < 500.dp)
 
             if (isWideLayout) {
                 Row(

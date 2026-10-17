@@ -23,7 +23,10 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
+    var engine: EngineBridge = OliveEngine
     var uvcWrapper: UvcCameraWrapper? = null
+
+    fun getElapsedRealtimeMs(): Long = android.os.SystemClock.elapsedRealtime()
 
     enum class EngineMode { STOPPED, UVC, NATIVE }
 
@@ -127,7 +130,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val wasLowPower = _isLowPowerMode.value
             if (wasLowPower && !value) {
                 // Reset watchdog timestamp before exiting low-power state
-                lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime()
+                lastFrameReceivedRealtime = getElapsedRealtimeMs()
             }
             _isLowPowerMode.value = value
         }
@@ -150,11 +153,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var frameJob: Job? = null
 
     fun getAvailableInternalCameras(): String {
-        return OliveEngine.getAvailableInternalCameras()
+        return engine.getAvailableInternalCameras()
     }
 
     private fun updateStats() {
-        val json = OliveEngine.getEngineStats()
+        val json = engine.getEngineStats()
         try {
             val obj = JSONObject(json)
             engineStats = EngineStats(
@@ -212,7 +215,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val buffer = frameBuffer ?: return
 
-        val ts = OliveEngine.getLatestFrameInto(buffer, lastFrameTimestamp)
+        val ts = engine.getLatestFrameInto(buffer, lastFrameTimestamp)
         if (ts <= 0L || ts <= lastFrameTimestamp) return
 
         buffer.rewind()
@@ -230,7 +233,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (isActive) {
                 latestFrame = imageBitmapToPublish
                 lastFrameTimestamp = ts
-                lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime()
+                lastFrameReceivedRealtime = getElapsedRealtimeMs()
                 isCameraStuck = false // Reset stuck state if frames resume
             }
         }
@@ -239,11 +242,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun dismissCameraStuckDialog() {
         isCameraStuck = false
         // Offset the timer by 10s so the 5s timeout takes 15s to trigger again
-        lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime() + 10000L
+        lastFrameReceivedRealtime = getElapsedRealtimeMs() + 10000L
     }
 
     private fun startPolling() {
-        lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime()
+        lastFrameReceivedRealtime = getElapsedRealtimeMs()
 
         statsJob?.cancel()
         frameJob?.cancel()
@@ -271,7 +274,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     if (isEngineRunning) {
                         val timeSinceLastFrame =
-                            android.os.SystemClock.elapsedRealtime() - lastFrameReceivedRealtime
+                            getElapsedRealtimeMs() - lastFrameReceivedRealtime
                         if (timeSinceLastFrame > CAMERA_STUCK_TIMEOUT_MS) {
                             isCameraStuck = true
                         }
@@ -299,7 +302,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Reset watchdog state so stale timestamps from a previous session
         // don't immediately trigger a false-positive UI timeout.
         isCameraStuck = false
-        lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime()
+        lastFrameReceivedRealtime = getElapsedRealtimeMs()
         currentLat = lat
         currentLon = lon
         val downsampling = if (cameraId == "demo") 0 else settingsManager.downsampling
@@ -314,7 +317,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val forcedExtractor = if (isAutoSettings) "Olive" else settingsManager.extractor
             val forcedCameraId = if (isAutoSettings && cameraId != "demo") "0" else cameraId
 
-            OliveEngine.startNativeCameraEngine(
+            engine.startNativeCameraEngine(
                 motionSensorMode,
                 forcedExtractor,
                 forcedSensorMode,
@@ -330,7 +333,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.NATIVE
 
-                val gainRange = OliveEngine.getNativeCameraGainRange()
+                val gainRange = engine.getNativeCameraGainRange()
                 val (minG, maxG, defaultG) = if (gainRange != null && gainRange.size >= 3) {
                     Triple(gainRange[0], gainRange[1], gainRange[2])
                 } else {
@@ -360,11 +363,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 supportedHotPixelModes =
-                    OliveEngine.getNativeCameraSupportedHotPixelModes().toList()
+                    engine.getNativeCameraSupportedHotPixelModes().toList()
                 if (!isAutoSettings) {
-                    OliveEngine.setEngineSigma(currentSigma)
+                    engine.setEngineSigma(currentSigma)
                 }
-                OliveEngine.setEngineStrictMatch(false) // Phone camera has wide FOV, needs generous thresholds
+                engine.setEngineStrictMatch(false) // Phone camera has wide FOV, needs generous thresholds
                 startPolling()
             }
         }
@@ -381,16 +384,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Reset watchdog state so stale timestamps from a previous session
         // don't immediately trigger a false-positive UI timeout.
         isCameraStuck = false
-        lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime()
+        lastFrameReceivedRealtime = getElapsedRealtimeMs()
         currentLat = lat
         currentLon = lon
         viewModelScope.launch(Dispatchers.IO) {
             if (isEngineRunning) {
-                OliveEngine.stopEngine()
+                engine.stopEngine()
             }
 
             val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
-            OliveEngine.startExternalCameraEngine(
+            engine.startExternalCameraEngine(
                 uvcWrapper?.previewWidth ?: 640,
                 uvcWrapper?.previewHeight ?: 480,
                 settingsManager.motionSensorMode,
@@ -443,8 +446,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     setGain(savedGain)
                 }
 
-                OliveEngine.setEngineSigma(currentSigma)
-                OliveEngine.setEngineStrictMatch(true) // SC2210 has tight FOV, use strict thresholds
+                engine.setEngineSigma(currentSigma)
+                engine.setEngineStrictMatch(true) // SC2210 has tight FOV, use strict thresholds
 
                 startPolling()
             }
@@ -457,7 +460,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settingsManager.manualExposureUs = us
         }
         viewModelScope.launch(Dispatchers.IO) {
-            OliveEngine.setNativeCameraExposure(us.toInt())
+            engine.setNativeCameraExposure(us.toInt())
         }
     }
 
@@ -468,24 +471,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val sigma = currentSigma
         viewModelScope.launch(Dispatchers.IO) {
-            OliveEngine.setEngineSigma(sigma)
+            engine.setEngineSigma(sigma)
         }
     }
 
     fun fetchRealtimeSettings() {
         if (engineMode == EngineMode.NATIVE) {
             if (settingsManager.cameraSettingsMode == "Auto") {
-                val gain = OliveEngine.getNativeCameraGain()
+                val gain = engine.getNativeCameraGain()
                 if (!gain.isNaN() && gain > 0) {
                     currentGain = gain
                 }
-                val exp = OliveEngine.getNativeCameraExposure()
+                val exp = engine.getNativeCameraExposure()
                 if (exp > 0) {
                     currentExposure = exp.toFloat()
                 }
-                noiseReductionMode = OliveEngine.getNativeCameraNoiseReduction()
+                noiseReductionMode = engine.getNativeCameraNoiseReduction()
             }
-            hotPixelMode = OliveEngine.getNativeCameraHotPixelMode()
+            hotPixelMode = engine.getNativeCameraHotPixelMode()
         } else if (engineMode == EngineMode.UVC) {
             if (settingsManager.cameraSettingsMode == "Auto") {
                 val hwGain = uvcWrapper?.getHardwareGain()
@@ -506,7 +509,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settingsManager.manualZoomRatio = zoom
         }
         viewModelScope.launch(Dispatchers.IO) {
-            OliveEngine.setNativeCameraZoomRatio(zoom)
+            engine.setNativeCameraZoomRatio(zoom)
         }
     }
 
@@ -516,7 +519,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settingsManager.manualGain = gain
         }
         viewModelScope.launch(Dispatchers.IO) {
-            OliveEngine.setNativeCameraGain(gain)
+            engine.setNativeCameraGain(gain)
         }
     }
 
@@ -526,7 +529,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settingsManager.manualFocus = focus
         }
         viewModelScope.launch(Dispatchers.IO) {
-            OliveEngine.setNativeCameraFocus(focus)
+            engine.setNativeCameraFocus(focus)
         }
     }
 
@@ -536,7 +539,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settingsManager.manualNoiseReduction = mode
         }
         viewModelScope.launch(Dispatchers.IO) {
-            OliveEngine.setNativeCameraNoiseReduction(mode)
+            engine.setNativeCameraNoiseReduction(mode)
         }
     }
 
@@ -546,7 +549,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settingsManager.manualHotPixelMode = mode
         }
         viewModelScope.launch(Dispatchers.IO) {
-            OliveEngine.setNativeCameraHotPixelMode(mode)
+            engine.setNativeCameraHotPixelMode(mode)
         }
     }
 
@@ -556,12 +559,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settingsManager.manualUvcBrightness = brightness
         }
         viewModelScope.launch(Dispatchers.IO) {
-            OliveEngine.setNativeCameraBrightness(brightness)
+            engine.setNativeCameraBrightness(brightness)
         }
     }
 
     fun setEnginePaused(paused: Boolean) {
-        OliveEngine.setEnginePaused(paused)
+        engine.setEnginePaused(paused)
     }
 
     fun updateUvcStacking(frames: Int) {
@@ -569,12 +572,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (settingsManager.cameraSettingsMode == "Manual") {
             settingsManager.manualUvcStacking = uvcStacking
         }
-        OliveEngine.updateUvcStacking(uvcStacking)
+        engine.updateUvcStacking(uvcStacking)
     }
 
     fun setGoToTarget(ra: Double, dec: Double, epoch: Double = 2000.0) {
         if (isEngineRunning) {
-            OliveEngine.setGoToTarget(ra, dec, epoch)
+            engine.setGoToTarget(ra, dec, epoch)
             Log.i("MainViewModel", "GoTo Target set in JNI: RA=$ra, Dec=$dec, Epoch=$epoch")
         } else {
             Log.w("MainViewModel", "Engine not running, cannot set GoTo Target: RA=$ra, Dec=$dec")
@@ -583,7 +586,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearGoToTarget() {
         if (isEngineRunning) {
-            OliveEngine.clearGoToTarget()
+            engine.clearGoToTarget()
             Log.i("MainViewModel", "GoTo Target cleared in JNI")
         } else {
             Log.w("MainViewModel", "Engine not running, cannot clear GoTo Target")
@@ -593,13 +596,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun syncTelescope(ra: Double? = null, dec: Double? = null) {
         if (isEngineRunning) {
             if (ra != null && dec != null) {
-                OliveEngine.syncTelescopeToTarget(ra, dec)
+                engine.syncTelescopeToTarget(ra, dec)
                 Log.i(
                     "MainViewModel",
                     "Sync Telescope to target requested in JNI: RA=$ra, Dec=$dec"
                 )
             } else {
-                OliveEngine.syncTelescope()
+                engine.syncTelescope()
                 Log.i("MainViewModel", "Sync Telescope requested in JNI")
             }
         } else {
@@ -609,7 +612,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAlignTargetPixel(x: Double, y: Double) {
         if (isEngineRunning) {
-            OliveEngine.setAlignTargetPixel(x, y)
+            engine.setAlignTargetPixel(x, y)
             Log.i("MainViewModel", "Align Target set in JNI: x=$x, y=$y")
         } else {
             Log.w("MainViewModel", "Engine not running, cannot set align target: x=$x, y=$y")
@@ -624,7 +627,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val bspPath = getApplication<Application>().getDatabasePath("de421.bsp").absolutePath
         val timeMs = System.currentTimeMillis()
 
-        val json = OliveEngine.getPlanets(bspPath, timeMs, lat, lon)
+        val json = engine.getPlanets(bspPath, timeMs, lat, lon)
         if (json.isBlank() || json == "[]") return emptyList()
 
         return try {
@@ -681,7 +684,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val timeMs = System.currentTimeMillis()
         val asteroidsJson = catalogDb.getAsteroidsJson()
 
-        val json = OliveEngine.getAsteroids(bspPath, timeMs, lat, lon, asteroidsJson)
+        val json = engine.getAsteroids(bspPath, timeMs, lat, lon, asteroidsJson)
         if (json.isBlank() || json == "[]") return emptyList()
 
         return try {
@@ -737,7 +740,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val timeMs = System.currentTimeMillis()
         val cometsJson = catalogDb.getCometsJson()
 
-        val json = OliveEngine.getComets(bspPath, timeMs, lat, lon, cometsJson)
+        val json = engine.getComets(bspPath, timeMs, lat, lon, cometsJson)
         if (json.isBlank() || json == "[]") return emptyList()
 
         return try {
@@ -798,7 +801,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopEngineSync() {
-        OliveEngine.stopEngine()
+        engine.stopEngine()
 
         engineMode = EngineMode.STOPPED
         isLowPowerMode = false

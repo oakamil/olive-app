@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
@@ -60,6 +61,7 @@ import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
 
+@OptIn(ExperimentalTextApi::class)
 @Composable
 fun StartScreen(
     viewModel: MainViewModel,
@@ -72,6 +74,7 @@ fun StartScreen(
     onToggleEngine: () -> Unit,
     onRefreshLocation: () -> Unit = {}
 ) {
+    val capabilities = LocalPlatformCapabilities.current
     var cameraSelection by remember { mutableStateOf(activeCameraSelection) }
     var cameraSettingsMode by remember { mutableStateOf(settingsManager.cameraSettingsMode) }
     var internalFps by remember { mutableIntStateOf(settingsManager.internalFps) }
@@ -228,44 +231,46 @@ fun StartScreen(
                 )
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = isCameraConnected) {
-                        if (isCameraConnected) cameraSelection = "external"
-                    }
-                    .padding(vertical = 8.dp)
-            ) {
-                RadioButton(
-                    selected = cameraSelection == "external",
-                    onClick = { if (isCameraConnected) cameraSelection = "external" },
-                    enabled = isCameraConnected,
-                    colors = RadioButtonDefaults.colors(
-                        selectedColor = MaterialTheme.colorScheme.primary,
-                        unselectedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                        disabledSelectedColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
-                        disabledUnselectedColor = MaterialTheme.colorScheme.onBackground.copy(
+            if (capabilities.supportsUsbCamera) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = isCameraConnected) {
+                            if (isCameraConnected) cameraSelection = "external"
+                        }
+                        .padding(vertical = 8.dp)
+                ) {
+                    RadioButton(
+                        selected = cameraSelection == "external",
+                        onClick = { if (isCameraConnected) cameraSelection = "external" },
+                        enabled = isCameraConnected,
+                        colors = RadioButtonDefaults.colors(
+                            selectedColor = MaterialTheme.colorScheme.primary,
+                            unselectedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                            disabledSelectedColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+                            disabledUnselectedColor = MaterialTheme.colorScheme.onBackground.copy(
+                                alpha = 0.38f
+                            )
+                        )
+                    )
+                    Text(
+                        text = stringResource(id = R.string.label_external_camera),
+                        modifier = Modifier.padding(start = 8.dp),
+                        color = if (isCameraConnected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(
                             alpha = 0.38f
                         )
                     )
-                )
-                Text(
-                    text = stringResource(id = R.string.label_external_camera),
-                    modifier = Modifier.padding(start = 8.dp),
-                    color = if (isCameraConnected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(
-                        alpha = 0.38f
-                    )
-                )
-            }
+                }
 
-            if (!isCameraConnected) {
-                Text(
-                    text = stringResource(id = R.string.label_no_external_camera),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 56.dp)
-                )
+                if (!isCameraConnected) {
+                    Text(
+                        text = stringResource(id = R.string.label_no_external_camera),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 56.dp)
+                    )
+                }
             }
 
 
@@ -544,6 +549,7 @@ fun StartScreen(
                             )
                         }
                     } catch (_: Exception) {
+                        // Ignore JSON parsing errors if internal camera FOV metadata is unavailable
                     }
                     list
                 }
