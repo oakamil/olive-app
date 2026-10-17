@@ -116,7 +116,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var currentUvcBrightness by mutableIntStateOf(50)
     var latestFrame by mutableStateOf<ImageBitmap?>(null)
     var isCameraStuck by mutableStateOf(false)
+
+    @Volatile
     private var lastFrameReceivedRealtime = 0L
+
+    private val _isLowPowerMode = mutableStateOf(false)
+    var isLowPowerMode: Boolean
+        get() = _isLowPowerMode.value
+        set(value) {
+            val wasLowPower = _isLowPowerMode.value
+            if (wasLowPower && !value) {
+                // Reset watchdog timestamp before exiting low-power state
+                lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime()
+            }
+            _isLowPowerMode.value = value
+        }
 
     var starSensitivity by mutableFloatStateOf(50f)
     var uvcStacking by mutableIntStateOf(1)
@@ -248,17 +262,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         frameJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
-                try {
-                    fetchLatestFrame()
-                } catch (e: Exception) {
-                    Log.e("MainViewModel", "Error in fetchLatestFrame: ${e.message}")
-                }
+                if (!isLowPowerMode) {
+                    try {
+                        fetchLatestFrame()
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Error in fetchLatestFrame: ${e.message}")
+                    }
 
-                if (isEngineRunning) {
-                    val timeSinceLastFrame =
-                        android.os.SystemClock.elapsedRealtime() - lastFrameReceivedRealtime
-                    if (timeSinceLastFrame > CAMERA_STUCK_TIMEOUT_MS) {
-                        isCameraStuck = true
+                    if (isEngineRunning) {
+                        val timeSinceLastFrame =
+                            android.os.SystemClock.elapsedRealtime() - lastFrameReceivedRealtime
+                        if (timeSinceLastFrame > CAMERA_STUCK_TIMEOUT_MS) {
+                            isCameraStuck = true
+                        }
                     }
                 }
                 delay(SCREEN_UPDATE_INTERVAL_MS)
@@ -785,6 +801,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         OliveEngine.stopEngine()
 
         engineMode = EngineMode.STOPPED
+        isLowPowerMode = false
         stopPolling()
         frameBuffer = null
 

@@ -186,7 +186,7 @@ fun EngineRunningScreen(
     val coroutineScope = rememberCoroutineScope()
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val catalogPainters = rememberCatalogPainters()
-    var isLowPowerMode by remember { mutableStateOf(false) }
+    val isLowPowerMode = viewModel.isLowPowerMode
     var lowPowerTimeoutSeconds by remember { mutableIntStateOf(settingsManager.lowPowerTimeoutSeconds) }
 
     val context = LocalContext.current
@@ -274,24 +274,28 @@ fun EngineRunningScreen(
         )
     }
 
-    LaunchedEffect(lastInteractionTime, showCatalog, lowPowerTimeoutSeconds) {
-        if (!showCatalog && lowPowerTimeoutSeconds > 0) {
+    LaunchedEffect(
+        lastInteractionTime,
+        showCatalog,
+        lowPowerTimeoutSeconds,
+        viewModel.isCameraStuck
+    ) {
+        if (!showCatalog && !viewModel.isCameraStuck && lowPowerTimeoutSeconds > 0) {
             delay(lowPowerTimeoutSeconds * 1000L)
-            isLowPowerMode = true
+            viewModel.isLowPowerMode = true
         }
     }
 
     DisposableEffect(isLowPowerMode) {
-        if (isLowPowerMode) {
-            activity?.window?.attributes = activity.window?.attributes?.apply {
-                preferredRefreshRate = 30f
-            }
-        } else {
-            activity?.window?.attributes = activity.window?.attributes?.apply {
-                preferredRefreshRate = 0f
-            }
+        activity?.window?.attributes = activity.window?.attributes?.apply {
+            preferredRefreshRate = if (isLowPowerMode) 30f else 0f
         }
+        onDispose { }
+    }
+
+    DisposableEffect(Unit) {
         onDispose {
+            viewModel.isLowPowerMode = false
             activity?.window?.attributes = activity.window?.attributes?.apply {
                 preferredRefreshRate = 0f
             }
@@ -320,8 +324,8 @@ fun EngineRunningScreen(
                         awaitPointerEvent(PointerEventPass.Initial)
                         val ev = awaitPointerEvent(PointerEventPass.Initial)
                         lastInteractionTime = System.currentTimeMillis()
-                        if (isLowPowerMode) {
-                            isLowPowerMode = false
+                        if (viewModel.isLowPowerMode) {
+                            viewModel.isLowPowerMode = false
                             ev.changes.forEach { it.consume() }
                         }
                     }
