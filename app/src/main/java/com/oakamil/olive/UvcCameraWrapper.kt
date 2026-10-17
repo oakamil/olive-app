@@ -172,6 +172,12 @@ class UvcCameraWrapper() {
         uvcCameraInstance?.brightness = brightness
     }
 
+    // Used from native
+    @Keep
+    fun getBrightness(): Int {
+        return getHardwareBrightness() ?: 50
+    }
+
     fun release() {
         if (isPreviewRunning) {
             try {
@@ -211,15 +217,6 @@ class UvcCameraWrapper() {
             uvcCameraInstance?.brightness
         } catch (_: Exception) {
             null
-        }
-    }
-
-    fun resetHardwareBrightness() {
-        if (uvcCameraInstance == null) return
-        try {
-            uvcCameraInstance?.resetBrightness()
-        } catch (e: Exception) {
-            Log.e("UvcCameraWrapper", "Failed to reset brightness", e)
         }
     }
 }
