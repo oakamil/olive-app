@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
 fun getIconAndColorForType(objectType: String): Pair<ImageVector, Color> {
@@ -28,7 +29,7 @@ fun getIconAndColorForType(objectType: String): Pair<ImageVector, Color> {
         "Cluster + Nebula" -> Icons.Filled.BlurCircular to defaultColor
         "Nebula" -> Icons.Filled.Air to defaultColor
         "Dark Nebula" -> Icons.Filled.Cloud to Color(0xFF8B0000) // dark red
-        "Double Star" -> Icons.Outlined.AutoAwesome to defaultColor
+        "Multiple Star", "Double Star" -> Icons.Outlined.AutoAwesome to defaultColor
         "Galaxy" -> Icons.Outlined.Storm to defaultColor
         "Asteroid" -> Icons.Filled.Cookie to defaultColor
         "Planet", "Moon" -> CustomIcons.Planet to defaultColor
@@ -147,36 +148,66 @@ val catalogCategories = listOf(
     "Harris", "RASC Doubles", "EGC"
 )
 
+const val BRIGHT_STAR_PRIORITY_MAG_LIMIT = 4.0
+
 fun getCatalogPriority(obj: CatalogObject): Int {
     return when (obj.catalogLabel) {
-        "Planet", "Moon", "Solar System" -> catalogCategories.indexOf("Solar System")
-        "Str" -> catalogCategories.indexOf("Bright Stars")
-        "M" -> catalogCategories.indexOf("Messier")
-        "C" -> catalogCategories.indexOf("Caldwell")
-        "Col" -> catalogCategories.indexOf("Collinder")
-        "NGC" -> catalogCategories.indexOf("NGC")
-        "IC" -> catalogCategories.indexOf("IC")
-        "Asteroid" -> catalogCategories.indexOf("Asteroids")
-        "Comet" -> catalogCategories.indexOf("Comets")
-        "H" -> catalogCategories.indexOf("Herschel 400")
-        "B" -> catalogCategories.indexOf("Barnard")
-        "Sh2" -> catalogCategories.indexOf("Sharpless")
-        "Abl" -> catalogCategories.indexOf("Abell")
-        "Arp" -> catalogCategories.indexOf("Arp")
-        "SaA" -> catalogCategories.indexOf("SAC Asterisms")
-        "SaM" -> catalogCategories.indexOf("SAC Doubles")
-        "SaR" -> catalogCategories.indexOf("SAC Red Stars")
-        "Ta2" -> catalogCategories.indexOf("TAAS 200")
-        "Har" -> catalogCategories.indexOf("Harris")
-        "RDS" -> catalogCategories.indexOf("RASC Doubles")
-        "EGC" -> catalogCategories.indexOf("EGC")
+        "Planet", "Moon", "Solar System" -> 2
+        "Str" -> {
+            val mag = obj.magnitude ?: 99.0
+            if (mag <= BRIGHT_STAR_PRIORITY_MAG_LIMIT) 3 else 100
+        }
+
+        "M" -> 4
+        "C" -> 5
+        "Col" -> 6
+        "NGC" -> 7
+        "IC" -> 8
+        "Asteroid" -> 9
+        "Comet" -> 10
+        "H" -> 11
+        "B" -> 12
+        "Sh2" -> 13
+        "Abl" -> 14
+        "Arp" -> 15
+        "SaA" -> 16
+        "SaM" -> 17
+        "SaR" -> 18
+        "Ta2" -> 19
+        "Har" -> 20
+        "RDS" -> 21
+        "EGC" -> 22
         else -> {
             when (obj.objectType) {
-                "Planet", "Moon" -> catalogCategories.indexOf("Solar System")
-                "Asteroid" -> catalogCategories.indexOf("Asteroids")
-                "Comet" -> catalogCategories.indexOf("Comets")
+                "Planet", "Moon" -> 2
+                "Asteroid" -> 9
+                "Comet" -> 10
+                "Star", "Multiple Star" -> {
+                    val mag = obj.magnitude ?: 99.0
+                    if (mag <= BRIGHT_STAR_PRIORITY_MAG_LIMIT) 3 else 100
+                }
+
                 else -> 999
             }
         }
     }
+}
+
+@Composable
+fun getLocalizedObjectType(type: String): String = when (type) {
+    "Star" -> stringResource(R.string.type_star)
+    "Galaxy" -> stringResource(R.string.type_galaxy)
+    "Nebula" -> stringResource(R.string.type_nebula)
+    "Cluster" -> stringResource(R.string.type_cluster)
+    "Planet" -> stringResource(R.string.type_planet)
+    "Asterism" -> stringResource(R.string.type_asterism)
+    "Cluster + Nebula" -> stringResource(R.string.type_cluster_nebula)
+    "Dark Nebula" -> stringResource(R.string.type_dark_nebula)
+    "Multiple Star", "Double Star" -> stringResource(R.string.type_multiple_star)
+    "Globular Cluster" -> stringResource(R.string.type_globular_cluster)
+    "Open Cluster" -> stringResource(R.string.type_open_cluster)
+    "Planetary Nebula" -> stringResource(R.string.type_planetary_nebula)
+    "Asteroid" -> stringResource(R.string.type_asteroid)
+    "Comet" -> stringResource(R.string.type_comet)
+    else -> type
 }

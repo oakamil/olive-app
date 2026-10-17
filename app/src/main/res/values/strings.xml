@@ -189,7 +189,7 @@
     <string name="type_asterism">Asterism</string>
     <string name="type_cluster_nebula">Cluster + Nebula</string>
     <string name="type_dark_nebula">Dark Nebula</string>
-    <string name="type_double_star">Double Star</string>
+    <string name="type_multiple_star">Multiple Star</string>
     <string name="type_globular_cluster">Globular Cluster</string>
     <string name="type_open_cluster">Open Cluster</string>
     <string name="type_planetary_nebula">Planetary Nebula</string>

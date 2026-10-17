@@ -106,11 +106,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun getRequiredEnginePermissions(): List<String> {
-        val permissions = mutableListOf<String>()
-        if (activeCameraSelection == "internal") {
-            permissions.add(Manifest.permission.CAMERA)
-        }
-        return permissions
+        return mutableListOf(Manifest.permission.CAMERA)
     }
 
     private val requestCameraLauncher =
@@ -898,7 +894,7 @@ class MainActivity : ComponentActivity() {
                     Log.e("OliveUI", "UVC camera selected but none connected!")
                     viewModel.stopEngineSync()
                 }
-            } else if (activeCameraSelection == "demo" || ContextCompat.checkSelfPermission(
+            } else if (ContextCompat.checkSelfPermission(
                     this@MainActivity,
                     Manifest.permission.CAMERA
                 ) == PackageManager.PERMISSION_GRANTED

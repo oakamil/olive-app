@@ -126,9 +126,9 @@ fun SkyCatalogDialog(
         "Cluster + Nebula",
         "Comet",
         "Dark Nebula",
-        "Double Star",
         "Galaxy",
         "Globular Cluster",
+        "Multiple Star",
         "Nebula",
         "Open Cluster",
         "Planet",
@@ -201,211 +201,190 @@ fun SkyCatalogDialog(
     val catalogDescriptions = remember { viewModel.catalogDb.getCatalogDescriptions() }
     var showInfoForCategory by remember { mutableStateOf<String?>(null) }
 
-    val fetchResults = { offset: Int ->
-        if (!isLoading) {
-            if (offset == 0) {
-                searchResults = emptyList()
+    val performFetch: suspend (Int) -> List<CatalogObject> = { offset ->
+        val lat = viewModel.currentLat
+        val lon = viewModel.currentLon
+        val timeMs = System.currentTimeMillis()
+        val checkVisibility =
+            visibilityFilter == "Above Horizon" && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0
+
+        var lstRad = 0.0
+        var sinLat = 0.0
+        var cosLat = 0.0
+        if (lat != null && lon != null) {
+            val daysSinceJ2000 = (timeMs - 946728000000.0) / 86400000.0
+            var gmst = (280.46061837 + 360.98564736629 * daysSinceJ2000) % 360.0
+            if (gmst < 0) gmst += 360.0
+            var lst = (gmst + lon) % 360.0
+            if (lst < 0) lst += 360.0
+            lstRad = Math.toRadians(lst)
+            val latRad = Math.toRadians(lat)
+            sinLat = sin(latRad)
+            cosLat = cos(latRad)
+        }
+
+        val isAllTypes = typeFilters.size >= catalogTypeOptions.size
+        val allPlanets =
+            if (selectedCategory == "Solar System" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects") viewModel.getPlanets() else emptyList()
+        val filteredPlanets = allPlanets.filter { p ->
+            var passes = true
+            if (checkVisibility) {
+                val altCondition =
+                    sin(p.dec * Math.PI / 180.0) * sinLat + cos(
+                        p.dec * Math.PI / 180.0
+                    ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
+                if (altCondition <= 0) passes = false
             }
-            isLoading = true
-            coroutineScope.launch {
-                val results = withContext(Dispatchers.IO) {
-                    val lat = viewModel.currentLat
-                    val lon = viewModel.currentLon
-                    val timeMs = System.currentTimeMillis()
-                    val checkVisibility =
-                        visibilityFilter == "Above Horizon" && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0
+            if (!isAllTypes && "Planet" !in typeFilters && p.objectType !in typeFilters) passes =
+                false
+            if (searchQuery.isNotBlank() && !p.displayName.contains(
+                    searchQuery,
+                    ignoreCase = true
+                )
+            ) passes = false
+            val limit = magLimit
+            if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
+                false
+            if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
+                if (angularDistance(currentRa, currentDec, p.ra, p.dec) > 10.0) passes =
+                    false
+            }
+            passes
+        }
 
-                    var lstRad = 0.0
-                    var sinLat = 0.0
-                    var cosLat = 0.0
-                    if (lat != null && lon != null) {
-                        val daysSinceJ2000 = (timeMs - 946728000000.0) / 86400000.0
-                        var gmst = (280.46061837 + 360.98564736629 * daysSinceJ2000) % 360.0
-                        if (gmst < 0) gmst += 360.0
-                        var lst = (gmst + lon) % 360.0
-                        if (lst < 0) lst += 360.0
-                        lstRad = Math.toRadians(lst)
-                        val latRad = Math.toRadians(lat)
-                        sinLat = sin(latRad)
-                        cosLat = cos(latRad)
-                    }
+        val sqlResults =
+            if (selectedCategory == "Solar System" || selectedCategory == "Asteroids" || selectedCategory == "Comets") {
+                emptyList()
+            } else {
+                val filter = when (selectedCategory) {
+                    "Nearest Objects" -> "Nearest Objects"
+                    "All Objects" -> null
+                    else -> categoryToShortCode[selectedCategory]
+                }
+                viewModel.catalogDb.searchObjects(
+                    searchQuery = searchQuery,
+                    catalogFilter = filter,
+                    sortBy = sortBy,
+                    magLimit = magLimit,
+                    typeFilters = if (isAllTypes) null else typeFilters,
+                    visibilityFilter = visibilityFilter,
+                    lat = viewModel.currentLat,
+                    lon = viewModel.currentLon,
+                    targetRa = currentRa,
+                    targetDec = currentDec,
+                    limit = 300,
+                    offset = offset
+                )
+            }
 
-                    val isAllTypes = typeFilters.size >= catalogTypeOptions.size
-                    val allPlanets =
-                        if (selectedCategory == "Solar System" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects") viewModel.getPlanets() else emptyList()
-                    val filteredPlanets = allPlanets.filter { p ->
-                        var passes = true
-                        if (checkVisibility) {
-                            val altCondition =
-                                sin(p.dec * Math.PI / 180.0) * sinLat + cos(
-                                    p.dec * Math.PI / 180.0
-                                ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
-                            if (altCondition <= 0) passes = false
-                        }
-                        if (!isAllTypes && "Planet" !in typeFilters && p.objectType !in typeFilters) passes =
-                            false
-                        if (searchQuery.isNotBlank() && !p.displayName.contains(
-                                searchQuery,
-                                ignoreCase = true
+        if (offset == 0 && (selectedCategory == "Solar System" || selectedCategory == "Asteroids" || selectedCategory == "Comets" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects")) {
+            val allAsteroids =
+                if (selectedCategory == "Asteroids" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects") viewModel.getAsteroids() else emptyList()
+            val filteredAsteroids = allAsteroids.filter { p ->
+                var passes = true
+                if (checkVisibility) {
+                    val altCondition =
+                        sin(p.dec * Math.PI / 180.0) * sinLat + cos(
+                            p.dec * Math.PI / 180.0
+                        ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
+                    if (altCondition <= 0) passes = false
+                }
+                if (!isAllTypes && "Asteroid" !in typeFilters && p.objectType !in typeFilters) passes =
+                    false
+                if (searchQuery.isNotBlank() && !p.displayName.contains(
+                        searchQuery,
+                        ignoreCase = true
+                    )
+                ) passes = false
+                val limit = magLimit
+                if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
+                    false
+                if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
+                    if (angularDistance(
+                            currentRa,
+                            currentDec,
+                            p.ra,
+                            p.dec
+                        ) > 10.0
+                    ) passes =
+                        false
+                }
+                passes
+            }
+
+            val allComets =
+                if (selectedCategory == "Comets" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects") viewModel.getComets() else emptyList()
+            val filteredComets = allComets.filter { p ->
+                var passes = true
+                if (checkVisibility) {
+                    val altCondition =
+                        sin(p.dec * Math.PI / 180.0) * sinLat + cos(
+                            p.dec * Math.PI / 180.0
+                        ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
+                    if (altCondition <= 0) passes = false
+                }
+                if (!isAllTypes && "Comet" !in typeFilters && p.objectType !in typeFilters) passes =
+                    false
+                if (searchQuery.isNotBlank() && !p.displayName.contains(
+                        searchQuery,
+                        ignoreCase = true
+                    )
+                ) passes = false
+                val limit = magLimit
+                if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
+                    false
+                if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
+                    if (angularDistance(
+                            currentRa,
+                            currentDec,
+                            p.ra,
+                            p.dec
+                        ) > 10.0
+                    ) passes =
+                        false
+                }
+                passes
+            }
+
+            val combinedList =
+                (filteredPlanets + filteredAsteroids + filteredComets + sqlResults).toMutableList()
+            when (sortBy) {
+                "distance" -> {
+                    if (currentRa != null && currentDec != null) {
+                        combinedList.sortBy {
+                            angularDistance(
+                                currentRa,
+                                currentDec,
+                                it.ra,
+                                it.dec
                             )
-                        ) passes = false
-                        val limit = magLimit
-                        if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
-                            false
-                        if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
-                            if (angularDistance(currentRa, currentDec, p.ra, p.dec) > 10.0) passes =
-                                false
                         }
-                        passes
-                    }
-
-                    val sqlResults =
-                        if (selectedCategory == "Solar System" || selectedCategory == "Asteroids" || selectedCategory == "Comets") {
-                            emptyList()
-                        } else {
-                            val filter = when (selectedCategory) {
-                                "Nearest Objects" -> "Nearest Objects"
-                                "All Objects" -> null
-                                else -> categoryToShortCode[selectedCategory]
-                            }
-                            viewModel.catalogDb.searchObjects(
-                                searchQuery = searchQuery,
-                                catalogFilter = filter,
-                                sortBy = sortBy,
-                                magLimit = magLimit,
-                                typeFilters = if (isAllTypes) null else typeFilters,
-                                visibilityFilter = visibilityFilter,
-                                lat = viewModel.currentLat,
-                                lon = viewModel.currentLon,
-                                targetRa = currentRa,
-                                targetDec = currentDec,
-                                limit = 300,
-                                offset = offset
-                            )
-                        }
-
-                    if (offset == 0 && (selectedCategory == "Solar System" || selectedCategory == "Asteroids" || selectedCategory == "Comets" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects")) {
-                        val allAsteroids =
-                            if (selectedCategory == "Asteroids" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects") viewModel.getAsteroids() else emptyList()
-                        val filteredAsteroids = allAsteroids.filter { p ->
-                            var passes = true
-                            if (checkVisibility) {
-                                val altCondition =
-                                    sin(p.dec * Math.PI / 180.0) * sinLat + cos(
-                                        p.dec * Math.PI / 180.0
-                                    ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
-                                if (altCondition <= 0) passes = false
-                            }
-                            if (!isAllTypes && "Asteroid" !in typeFilters && p.objectType !in typeFilters) passes =
-                                false
-                            if (searchQuery.isNotBlank() && !p.displayName.contains(
-                                    searchQuery,
-                                    ignoreCase = true
-                                )
-                            ) passes = false
-                            val limit = magLimit
-                            if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
-                                false
-                            if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
-                                if (angularDistance(
-                                        currentRa,
-                                        currentDec,
-                                        p.ra,
-                                        p.dec
-                                    ) > 10.0
-                                ) passes =
-                                    false
-                            }
-                            passes
-                        }
-
-                        val allComets =
-                            if (selectedCategory == "Comets" || selectedCategory == "All Objects" || selectedCategory == "Nearest Objects") viewModel.getComets() else emptyList()
-                        val filteredComets = allComets.filter { p ->
-                            var passes = true
-                            if (checkVisibility) {
-                                val altCondition =
-                                    sin(p.dec * Math.PI / 180.0) * sinLat + cos(
-                                        p.dec * Math.PI / 180.0
-                                    ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
-                                if (altCondition <= 0) passes = false
-                            }
-                            if (!isAllTypes && "Comet" !in typeFilters && p.objectType !in typeFilters) passes =
-                                false
-                            if (searchQuery.isNotBlank() && !p.displayName.contains(
-                                    searchQuery,
-                                    ignoreCase = true
-                                )
-                            ) passes = false
-                            val limit = magLimit
-                            if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
-                                false
-                            if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
-                                if (angularDistance(
-                                        currentRa,
-                                        currentDec,
-                                        p.ra,
-                                        p.dec
-                                    ) > 10.0
-                                ) passes =
-                                    false
-                            }
-                            passes
-                        }
-
-                        val combinedList =
-                            (filteredPlanets + filteredAsteroids + filteredComets + sqlResults).toMutableList()
-                        when (sortBy) {
-                            "distance" -> {
-                                if (currentRa != null && currentDec != null) {
-                                    combinedList.sortBy {
-                                        angularDistance(
-                                            currentRa,
-                                            currentDec,
-                                            it.ra,
-                                            it.dec
-                                        )
-                                    }
-                                }
-                            }
-
-                            "name" -> {
-                                combinedList.sortWith(compareBy<CatalogObject> { it.commonName.isNullOrEmpty() }.thenBy { it.commonName }
-                                    .thenBy { it.catalogEntry.toIntOrNull() ?: Int.MAX_VALUE })
-                            }
-
-                            "catalog ID" -> {
-                                combinedList.sortWith(compareBy<CatalogObject> {
-                                    getCatalogPriority(
-                                        it
-                                    )
-                                }
-                                    .thenBy { if (it.objectType == "Planet" || it.objectType == "Moon") it.id else 0 }
-                                    .thenBy { it.catalogEntry.toIntOrNull() ?: Int.MAX_VALUE }
-                                    .thenBy { it.catalogEntry })
-                            }
-
-                            "brightness" -> {
-                                combinedList.sortWith(compareBy<CatalogObject> { it.magnitude == null }.thenBy { it.magnitude })
-                            }
-                        }
-                        combinedList
-                    } else {
-                        sqlResults
                     }
                 }
 
-                if (offset == 0) {
-                    searchResults = results
-                    if (results.isNotEmpty()) {
-                        activeListState?.scrollToItem(0)
-                    }
-                } else {
-                    searchResults = searchResults + results
+                "name" -> {
+                    combinedList.sortWith(compareBy<CatalogObject> { it.commonName.isNullOrEmpty() }.thenBy { it.commonName }
+                        .thenBy { it.catalogEntry.toIntOrNull() ?: Int.MAX_VALUE })
                 }
-                hasMore = results.size == 300
-                isLoading = false
+
+                "catalog ID" -> {
+                    combinedList.sortWith(compareBy<CatalogObject> {
+                        getCatalogPriority(
+                            it
+                        )
+                    }
+                        .thenBy { if (it.objectType == "Planet" || it.objectType == "Moon") it.id else 0 }
+                        .thenBy { it.catalogEntry.toIntOrNull() ?: Int.MAX_VALUE }
+                        .thenBy { it.catalogEntry })
+                }
+
+                "brightness" -> {
+                    combinedList.sortWith(compareBy<CatalogObject> { it.magnitude == null }.thenBy { it.magnitude })
+                }
             }
+            combinedList
+        } else {
+            sqlResults
         }
     }
 
@@ -418,9 +397,31 @@ fun SkyCatalogDialog(
         visibilityFilter,
         cometsRefreshTrigger
     ) {
-        // Cancel ongoing coroutine calls if needed by checking a token, or let it override. 
-        // We will just call fetchResults(0) whenever a filter changes.
-        fetchResults(0)
+        isLoading = true
+        searchResults = emptyList()
+        val results = withContext(Dispatchers.IO) {
+            performFetch(0)
+        }
+        searchResults = results
+        if (results.isNotEmpty()) {
+            activeListState?.scrollToItem(0)
+        }
+        hasMore = results.size == 300
+        isLoading = false
+    }
+
+    val loadMore = {
+        if (!isLoading && hasMore) {
+            isLoading = true
+            coroutineScope.launch {
+                val results = withContext(Dispatchers.IO) {
+                    performFetch(searchResults.size)
+                }
+                searchResults = searchResults + results
+                hasMore = results.size == 300
+                isLoading = false
+            }
+        }
     }
 
     BackHandler {
@@ -686,25 +687,7 @@ fun SkyCatalogDialog(
                                                 Icon(iVec, contentDescription = null, tint = iCol)
                                             },
                                             text = {
-                                                Text(
-                                                    when (type) {
-                                                        "Star" -> stringResource(R.string.type_star)
-                                                        "Galaxy" -> stringResource(R.string.type_galaxy)
-                                                        "Nebula" -> stringResource(R.string.type_nebula)
-                                                        "Cluster" -> stringResource(R.string.type_cluster)
-                                                        "Planet" -> stringResource(R.string.type_planet)
-                                                        "Asterism" -> stringResource(R.string.type_asterism)
-                                                        "Cluster + Nebula" -> stringResource(R.string.type_cluster_nebula)
-                                                        "Dark Nebula" -> stringResource(R.string.type_dark_nebula)
-                                                        "Double Star" -> stringResource(R.string.type_double_star)
-                                                        "Globular Cluster" -> stringResource(R.string.type_globular_cluster)
-                                                        "Open Cluster" -> stringResource(R.string.type_open_cluster)
-                                                        "Planetary Nebula" -> stringResource(R.string.type_planetary_nebula)
-                                                        "Asteroid" -> stringResource(R.string.type_asteroid)
-                                                        "Comet" -> stringResource(R.string.type_comet)
-                                                        else -> type
-                                                    }
-                                                )
+                                                Text(getLocalizedObjectType(type))
                                             },
                                             onClick = {
                                                 typeFilters = if (isSelected) {
@@ -840,14 +823,20 @@ fun SkyCatalogDialog(
                                     }
                                 }
                             }
+                            val currentRa = currentRaState.value
+                            val currentDec = currentDecState.value
+                            val currentTimeMs = currentTimeMsState.longValue
+                            val lat = viewModel.currentLat
+                            val lon = viewModel.currentLon
+                            val telescopeAltAz =
+                                if (currentRa != null && currentDec != null && lat != null && lon != null) {
+                                    raDecToAltAz(currentRa, currentDec, lat, lon, currentTimeMs)
+                                } else null
+
                             items(
                                 searchResults,
-                                key = { it.id.toString() + it.catalogEntry }) { obj ->
-                                val currentRa = currentRaState.value
-                                val currentDec = currentDecState.value
-                                val currentTimeMs = currentTimeMsState.longValue
-                                val lat = viewModel.currentLat
-                                val lon = viewModel.currentLon
+                                key = { "${it.catalogLabel}_${it.id}_${it.catalogEntry}" }
+                            ) { obj ->
                                 var isBelowHorizon = false
                                 if (visibilityFilter == "All Objects" && lat != null && lon != null) {
                                     val objAltAz = raDecToAltAz(
@@ -867,23 +856,7 @@ fun SkyCatalogDialog(
                                     ) else ListItemDefaults.colors(),
                                     headlineContent = { Text(obj.displayName) },
                                     supportingContent = {
-                                        val localizedType = when (obj.objectType) {
-                                            "Star" -> stringResource(R.string.type_star)
-                                            "Galaxy" -> stringResource(R.string.type_galaxy)
-                                            "Nebula" -> stringResource(R.string.type_nebula)
-                                            "Cluster" -> stringResource(R.string.type_cluster)
-                                            "Planet" -> stringResource(R.string.type_planet)
-                                            "Asterism" -> stringResource(R.string.type_asterism)
-                                            "Cluster + Nebula" -> stringResource(R.string.type_cluster_nebula)
-                                            "Dark Nebula" -> stringResource(R.string.type_dark_nebula)
-                                            "Double Star" -> stringResource(R.string.type_double_star)
-                                            "Globular Cluster" -> stringResource(R.string.type_globular_cluster)
-                                            "Open Cluster" -> stringResource(R.string.type_open_cluster)
-                                            "Planetary Nebula" -> stringResource(R.string.type_planetary_nebula)
-                                            "Asteroid" -> stringResource(R.string.type_asteroid)
-                                            "Comet" -> stringResource(R.string.type_comet)
-                                            else -> obj.objectType
-                                        }
+                                        val localizedType = getLocalizedObjectType(obj.objectType)
                                         val magText = if (obj.magnitude != null) "Mag: ${
                                             String.format(
                                                 Locale.getDefault(),
@@ -912,7 +885,7 @@ fun SkyCatalogDialog(
                                                     overflow = TextOverflow.Ellipsis
                                                 )
                                             }
-                                            if (obj.designation.isNotBlank()) {
+                                            if (obj.designation.isNotBlank() && obj.displayName != obj.designation) {
                                                 Text(
                                                     text = obj.designation,
                                                     maxLines = 1,
@@ -940,11 +913,7 @@ fun SkyCatalogDialog(
                                                         .padding(4.dp)
                                                 )
                                             } else {
-                                                if (currentRa != null && currentDec != null && lat != null && lon != null) {
-                                                    val telescopeAltAz = raDecToAltAz(
-                                                        currentRa,
-                                                        currentDec, lat, lon, currentTimeMs
-                                                    )
+                                                if (telescopeAltAz != null && currentRa != null && currentDec != null && lat != null && lon != null) {
                                                     val objAltAz =
                                                         raDecToAltAz(
                                                             obj.ra,
@@ -1058,7 +1027,7 @@ fun SkyCatalogDialog(
                                         if (isLoading) {
                                             CircularProgressIndicator()
                                         } else {
-                                            Button(onClick = { fetchResults(searchResults.size) }) {
+                                            Button(onClick = { loadMore() }) {
                                                 Text(stringResource(R.string.btn_load_more))
                                             }
                                         }
@@ -1376,6 +1345,9 @@ fun formatRa(raDegrees: Double): String {
     if (m == 60) {
         m = 0
         h += 1
+    }
+    if (h >= 24) {
+        h %= 24
     }
     return String.format(Locale.US, "%02dh %02dm %02ds", h, m, s)
 }

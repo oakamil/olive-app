@@ -131,7 +131,13 @@ class SettingsManager(context: Context) {
                 return MainViewModel.DEFAULT_CATALOG_TYPE_FILTERS
             }
             val set = prefs.getStringSet("catalog_type_filters", null)
-            return set?.toSet() ?: MainViewModel.DEFAULT_CATALOG_TYPE_FILTERS
+                ?: return MainViewModel.DEFAULT_CATALOG_TYPE_FILTERS
+            if ("Double Star" in set) {
+                val migrated = (set - "Double Star" + "Multiple Star").toSet()
+                prefs.edit { putStringSet("catalog_type_filters", migrated) }
+                return migrated
+            }
+            return set.toSet()
         }
         set(value) = prefs.edit { putStringSet("catalog_type_filters", value.toSet()) }
 
