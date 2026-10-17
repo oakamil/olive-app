@@ -29,6 +29,7 @@ Saguaro Astronomy Club Double Star Database Version 4.0
 SAC Red Stars Database Version 2.0
 
 ## Str
+The Yale Catalogue of Bright Stars consists of all stars of magnitude 6.5 or brighter
 
 ## EGC
 Catalog of Extra-Galactic Globular Clusters. This catalog features globulars associated with nearby galaxies and are visible through modest amateur telescopes, mostly in Andromeda.

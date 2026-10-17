@@ -110,7 +110,7 @@ for obj_id, names in names_raw.items():
 
 type_map = {
     'Gx': ('Galaxy', 'galaxy'),
-    'D*': ('Double Star', 'star'),
+    'D*': ('Multiple Star', 'star'),
     'PN': ('Planetary Nebula', 'nebula'),
     '*': ('Star', 'star'),
     'OC': ('Open Cluster', 'cluster'),
@@ -118,9 +118,59 @@ type_map = {
     'Nb': ('Nebula', 'nebula'),
     'Ast': ('Asterism', 'star'),
     'C+N': ('Cluster + Nebula', 'cluster'),
-    '***': ('Triple Star', 'star'),
+    '***': ('Multiple Star', 'star'),
     'DN': ('Dark Nebula', 'nebula')
 }
+
+IAU_CONSTELLATIONS = {
+    'And': 'Andromeda', 'Ant': 'Antlia', 'Aps': 'Apus', 'Aql': 'Aquila',
+    'Aqr': 'Aquarius', 'Ara': 'Ara', 'Ari': 'Aries', 'Aur': 'Auriga',
+    'Boo': 'Bootes', 'Cae': 'Caelum', 'Cam': 'Camelopardalis', 'Cap': 'Capricornus',
+    'Car': 'Carina', 'Cas': 'Cassiopeia', 'Cen': 'Centaurus', 'Cep': 'Cepheus',
+    'Cet': 'Cetus', 'Cha': 'Chamaeleon', 'Cir': 'Circinus', 'CMa': 'Canis Major',
+    'CMi': 'Canis Minor', 'Cnc': 'Cancer', 'Col': 'Columba', 'Com': 'Coma Berenices',
+    'CrA': 'Corona Australis', 'CrB': 'Corona Borealis', 'Crt': 'Crater', 'Cru': 'Crux',
+    'Crv': 'Corvus', 'CVn': 'Canes Venatici', 'Cyg': 'Cygnus', 'Del': 'Delphinus',
+    'Dor': 'Dorado', 'Dra': 'Draco', 'Equ': 'Equuleus', 'Eri': 'Eridanus',
+    'For': 'Fornax', 'Gem': 'Gemini', 'Gru': 'Grus', 'Her': 'Hercules',
+    'Hor': 'Horologium', 'Hya': 'Hydra', 'Hyi': 'Hydrus', 'Ind': 'Indus',
+    'Lac': 'Lacerta', 'Leo': 'Leo', 'Lep': 'Lepus', 'Lib': 'Libra',
+    'LMi': 'Leo Minor', 'Lup': 'Lupus', 'Lyn': 'Lynx', 'Lyr': 'Lyra',
+    'Men': 'Mensa', 'Mic': 'Microscopium', 'Mon': 'Monoceros', 'Mus': 'Musca',
+    'Nor': 'Norma', 'Oct': 'Octans', 'Oph': 'Ophiuchus', 'Ori': 'Orion',
+    'Pav': 'Pavo', 'Peg': 'Pegasus', 'Per': 'Perseus', 'Phe': 'Phoenix',
+    'Pic': 'Pictor', 'PsA': 'Piscis Austrinus', 'Psc': 'Pisces', 'Pup': 'Puppis',
+    'Pyx': 'Pyxis', 'Ret': 'Reticulum', 'Scl': 'Sculptor', 'Sco': 'Scorpius',
+    'Sct': 'Scutum', 'Ser': 'Serpens', 'Ser1': 'Serpens', 'Ser2': 'Serpens',
+    'Sex': 'Sextans', 'Sge': 'Sagitta', 'Sgr': 'Sagittarius', 'Tau': 'Taurus',
+    'Tel': 'Telescopium', 'TrA': 'Triangulum Australe', 'Tri': 'Triangulum',
+    'Tuc': 'Tucana', 'UMa': 'Ursa Major', 'UMi': 'Ursa Minor', 'Vel': 'Vela',
+    'Vir': 'Virgo', 'Vol': 'Volans', 'Vul': 'Vulpecula'
+}
+iau_map_lower = {k.lower(): v for k, v in IAU_CONSTELLATIONS.items()}
+
+GREEK_MAP = {
+    'α': 'Alpha', 'β': 'Beta', 'γ': 'Gamma', 'δ': 'Delta', 'ε': 'Epsilon',
+    'ζ': 'Zeta', 'η': 'Eta', 'θ': 'Theta', 'ι': 'Iota', 'κ': 'Kappa',
+    'λ': 'Lambda', 'μ': 'Mu', 'ν': 'Nu', 'ξ': 'Xi', 'ο': 'Omicron',
+    'π': 'Pi', 'ρ': 'Rho', 'σ': 'Sigma', 'τ': 'Tau', 'υ': 'Upsilon',
+    'φ': 'Phi', 'χ': 'Chi', 'ψ': 'Psi', 'ω': 'Omega'
+}
+SUPERSCRIPT_MAP = {
+    '¹': ' 1', '²': ' 2', '³': ' 3', '⁴': ' 4', '⁵': ' 5', 
+    '⁶': ' 6', '⁷': ' 7', '⁸': ' 8', '⁹': ' 9'
+}
+
+def expand_bayer(bayer_f):
+    if not bayer_f:
+        return bayer_f
+    for k, v in SUPERSCRIPT_MAP.items():
+        bayer_f = bayer_f.replace(k, v)
+    for k, v in GREEK_MAP.items():
+        if bayer_f.startswith(k):
+            bayer_f = v + bayer_f[len(k):]
+            break
+    return re.sub(r'\s+', ' ', bayer_f).strip()
 
 # 3. Copy objects from PiFinder
 cursor_in.execute("""
@@ -148,7 +198,8 @@ for row in rows:
         except Exception:
             pass
     
-    insert_data.append((cat_code, str(seq), ra, dec, const, t_full, t_broad, mag_val, sb, size, common_name, desc, None))
+    const_full = iau_map_lower.get(const.strip().lower(), const) if const else None
+    insert_data.append((cat_code, str(seq), ra, dec, const_full, t_full, t_broad, mag_val, sb, size, common_name, desc, None))
 
 cursor_out.executemany("""
     INSERT INTO catalog (
@@ -158,37 +209,78 @@ cursor_out.executemany("""
 
 conn_in.close()
 
-# 4. Insert Str stars from stars.csv
-with open("stars.csv", "r", encoding="utf-8") as f:
-    reader = csv.DictReader(f)
-    for row in reader:
-        id_str = row["ID"]
-        common_name = row["CommonName"]
-        ra_str = row["RA"]
-        dec_str = row["Dec"]
-        mag_str = row["Magnitude"]
+# 4. Insert Str stars from bsc5-all.json
+bsc5_path = "bsc5-all.json" if os.path.exists("bsc5-all.json") else os.path.expanduser("~/Downloads/bsc5-all.json")
+if not os.path.exists(bsc5_path):
+    print(f"BSC5 catalog file not found at: {bsc5_path}")
+    sys.exit(1)
 
-        ra_parts = ra_str.split()
-        if len(ra_parts) >= 2:
-            hh = float(ra_parts[0])
-            mm = float(ra_parts[1])
-            ss = float(ra_parts[2]) if len(ra_parts) >= 3 else 0.0
-            ra_deg = (hh + mm / 60.0 + ss / 3600.0) * 15.0
-        else:
-            ra_deg = 0.0
+with open(bsc5_path, "r", encoding="utf-8") as f:
+    bsc_data = json.load(f)
 
-        dec_deg = float(dec_str.replace(' ', ''))
+star_rows = []
+for obj in bsc_data:
+    hr_id = obj.get("HR")
+    if not hr_id: continue
 
+    # Bulletproof coordinates with DE- sign handling
+    rah = float(obj.get("RAh", 0)) if obj.get("RAh") else 0.0
+    ram = float(obj.get("RAm", 0)) if obj.get("RAm") else 0.0
+    ras = float(obj.get("RAs", 0)) if obj.get("RAs") else 0.0
+    ra_deg = (rah + ram / 60.0 + ras / 3600.0) * 15.0
+
+    de_sign = -1.0 if obj.get("DE-") == "-" else 1.0
+    ded = float(obj.get("DEd", 0)) if obj.get("DEd") else 0.0
+    dem = float(obj.get("DEm", 0)) if obj.get("DEm") else 0.0
+    des = float(obj.get("DEs", 0)) if obj.get("DEs") else 0.0
+    dec_deg = de_sign * (ded + dem / 60.0 + des / 3600.0)
+
+    try:
+        vmag = obj.get("Vmag")
+        mag = float(vmag) if vmag is not None else None
+    except (ValueError, TypeError):
+        mag = None
+
+    # Resilient Multiple Star detection
+    is_multiple = False
+    mult_cnt = obj.get("MultCnt")
+    if mult_cnt:
         try:
-            mag = float(mag_str)
-        except ValueError:
-            mag = None
+            if int(mult_cnt) > 1:
+                is_multiple = True
+        except (ValueError, TypeError):
+            pass
+    if not is_multiple and (obj.get("Multiple") or obj.get("ADS")):
+        is_multiple = True
+    if not is_multiple and "Notes" in obj and isinstance(obj["Notes"], list):
+        for note in obj["Notes"]:
+            cat = note.get("Category", "").lower()
+            if "double" in cat or "multiple" in cat or "binar" in cat:
+                is_multiple = True
+                break
 
-        cursor_out.execute("""
-            INSERT INTO catalog (
-                catalog_label, catalog_entry, ra, dec, object_type, broad_category, magnitude, common_name
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, ('Str', id_str, ra_deg, dec_deg, 'Star', 'Star', mag, common_name))
+    obj_type = "Multiple Star" if is_multiple else "Star"
+    common_name = obj.get("Common")
+
+    bayer_f = obj.get("BayerF")
+    flamsteed_f = obj.get("FlamsteedF")
+    if bayer_f:
+        catalog_entry = expand_bayer(bayer_f)
+    elif flamsteed_f:
+        catalog_entry = flamsteed_f.strip()
+    else:
+        catalog_entry = f"HR {hr_id}"
+
+    const_abbr = obj.get("Constellation")
+    const_full = iau_map_lower.get(const_abbr.strip().lower(), const_abbr.strip()) if const_abbr else None
+
+    star_rows.append(('Str', catalog_entry, ra_deg, dec_deg, const_full, obj_type, 'Star', mag, common_name))
+
+cursor_out.executemany("""
+    INSERT INTO catalog (
+        catalog_label, catalog_entry, ra, dec, constellation, object_type, broad_category, magnitude, common_name
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+""", star_rows)
 
 # 5. Create catalog_descriptions table
 cursor_out.execute("DROP TABLE IF EXISTS catalog_descriptions")
@@ -207,8 +299,6 @@ for section in sections:
     label = lines[0].strip()
     description = lines[1].strip() if len(lines) > 1 else ""
     cursor_out.execute("INSERT INTO catalog_descriptions (catalog_label, description) VALUES (?, ?)", (label, description))
-
-cursor_out.execute("INSERT INTO catalog_descriptions (catalog_label, description) VALUES (?, ?)", ('Str', ''))
 
 # 6. Create asteroids table
 cursor_out.execute("DROP TABLE IF EXISTS asteroids")

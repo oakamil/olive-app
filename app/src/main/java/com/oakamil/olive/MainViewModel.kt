@@ -786,12 +786,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshComets(onComplete: () -> Unit, onNetworkError: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            val success = catalogDb.refreshComets {
-                onNetworkError()
-            }
-            if (success) {
-                launch(Dispatchers.Main) {
+            val success = catalogDb.refreshComets()
+            launch(Dispatchers.Main) {
+                if (success) {
                     onComplete()
+                } else {
+                    onNetworkError()
                 }
             }
         }
@@ -827,7 +827,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val DEFAULT_CATALOG_TYPE_FILTERS = setOf(
             "Asterism", "Asteroid", "Cluster + Nebula", "Comet", "Dark Nebula",
-            "Double Star", "Galaxy", "Globular Cluster", "Nebula", "Open Cluster",
+            "Galaxy", "Globular Cluster", "Multiple Star", "Nebula", "Open Cluster",
             "Planet", "Planetary Nebula", "Star"
         )
     }
