@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Olive App"
 include(":app")
+include(":shared")

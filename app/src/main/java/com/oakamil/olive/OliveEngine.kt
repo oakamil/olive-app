@@ -1,13 +1,15 @@
 package com.oakamil.olive
 
+import androidx.compose.ui.graphics.asImageBitmap
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 object OliveEngine : EngineBridge {
     init {
         System.loadLibrary("olive_jni")
     }
 
-    external override fun initJni(filesDir: String)
+    external fun initJni(filesDir: String)
 
     external override fun startNativeCameraEngine(
         motionSensorMode: Int,
@@ -34,10 +36,10 @@ object OliveEngine : EngineBridge {
         settingsManager: SettingsManager,
         autoMode: Boolean,
         uvcFps: Int,
-        uvcWrapper: UvcCameraWrapper?
+        uvcWrapper: UvcCameraHandler?
     )
 
-    external override fun pushExternalUvcFrame(
+    external fun pushExternalUvcFrame(
         buffer: ByteBuffer,
         width: Int,
         height: Int,
@@ -64,14 +66,39 @@ object OliveEngine : EngineBridge {
     external override fun setNativeCameraHotPixelMode(mode: Int)
     external override fun getNativeCameraHotPixelMode(): Int
     external override fun getAvailableInternalCameras(): String
-    external override fun getLatestFrameInto(buffer: ByteBuffer, lastTimestamp: Long): Long
+
+    external fun getLatestFrameInto(buffer: ByteBuffer, lastTimestamp: Long): Long
+
+    private var frameBuffer: ByteBuffer? = null
+
+    override fun getLatestFrame(lastTimestamp: Long): LatestFrame? {
+        val targetSize = 52 * 1024 * 1024
+        if (frameBuffer == null || frameBuffer!!.capacity() < targetSize) {
+            frameBuffer = ByteBuffer.allocateDirect(targetSize).order(ByteOrder.LITTLE_ENDIAN)
+        }
+        val buffer = frameBuffer ?: return null
+
+        val ts = getLatestFrameInto(buffer, lastTimestamp)
+        if (ts <= 0L || ts <= lastTimestamp) return null
+
+        buffer.rewind()
+        val width = buffer.int
+        val height = buffer.int
+        val pixelCount = width * height
+        if (pixelCount !in 1..25000000) return null
+
+        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        bitmap.copyPixelsFromBuffer(buffer)
+        return LatestFrame(ts, bitmap.asImageBitmap())
+    }
+
     external override fun setEnginePaused(paused: Boolean)
     external override fun setEngineSigma(sigma: Float)
     external override fun setEngineStrictMatch(strict: Boolean)
     external override fun updateUvcStacking(frames: Int)
     external override fun processTelescopeData(data: ByteArray): ByteArray?
     external override fun resetTelescopeServer()
-    external override fun handleAlpacaConnection(fd: Int)
+    external fun handleAlpacaConnection(fd: Int)
     external override fun getPlanets(
         bspPath: String,
         timeMs: Long,

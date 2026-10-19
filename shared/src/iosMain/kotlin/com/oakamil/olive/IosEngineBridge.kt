@@ -1,0 +1,359 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
+package com.oakamil.olive
+
+import androidx.compose.ui.graphics.asComposeImageBitmap
+import com.oakamil.olive.cinterop.olive_ios_clear_goto_target
+import com.oakamil.olive.cinterop.olive_ios_free_bytes
+import com.oakamil.olive.cinterop.olive_ios_free_string
+import com.oakamil.olive.cinterop.olive_ios_get_asteroids
+import com.oakamil.olive.cinterop.olive_ios_get_available_cameras
+import com.oakamil.olive.cinterop.olive_ios_get_camera_exposure
+import com.oakamil.olive.cinterop.olive_ios_get_camera_focus
+import com.oakamil.olive.cinterop.olive_ios_get_camera_gain
+import com.oakamil.olive.cinterop.olive_ios_get_camera_zoom
+import com.oakamil.olive.cinterop.olive_ios_get_comets
+import com.oakamil.olive.cinterop.olive_ios_get_engine_stats
+import com.oakamil.olive.cinterop.olive_ios_get_latest_frame_into
+import com.oakamil.olive.cinterop.olive_ios_get_planets
+import com.oakamil.olive.cinterop.olive_ios_process_telescope_data
+import com.oakamil.olive.cinterop.olive_ios_reset_telescope_server
+import com.oakamil.olive.cinterop.olive_ios_set_align_target_pixel
+import com.oakamil.olive.cinterop.olive_ios_set_camera_exposure
+import com.oakamil.olive.cinterop.olive_ios_set_camera_focus
+import com.oakamil.olive.cinterop.olive_ios_set_camera_gain
+import com.oakamil.olive.cinterop.olive_ios_set_camera_zoom
+import com.oakamil.olive.cinterop.olive_ios_set_engine_paused
+import com.oakamil.olive.cinterop.olive_ios_set_engine_sigma
+import com.oakamil.olive.cinterop.olive_ios_set_engine_strict_match
+import com.oakamil.olive.cinterop.olive_ios_set_goto_target
+import com.oakamil.olive.cinterop.olive_ios_start_engine
+import com.oakamil.olive.cinterop.olive_ios_start_hardware_capture
+import com.oakamil.olive.cinterop.olive_ios_stop_engine
+import com.oakamil.olive.cinterop.olive_ios_stop_hardware_capture
+import com.oakamil.olive.cinterop.olive_ios_sync_telescope
+import com.oakamil.olive.cinterop.olive_ios_sync_telescope_to_target
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.UByteVar
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.pin
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.reinterpret
+import kotlinx.cinterop.toKString
+import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.value
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorType
+import org.jetbrains.skia.ImageInfo
+import platform.posix.size_tVar
+
+@OptIn(ExperimentalForeignApi::class)
+class IosEngineBridge : EngineBridge {
+
+    private val frameCapacity = 2048 * 1536 * 4 + 8
+    private val frameRawBuffer = ByteArray(frameCapacity)
+
+
+    override fun startNativeCameraEngine(
+        motionSensorMode: Int,
+        extractor: String,
+        sensorMode: String,
+        internalCameraId: String,
+        downsampleMode: Int,
+        lat: Double,
+        lon: Double,
+        timeMs: Long,
+        settingsManager: SettingsManager,
+        autoMode: Boolean
+    ) {
+        val isDemo = internalCameraId == "demo"
+        if (!isDemo) {
+            olive_ios_start_hardware_capture(internalCameraId)
+        }
+        val camerasJson = getAvailableInternalCameras()
+        var selectedFov = 65.0f
+        var selectedWidth = 2016u
+        var selectedHeight = 1512u
+        try {
+            val jsonArray = JSONArray(camerasJson)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                if (obj.getString("id") == internalCameraId) {
+                    val f = obj.getDouble("fov").toFloat()
+                    if (f >= 10.0f) {
+                        selectedFov = f
+                    }
+                    if (obj.has("width") && obj.has("height")) {
+                        val w = obj.optInt("width", 2016)
+                        val h = obj.optInt("height", 1512)
+                        if (w > 0 && h > 0) {
+                            selectedWidth = w.toUInt()
+                            selectedHeight = h.toUInt()
+                        }
+                    }
+                    break
+                }
+            }
+        } catch (_: Exception) {
+        }
+
+        val started = olive_ios_start_engine(
+            selectedWidth,
+            selectedHeight,
+            if (isDemo) 0 else motionSensorMode,
+            if (extractor.isNotEmpty()) extractor else null,
+            if (isDemo) 0 else downsampleMode,
+            lat,
+            lon,
+            timeMs,
+            if (isDemo) false else autoMode,
+            selectedFov,
+            internalCameraId
+        )
+        check(started) { "Failed to initialize Olive iOS engine (check database path and permissions)" }
+    }
+
+    override fun startExternalCameraEngine(
+        width: Int,
+        height: Int,
+        motionSensorMode: Int,
+        extractor: String,
+        downsampleMode: Int,
+        lat: Double,
+        lon: Double,
+        timeMs: Long,
+        settingsManager: SettingsManager,
+        autoMode: Boolean,
+        uvcFps: Int,
+        uvcWrapper: UvcCameraHandler?
+    ) {
+        // USB cameras supported on iPadOS 17+ in Phase 4
+    }
+
+    override fun stopEngine() {
+        olive_ios_stop_engine()
+        olive_ios_stop_hardware_capture()
+    }
+
+    override fun getEngineStats(): String {
+        val ptr = olive_ios_get_engine_stats() ?: return "{}"
+        val stats = ptr.toKString()
+        olive_ios_free_string(ptr)
+        return stats
+    }
+
+    override fun setNativeCameraExposure(exposureUs: Int) {
+        olive_ios_set_camera_exposure(exposureUs)
+    }
+
+    override fun setNativeCameraGain(gain: Float) {
+        olive_ios_set_camera_gain(gain)
+    }
+
+    override fun setNativeCameraFocus(distance: Float) {
+        olive_ios_set_camera_focus(distance)
+    }
+
+    override fun setNativeCameraNoiseReduction(mode: Int) {
+        // Handled automatically by AVFoundation
+    }
+
+    override fun getNativeCameraExposure(): Int {
+        return olive_ios_get_camera_exposure()
+    }
+
+    override fun getNativeCameraGainRange(): FloatArray {
+        return floatArrayOf(50f, 3200f, 3200f)
+    }
+
+    override fun getNativeCameraGain(): Float {
+        return olive_ios_get_camera_gain()
+    }
+
+    override fun getNativeCameraNoiseReduction(): Int {
+        return 0
+    }
+
+    override fun getNativeCameraBrightnessRange(): IntArray? {
+        return null
+    }
+
+    override fun getNativeCameraBrightness(): Int {
+        return 0
+    }
+
+    override fun setNativeCameraBrightness(brightness: Int) {
+        // Not used on iOS
+    }
+
+    override fun setNativeCameraZoomRatio(zoom: Float) {
+        olive_ios_set_camera_zoom(zoom)
+    }
+
+    override fun getNativeCameraZoomRatio(): Float {
+        return olive_ios_get_camera_zoom()
+    }
+
+    override fun getNativeCameraFocus(): Float {
+        return olive_ios_get_camera_focus()
+    }
+
+    override fun getNativeCameraSupportedHotPixelModes(): IntArray {
+        return intArrayOf(0)
+    }
+
+    override fun setNativeCameraHotPixelMode(mode: Int) {
+        // Not used on iOS
+    }
+
+    override fun getNativeCameraHotPixelMode(): Int {
+        return 0
+    }
+
+    override fun getAvailableInternalCameras(): String {
+        val ptr = olive_ios_get_available_cameras()
+            ?: return "[{\"id\":\"0\",\"name\":\"Back Camera (Wide)\",\"fov\":65.0,\"supports_raw\":false}]"
+        val res = ptr.toKString()
+        platform.posix.free(ptr)
+        return res
+    }
+
+    override fun getLatestFrame(lastTimestamp: Long): LatestFrame? {
+        return frameRawBuffer.usePinned { pinned ->
+            val ptr = pinned.addressOf(0).reinterpret<UByteVar>()
+            val newTimestamp = olive_ios_get_latest_frame_into(
+                ptr,
+                frameCapacity.toULong(),
+                lastTimestamp
+            )
+            if (newTimestamp <= lastTimestamp || newTimestamp == 0L) {
+                return null
+            }
+
+            val width = (frameRawBuffer[0].toInt() and 0xFF) or
+                    ((frameRawBuffer[1].toInt() and 0xFF) shl 8) or
+                    ((frameRawBuffer[2].toInt() and 0xFF) shl 16) or
+                    ((frameRawBuffer[3].toInt() and 0xFF) shl 24)
+            val height = (frameRawBuffer[4].toInt() and 0xFF) or
+                    ((frameRawBuffer[5].toInt() and 0xFF) shl 8) or
+                    ((frameRawBuffer[6].toInt() and 0xFF) shl 16) or
+                    ((frameRawBuffer[7].toInt() and 0xFF) shl 24)
+
+            if (width <= 0 || height <= 0 || width > 4096 || height > 4096) {
+                return null
+            }
+
+            val pixelByteCount = width * height * 4
+            if (pixelByteCount + 8 > frameCapacity) {
+                return null
+            }
+
+            val imageInfo = ImageInfo(width, height, ColorType.RGBA_8888, ColorAlphaType.PREMUL)
+            val pixels = frameRawBuffer.copyOfRange(8, 8 + pixelByteCount)
+
+            val skiaBitmap = org.jetbrains.skia.Bitmap()
+            skiaBitmap.installPixels(imageInfo, pixels, width * 4)
+            skiaBitmap.setImmutable()
+            val composeBitmap = skiaBitmap.asComposeImageBitmap()
+            LatestFrame(newTimestamp, composeBitmap)
+        }
+    }
+
+    override fun setEnginePaused(paused: Boolean) {
+        olive_ios_set_engine_paused(paused)
+    }
+
+    override fun setEngineSigma(sigma: Float) {
+        olive_ios_set_engine_sigma(sigma)
+    }
+
+    override fun setEngineStrictMatch(strict: Boolean) {
+        olive_ios_set_engine_strict_match(strict)
+    }
+
+    override fun updateUvcStacking(frames: Int) {
+        // External UVC stacking
+    }
+
+    override fun processTelescopeData(data: ByteArray): ByteArray? {
+        if (data.isEmpty()) return null
+        return memScoped {
+            val outLenVar = alloc<size_tVar>()
+            val dataPinned = data.pin()
+            try {
+                val resPtr = olive_ios_process_telescope_data(
+                    dataPinned.addressOf(0).reinterpret(),
+                    data.size.toULong(),
+                    outLenVar.ptr
+                ) ?: return null
+                val outLen = outLenVar.value.toInt()
+                val result = resPtr.readBytes(outLen)
+                olive_ios_free_bytes(resPtr, outLenVar.value)
+                result
+            } finally {
+                dataPinned.unpin()
+            }
+        }
+    }
+
+    override fun resetTelescopeServer() {
+        olive_ios_reset_telescope_server()
+    }
+
+    override fun getPlanets(bspPath: String, timeMs: Long, lat: Double, lon: Double): String {
+        val ptr = olive_ios_get_planets(bspPath, timeMs, lat, lon) ?: return "[]"
+        val res = ptr.toKString()
+        olive_ios_free_string(ptr)
+        return res
+    }
+
+    override fun getAsteroids(
+        bspPath: String,
+        timeMs: Long,
+        lat: Double,
+        lon: Double,
+        asteroidsJson: String
+    ): String {
+        val ptr = olive_ios_get_asteroids(bspPath, timeMs, lat, lon, asteroidsJson) ?: return "[]"
+        val res = ptr.toKString()
+        olive_ios_free_string(ptr)
+        return res
+    }
+
+    override fun getComets(
+        bspPath: String,
+        timeMs: Long,
+        lat: Double,
+        lon: Double,
+        jsonArray: String
+    ): String {
+        val ptr = olive_ios_get_comets(bspPath, timeMs, lat, lon, jsonArray) ?: return "[]"
+        val res = ptr.toKString()
+        olive_ios_free_string(ptr)
+        return res
+    }
+
+    override fun setGoToTarget(ra: Double, dec: Double, epoch: Double) {
+        olive_ios_set_goto_target(ra, dec, epoch)
+    }
+
+    override fun clearGoToTarget() {
+        olive_ios_clear_goto_target()
+    }
+
+    override fun setAlignTargetPixel(x: Double, y: Double) {
+        olive_ios_set_align_target_pixel(x, y)
+    }
+
+    override fun syncTelescope() {
+        olive_ios_sync_telescope()
+    }
+
+    override fun syncTelescopeToTarget(ra: Double, dec: Double) {
+        olive_ios_sync_telescope_to_target(ra, dec)
+    }
+}
