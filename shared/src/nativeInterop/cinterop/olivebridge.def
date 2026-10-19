@@ -1,0 +1,3 @@
+headers = OliveBridge.h
+headerFilter = **
+package = com.oakamil.olive.cinterop

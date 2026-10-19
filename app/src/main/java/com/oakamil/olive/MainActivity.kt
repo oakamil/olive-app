@@ -38,7 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import com.oakamil.olive.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -48,6 +48,8 @@ import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.jiangdg.usb.USBMonitor
 import kotlinx.coroutines.CancellationException
@@ -80,7 +82,18 @@ class MainActivity : ComponentActivity() {
     private var currentScreen by mutableStateOf("main")
     private var isInPipMode by mutableStateOf(false)
 
-    private val viewModel: MainViewModel by viewModels()
+    private val viewModel: MainViewModel by viewModels {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                val storage = SharedPreferencesStorage(applicationContext)
+                val capabilities = AndroidPlatformCapabilities
+                val engine = OliveEngine
+                val catalogDb = CatalogDatabaseHelper(applicationContext)
+                return MainViewModel(storage, capabilities, engine, catalogDb) as T
+            }
+        }
+    }
     private var detectedIpAddress by mutableStateOf("127.0.0.1")
     private var showPermissionDialog by mutableStateOf(false)
     private var showLocationPermissionDialog by mutableStateOf(false)
@@ -241,6 +254,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         hideSystemUI()
 
         lifecycleScope.launch(Dispatchers.IO) {
@@ -248,7 +265,7 @@ class MainActivity : ComponentActivity() {
             OliveEngine.initJni(filesDir.absolutePath)
         }
 
-        settingsManager = SettingsManager(this.applicationContext)
+        settingsManager = viewModel.settingsManager
         activeCameraSelection = settingsManager.cameraSelection
 
         settingsManager.savedLocation?.let { (lat, lon) ->
@@ -322,10 +339,10 @@ class MainActivity : ComponentActivity() {
                             val isPermanentlyDenied = !shouldShowRationale && !isFirstRun
 
                             NightVisionDialog(
-                                title = stringResource(id = R.string.title_permissions_required),
-                                text = stringResource(id = R.string.desc_permissions_required),
+                                title = stringResource(Res.string.title_permissions_required),
+                                text = stringResource(Res.string.desc_permissions_required),
                                 confirmButtonText = stringResource(
-                                    id = if (isPermanentlyDenied) R.string.btn_open_settings else R.string.btn_continue
+                                    if (isPermanentlyDenied) Res.string.btn_open_settings else Res.string.btn_continue
                                 ),
                                 onConfirm = { handlePermissionRequest() },
                                 onDismiss = {
@@ -337,9 +354,9 @@ class MainActivity : ComponentActivity() {
 
                         if (showLocationPermissionDialog) {
                             NightVisionDialog(
-                                title = stringResource(id = R.string.title_location_permission_required),
-                                text = stringResource(id = R.string.desc_location_permission_required),
-                                confirmButtonText = stringResource(id = R.string.btn_open_settings),
+                                title = stringResource(Res.string.title_location_permission_required),
+                                text = stringResource(Res.string.desc_location_permission_required),
+                                confirmButtonText = stringResource(Res.string.btn_open_settings),
                                 onConfirm = {
                                     showLocationPermissionDialog = false
                                     val intent =
@@ -354,9 +371,9 @@ class MainActivity : ComponentActivity() {
 
                         if (showLocationServicesDisabledDialog) {
                             NightVisionDialog(
-                                title = stringResource(id = R.string.title_location_services_disabled),
-                                text = stringResource(id = R.string.desc_location_services_disabled),
-                                confirmButtonText = stringResource(id = R.string.btn_open_settings),
+                                title = stringResource(Res.string.title_location_services_disabled),
+                                text = stringResource(Res.string.desc_location_services_disabled),
+                                confirmButtonText = stringResource(Res.string.btn_open_settings),
                                 onConfirm = {
                                     showLocationServicesDisabledDialog = false
                                     try {
@@ -366,16 +383,16 @@ class MainActivity : ComponentActivity() {
                                     } catch (_: Exception) {
                                     }
                                 },
-                                dismissButtonText = stringResource(id = R.string.btn_cancel),
+                                dismissButtonText = stringResource(Res.string.btn_cancel),
                                 onDismiss = { showLocationServicesDisabledDialog = false }
                             )
                         }
 
                         if (showBatteryOptimizationDialog) {
                             NightVisionDialog(
-                                title = getString(R.string.title_battery_optimization),
-                                text = getString(R.string.body_battery_optimization),
-                                confirmButtonText = getString(R.string.btn_open_settings),
+                                title = stringResource(Res.string.title_battery_optimization),
+                                text = stringResource(Res.string.body_battery_optimization),
+                                confirmButtonText = stringResource(Res.string.btn_open_settings),
                                 onConfirm = {
                                     showBatteryOptimizationDialog = false
                                     getPreferences(MODE_PRIVATE).edit {
@@ -393,7 +410,7 @@ class MainActivity : ComponentActivity() {
                                     } catch (_: Exception) {
                                     }
                                 },
-                                dismissButtonText = getString(R.string.btn_skip),
+                                dismissButtonText = stringResource(Res.string.btn_skip),
                                 onDismiss = {
                                     showBatteryOptimizationDialog = false
                                     getPreferences(MODE_PRIVATE).edit {
@@ -409,11 +426,11 @@ class MainActivity : ComponentActivity() {
 
                         if (showLocationRequiredDialog) {
                             InfoPopup(
-                                title = stringResource(R.string.title_observer_location),
+                                title = stringResource(Res.string.title_observer_location),
                                 onDismiss = { showLocationRequiredDialog = false }
                             ) {
                                 Text(
-                                    stringResource(R.string.info_location),
+                                    stringResource(Res.string.info_location),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
@@ -478,13 +495,13 @@ class MainActivity : ComponentActivity() {
                                 onDismissRequest = { /* Force user choice */ },
                                 title = {
                                     Text(
-                                        getString(R.string.title_camera_stuck),
+                                        stringResource(Res.string.title_camera_stuck),
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                 },
                                 text = {
                                     Text(
-                                        getString(R.string.body_camera_stuck),
+                                        stringResource(Res.string.body_camera_stuck),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
@@ -507,12 +524,12 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     ) {
-                                        Text(getString(R.string.btn_restart))
+                                        Text(stringResource(Res.string.btn_restart))
                                     }
                                 },
                                 dismissButton = {
                                     OutlinedButton(onClick = { viewModel.dismissCameraStuckDialog() }) {
-                                        Text(getString(R.string.btn_cancel))
+                                        Text(stringResource(Res.string.btn_cancel))
                                     }
                                 },
                                 containerColor = MaterialTheme.colorScheme.surface
@@ -591,6 +608,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        hideSystemUI()
         if (settingsManager.locationMode == "Auto" && hasLocationPermission && !viewModel.hasValidLocation) {
             fetchLocation(isManualRefresh = false)
         }

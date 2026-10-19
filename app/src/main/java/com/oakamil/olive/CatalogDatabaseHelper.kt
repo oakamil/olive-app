@@ -18,47 +18,11 @@ import java.net.URL
 import java.util.zip.GZIPInputStream
 import kotlin.math.cos
 import kotlin.math.sin
-
-data class CatalogObject(
-    val id: Int,
-    val catalogLabel: String,
-    val catalogEntry: String,
-    val ra: Double,
-    val dec: Double,
-    val constellation: String?,
-    val objectType: String,
-    val broadCategory: String,
-    val magnitude: Double?,
-    val surfaceBrightness: Double?,
-    val angularSize: String?,
-    val commonName: String?,
-    val description: String?,
-    val copyright: String?
-) {
-    val isFakeCommonName: Boolean
-        get() = commonName != null && commonName.matches(Regex("^[a-zA-Z0-9]+\\s+([IVX]+\\s+)?\\d+[a-zA-Z]?$"))
-
-    val displayName: String
-        get() = if (commonName.isNullOrBlank() || isFakeCommonName) designation else commonName
-
-    val designation: String
-        get() = when (catalogLabel) {
-            "Str", "Planet", "Solar System" -> {
-                catalogEntry
-            }
-
-            in listOf("M", "NGC", "IC", "C", "Col") -> {
-                catalogLabel + catalogEntry
-            }
-
-            else -> {
-                "$catalogLabel $catalogEntry"
-            }
-        }
-}
-
 class CatalogDatabaseHelper(private val context: Context) :
-    SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
+    SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION), CatalogDatabase {
+
+    override fun getBspPath(): String = context.getDatabasePath("de421.bsp").absolutePath
+
 
     companion object {
         private const val DB_NAME = "catalog.db"
@@ -108,7 +72,6 @@ class CatalogDatabaseHelper(private val context: Context) :
             database.execSQL("CREATE INDEX IF NOT EXISTS idx_broad_category ON catalog(broad_category)")
             database.execSQL("CREATE INDEX IF NOT EXISTS idx_type ON catalog(object_type)")
             database.execSQL("CREATE INDEX IF NOT EXISTS idx_constellation ON catalog(constellation)")
-            database.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS catalog_spatial USING rtree(id, minX, maxX, minY, maxY, minZ, maxZ)")
             database.close()
             Log.i(TAG, "Indexes built successfully.")
         } catch (e: Exception) {
@@ -158,30 +121,15 @@ class CatalogDatabaseHelper(private val context: Context) :
         if (db == null || !db!!.isOpen) {
             val dbPath = context.getDatabasePath(DB_NAME).absolutePath
             db = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READWRITE)
-
-            db?.addCustomFunction("SIN", 1) { args ->
-                try {
-                    sin(args[0].toDouble()).toString()
-                } catch (_: Exception) {
-                    "0.0"
-                }
-            }
-            db?.addCustomFunction("COS", 1) { args ->
-                try {
-                    cos(args[0].toDouble()).toString()
-                } catch (_: Exception) {
-                    "0.0"
-                }
-            }
         }
     }
 
-    fun closeDatabase() {
+    override fun closeDatabase() {
         db?.close()
         db = null
     }
 
-    fun getCatalogDescriptions(): Map<String, String> {
+    override fun getCatalogDescriptions(): Map<String, String> {
         openDatabase()
         val database = db ?: return emptyMap()
         val map = mutableMapOf<String, String>()
@@ -206,7 +154,7 @@ class CatalogDatabaseHelper(private val context: Context) :
         return map
     }
 
-    fun getAsteroidsJson(): String {
+    override fun getAsteroidsJson(): String {
         openDatabase()
         val database = db ?: return "[]"
         val array = JSONArray()
@@ -240,7 +188,7 @@ class CatalogDatabaseHelper(private val context: Context) :
         return array.toString()
     }
 
-    fun getCometsJson(): String {
+    override fun getCometsJson(): String {
         openDatabase()
         val database = db ?: return "[]"
         val array = JSONArray()
@@ -286,7 +234,7 @@ class CatalogDatabaseHelper(private val context: Context) :
         return (365.25 * (y + 4716)).toInt() + (30.6001 * (m + 1)).toInt() + dayFrac + b - 1524.5
     }
 
-    fun refreshComets(): Boolean {
+    override fun refreshComets(): Boolean {
         try {
             val url =
                 URL("https://cobs.si/api/elements.api?format=mpc&is-active=true&cur-mag=20")
@@ -364,21 +312,21 @@ class CatalogDatabaseHelper(private val context: Context) :
         }
     }
 
-    fun searchObjects(
-        searchQuery: String = "",
-        catalogFilter: String? = null,
-        sortBy: String = "catalog ID",
-        magLimit: Double? = null,
-        typeFilters: Set<String>? = null,
-        starFilter: Boolean? = null,
-        visibilityFilter: String = "Above Horizon",
-        lat: Double? = null,
-        lon: Double? = null,
-        targetRa: Double? = null,
-        targetDec: Double? = null,
-        maxDistanceDegrees: Double? = null,
-        limit: Int = 300,
-        offset: Int = 0
+    override fun searchObjects(
+        searchQuery: String,
+        catalogFilter: String?,
+        sortBy: String,
+        magLimit: Double?,
+        typeFilters: Set<String>?,
+        starFilter: Boolean?,
+        visibilityFilter: String,
+        lat: Double?,
+        lon: Double?,
+        targetRa: Double?,
+        targetDec: Double?,
+        maxDistanceDegrees: Double?,
+        limit: Int,
+        offset: Int
     ): List<CatalogObject> {
         openDatabase()
         val database = db ?: return emptyList()
@@ -475,11 +423,7 @@ class CatalogDatabaseHelper(private val context: Context) :
 
         if (visibilityFilter == "Above Horizon" && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
             val timeMs = System.currentTimeMillis()
-            val daysSinceJ2000 = (timeMs - 946728000000.0) / 86400000.0
-            var gmst = (280.46061837 + 360.98564736629 * daysSinceJ2000) % 360.0
-            if (gmst < 0) gmst += 360.0
-            var lst = (gmst + lon) % 360.0
-            if (lst < 0) lst += 360.0
+            val lst = AstrometryUtils.calculateLST(lon, timeMs)
             val lstRad = Math.toRadians(lst)
 
             val latRad = Math.toRadians(lat)

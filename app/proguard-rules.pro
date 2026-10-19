@@ -13,6 +13,11 @@
     public static int d(...);
 }
 
+-assumenosideeffects class com.oakamil.olive.Log {
+    public static void v(...);
+    public static void d(...);
+}
+
 # Preserve standard Android entry points
 -keep class com.oakamil.olive.MainActivity { *; }
 -keep class com.oakamil.olive.OliveService { *; }

@@ -1,0 +1,432 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		561FF186FCD4419BB09D194E /* MotionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13BEDE448EC4E2F9AC739CF /* MotionService.swift */; };
+		7B79493A8B7FC1F200000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7B79493A8B7FC1F200000002 /* Assets.xcassets */; };
+		A31835F6A6CA443EBD9B0FBC /* CameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15A392E35F7453EB437ACE3 /* CameraService.swift */; };
+		ADD9E56F018C454BBC5F2B35 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2895390114EC4D76A79BE472 /* ContentView.swift */; };
+		C38A3A2E21A84D64A10B9D24 /* OliveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3DF066B6D0541DDAFBC5D62 /* OliveApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		034BD6AACCDA40B2AD06BC86 /* Olive.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Olive.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0BCA8BE1C1FA4C238756F477 /* OliveBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OliveBridge.h; sourceTree = "<group>"; };
+		2895390114EC4D76A79BE472 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		7B79493A8B7FC1F200000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8AA86AD28C394E35ACC06ABD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A13BEDE448EC4E2F9AC739CF /* MotionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionService.swift; sourceTree = "<group>"; };
+		D3DF066B6D0541DDAFBC5D62 /* OliveApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OliveApp.swift; sourceTree = "<group>"; };
+		F15A392E35F7453EB437ACE3 /* CameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraService.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7152A13FF32147AB94D72080 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		86F435ECF44E451F8FA1FDCE = {
+			isa = PBXGroup;
+			children = (
+				D384F34C348C4467BB976747 /* Olive */,
+				E10F638F3F374563ACC7EB48 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D384F34C348C4467BB976747 /* Olive */ = {
+			isa = PBXGroup;
+			children = (
+				D3DF066B6D0541DDAFBC5D62 /* OliveApp.swift */,
+				2895390114EC4D76A79BE472 /* ContentView.swift */,
+				F15A392E35F7453EB437ACE3 /* CameraService.swift */,
+				A13BEDE448EC4E2F9AC739CF /* MotionService.swift */,
+				0BCA8BE1C1FA4C238756F477 /* OliveBridge.h */,
+				8AA86AD28C394E35ACC06ABD /* Info.plist */,
+				7B79493A8B7FC1F200000002 /* Assets.xcassets */,
+			);
+			name = Olive;
+			sourceTree = "<group>";
+		};
+		E10F638F3F374563ACC7EB48 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				034BD6AACCDA40B2AD06BC86 /* Olive.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		664DD27B60E34DE599FD2CEB /* Olive */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 886C8D36D0AB40A7B6DB3D6A /* Build configuration list for PBXNativeTarget "Olive" */;
+			buildPhases = (
+				A1B2C3D4E5F60718293A4B5C /* Embed and Sign Shared KMP Framework */,
+				ED300B470E9546389864B9B5 /* Build Rust olive-ios Library */,
+				D9B8B1AEA2FC4B7FA3F41187 /* Sources */,
+				7152A13FF32147AB94D72080 /* Frameworks */,
+				6D0013EE3A754CB4A1BC145E /* Resources */,
+				B2C3D4E5F60718293A4B5C6D /* Copy Olive Assets to App Bundle */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Olive;
+			productName = Olive;
+			productReference = 034BD6AACCDA40B2AD06BC86 /* Olive.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		EAA4B4195F8648C8B34F3A67 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					664DD27B60E34DE599FD2CEB = {
+						CreatedOnToolsVersion = 16.0;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 8FE30433894F4E3E837865F2 /* Build configuration list for PBXProject "iosApp" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 86F435ECF44E451F8FA1FDCE;
+			productRefGroup = E10F638F3F374563ACC7EB48 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				664DD27B60E34DE599FD2CEB /* Olive */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		6D0013EE3A754CB4A1BC145E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7B79493A8B7FC1F200000001 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A1B2C3D4E5F60718293A4B5C /* Embed and Sign Shared KMP Framework */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed and Sign Shared KMP Framework";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nexport JAVA_HOME=\"/tmp/jbr\"\ncd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode\n";
+		};
+		B2C3D4E5F60718293A4B5C6D /* Copy Olive Assets to App Bundle */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Olive Assets to App Bundle";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\nmkdir -p \"$DEST\"\ncp -f \"$SRCROOT/../app/src/main/assets/default_database.npz\" \"$DEST/\"\ncp -f \"$SRCROOT/../app/src/main/assets/de421.bsp\" \"$DEST/\"\nif [ ! -f \"$DEST/catalog.db\" ] || [ \"$SRCROOT/../app/src/main/assets/catalog.db.gz\" -nt \"$DEST/catalog.db\" ]; then\n    gzip -dc \"$SRCROOT/../app/src/main/assets/catalog.db.gz\" > \"$DEST/catalog.db\"\nfi\n";
+		};
+		ED300B470E9546389864B9B5 /* Build Rust olive-ios Library */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust olive-ios Library";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nif [ \"$PLATFORM_NAME\" = \"iphonesimulator\" ]; then\n    TARGET=\"aarch64-apple-ios-sim\"\n    CLANG_TARGET=\"arm64-apple-ios16.0-simulator\"\nelse\n    TARGET=\"aarch64-apple-ios\"\n    CLANG_TARGET=\"arm64-apple-ios16.0\"\nfi\n\nBUILD_ARGS=\"--target $TARGET --release\"\n\nexport PATH=\"$HOME/.cargo/bin:/usr/local/bin:/opt/homebrew/bin:$PATH\"\nexport SDKROOT=\"$SDK_DIR\"\nexport BINDGEN_EXTRA_CLANG_ARGS=\"-target $CLANG_TARGET -isysroot $SDKROOT\"\n\ncd \"$SRCROOT/../crates/olive-ios\"\ncargo build $BUILD_ARGS\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D9B8B1AEA2FC4B7FA3F41187 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C38A3A2E21A84D64A10B9D24 /* OliveApp.swift in Sources */,
+				ADD9E56F018C454BBC5F2B35 /* ContentView.swift in Sources */,
+				A31835F6A6CA443EBD9B0FBC /* CameraService.swift in Sources */,
+				561FF186FCD4419BB09D194E /* MotionService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		637BB03D984A453C8E5574A3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C303EAF576874002AE08853D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VA83C4R5TG;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]" = (
+					"$(inherited)",
+					"$(SRCROOT)/../shared/build/bin/iosArm64/releaseFramework",
+					"$(BUILT_PRODUCTS_DIR)",
+				);
+				"FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]" = (
+					"$(inherited)",
+					"$(SRCROOT)/../shared/build/bin/iosSimulatorArm64/releaseFramework",
+					"$(BUILT_PRODUCTS_DIR)",
+				);
+				GENERATE_INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
+					"$(inherited)",
+					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios/release",
+					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios/debug",
+				);
+				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = (
+					"$(inherited)",
+					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/release",
+					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/debug",
+				);
+				MARKETING_VERSION = 0.7.0;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lolive_ios",
+					"-framework",
+					Shared,
+					"-framework",
+					AVFoundation,
+					"-framework",
+					CoreMotion,
+					"-framework",
+					CoreMedia,
+					"-framework",
+					CoreVideo,
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oakamil.olive;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = OliveBridge.h;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		E534B4DEF8C34B529EB270D6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VA83C4R5TG;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]" = (
+					"$(inherited)",
+					"$(SRCROOT)/../shared/build/bin/iosArm64/debugFramework",
+					"$(BUILT_PRODUCTS_DIR)",
+				);
+				"FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]" = (
+					"$(inherited)",
+					"$(SRCROOT)/../shared/build/bin/iosSimulatorArm64/debugFramework",
+					"$(BUILT_PRODUCTS_DIR)",
+				);
+				GENERATE_INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
+					"$(inherited)",
+					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios/release",
+					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios/debug",
+				);
+				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = (
+					"$(inherited)",
+					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/release",
+					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/debug",
+				);
+				MARKETING_VERSION = 0.7.0;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lolive_ios",
+					"-framework",
+					Shared,
+					"-framework",
+					AVFoundation,
+					"-framework",
+					CoreMotion,
+					"-framework",
+					CoreMedia,
+					"-framework",
+					CoreVideo,
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oakamil.olive;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = OliveBridge.h;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EF4DA069731D4744BB24DAF6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		886C8D36D0AB40A7B6DB3D6A /* Build configuration list for PBXNativeTarget "Olive" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E534B4DEF8C34B529EB270D6 /* Debug */,
+				C303EAF576874002AE08853D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8FE30433894F4E3E837865F2 /* Build configuration list for PBXProject "iosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EF4DA069731D4744BB24DAF6 /* Debug */,
+				637BB03D984A453C8E5574A3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = EAA4B4195F8648C8B34F3A67 /* Project object */;
+}

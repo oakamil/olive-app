@@ -7,11 +7,11 @@ import androidx.annotation.Keep
 import com.jiangdg.usb.USBMonitor
 import com.jiangdg.uvc.UVCCamera
 
-class UvcCameraWrapper() {
+class UvcCameraWrapper() : UvcCameraHandler {
     var uvcCameraInstance: UVCCamera? = null
-    var previewWidth: Int = 640
+    override var previewWidth: Int = 640
         private set
-    var previewHeight: Int = 480
+    override var previewHeight: Int = 480
         private set
 
     private var dummySurfaceTexture: SurfaceTexture? = null
@@ -113,7 +113,7 @@ class UvcCameraWrapper() {
 
     private var isPreviewRunning = false
 
-    fun startZeroCopyStream() {
+    override fun startZeroCopyStream() {
         uvcCameraInstance?.setFrameCallback({ frame ->
             if (frame != null && frame.isDirect) {
                 OliveEngine.pushExternalUvcFrame(
@@ -178,7 +178,7 @@ class UvcCameraWrapper() {
         return getHardwareBrightness() ?: 50
     }
 
-    fun release() {
+    override fun release() {
         if (isPreviewRunning) {
             try {
                 uvcCameraInstance?.stopPreview()
@@ -200,7 +200,7 @@ class UvcCameraWrapper() {
         dummySurfaceTexture = null
     }
 
-    fun getHardwareGain(): Int? {
+    override fun getHardwareGain(): Int? {
         if (uvcCameraInstance == null) return null
         return try {
             uvcCameraInstance?.updateCameraParams()
@@ -210,7 +210,7 @@ class UvcCameraWrapper() {
         }
     }
 
-    fun getHardwareBrightness(): Int? {
+    override fun getHardwareBrightness(): Int? {
         if (uvcCameraInstance == null) return null
         return try {
             uvcCameraInstance?.updateCameraParams()

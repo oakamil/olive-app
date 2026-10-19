@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Pop-up Info Content -->
+    <string name="info_star_sensitivity"><![CDATA[Determines the sensitivity for detecting stars in a captured image. Increase to detect more stars. Note: increasing the value too much can slow down the solver and/or result in more false stars detected.]]></string>
+    <string name="info_zoom"><![CDATA[Increase the camera\'s zoom for avoiding obstructions at the edges of the image. Note: zooming in reduces the usable image for star detection.]]></string>
+    <string name="info_exposure"><![CDATA[Increase the exposure to gather more light in a captured image. Slower exposures (higher number) increase star detection at the cost of slower updates.]]></string>
+    <string name="info_stacking"><![CDATA[Combine data from multiple frames into a single image prior to star detection. This slows down the effective exposure rate for the camera.]]></string>
+    <string name="info_brightness"><![CDATA[Increase the brightness of the image. Unlike gain, the brightness value is applied after the image is captured by the sensor.]]></string>
+    <string name="info_iso"><![CDATA[Increase the camera\'s brightness / light sensitivity. By default the ISO value is set to the highest <i>analog</i> value supported by the camera. Any increase beyond this will also increase noise artifacts.]]></string>
+    <string name="info_gain"><![CDATA[Increase the camera sensor\'s light sensitivity.]]></string>
+    <string name="info_focus"><![CDATA[Change the focus position of the camera.]]></string>
+    <string name="info_noise_reduction"><![CDATA[Enable software noise reduction in the camera\'s image processor.]]></string>
+    <string name="info_hot_pixel_mode"><![CDATA[Enable hot pixel removal in the camera\'s image processor.]]></string>
+    <string name="info_hfr"><![CDATA[Half-Flux Radius is used to measure the size, sharpness, and focus of detected stars. Lower values indicate a better focus of the camera when it\'s pointed at the sky.]]></string>
+    <string name="info_camera_selection"><![CDATA[<b>Internal Camera</b><br>Use the device\'s native camera for imaging the sky.<br><br><b>External Camera</b><br>Use a camera plugged into the device\'s USB port.<br><br><b>Demo Camera</b><br>Cycles through canned images for demo purposes.]]></string>
+    <string name="info_sensor_mode"><![CDATA[Processed mode (recommended) uses the camera\'s own algorithms to pre-process the image. Raw mode relies on the engine to do the processing. Raw is only available on select phone models.]]></string>
+    <string name="info_downsampling"><![CDATA[Based on this setting the image will be reduced in size prior to running the plate-solving algorithms.]]></string>
+    <string name="info_extractor"><![CDATA[Determines which algorithm to use for star detection. Cedar (cedar-detect) is recommended for raw mode.]]></string>
+    <string name="info_guidance_mode"><![CDATA[The engine\'s guidance display can show Alt-Az offsets (distance to target) or equatorial RA/Dec offsets.]]></string>
+    <string name="info_telescope_control" tools:ignore="TypographyDashes"><![CDATA[Olive Finder runs control servers for external connections:<br>- Meade LX200 protocol on port 4030<br>- ASCOM Alpaca protocol on port 11111<br>- ASCOM Alpaca discovery server<br><br><h2>SkySafari Integration</h2><b>Configuring SkySafari 7/8 Plus or Pro (Alpaca)</b><br>Menu > Settings > Telescope section - Presets<br>Add Preset > ASCOM Alpaca<br>Manual Configuration:<br>- IP Address - 127.0.0.1 if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>- Port - 11111<br>Check IP and Port for Devices<br>Next<br>- Preset Name: Olive<br>- Set Time &amp; Location: leave this checked only if Olive is on a separate device<br>- Readout Rate: 10 per second <i>(Important: swipe back instead of pressing the X)</i><br>Save Preset<br>Select the new preset > Use This Preset<br><br><b>Configuring SkySafari 7/8 Plus or Pro (LX200)</b><br>Menu > Settings > Telescope section - Presets<br>Add Preset > Other Connection > Meade LX200 Classic, Next > <i>Alt-Az. GoTo (Recommended)</i>, Next<br>Connect via WiFi<br>- IP Address - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>- Port - 4030<br>Check Connection<br>Next<br>- Preset Name: Olive<br>- Set Time &amp; Location: leave this checked only if Olive is on a separate device<br>- Readout Rate: 10 per second <i>(Important: swipe back instead of pressing the X)</i><br>Save Preset<br>Select the new preset > Use This Preset<br><br><b>Configuring SkySafari 6 Plus or Pro (LX200)</b><br>Settings > Telescope section - Setup<br>- Scope Type -- Meade LX200 Classic<br>- Mount Type -- <i>Alt-Az. GoTo (Recommended)</i><br>- Connect via WiFi<br>- IP Address - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>- Port - 4030<br>- Set Time &amp; Location: leave this checked only if Olive is on a separate device<br>- Readout Rate -- 10 per second <i>(Important: swipe back instead of pressing the X)</i><br>Press X<br><br><b>SkySafari Usage</b><br>Scope > Connect<br>Select an Object<br>- GoTo -> Olive will show guidance to the object<br>- Stop -> Stop the current GoTo target<br>- Align -> Center object in eyepiece, tap Align to update Olive\'s alignment*<br><br><h2>Stellarium Integration</h2><b>Configuring Stellarium+ (LX200)</b><br>Menu > Observing Tools > Telescope Control <i>(toggle on)</i><br>Type - Network<br>Host - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>Toggle Link to on<br>Time and Location sync - Turn off if using Olive on the same device<br><br><b>Stellarium Usage</b><br>Menu > Observing Tools > Telescope Control <i>(toggle on)</i><br>Toggle Link to on<br>Select an Object<br>- GoTo -> Olive will show guidance to the object<br>- Sync -> Center object in eyepiece, tap Sync to update Olive\'s alignment*<br><br><small>* Olive uses a single alignment point to determine the offset of the camera\'s view to the telescope\'s view. Alignment only needs to be done once each time the camera is mounted on a telescope.</small>]]></string>
+
+    <!-- Info Headings -->
+    <string name="heading_telescope_control">Telescope Control</string>
+    <string name="ra_j2000_label">RA (J2000)</string>
+    <string name="dec_j2000_label">Dec (J2000)</string>
+
+    <!-- GoTo RA/Dec Dialog -->
+    <string name="title_goto_ra_dec">GoTo RA/Dec</string>
+    <string name="label_ra_dec">RA/Dec</string>
+    <string name="label_epoch">Epoch</string>
+    <string name="label_j2000">J2000</string>
+    <string name="label_now">Now</string>
+    <string name="label_ra">Right Ascension</string>
+    <string name="label_dec">Declination</string>
+
+    <!-- Camera Mode Labels -->
+    <string name="info_detected_stars">Detected Stars</string>
+    <string name="info_hfr_label">HFR</string>
+    <string name="status_waiting_for_frame">Waiting for frame …</string>
+
+    <!-- Buttons -->
+    <string name="btn_camera_mode">Camera Mode</string>
+
+    <string name="btn_stop_engine">Stop Engine</string>
+    <string name="btn_start_engine">Start Engine</string>
+    <string name="btn_stopping">Stopping …</string>
+    <string name="btn_starting">Starting …</string>
+    <string name="btn_continue">Continue</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_save">Save</string>
+    <string name="btn_retry">Retry</string>
+    <string name="btn_refresh">Refresh</string>
+    <string name="btn_entering_pip">Entering PIP …</string>
+
+    <!-- Control labels -->
+    <string name="label_star_sensitivity">Star Sensitivity</string>
+    <string name="label_zoom">Zoom</string>
+    <string name="label_exposure">Exposure</string>
+    <string name="label_stacking_frames">Stacking (Frames)</string>
+    <string name="label_brightness">Brightness</string>
+    <string name="label_focus">Focus</string>
+    <string name="label_noise_reduction">Noise Reduction</string>
+    <string name="label_hot_pixel_mode">Hot Pixel Mode</string>
+    <string name="label_camera_selection">Camera Selection</string>
+    <string name="label_sensor_mode">Sensor Mode</string>
+    <string name="label_downsampling">Downsampling</string>
+    <string name="label_extractor">Extractor</string>
+    <string name="label_guidance_mode">Guidance Mode</string>
+
+    <!-- Settings Labels -->
+    <string name="label_external_camera">External (USB/UVC) Camera</string>
+    <string name="label_internal_camera">Internal Camera</string>
+    <string name="label_demo_camera">Demo Camera</string>
+    <string name="label_camera">Camera</string>
+    <string name="label_no_external_camera">No External Camera Detected</string>
+
+    <!-- Setting Values -->
+    <string name="value_processed">Processed</string>
+    <string name="value_raw">Raw</string>
+    <string name="value_cedar">Cedar</string>
+    <string name="value_alt_az_offset">Alt-Az</string>
+    <string name="value_equatorial_ra_dec">Equatorial</string>
+    <string name="value_olive">Olive</string>
+    <string name="value_off">Off</string>
+    <string name="value_on">On</string>
+
+    <string name="value_2x2">2x2</string>
+    <string name="value_4x4">4x4</string>
+    <string name="value_fast">Fast</string>
+    <string name="value_hq">HQ</string>
+
+    <!-- Stats Labels -->
+    <string name="stat_status">Status</string>
+    <string name="stat_star_count">Star Count</string>
+    <string name="stat_ra">RA</string>
+    <string name="stat_dec">Dec</string>
+    <string name="stat_fov">FOV</string>
+    <string name="stat_exposure">Exposure</string>
+    <string name="stat_post_process">Post-Process</string>
+    <string name="stat_extraction">Extraction</string>
+    <string name="stat_solve">Solve</string>
+    <string name="stat_solve_rate">Solve Rate</string>
+    <string name="stat_last_solve">Last Solve</string>
+    <string name="crop_center">Center</string>
+    <string name="crop_top">Top</string>
+    <string name="crop_bottom">Bottom</string>
+    <string name="crop_left">Left</string>
+    <string name="crop_right">Right</string>
+    <string name="crop_full">Full</string>
+    <string name="crop_failed">Failed</string>
+    <!-- Content Descriptions -->
+    <string name="cd_info">Info</string>
+    <string name="cd_close">Close</string>
+    <string name="cd_live_preview">Live Preview</string>
+    <string name="cd_target">Target</string>
+
+    <!-- Permissions Dialog -->
+    <string name="title_permissions_required">Camera Permission</string>
+    <string name="desc_permissions_required">Olive Finder needs Camera permission to operate the telescope engine.</string>
+
+    <!-- Value Format Strings -->
+    <string name="format_ms">%1$s ms</string>
+    <string name="format_hz">%1$s Hz</string>
+    <string name="format_zoom">%1$sx</string>
+    <string name="format_degree">%1$s°</string>
+    <string name="format_camera_fov">Camera %1$s (%2$s° FOV)</string>
+
+    <!-- Guidance Display Labels -->
+    <string name="label_alt">Alt</string>
+    <string name="label_az">Az</string>
+    <string name="label_north">North</string>
+    <string name="label_south">South</string>
+    <string name="label_east">East</string>
+    <string name="label_west">West</string>
+    <string name="label_north_compact">N</string>
+    <string name="label_south_compact">S</string>
+    <string name="label_east_compact">E</string>
+    <string name="label_west_compact">W</string>
+
+    <!-- Catalog and Alignment Strings -->
+    <string name="title_sky_catalog">Sky Catalog</string>
+    <string name="btn_catalog">Catalog</string>
+    <string name="placeholder_search">Search</string>
+    <string name="cat_all_objects">All Objects</string>
+    <string name="cat_nearest_objects">Nearest Objects</string>
+    <string name="cat_solar_system">Solar System</string>
+    <string name="cat_bright_stars">Bright Stars</string>
+    <string name="btn_goto">GoTo</string>
+    <string name="btn_align">Align</string>
+    <string name="btn_reset">Reset</string>
+    <string name="btn_confirm">Confirm</string>
+    <string name="title_confirm_alignment">Confirm Alignment</string>
+    <string name="inst_confirm_alignment">Please ensure that the selected target is centered in your eyepiece before continuing.</string>
+    <string name="title_reset_alignment">Reset Alignment</string>
+    <string name="inst_reset_alignment">The alignment will be reset to the center of the camera\'s field of view.</string>
+    <string name="title_reset_calibration">Reset Calibration</string>
+    <string name="inst_reset_calibration">The calibration data for the motion sensor will be removed.</string>
+    <string name="inst_reset_camera_calibration">The saved Auto settings for this camera will be removed, requiring the app to learn them again.</string>
+    
+    <!-- Filter and Sort Strings -->
+    <string name="filter_sort_by">Sort By</string>
+    <string name="filter_visibility">Visibility</string>
+    <string name="filter_object_type">Object Type</string>
+    <string name="filter_magnitude_limit">Magnitude Limit</string>
+    <string name="type_all_types">All Types</string>
+    <string name="type_star">Star</string>
+    <string name="type_galaxy">Galaxy</string>
+    <string name="type_nebula">Nebula</string>
+    <string name="type_cluster">Cluster</string>
+    <string name="type_planet">Planet</string>
+    <string name="type_asterism">Asterism</string>
+    <string name="type_cluster_nebula">Cluster + Nebula</string>
+    <string name="type_dark_nebula">Dark Nebula</string>
+    <string name="type_multiple_star">Multiple Star</string>
+    <string name="type_globular_cluster">Globular Cluster</string>
+    <string name="type_open_cluster">Open Cluster</string>
+    <string name="type_planetary_nebula">Planetary Nebula</string>
+    <string name="status_no_objects">No objects found</string>
+    <string name="btn_load_more">Load More</string>
+    <string name="cd_selected">Selected</string>
+    <string name="status_below_horizon">Below Horizon</string>
+    <string name="cd_direction">Direction</string>
+    <string name="cd_settings">Settings</string>
+    <string name="asteroids_catalog_title">Asteroids</string>
+    <string name="comets_catalog_title">Comets</string>
+    <string name="refresh_comets_button">Refresh Comets</string>
+    <string name="error_comets_download">Unable to fetch comet data.</string>
+    
+    <!-- Added Missing Strings -->
+    <string name="label_motion_sensor">Motion Sensor</string>
+    <string name="info_motion_sensor">Enable the phone\'s motion sensor for calculating position between camera solves. Sensor calibration is stored when using the phone\'s camera. Reset the calibration when adding or removing a mirror.</string>
+    <string name="btn_camera_align">Camera / Align</string>
+    <string name="stat_solving">Solving</string>
+    <string name="stat_slewing">Slewing</string>
+    <string name="stat_idle">Idle</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="cd_close_keyboard">Close Keyboard</string>
+    <string name="cd_open_catalogs_menu">Open catalogs menu</string>
+    <string name="cd_swap_keyboard_side">Swap keyboard side</string>
+    <string name="cat_messier">Messier</string>
+    <string name="cat_ngc">NGC</string>
+    <string name="cat_ic">IC</string>
+    <string name="cat_barnard">Barnard</string>
+    <string name="cat_caldwell">Caldwell</string>
+    <string name="cat_collinder">Collinder</string>
+    <string name="cat_rasc_doubles">RASC Doubles</string>
+    <string name="cat_sac_asterisms">SAC Asterisms</string>
+    <string name="type_asteroid">Asteroid</string>
+    <string name="type_comet">Comet</string>
+    <string name="label_camera_settings">Camera Settings</string>
+    <string name="info_camera_settings">In Auto mode the engine dynamically chooses the camera settings including effective exposure. &lt;br&gt;&lt;br&gt;The app automatically saves successful Auto settings for the phone\'s internal camera. Use the reset button to clear these saved settings and start over if they are no longer working.</string>
+    <string name="label_camera_frame_rate">Camera Frame Rate</string>
+    <string name="info_camera_frame_rate">Sets the frame rate and base exposure time for the camera.</string>
+    <string name="info_internal_camera">Choose the phone camera to use for imaging.</string>
+    <string name="label_internal_camera_section">Internal Camera</string>
+    <string name="value_auto">Auto</string>
+    <string name="value_manual">Manual</string>
+
+    <!-- Camera Stuck Dialog -->
+    <string name="title_camera_stuck">Camera Not Responding</string>
+    <string name="body_camera_stuck">The camera has stopped responding. A clean restart of the app may help to restore camera functionality.</string>
+    <string name="btn_restart">Restart</string>
+
+    <!-- Battery Optimization Dialog -->
+    <string name="title_battery_optimization">Background Tracking</string>
+    <string name="body_battery_optimization">To continue tracking in the background while using a planetarium app, please allow unrestricted battery usage for Olive in the App Info settings. Otherwise, Android may freeze the connection.</string>
+    <string name="btn_open_settings">Open Settings</string>
+    <string name="btn_skip">Skip</string>
+    <string name="no_target">No Target</string>
+    <string name="label_designation">Designation</string>
+    <string name="label_type">Type</string>
+    <string name="label_magnitude">Magnitude</string>
+    <string name="label_constellation">Constellation</string>
+    <string name="value_not_available">N/A</string>
+    <string name="format_ra_dec">RA %1$s Dec %2$s</string>
+    <string name="target_label_format">Target (%1$.2f, %2$.2f)</string>
+    <string name="stat_ip_address">IP Address</string>
+    <string name="msg_confirm_alignment">Are you sure you want to sync the telescope\'s coordinates to this target?</string>
+    <string name="btn_cancel_goto">Cancel GoTo target</string>
+    <string name="btn_recenter">Recenter camera view</string>
+
+    <string name="title_engine_info">Engine Info</string>
+    <string name="cd_solve_status">Solve Status</string>
+    <string name="cd_stars">Stars</string>
+    <string name="cd_pipeline_time">Pipeline Time</string>
+
+    <string name="format_pipeline_ms">%1$dms</string>
+    <string name="format_pipeline_s">%1$.1fs</string>
+    <string name="format_high_sens">%1$s (HS)</string>
+    <string name="label_screen_brightness">Screen Brightness</string>
+    <string name="format_percent">%1$s: %2$d%%</string>
+    <string name="format_exposure_seconds">%1$s: %2$.1f s</string>
+    <string name="format_label_value_string">%1$s: %2$s</string>
+    <string name="format_time_sec">%1$d sec</string>
+    <string name="format_time_min">%1$s min</string>
+    <string name="label_low_power_timeout">Low-Power Timeout</string>
+    <string name="cd_next">Next</string>
+    <string name="cd_imu_estimate">IMU Estimate</string>
+    <string name="cd_plate_solving">Plate Solving</string>
+
+    <!-- Location Section -->
+    <string name="label_location">Observer Location</string>
+    <string name="info_location">Location is required to calculate sky coordinates and operate the engine.</string>
+    <string name="format_coordinate">%1$.2f° %2$s, %3$.2f° %4$s</string>
+    <string name="dir_north">N</string>
+    <string name="dir_south">S</string>
+    <string name="dir_east">E</string>
+    <string name="dir_west">W</string>
+    <string name="status_location_not_set">Location not set</string>
+    <string name="label_current_location">Location: %1$s</string>
+    <string name="btn_edit_location">Edit</string>
+
+    <!-- Location Dialog -->
+    <string name="title_observer_location">Observer Location</string>
+    <string name="label_latitude">Latitude</string>
+    <string name="label_longitude">Longitude</string>
+    <string name="title_location_permission_required">Location Permission</string>
+    <string name="desc_location_permission_required">Location permission is required to determine your observer coordinates in Auto mode. Please grant Location permission in Settings, or set coordinates manually.</string>
+    <string name="title_location_services_disabled">Location Services Disabled</string>
+    <string name="desc_location_services_disabled">Location services are turned off on your device. Please turn on Location in system settings to use Auto mode.</string>
+</resources>
