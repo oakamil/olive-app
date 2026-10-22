@@ -36,14 +36,18 @@ import platform.AVFoundation.AVCaptureDevice
 import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.authorizationStatusForMediaType
 import platform.AVFoundation.requestAccessForMediaType
+import platform.Foundation.NSProcessInfo
 import platform.Foundation.NSURL
 import platform.UIKit.UIApplication
 import platform.UIKit.UIApplicationOpenSettingsURLString
 import platform.UIKit.UIViewController
 
 @OptIn(ExperimentalForeignApi::class)
-private fun getIosDeviceIpAddress(): String {
-    return olive_ios_get_local_ip()?.toKString() ?: "127.0.0.1"
+private fun getIosDeviceNetworkEndpoint(): String {
+    val ip = olive_ios_get_local_ip()?.toKString() ?: "127.0.0.1"
+    val rawHost = NSProcessInfo.processInfo.hostName
+    val host = if (rawHost.endsWith(".local")) rawHost else "$rawHost.local"
+    return "$host ($ip)"
 }
 
 fun MainViewController(): UIViewController = ComposeUIViewController {
@@ -65,7 +69,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     var isStarting by remember { mutableStateOf(false) }
     var isStopping by remember { mutableStateOf(false) }
     var startupTimeoutJob by remember { mutableStateOf<Job?>(null) }
-    var detectedIpAddress by remember { mutableStateOf("127.0.0.1") }
+    var detectedIpAddress by remember { mutableStateOf(getIosDeviceNetworkEndpoint()) }
     var showLocationRequiredDialog by remember { mutableStateOf(false) }
     var showCameraPermissionDialog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
@@ -101,12 +105,12 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             startupTimeoutJob = null
             isStarting = false
             while (viewModel.isEngineRunning) {
-                detectedIpAddress = getIosDeviceIpAddress()
+                detectedIpAddress = getIosDeviceNetworkEndpoint()
                 delay(10000L)
             }
         } else {
             isStarting = false
-            detectedIpAddress = getIosDeviceIpAddress()
+            detectedIpAddress = getIosDeviceNetworkEndpoint()
         }
     }
 
