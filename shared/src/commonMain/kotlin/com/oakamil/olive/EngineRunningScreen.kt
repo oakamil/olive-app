@@ -2261,7 +2261,12 @@ fun EngineRunningScreen(
             InfoPopup(
                 title = stringResource(id = Res.string.heading_telescope_control),
                 onDismiss = { showTelescopeControlInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_telescope_control)))
+                val infoRes = if (capabilities.isApple) {
+                    Res.string.info_telescope_control_ios
+                } else {
+                    Res.string.info_telescope_control
+                }
+                Text(AnnotatedString.fromHtml(stringResource(id = infoRes)))
             }
         }
 
