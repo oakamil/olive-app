@@ -946,9 +946,32 @@ class MainActivity : ComponentActivity() {
                 createNew: Boolean
             ) {
                 if (device != null && ctrlBlock != null) {
+                    try {
+                        val parsed = UvcFormat.parseRawDescriptors(ctrlBlock.rawDescriptors)
+                        if (parsed.isNotEmpty()) {
+                            viewModel.availableUvcFormats = parsed
+                            val best = UvcFormat.findBestFormatForFps(
+                                viewModel.settingsManager.uvcFps,
+                                parsed
+                            )
+                            viewModel.settingsManager.uvcFps = best.fps
+                            viewModel.settingsManager.uvcWidth = best.width
+                            viewModel.settingsManager.uvcHeight = best.height
+                            viewModel.settingsManager.uvcFormat = best.format
+                        }
+                    } catch (e: Exception) {
+                        Log.w("OliveUI", "Failed to parse UVC raw descriptors", e)
+                    }
+
                     viewModel.uvcWrapper?.release()
                     val wrapper = UvcCameraWrapper()
-                    wrapper.initialize(ctrlBlock, viewModel.settingsManager.uvcFps.coerceAtLeast(1))
+                    wrapper.initialize(
+                        ctrlBlock,
+                        viewModel.settingsManager.uvcWidth,
+                        viewModel.settingsManager.uvcHeight,
+                        viewModel.settingsManager.uvcFps.coerceAtLeast(1),
+                        viewModel.settingsManager.uvcFormat
+                    )
                     viewModel.uvcWrapper = wrapper
 
                     if (isStarting) {

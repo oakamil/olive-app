@@ -13,8 +13,8 @@ android {
         applicationId = "com.oakamil.olive"
         minSdk = 29
         targetSdk = 36
-        versionCode = 30
-        versionName = "0.7.0"
+        versionCode = 32
+        versionName = "0.7.1"
     }
 
     buildFeatures {
@@ -71,6 +71,7 @@ dependencies {
     implementation("io.grpc:grpc-stub:1.66.0")
     implementation("com.google.protobuf:protobuf-kotlin-lite:4.26.1")
     compileOnly("org.apache.tomcat:annotations-api:6.0.53")
+    testImplementation("junit:junit:4.13.2")
 }
 
 protobuf {

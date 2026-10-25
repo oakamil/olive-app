@@ -1,6 +1,9 @@
 package com.oakamil.olive
 
 import android.app.Application
+import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -24,6 +27,7 @@ import java.nio.ByteOrder
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     var uvcWrapper: UvcCameraWrapper? = null
+    var availableUvcFormats by mutableStateOf(UvcFormat.FALLBACK_FORMATS)
 
     enum class EngineMode { STOPPED, UVC, NATIVE }
 
@@ -35,6 +39,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     var engineStats by mutableStateOf(EngineStats())
         private set
+
+    val sensorOrientation: Int
+        get() {
+            if (engineMode == EngineMode.NATIVE) {
+                return try {
+                    val cameraManager =
+                        getApplication<Application>().getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                    val characteristics =
+                        cameraManager.getCameraCharacteristics(settingsManager.internalCameraId)
+                    characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+                } catch (_: Exception) {
+                    90
+                }
+            }
+            return 0
+        }
+
+    private var lastLoggedMirrored: Boolean? = null
 
     enum class LocationRefreshStatus { IDLE, REFRESHING, SUCCESS, FAILURE }
 
@@ -157,6 +179,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val json = OliveEngine.getEngineStats()
         try {
             val obj = JSONObject(json)
+            val parsedMirrored =
+                if (obj.isNull("is_mirrored")) null else obj.getBoolean("is_mirrored")
+            if (parsedMirrored != lastLoggedMirrored) {
+                lastLoggedMirrored = parsedMirrored
+                Log.i(
+                    "MainViewModel",
+                    "Engine mirroring state updated: is_mirrored=$parsedMirrored (sensorOrientation=$sensorOrientation)"
+                )
+            }
+
             engineStats = EngineStats(
                 status = obj.optString("status", "Idle"),
                 ra = if (obj.isNull("ra")) null else obj.getDouble("ra"),
@@ -180,7 +212,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 targetRa = if (obj.isNull("target_ra")) null else obj.getDouble("target_ra"),
                 targetDec = if (obj.isNull("target_dec")) null else obj.getDouble("target_dec"),
                 isImuEstimate = obj.optBoolean("is_imu_estimate", false),
-                isMirrored = if (obj.isNull("is_mirrored")) null else obj.getBoolean("is_mirrored"),
+                isMirrored = parsedMirrored,
                 solvedCrop = if (obj.isNull("solved_crop")) null else obj.getString("solved_crop"),
                 targetPixelX = if (obj.isNull("target_pixel_x")) null else obj.getDouble("target_pixel_x"),
                 targetPixelY = if (obj.isNull("target_pixel_y")) null else obj.getDouble("target_pixel_y"),
@@ -238,7 +270,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissCameraStuckDialog() {
         isCameraStuck = false
-        // Offset the timer by 10s so the 5s timeout takes 15s to trigger again
+        // Offset the timer by 10s so the 10s timeout takes 20s to trigger again
         lastFrameReceivedRealtime = android.os.SystemClock.elapsedRealtime() + 10000L
     }
 
@@ -390,12 +422,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
+            val uvcWidth = uvcWrapper?.previewWidth ?: 640
+            val uvcHeight = uvcWrapper?.previewHeight ?: 480
+            val autoDownsampling = if (uvcWidth.toLong() * uvcHeight.toLong() < 1_250_000L) 0 else 2
+            val forcedDownsampling =
+                if (isAutoSettings) autoDownsampling else settingsManager.downsampling
             OliveEngine.startExternalCameraEngine(
-                uvcWrapper?.previewWidth ?: 640,
-                uvcWrapper?.previewHeight ?: 480,
+                uvcWidth,
+                uvcHeight,
                 settingsManager.motionSensorMode,
                 settingsManager.extractor,
-                settingsManager.downsampling,
+                forcedDownsampling,
                 lat,
                 lon,
                 timeMs,
@@ -413,34 +450,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 minAnalogGain = 0f
                 maxAnalogGain = 100f
 
-                uvcWrapper?.startZeroCopyStream()
-                delay(300) // Wait for hardware to initialize limits
+                val fps = settingsManager.uvcFps.coerceAtLeast(1)
+                val initialGain = if (isAutoSettings) {
+                    100f
+                } else {
+                    val saved = settingsManager.manualGain
+                    if (saved < 0f) 100f else saved.coerceIn(0f, 100f)
+                }
+
+                // Both Auto and Manual modes run the same AEC Prime-and-Lock startup sequence:
+                // 200ms stabilize -> 750ms Mode 2 prime -> Lock Mode 1 -> 1/fps exposure -> initialGain
+                currentExposure = (1_000_000 / fps).toFloat()
+                currentGain = initialGain
+                uvcWrapper?.startZeroCopyStream(initialGain.toInt())
 
                 if (isAutoSettings) {
-                    val fps = settingsManager.uvcFps.coerceAtLeast(1)
-                    setExposure((1000000 / fps).toFloat())
-
                     updateStarSensitivity(50f)
                     updateUvcStacking(1)
-
-                    // Auto mode: Kotlin does NOT touch brightness or gain at startup.
-                    // Rust autonomously calibrates baseline brightness, sets gain to 100f,
-                    // and locks calibration. fetchRealtimeSettings() automatically syncs to UI.
                 } else {
-                    setExposure(settingsManager.manualExposureUs)
                     updateStarSensitivity(settingsManager.manualStarSensitivity)
                     updateUvcStacking(settingsManager.manualUvcStacking)
-
-                    // Manual mode: preserve hardware brightness, apply manual gain
-                    val hwBrightness = uvcWrapper?.getHardwareBrightness()
-                    if (hwBrightness != null && hwBrightness in 0..100) {
-                        currentUvcBrightness = hwBrightness
-                    }
-
-                    var savedGain = settingsManager.manualGain
-                    if (savedGain < 0f) savedGain = 50f
-                    savedGain = savedGain.coerceIn(0f, 100f)
-                    setGain(savedGain)
                 }
 
                 OliveEngine.setEngineSigma(currentSigma)
@@ -486,7 +515,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 noiseReductionMode = OliveEngine.getNativeCameraNoiseReduction()
             }
             hotPixelMode = OliveEngine.getNativeCameraHotPixelMode()
-        } else if (engineMode == EngineMode.UVC) {
+        } else if (engineMode == EngineMode.UVC && uvcWrapper?.isPipelineReady?.get() == true) {
             if (settingsManager.cameraSettingsMode == "Auto") {
                 val hwGain = uvcWrapper?.getHardwareGain()
                 if (hwGain != null && hwGain in 0..100) {
@@ -816,7 +845,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         const val INVALID_COORD = 200.0
-        const val CAMERA_STUCK_TIMEOUT_MS = 5000L
+        const val CAMERA_STUCK_TIMEOUT_MS = 15000L
         const val SCREEN_UPDATE_RATE_HZ = 10
         const val SCREEN_UPDATE_INTERVAL_MS = 1000L / SCREEN_UPDATE_RATE_HZ
 

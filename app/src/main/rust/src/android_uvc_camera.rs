@@ -61,11 +61,11 @@ impl AndroidUvcCamera {
                 initial_fov: None,
             }),
             exposure_us: AtomicI32::new((1_000_000 / fps.max(1)) as i32),
-            gain: AtomicI32::new(50),
+            gain: AtomicI32::new(100),
             brightness: AtomicI32::new(initial_b),
             cal_phase: AtomicU32::new(0),
-            calibrated: AtomicBool::new(!is_auto), // Manual mode bypasses calibration
-            settle_frames: AtomicU32::new(3),      // Flush initial frames on stream start
+            calibrated: AtomicBool::new(!is_auto), // Manual mode bypasses calibration, Auto mode runs it
+            settle_frames: AtomicU32::new(10),     // Universal 10 initial settle frames on boot
             cal_attempts: AtomicU32::new(0),
             stack_count: AtomicUsize::new(1),
             accumulator: Mutex::new(Vec::new()),
@@ -124,89 +124,113 @@ impl AndroidUvcCamera {
                 return; // DROP FRAME: flushing hardware pipeline
             }
 
-            let y_plane = &nv21_data[0..y_plane_size];
-            let (p5, median) = Self::measure_p5_and_median(y_plane);
-            let phase = self.cal_phase.load(Ordering::Relaxed);
+            // After initial settle frames have flushed the cold startup buffer,
+            // query if the camera is running pure Auto-Exposure (Mode 8 or Mode 2).
+            let is_ae = if let (Some(jvm), Some(wrapper)) = (&self.jvm, &self.uvc_wrapper) {
+                if let Ok(mut env) = jvm.attach_current_thread() {
+                    let res = env.call_method(wrapper.as_obj(), "isAutoExposure", "()Z", &[]);
+                    let _ = env.exception_clear();
+                    res.ok().and_then(|v| v.z().ok()).unwrap_or(false)
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
 
-            match phase {
-                0 => {
-                    // Phase 0: Settle Baseline Brightness
-                    let attempts = self.cal_attempts.fetch_add(1, Ordering::Relaxed);
+            if is_ae {
+                // Mode 8 (Aperture Priority Auto-Exposure - Sony IMX662):
+                // Initial 10 frames already flushed; bypass brightness calibration so Sony AEC runs cleanly.
+                log::info!(
+                    "Camera in Auto-Exposure mode: bypassing brightness calibration, locking."
+                );
+                self.calibrated.store(true, Ordering::Relaxed);
+                // Proceed to deliver this settled frame to the Engine!
+            } else {
+                let y_plane = &nv21_data[0..y_plane_size];
+                let (p5, median) = Self::measure_p5_and_median(y_plane);
+                let phase = self.cal_phase.load(Ordering::Relaxed);
 
-                    if median > 100 {
-                        // Daytime/bright scene: skip brightness cal, set gain to 100
-                        log::info!(
-                            "Daytime scene detected (median={}). Skipping brightness cal.",
-                            median
-                        );
+                match phase {
+                    0 => {
+                        // Phase 0: Settle Baseline Brightness
+                        let attempts = self.cal_attempts.fetch_add(1, Ordering::Relaxed);
+
+                        if median > 100 {
+                            // Daytime/bright scene: skip brightness cal, set gain to 100
+                            log::info!(
+                                "Daytime scene detected (median={}). Skipping brightness cal.",
+                                median
+                            );
+                            self.set_gain(100.0);
+                            self.settle_frames.store(3, Ordering::Relaxed);
+                            self.cal_phase.store(2, Ordering::Relaxed); // Verify/lock
+                            return;
+                        }
+
+                        if attempts < 3 && (p5 < 5 || p5 > 14) {
+                            let current_b = self.brightness.load(Ordering::Relaxed);
+                            let delta = ((p5 - 10) as f32 / 1.5).round() as i32;
+                            let step = if delta == 0 {
+                                if p5 > 14 { 1 } else { -1 }
+                            } else {
+                                delta
+                            };
+                            let new_b = (current_b - step).clamp(0, 100);
+
+                            if new_b != current_b {
+                                log::info!(
+                                    "Auto-calibrating brightness: P5={}, adjusting {} -> {}",
+                                    p5,
+                                    current_b,
+                                    new_b
+                                );
+                                self.set_brightness(new_b);
+                                self.settle_frames.store(3, Ordering::Relaxed);
+                                return; // DROP FRAME
+                            }
+                        }
+
+                        // Brightness settled! Now transition to Phase 1: set gain to 100
+                        log::info!("Brightness settled at P5={}. Setting gain to 100...", p5);
                         self.set_gain(100.0);
                         self.settle_frames.store(3, Ordering::Relaxed);
-                        self.cal_phase.store(2, Ordering::Relaxed); // Verify/lock
-                        return;
+                        self.cal_phase.store(1, Ordering::Relaxed);
+                        return; // DROP FRAME while gain settles
                     }
-
-                    if attempts < 3 && (p5 < 5 || p5 > 14) {
-                        let current_b = self.brightness.load(Ordering::Relaxed);
-                        let delta = ((p5 - 10) as f32 / 1.5).round() as i32;
-                        let step = if delta == 0 {
-                            if p5 > 14 { 1 } else { -1 }
-                        } else {
-                            delta
-                        };
-                        let new_b = (current_b - step).clamp(0, 100);
-
-                        if new_b != current_b {
+                    1 => {
+                        // Phase 1: Verify at Gain 100
+                        if p5 >= 5 && p5 <= 14 {
                             log::info!(
-                                "Auto-calibrating brightness: P5={}, adjusting {} -> {}",
-                                p5,
-                                current_b,
-                                new_b
+                                "Calibration verified at Gain 100: P5={} (Optimal). Locking calibration.",
+                                p5
                             );
+                            self.calibrated.store(true, Ordering::Relaxed);
+                            // Do not return: pass this settled frame directly to Engine!
+                        } else {
+                            // Rare trim step if gain caused unexpected pedestal shift
+                            log::info!("Post-gain trim needed at Gain 100: P5={}", p5);
+                            let current_b = self.brightness.load(Ordering::Relaxed);
+                            let delta = ((p5 - 10) as f32 / 1.5).round() as i32;
+                            let step = if delta == 0 {
+                                if p5 > 14 { 1 } else { -1 }
+                            } else {
+                                delta
+                            };
+                            let new_b = (current_b - step).clamp(0, 100);
+
                             self.set_brightness(new_b);
                             self.settle_frames.store(3, Ordering::Relaxed);
+                            self.cal_phase.store(2, Ordering::Relaxed);
                             return; // DROP FRAME
                         }
                     }
-
-                    // Brightness settled! Now transition to Phase 1: set gain to 100
-                    log::info!("Brightness settled at P5={}. Setting gain to 100...", p5);
-                    self.set_gain(100.0);
-                    self.settle_frames.store(3, Ordering::Relaxed);
-                    self.cal_phase.store(1, Ordering::Relaxed);
-                    return; // DROP FRAME while gain settles
-                }
-                1 => {
-                    // Phase 1: Verify at Gain 100
-                    if p5 >= 5 && p5 <= 14 {
-                        log::info!(
-                            "Calibration verified at Gain 100: P5={} (Optimal). Locking calibration.",
-                            p5
-                        );
+                    _ => {
+                        // Final Lock Phase
+                        log::info!("Calibration locked: final P5={}", p5);
                         self.calibrated.store(true, Ordering::Relaxed);
-                        // Do not return: pass this settled frame directly to Engine!
-                    } else {
-                        // Rare trim step if gain caused unexpected pedestal shift
-                        log::info!("Post-gain trim needed at Gain 100: P5={}", p5);
-                        let current_b = self.brightness.load(Ordering::Relaxed);
-                        let delta = ((p5 - 10) as f32 / 1.5).round() as i32;
-                        let step = if delta == 0 {
-                            if p5 > 14 { 1 } else { -1 }
-                        } else {
-                            delta
-                        };
-                        let new_b = (current_b - step).clamp(0, 100);
-
-                        self.set_brightness(new_b);
-                        self.settle_frames.store(3, Ordering::Relaxed);
-                        self.cal_phase.store(2, Ordering::Relaxed);
-                        return; // DROP FRAME
+                        // Do not return: pass this frame to Engine!
                     }
-                }
-                _ => {
-                    // Final Lock Phase
-                    log::info!("Calibration locked: final P5={}", p5);
-                    self.calibrated.store(true, Ordering::Relaxed);
-                    // Do not return: pass this frame to Engine!
                 }
             }
         }
