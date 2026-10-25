@@ -56,7 +56,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import org.json.JSONArray
-import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
 
@@ -76,6 +75,9 @@ fun StartScreen(
     var cameraSettingsMode by remember { mutableStateOf(settingsManager.cameraSettingsMode) }
     var internalFps by remember { mutableIntStateOf(settingsManager.internalFps) }
     var uvcFps by remember { mutableIntStateOf(settingsManager.uvcFps) }
+    var uvcWidth by remember { mutableIntStateOf(settingsManager.uvcWidth) }
+    var uvcHeight by remember { mutableIntStateOf(settingsManager.uvcHeight) }
+    var uvcFormat by remember { mutableStateOf(settingsManager.uvcFormat) }
     var extractor by remember { mutableStateOf(settingsManager.extractor) }
     var sensorMode by remember { mutableStateOf(settingsManager.sensorMode) }
     var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
@@ -88,7 +90,7 @@ fun StartScreen(
 
     var showCameraSelectionInfo by remember { mutableStateOf(false) }
     var showCameraSettingsInfo by remember { mutableStateOf(false) }
-    var showCameraFrameRateInfo by remember { mutableStateOf(false) }
+    var showCameraFormatInfo by remember { mutableStateOf(false) }
     var showInternalCameraInfo by remember { mutableStateOf(false) }
     var showSensorModeInfo by remember { mutableStateOf(false) }
     var showDownsamplingInfo by remember { mutableStateOf(false) }
@@ -111,6 +113,9 @@ fun StartScreen(
         cameraSettingsMode,
         internalFps,
         uvcFps,
+        uvcWidth,
+        uvcHeight,
+        uvcFormat,
         extractor,
         sensorMode,
         downsampling,
@@ -121,11 +126,21 @@ fun StartScreen(
         settingsManager.cameraSettingsMode = cameraSettingsMode
         settingsManager.internalFps = internalFps
         settingsManager.uvcFps = uvcFps
+        settingsManager.uvcWidth = uvcWidth
+        settingsManager.uvcHeight = uvcHeight
+        settingsManager.uvcFormat = uvcFormat
         settingsManager.extractor = extractor
         settingsManager.sensorMode = sensorMode
         settingsManager.downsampling = downsampling
         settingsManager.internalCameraId = internalCameraId
         settingsManager.guidanceMode = guidanceMode
+    }
+
+    LaunchedEffect(viewModel.availableUvcFormats) {
+        uvcFps = settingsManager.uvcFps
+        uvcWidth = settingsManager.uvcWidth
+        uvcHeight = settingsManager.uvcHeight
+        uvcFormat = settingsManager.uvcFormat
     }
 
     LaunchedEffect(internalCameraId) {
@@ -408,12 +423,12 @@ fun StartScreen(
             if (cameraSelection == "external") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        stringResource(id = R.string.label_camera_frame_rate),
+                        stringResource(id = R.string.label_camera_format),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     IconButton(
-                        onClick = { showCameraFrameRateInfo = true },
+                        onClick = { showCameraFormatInfo = true },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -430,7 +445,10 @@ fun StartScreen(
                         .fillMaxWidth()
                         .padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
                 ) {
-                    var expandedFps by remember { mutableStateOf(false) }
+                    var expandedFormat by remember { mutableStateOf(false) }
+                    val currentFormatLabel = remember(uvcFps) {
+                        "$uvcFps fps"
+                    }
                     Box(
                         modifier = Modifier.border(
                             1.dp,
@@ -438,44 +456,36 @@ fun StartScreen(
                             shape = RoundedCornerShape(4.dp)
                         )
                     ) {
-                        TextButton(onClick = { expandedFps = true }) {
+                        TextButton(onClick = { expandedFormat = true }) {
                             Text(
-                                NumberFormat.getInstance()
-                                    .format(if (cameraSelection == "external") uvcFps else internalFps),
+                                currentFormatLabel,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
                         DropdownMenu(
-                            expanded = expandedFps,
-                            onDismissRequest = { expandedFps = false },
+                            expanded = expandedFormat,
+                            onDismissRequest = { expandedFormat = false },
                             modifier = Modifier.border(
                                 1.dp,
                                 Color.Red,
                                 shape = RoundedCornerShape(4.dp)
                             )
                         ) {
-                            val fpsOptions = if (cameraSelection == "external") listOf(
-                                30,
-                                20,
-                                15,
-                                10,
-                                5
-                            ) else listOf(10, 5, 2, 1)
-                            fpsOptions.forEach { fps ->
+                            val formatOptions = viewModel.availableUvcFormats
+                            formatOptions.forEach { fmt ->
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            NumberFormat.getInstance().format(fps),
+                                            "${fmt.fps} fps",
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                     },
                                     onClick = {
-                                        if (cameraSelection == "external") {
-                                            uvcFps = fps
-                                        } else {
-                                            internalFps = fps
-                                        }
-                                        expandedFps = false
+                                        uvcWidth = fmt.width
+                                        uvcHeight = fmt.height
+                                        uvcFps = fmt.fps
+                                        uvcFormat = fmt.format
+                                        expandedFormat = false
                                     }
                                 )
                             }
@@ -1051,11 +1061,11 @@ fun StartScreen(
                 Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_camera_settings)))
             }
         }
-        if (showCameraFrameRateInfo) {
+        if (showCameraFormatInfo) {
             InfoPopup(
-                title = stringResource(id = R.string.label_camera_frame_rate),
-                onDismiss = { showCameraFrameRateInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_camera_frame_rate)))
+                title = stringResource(id = R.string.label_camera_format),
+                onDismiss = { showCameraFormatInfo = false }) {
+                Text(AnnotatedString.fromHtml(stringResource(id = R.string.info_camera_format)))
             }
         }
         if (showInternalCameraInfo) {

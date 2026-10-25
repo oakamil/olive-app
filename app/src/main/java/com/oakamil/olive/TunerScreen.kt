@@ -195,6 +195,11 @@ fun TunerScreen(
                 baseScale = 1f
             }
 
+            val isMirrored = viewModel.engineStats.isMirrored == true
+            val isRotated90 = (imageRotation.toInt() % 180 != 0)
+            val mirrorX = if (isMirrored && isRotated90) -1f else 1f
+            val mirrorY = if (isMirrored && !isRotated90) -1f else 1f
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -250,8 +255,8 @@ fun TunerScreen(
 
                                     // 4. Remove scale (zoom and base fit)
                                     val totalScale = scale * baseScale
-                                    val unscaledX = rx / totalScale
-                                    val unscaledY = ry / totalScale
+                                    val unscaledX = rx / (totalScale * mirrorX)
+                                    val unscaledY = ry / (totalScale * mirrorY)
 
                                     // 5. Apply to bitmap coordinates
                                     alignTargetX = (unscaledX / fitPxScale) + bW / 2f
@@ -259,8 +264,8 @@ fun TunerScreen(
                                 }
                             }
                             .graphicsLayer(
-                                scaleX = scale * baseScale,
-                                scaleY = scale * baseScale,
+                                scaleX = scale * baseScale * mirrorX,
+                                scaleY = scale * baseScale * mirrorY,
                                 translationX = offset.x,
                                 translationY = offset.y,
                                 rotationZ = imageRotation
@@ -291,8 +296,8 @@ fun TunerScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer(
-                                scaleX = scale * baseScale,
-                                scaleY = scale * baseScale,
+                                scaleX = scale * baseScale * mirrorX,
+                                scaleY = scale * baseScale * mirrorY,
                                 translationX = offset.x,
                                 translationY = offset.y,
                                 rotationZ = imageRotation

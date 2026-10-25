@@ -717,10 +717,16 @@ fun EngineRunningScreen(
                             Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
                         val bW = frame?.width?.toFloat() ?: 1f
                         val bH = frame?.height?.toFloat() ?: 1f
+
+                        val isMirrored = stats.isMirrored == true
+                        val isRotated90 = (viewModel.sensorOrientation % 180 != 0)
+                        val mirrorScaleX = if (isMirrored && isRotated90) -1f else 1f
+                        val mirrorScaleY = if (isMirrored && !isRotated90) -1f else 1f
+
                         val rawTargetPxX = (alignTargetPixel?.first ?: (bW / 2.0)).toFloat()
-                        val targetPxX =
-                            if (stats.isMirrored == true) bW - rawTargetPxX else rawTargetPxX
-                        val targetPxY = (alignTargetPixel?.second ?: (bH / 2.0)).toFloat()
+                        val rawTargetPxY = (alignTargetPixel?.second ?: (bH / 2.0)).toFloat()
+                        val targetPxX = if (mirrorScaleX < 0f) bW - rawTargetPxX else rawTargetPxX
+                        val targetPxY = if (mirrorScaleY < 0f) bH - rawTargetPxY else rawTargetPxY
                         val baseScale = maxOf(screenSize.width / bW, screenSize.height / bH)
 
                         val fovZoom = if ((stats.fov ?: 0.0) > 0) ((stats.fov
@@ -830,9 +836,8 @@ fun EngineRunningScreen(
                                         translationX = screenTx + manualOffset.x
                                         translationY = screenTy + manualOffset.y
                                         rotationZ = currentUiRotation
-                                        val mirrorMult = if (stats.isMirrored == true) -1f else 1f
-                                        scaleX = finalScale * clampedManualScale * mirrorMult
-                                        scaleY = finalScale * clampedManualScale
+                                        scaleX = finalScale * clampedManualScale * mirrorScaleX
+                                        scaleY = finalScale * clampedManualScale * mirrorScaleY
                                     }
                             )
 
@@ -856,6 +861,8 @@ fun EngineRunningScreen(
                             val currentManualScale by rememberUpdatedState(clampedManualScale)
                             val currentMinManualScale by rememberUpdatedState(minManualScale)
                             val currentManualOffset by rememberUpdatedState(manualOffset)
+                            val currentMirrorScaleX by rememberUpdatedState(mirrorScaleX)
+                            val currentMirrorScaleY by rememberUpdatedState(mirrorScaleY)
 
                             Canvas(
                                 modifier = Modifier
@@ -955,11 +962,10 @@ fun EngineRunningScreen(
                                                     cy - (rx - cx) * currentSinR + (ry - cy) * currentCosR
                                                 val effectiveScale =
                                                     currentFinalScale * currentManualScale
-                                                val mirrorMult =
-                                                    if (stats.isMirrored == true) -1f else 1f
                                                 val ix =
-                                                    cx + (px - cx) / (effectiveScale * mirrorMult)
-                                                val iy = cy + (py - cy) / effectiveScale
+                                                    cx + (px - cx) / (effectiveScale * currentMirrorScaleX)
+                                                val iy =
+                                                    cy + (py - cy) / (effectiveScale * currentMirrorScaleY)
                                                 val tpx =
                                                     (ix - cx) / currentBaseScale + currentBW / 2f
                                                 val tpy =

@@ -44,6 +44,18 @@ class SettingsManager(context: Context) {
         get() = prefs.getInt("uvc_fps", 30)
         set(value) = prefs.edit { putInt("uvc_fps", value) }
 
+    var uvcFormat: String
+        get() = prefs.getString("uvc_format", "MJPEG") ?: "MJPEG"
+        set(value) = prefs.edit { putString("uvc_format", value) }
+
+    var uvcWidth: Int
+        get() = prefs.getInt("uvc_width", 1920)
+        set(value) = prefs.edit { putInt("uvc_width", value) }
+
+    var uvcHeight: Int
+        get() = prefs.getInt("uvc_height", 1080)
+        set(value) = prefs.edit { putInt("uvc_height", value) }
+
     var extractor: String
         get() = prefs.getString("extractor", "Olive") ?: "Olive"
         set(value) = prefs.edit { putString("extractor", value) }
