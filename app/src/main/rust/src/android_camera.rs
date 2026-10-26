@@ -3,7 +3,7 @@
 
 use log::{error, info, warn};
 use ndk_sys::*;
-use olive_engine::{CameraConfig, CameraTrait, Image};
+use olive_engine::{CameraConfig, CameraTrait, CameraType, Image};
 use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::ptr;
@@ -93,6 +93,7 @@ impl CameraTrait for AndroidCamera {
 
     fn get_config(&self) -> Option<CameraConfig> {
         self.config.lock().unwrap().as_ref().map(|c| CameraConfig {
+            camera_type: CameraType::Internal { id: c.id.clone() },
             model: format!("Android_Cam_{}", c.id),
             width: c.width,
             height: c.height,
