@@ -137,62 +137,108 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
 
         captureSession.sessionPreset = .inputPriority
 
-        let deviceTypes: [AVCaptureDevice.DeviceType] = [
+        var deviceTypes: [AVCaptureDevice.DeviceType] = [
             .builtInWideAngleCamera,
             .builtInUltraWideCamera,
             .builtInTelephotoCamera
         ]
+        if #available(iOS 17.0, *) {
+            deviceTypes.append(.external)
+        }
         let discovery = AVCaptureDevice.DiscoverySession(
             deviceTypes: deviceTypes,
             mediaType: .video,
-            position: .back
+            position: .unspecified
         )
 
-        let targetIndex = Int(cameraId) ?? 0
+        let isExternalRequest = (cameraId == "external")
         let device: AVCaptureDevice
-        if discovery.devices.indices.contains(targetIndex) {
-            device = discovery.devices[targetIndex]
-        } else if let matched = discovery.devices.first(where: { $0.uniqueID == cameraId }) {
-            device = matched
-        } else if let defaultCam = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
-            device = defaultCam
-        } else if let first = discovery.devices.first {
-            device = first
+        if isExternalRequest {
+            if #available(iOS 17.0, *), let ext = discovery.devices.first(where: { $0.deviceType == .external }) {
+                device = ext
+            } else if let defaultCam = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
+                device = defaultCam
+            } else if let first = discovery.devices.first {
+                device = first
+            } else {
+                throw NSError(
+                    domain: "com.oakamil.olive",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "No camera available"]
+                )
+            }
         } else {
-            throw NSError(
-                domain: "com.oakamil.olive",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "No rear camera available"]
-            )
+            let targetIndex = Int(cameraId) ?? 0
+            if discovery.devices.indices.contains(targetIndex) {
+                device = discovery.devices[targetIndex]
+            } else if let matched = discovery.devices.first(where: { $0.uniqueID == cameraId }) {
+                device = matched
+            } else if let defaultCam = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
+                device = defaultCam
+            } else if let first = discovery.devices.first {
+                device = first
+            } else {
+                throw NSError(
+                    domain: "com.oakamil.olive",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "No rear camera available"]
+                )
+            }
         }
         currentCameraDevice = device
 
-        // Select the best 4:3 format <= 13MP (e.g. 4032x3024) supporting the widest exposure duration
-        let candidateFormats = device.formats.filter { format in
-            let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-            let pixels = Int(dims.width) * Int(dims.height)
-            let isUnder13MP = pixels <= 13_000_000
-            let is4to3 = abs(Double(dims.width) / Double(dims.height) - (4.0 / 3.0)) < 0.05
-            let subType = CMFormatDescriptionGetMediaSubType(format.formatDescription)
-            return isUnder13MP && is4to3 && (subType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange || subType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+        var isExternalDevice = false
+        if #available(iOS 17.0, *) {
+            isExternalDevice = (device.deviceType == .external)
         }
 
-        if let bestFormat = candidateFormats.max(by: { a, b in
-            let maxDurA = a.videoSupportedFrameRateRanges.map { $0.maxFrameDuration }.max(by: { CMTimeCompare($0, $1) < 0 }) ?? .zero
-            let maxDurB = b.videoSupportedFrameRateRanges.map { $0.maxFrameDuration }.max(by: { CMTimeCompare($0, $1) < 0 }) ?? .zero
-            if CMTimeCompare(maxDurA, maxDurB) != 0 {
-                return CMTimeCompare(maxDurA, maxDurB) < 0
+        if isExternalDevice {
+            // Find highest resolution <= 1080p for external cameras
+            let candidateFormats = device.formats.filter { format in
+                let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                return dims.width <= 1920 && dims.height <= 1080
             }
-            let dimsA = CMVideoFormatDescriptionGetDimensions(a.formatDescription)
-            let dimsB = CMVideoFormatDescriptionGetDimensions(b.formatDescription)
-            return (dimsA.width * dimsA.height) < (dimsB.width * dimsB.height)
-        }) {
-            do {
-                try device.lockForConfiguration()
-                device.activeFormat = bestFormat
-                device.unlockForConfiguration()
-            } catch {
-                print("Failed to set device.activeFormat to 4:3 12MP: \(error)")
+            if let bestFormat = candidateFormats.max(by: { a, b in
+                let dimsA = CMVideoFormatDescriptionGetDimensions(a.formatDescription)
+                let dimsB = CMVideoFormatDescriptionGetDimensions(b.formatDescription)
+                return (dimsA.width * dimsA.height) < (dimsB.width * dimsB.height)
+            }) ?? device.formats.first {
+                do {
+                    try device.lockForConfiguration()
+                    device.activeFormat = bestFormat
+                    device.unlockForConfiguration()
+                } catch {
+                    print("Failed to set external device.activeFormat: \(error)")
+                }
+            }
+        } else {
+            // Select the best 4:3 format <= 13MP (e.g. 4032x3024) supporting the widest exposure duration
+            let candidateFormats = device.formats.filter { format in
+                let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                let pixels = Int(dims.width) * Int(dims.height)
+                let isUnder13MP = pixels <= 13_000_000
+                let is4to3 = abs(Double(dims.width) / Double(dims.height) - (4.0 / 3.0)) < 0.05
+                let subType = CMFormatDescriptionGetMediaSubType(format.formatDescription)
+                return isUnder13MP && is4to3 && (subType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange || subType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+            }
+
+            if let bestFormat = candidateFormats.max(by: { a, b in
+                let maxDurA = a.videoSupportedFrameRateRanges.map { $0.maxFrameDuration }.max(by: { CMTimeCompare($0, $1) < 0 }) ?? .zero
+                let maxDurB = b.videoSupportedFrameRateRanges.map { $0.maxFrameDuration }.max(by: { CMTimeCompare($0, $1) < 0 }) ?? .zero
+                if CMTimeCompare(maxDurA, maxDurB) != 0 {
+                    return CMTimeCompare(maxDurA, maxDurB) < 0
+                }
+                let dimsA = CMVideoFormatDescriptionGetDimensions(a.formatDescription)
+                let dimsB = CMVideoFormatDescriptionGetDimensions(b.formatDescription)
+                return (dimsA.width * dimsA.height) < (dimsB.width * dimsB.height)
+            }) {
+                do {
+                    try device.lockForConfiguration()
+                    device.activeFormat = bestFormat
+                    device.unlockForConfiguration()
+                } catch {
+                    print("Failed to set device.activeFormat to 4:3 12MP: \(error)")
+                }
             }
         }
 
@@ -202,13 +248,22 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         }
 
         let output = AVCaptureVideoDataOutput()
-        let targetWidth = 2016
-        let targetHeight = 1512
-        output.videoSettings = [
-            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
-            kCVPixelBufferWidthKey as String: targetWidth,
-            kCVPixelBufferHeightKey as String: targetHeight
-        ]
+        if isExternalDevice {
+            let dims = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+            output.videoSettings = [
+                kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+                kCVPixelBufferWidthKey as String: Int(dims.width),
+                kCVPixelBufferHeightKey as String: Int(dims.height)
+            ]
+        } else {
+            let targetWidth = 2016
+            let targetHeight = 1512
+            output.videoSettings = [
+                kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+                kCVPixelBufferWidthKey as String: targetWidth,
+                kCVPixelBufferHeightKey as String: targetHeight
+            ]
+        }
         output.alwaysDiscardsLateVideoFrames = true
 
         let frameQueue = DispatchQueue(label: "com.oakamil.olive.cameraFrames", qos: .userInteractive)
@@ -225,32 +280,86 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
             }
         }
 
-        // Configure frame rate and initial optical infinity focus
+        // Configure frame rate, exposure, and initial optical infinity focus
         try device.lockForConfiguration()
         defer { device.unlockForConfiguration() }
 
-        if device.activeFormat.isVideoHDRSupported {
-            device.automaticallyAdjustsVideoHDREnabled = false
-            device.isVideoHDREnabled = false
-        }
+        if isExternalDevice {
+            // Two-Class Startup Engine for external cameras
+            let nominalFps: Double = {
+                if device.activeVideoMinFrameDuration.isValid && device.activeVideoMinFrameDuration.seconds > 0.0 {
+                    let fps = 1.0 / device.activeVideoMinFrameDuration.seconds
+                    if fps.isFinite && fps > 0.0 { return fps }
+                }
+                let ranges = device.activeFormat.videoSupportedFrameRateRanges
+                if let maxFps = ranges.map({ $0.maxFrameRate }).filter({ $0.isFinite && $0 > 0.0 }).max() {
+                    return maxFps
+                }
+                return 30.0
+            }()
 
-        if device.isLowLightBoostSupported {
-            device.automaticallyEnablesLowLightBoostWhenAvailable = false
-        }
+            let nominalExposureUs = Int32(round(1_000_000.0 / nominalFps))
+            let targetDuration = CMTime(value: 1, timescale: CMTimeScale(round(nominalFps)))
 
-        // Select the frame rate range that supports the widest exposure range
-        let ranges = device.activeFormat.videoSupportedFrameRateRanges
-        if let maxRange = ranges.max(by: { CMTimeCompare($0.maxFrameDuration, $1.maxFrameDuration) < 0 }) {
-            device.activeVideoMaxFrameDuration = maxRange.maxFrameDuration
-        }
-        // Cap max frame rate to 30 FPS to prevent 60 FPS flooding and excessive CPU/memory load
-        if ranges.contains(where: { $0.maxFrameRate >= 30.0 }) {
-            device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 30)
-        }
+            let minExp = device.activeFormat.minExposureDuration
+            let maxExp = device.activeFormat.maxExposureDuration
+            let clampedDuration: CMTime
+            if minExp.isValid && maxExp.isValid && minExp.seconds > 0.0 && maxExp.seconds > 0.0 {
+                clampedDuration = max(minExp, min(targetDuration, maxExp))
+            } else {
+                clampedDuration = targetDuration
+            }
 
-        // Lock to optical infinity baseline
-        if device.isFocusModeSupported(.locked) {
-            device.setFocusModeLocked(lensPosition: CameraService.opticalInfinityFocus, completionHandler: nil)
+            let durationSec = CMTimeGetSeconds(clampedDuration)
+            if durationSec.isFinite && durationSec > 0.0 {
+                self.appliedExposureUs = Int32(round(durationSec * 1_000_000.0))
+            } else {
+                self.appliedExposureUs = nominalExposureUs
+            }
+
+            if device.isExposureModeSupported(.continuousAutoExposure) {
+                // Class A (Sony IMX662): Native Hardware AEC
+                device.exposureMode = .continuousAutoExposure
+                if device.maxExposureTargetBias > 0.0 {
+                    device.setExposureTargetBias(device.maxExposureTargetBias, completionHandler: nil)
+                }
+                olive_ios_set_camera_is_ae(true)
+            } else if device.isExposureModeSupported(.custom) {
+                // Class B (SmartSens SC2210): Fixed-Iris Shutter Priority + Max ISO
+                device.setExposureModeCustom(duration: clampedDuration, iso: device.activeFormat.maxISO, completionHandler: nil)
+                olive_ios_set_camera_is_ae(false)
+            } else if device.isExposureModeSupported(.autoExpose) {
+                device.exposureMode = .autoExpose
+                olive_ios_set_camera_is_ae(true)
+            } else if device.isExposureModeSupported(.locked) {
+                device.exposureMode = .locked
+                olive_ios_set_camera_is_ae(false)
+            }
+        } else {
+            // Internal iPhone configuration
+            if device.activeFormat.isVideoHDRSupported {
+                device.automaticallyAdjustsVideoHDREnabled = false
+                device.isVideoHDREnabled = false
+            }
+
+            if device.isLowLightBoostSupported {
+                device.automaticallyEnablesLowLightBoostWhenAvailable = false
+            }
+
+            // Select the frame rate range that supports the widest exposure range
+            let ranges = device.activeFormat.videoSupportedFrameRateRanges
+            if let maxRange = ranges.max(by: { CMTimeCompare($0.maxFrameDuration, $1.maxFrameDuration) < 0 }) {
+                device.activeVideoMaxFrameDuration = maxRange.maxFrameDuration
+            }
+            // Cap max frame rate to 30 FPS to prevent 60 FPS flooding and excessive CPU/memory load
+            if ranges.contains(where: { $0.maxFrameRate >= 30.0 }) {
+                device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 30)
+            }
+
+            // Lock to optical infinity baseline
+            if device.isFocusModeSupported(.locked) {
+                device.setFocusModeLocked(lensPosition: CameraService.opticalInfinityFocus, completionHandler: nil)
+            }
         }
     }
 
@@ -360,6 +469,16 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
 
         let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         let timestampNs = Int64(CMTimeGetSeconds(timestamp) * 1_000_000_000.0)
+
+        if #available(iOS 17.0, *), currentCameraDevice?.deviceType == .external {
+            let rawExp = currentCameraDevice?.exposureDuration ?? .zero
+            if rawExp.isValid && rawExp.seconds > 0.0 {
+                let measuredUs = Int32(round(CMTimeGetSeconds(rawExp) * 1_000_000.0))
+                if measuredUs > 0 {
+                    self.appliedExposureUs = measuredUs
+                }
+            }
+        }
 
         let exposure = self.appliedExposureUs
         let iso = self.appliedIso

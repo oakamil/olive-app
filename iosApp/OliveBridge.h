@@ -118,6 +118,11 @@ float olive_ios_get_camera_focus(void);
 void olive_ios_set_camera_zoom(float zoom);
 float olive_ios_get_camera_zoom(void);
 
+void olive_ios_set_camera_stack_count(size_t count);
+void olive_ios_set_camera_is_ae(bool is_ae);
+void olive_ios_set_camera_brightness(int32_t brightness);
+int32_t olive_ios_get_camera_brightness(void);
+
 int64_t olive_ios_get_latest_frame_into(uint8_t *buffer, size_t capacity, int64_t last_timestamp_ms);
 
 // --- Telescope & Ephemeris Controls ---

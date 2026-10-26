@@ -150,6 +150,7 @@ pub extern "C" fn olive_ios_start_engine(
     init_ios_logger();
     let camera_id_str = unsafe { c_str_to_str(camera_id) };
     let is_demo = camera_id_str == "demo";
+    let is_external = camera_id_str == "external";
 
     let extractor_str = unsafe { c_str_to_str(extractor) };
     let ext_type = match extractor_str {
@@ -174,7 +175,7 @@ pub extern "C" fn olive_ios_start_engine(
         apple_camera::set_active_apple_camera(None);
         Arc::new(cam)
     } else {
-        let cam = AppleCamera::new(width, height, fov);
+        let cam = AppleCamera::new(width, height, if is_external { None } else { fov });
         apple_camera::set_active_apple_camera(Some(cam.clone()));
         cam
     };
@@ -210,13 +211,9 @@ pub extern "C" fn olive_ios_start_engine(
         crop: None,
         downsample: if is_demo { 0 } else { downsample_mode as u8 },
         auto_mode: auto_mode && !is_demo,
-        is_adaptive_camera: !is_demo,
-        noise_filter: true,
-        initial_fov: if is_demo {
-            camera.get_config().and_then(|c| c.initial_fov)
-        } else {
-            fov
-        },
+        is_adaptive_camera: !is_demo && !is_external,
+        noise_filter: !is_external,
+        initial_fov: if is_demo || is_external { None } else { fov },
         use_observer_location: !is_demo,
     };
 
@@ -592,9 +589,8 @@ pub extern "C" fn olive_ios_clear_goto_target() {
 pub extern "C" fn olive_ios_set_align_target_pixel(x: f64, y: f64) {
     if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
         if let Ok(mut state) = state_arc.write() {
-            state.pending_target_pixel_cmd = Some(olive_engine::engine::TargetPixelCommand::Set(
-                x, y,
-            ));
+            state.pending_target_pixel_cmd =
+                Some(olive_engine::engine::TargetPixelCommand::Set(x, y));
             info!("Align target pixel requested via iOS C-ABI: ({}, {})", x, y);
         }
     }

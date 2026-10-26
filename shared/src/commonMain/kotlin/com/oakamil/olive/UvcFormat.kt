@@ -27,7 +27,21 @@ data class UvcFormat(
             UvcFormat(1920, 1080, 5, "YUV2")
         )
 
-        fun filterFormats(all: List<UvcFormat>): List<UvcFormat> {
+        fun isUsb3Descriptors(raw: ByteArray?): Boolean {
+            if (raw == null || raw.size < 4) return false
+            var offset = 0
+            while (offset + 2 <= raw.size) {
+                val len = raw[offset].toInt() and 0xFF
+                if (len < 2 || offset + len > raw.size) break
+                val descType = raw[offset + 1].toInt() and 0xFF
+                // SuperSpeed Endpoint Companion Descriptor (0x30)
+                if (descType == 0x30) return true
+                offset += len
+            }
+            return false
+        }
+
+        fun filterFormats(all: List<UvcFormat>, isUsb3: Boolean = false): List<UvcFormat> {
             if (all.isEmpty()) return FALLBACK_FORMATS
             val maxWidth = all.maxOf { it.width }
             val maxHeight = all.maxOf { it.height }
@@ -41,7 +55,8 @@ data class UvcFormat(
                         fmt.format.startsWith("YUV", ignoreCase = true) ||
                         fmt.format.startsWith("YUY", ignoreCase = true)
                 val validFps = fmt.fps in 1..30
-                matchesRes && matchesFormat && validFps && fmt.fitsUsb2Bandwidth()
+                val fitsBandwidth = if (isUsb3) true else fmt.fitsUsb2Bandwidth()
+                matchesRes && matchesFormat && validFps && fitsBandwidth
             }
 
             if (valid.isEmpty()) return FALLBACK_FORMATS
@@ -84,7 +99,7 @@ data class UvcFormat(
             ) ?: validList.first()
         }
 
-        fun parseRawDescriptors(raw: ByteArray?): List<UvcFormat> {
+        fun parseRawDescriptors(raw: ByteArray?, isUsb3Override: Boolean? = null): List<UvcFormat> {
             if (raw == null || raw.size < 4) return emptyList()
             val formats = mutableListOf<UvcFormat>()
             var offset = 0
@@ -169,7 +184,8 @@ data class UvcFormat(
                 }
                 offset += len
             }
-            return filterFormats(formats)
+            val isUsb3 = isUsb3Override ?: isUsb3Descriptors(raw)
+            return filterFormats(formats, isUsb3 = isUsb3)
         }
     }
 }

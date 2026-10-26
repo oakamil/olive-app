@@ -10,6 +10,7 @@ import com.oakamil.olive.cinterop.olive_ios_free_bytes
 import com.oakamil.olive.cinterop.olive_ios_free_string
 import com.oakamil.olive.cinterop.olive_ios_get_asteroids
 import com.oakamil.olive.cinterop.olive_ios_get_available_cameras
+import com.oakamil.olive.cinterop.olive_ios_get_camera_brightness
 import com.oakamil.olive.cinterop.olive_ios_get_camera_exposure
 import com.oakamil.olive.cinterop.olive_ios_get_camera_focus
 import com.oakamil.olive.cinterop.olive_ios_get_camera_gain
@@ -21,9 +22,11 @@ import com.oakamil.olive.cinterop.olive_ios_get_planets
 import com.oakamil.olive.cinterop.olive_ios_process_telescope_data
 import com.oakamil.olive.cinterop.olive_ios_reset_telescope_server
 import com.oakamil.olive.cinterop.olive_ios_set_align_target_pixel
+import com.oakamil.olive.cinterop.olive_ios_set_camera_brightness
 import com.oakamil.olive.cinterop.olive_ios_set_camera_exposure
 import com.oakamil.olive.cinterop.olive_ios_set_camera_focus
 import com.oakamil.olive.cinterop.olive_ios_set_camera_gain
+import com.oakamil.olive.cinterop.olive_ios_set_camera_stack_count
 import com.oakamil.olive.cinterop.olive_ios_set_camera_zoom
 import com.oakamil.olive.cinterop.olive_ios_set_engine_paused
 import com.oakamil.olive.cinterop.olive_ios_set_engine_sigma
@@ -76,7 +79,7 @@ class IosEngineBridge : EngineBridge {
             olive_ios_start_hardware_capture(internalCameraId)
         }
         val camerasJson = getAvailableInternalCameras()
-        var selectedFov = 65.0f
+        var selectedFov = 0.0f
         var selectedWidth = 2016u
         var selectedHeight = 1512u
         try {
@@ -132,7 +135,23 @@ class IosEngineBridge : EngineBridge {
         uvcFps: Int,
         uvcWrapper: UvcCameraHandler?
     ) {
-        // USB cameras supported on iPadOS 17+ in Phase 4
+        olive_ios_start_hardware_capture("external")
+        val w = if (width > 0) width.toUInt() else 1920u
+        val h = if (height > 0) height.toUInt() else 1080u
+        val started = olive_ios_start_engine(
+            w,
+            h,
+            motionSensorMode,
+            extractor.ifEmpty { null },
+            downsampleMode,
+            lat,
+            lon,
+            timeMs,
+            autoMode,
+            0.0f,
+            "external"
+        )
+        check(started) { "Failed to initialize Olive iOS external UVC engine" }
     }
 
     override fun stopEngine() {
@@ -180,15 +199,15 @@ class IosEngineBridge : EngineBridge {
     }
 
     override fun getNativeCameraBrightnessRange(): IntArray? {
-        return null
+        return intArrayOf(0, 100, 50)
     }
 
     override fun getNativeCameraBrightness(): Int {
-        return 0
+        return olive_ios_get_camera_brightness()
     }
 
     override fun setNativeCameraBrightness(brightness: Int) {
-        // Not used on iOS
+        olive_ios_set_camera_brightness(brightness)
     }
 
     override fun setNativeCameraZoomRatio(zoom: Float) {
@@ -277,7 +296,7 @@ class IosEngineBridge : EngineBridge {
     }
 
     override fun updateUvcStacking(frames: Int) {
-        // External UVC stacking
+        olive_ios_set_camera_stack_count(frames.coerceAtLeast(1).toULong())
     }
 
     override fun processTelescopeData(data: ByteArray): ByteArray? {
