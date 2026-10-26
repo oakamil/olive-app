@@ -210,8 +210,8 @@
     <string name="type_comet">Comet</string>
     <string name="label_camera_settings">Camera Settings</string>
     <string name="info_camera_settings">In Auto mode the engine dynamically chooses the camera settings including effective exposure. &lt;br&gt;&lt;br&gt;The app automatically saves successful Auto settings for the phone\'s internal camera. Use the reset button to clear these saved settings and start over if they are no longer working.</string>
-    <string name="label_camera_frame_rate">Camera Frame Rate</string>
-    <string name="info_camera_frame_rate">Sets the frame rate and base exposure time for the camera.</string>
+    <string name="label_camera_format">Camera Frame Rate</string>
+    <string name="info_camera_format">Sets the target frame rate for the external USB camera. The app automatically chooses the optimal resolution and format for the selected frame rate.</string>
     <string name="info_internal_camera">Choose the phone camera to use for imaging.</string>
     <string name="label_internal_camera_section">Internal Camera</string>
     <string name="value_auto">Auto</string>

@@ -28,7 +28,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons.AutoMirrored.Filled
 import androidx.compose.material.icons.Icons.Default
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -77,7 +76,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.BaselineShift.Companion.Superscript
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -91,7 +89,6 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.abs
-import kotlin.math.acos
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -167,7 +164,8 @@ fun SkyCatalogDialog(
 
     val currentRaState = remember { mutableStateOf(viewModel.engineStats.ra) }
     val currentDecState = remember { mutableStateOf(viewModel.engineStats.dec) }
-    val currentTimeMsState = remember { mutableLongStateOf(Clock.System.now().toEpochMilliseconds()) }
+    val currentTimeMsState =
+        remember { mutableLongStateOf(Clock.System.now().toEpochMilliseconds()) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -862,7 +860,6 @@ fun SkyCatalogDialog(
                                             getLocalizedObjectType(obj.objectType)
                                         val magText = if (obj.magnitude != null) "Mag: ${
                                             String.format(
-                                                Locale.getDefault(),
                                                 "%.1f",
                                                 obj.magnitude
                                             )
@@ -955,7 +952,6 @@ fun SkyCatalogDialog(
                                                         )
                                                         Text(
                                                             String.format(
-                                                                Locale.getDefault(),
                                                                 "%.1f°",
                                                                 distance
                                                             ),
@@ -1352,7 +1348,7 @@ fun formatRa(raDegrees: Double): String {
     if (h >= 24) {
         h %= 24
     }
-    return String.format(Locale.US, "%02dh %02dm %02ds", h, m, s)
+    return String.format("%02dh %02dm %02ds", h, m, s)
 }
 
 fun formatDec(decDegrees: Double): String {
@@ -1370,7 +1366,7 @@ fun formatDec(decDegrees: Double): String {
         m = 0
         d += 1
     }
-    return String.format(Locale.US, "%s%02d° %02d' %02d\"", sign, d, m, s)
+    return String.format("%s%02d° %02d' %02d\"", sign, d, m, s)
 }
 
 enum class CoordinateField {
@@ -1404,7 +1400,10 @@ fun GotoRaDecPopup(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Epoch Toggle
-            Text(stringResource(Res.string.label_epoch), style = MaterialTheme.typography.labelLarge)
+            Text(
+                stringResource(Res.string.label_epoch),
+                style = MaterialTheme.typography.labelLarge
+            )
             Row(
                 modifier = Modifier
                     .padding(top = 4.dp, bottom = 12.dp)
@@ -1562,7 +1561,8 @@ fun GotoRaDecPopup(
                     val epoch = if (epochIsJ2000) {
                         2000.0
                     } else {
-                        val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+                        val now =
+                            Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
                         val year = now.year
                         val dayOfYear = now.dayOfYear
                         val isLeapYear = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)

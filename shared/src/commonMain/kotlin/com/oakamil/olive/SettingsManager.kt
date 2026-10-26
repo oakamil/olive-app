@@ -1,6 +1,7 @@
 package com.oakamil.olive
 
-class SettingsManager(
+class
+SettingsManager(
     private val storage: KeyValueStorage,
     val defaultFocus: Float = 0.0f
 ) {
@@ -39,6 +40,18 @@ class SettingsManager(
     var uvcFps: Int
         get() = storage.getInt("uvc_fps", 30)
         set(value) = storage.putInt("uvc_fps", value)
+
+    var uvcFormat: String
+        get() = storage.getString("uvc_format", "MJPEG") ?: "MJPEG"
+        set(value) = storage.putString("uvc_format", value)
+
+    var uvcWidth: Int
+        get() = storage.getInt("uvc_width", 1920)
+        set(value) = storage.putInt("uvc_width", value)
+
+    var uvcHeight: Int
+        get() = storage.getInt("uvc_height", 1080)
+        set(value) = storage.putInt("uvc_height", value)
 
     var extractor: String
         get() = storage.getString("extractor", "Olive") ?: "Olive"

@@ -124,6 +124,7 @@ int64_t olive_ios_get_latest_frame_into(uint8_t *buffer, size_t capacity, int64_
 void olive_ios_set_goto_target(double ra, double dec, double epoch);
 void olive_ios_clear_goto_target(void);
 void olive_ios_set_align_target_pixel(double x, double y);
+void olive_ios_clear_align_target_pixel(void);
 void olive_ios_sync_telescope(void);
 void olive_ios_sync_telescope_to_target(double ra, double dec);
 

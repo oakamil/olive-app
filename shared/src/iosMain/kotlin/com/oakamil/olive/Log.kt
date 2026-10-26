@@ -2,6 +2,7 @@ package com.oakamil.olive
 
 import platform.Foundation.NSLog
 
+@Suppress("unused")
 actual object Log {
     actual fun v(tag: String, msg: String) {
         NSLog("[VERBOSE] [%s] %s", tag, msg)

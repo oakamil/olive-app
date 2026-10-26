@@ -25,7 +25,7 @@ class OliveService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var multicastLock: WifiManager.MulticastLock? = null
-    private val CHANNEL_ID = "OliveServiceChannel"
+    private val channelId = "OliveServiceChannel"
 
     override fun onCreate() {
         super.onCreate()
@@ -42,7 +42,7 @@ class OliveService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val mode = intent?.getStringExtra("ENGINE_MODE") ?: "NATIVE"
 
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle(getString(R.string.notif_engine_title))
             .setContentText(getString(R.string.notif_engine_text, mode))
             .setSmallIcon(drawable.ic_menu_camera)
@@ -50,9 +50,9 @@ class OliveService : Service() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val type = if (mode == "UVC") {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             } else {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             }
             startForeground(1, notification, type)
         } else {
@@ -62,6 +62,16 @@ class OliveService : Service() {
         acquireWakeLock()
 
         return START_NOT_STICKY
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        super.onTimeout(startId, fgsType)
+        Log.w(
+            "OliveService",
+            "Foreground service onTimeout received (fgsType=$fgsType, startId=$startId). Stopping service gracefully to prevent crash."
+        )
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf(startId)
     }
 
     override fun onDestroy() {
@@ -77,7 +87,7 @@ class OliveService : Service() {
 
     private fun createNotificationChannel() {
         val serviceChannel = NotificationChannel(
-            CHANNEL_ID,
+            channelId,
             getString(R.string.notif_channel_name),
             NotificationManager.IMPORTANCE_LOW
         )

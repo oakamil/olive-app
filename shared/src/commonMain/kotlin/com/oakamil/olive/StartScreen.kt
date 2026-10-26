@@ -28,14 +28,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,10 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlin.math.abs
 
 @Composable
@@ -73,6 +68,9 @@ fun StartScreen(
     var cameraSettingsMode by remember { mutableStateOf(settingsManager.cameraSettingsMode) }
     var internalFps by remember { mutableIntStateOf(settingsManager.internalFps) }
     var uvcFps by remember { mutableIntStateOf(settingsManager.uvcFps) }
+    var uvcWidth by remember { mutableIntStateOf(settingsManager.uvcWidth) }
+    var uvcHeight by remember { mutableIntStateOf(settingsManager.uvcHeight) }
+    var uvcFormat by remember { mutableStateOf(settingsManager.uvcFormat) }
     var extractor by remember { mutableStateOf(settingsManager.extractor) }
     var sensorMode by remember { mutableStateOf(settingsManager.sensorMode) }
     var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
@@ -85,7 +83,7 @@ fun StartScreen(
 
     var showCameraSelectionInfo by remember { mutableStateOf(false) }
     var showCameraSettingsInfo by remember { mutableStateOf(false) }
-    var showCameraFrameRateInfo by remember { mutableStateOf(false) }
+    var showCameraFormatInfo by remember { mutableStateOf(false) }
     var showInternalCameraInfo by remember { mutableStateOf(false) }
     var showSensorModeInfo by remember { mutableStateOf(false) }
     var showDownsamplingInfo by remember { mutableStateOf(false) }
@@ -108,6 +106,9 @@ fun StartScreen(
         cameraSettingsMode,
         internalFps,
         uvcFps,
+        uvcWidth,
+        uvcHeight,
+        uvcFormat,
         extractor,
         sensorMode,
         downsampling,
@@ -118,11 +119,21 @@ fun StartScreen(
         settingsManager.cameraSettingsMode = cameraSettingsMode
         settingsManager.internalFps = internalFps
         settingsManager.uvcFps = uvcFps
+        settingsManager.uvcWidth = uvcWidth
+        settingsManager.uvcHeight = uvcHeight
+        settingsManager.uvcFormat = uvcFormat
         settingsManager.extractor = extractor
         settingsManager.sensorMode = sensorMode
         settingsManager.downsampling = downsampling
         settingsManager.internalCameraId = internalCameraId
         settingsManager.guidanceMode = guidanceMode
+    }
+
+    LaunchedEffect(viewModel.availableUvcFormats) {
+        uvcFps = settingsManager.uvcFps
+        uvcWidth = settingsManager.uvcWidth
+        uvcHeight = settingsManager.uvcHeight
+        uvcFormat = settingsManager.uvcFormat
     }
 
     LaunchedEffect(internalCameraId) {
@@ -350,7 +361,8 @@ fun StartScreen(
                                         false
                                     )
                                 }
-                                val profileKey = if (capabilities.isApple) "night_profile_Apple AVFoundation Camera" else "night_profile_Android_Cam_$internalCameraId"
+                                val profileKey =
+                                    if (capabilities.isApple) "night_profile_Apple AVFoundation Camera" else "night_profile_Android_Cam_$internalCameraId"
                                 var hasCameraProfile by remember {
                                     mutableStateOf(
                                         settingsManager.getString(profileKey) != null
@@ -407,12 +419,12 @@ fun StartScreen(
             if (cameraSelection == "external") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        stringResource(id = Res.string.label_camera_frame_rate),
+                        stringResource(id = Res.string.label_camera_format),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     IconButton(
-                        onClick = { showCameraFrameRateInfo = true },
+                        onClick = { showCameraFormatInfo = true },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -429,7 +441,10 @@ fun StartScreen(
                         .fillMaxWidth()
                         .padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
                 ) {
-                    var expandedFps by remember { mutableStateOf(false) }
+                    var expandedFormat by remember { mutableStateOf(false) }
+                    val currentFormatLabel = remember(uvcFps) {
+                        "$uvcFps fps"
+                    }
                     Box(
                         modifier = Modifier.border(
                             1.dp,
@@ -437,44 +452,36 @@ fun StartScreen(
                             shape = RoundedCornerShape(4.dp)
                         )
                     ) {
-                        TextButton(onClick = { expandedFps = true }) {
+                        TextButton(onClick = { expandedFormat = true }) {
                             Text(
-                                NumberFormat.getInstance()
-                                    .format(if (cameraSelection == "external") uvcFps else internalFps),
+                                currentFormatLabel,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
                         DropdownMenu(
-                            expanded = expandedFps,
-                            onDismissRequest = { expandedFps = false },
+                            expanded = expandedFormat,
+                            onDismissRequest = { expandedFormat = false },
                             modifier = Modifier.border(
                                 1.dp,
                                 Color.Red,
                                 shape = RoundedCornerShape(4.dp)
                             )
                         ) {
-                            val fpsOptions = if (cameraSelection == "external") listOf(
-                                30,
-                                20,
-                                15,
-                                10,
-                                5
-                            ) else listOf(10, 5, 2, 1)
-                            fpsOptions.forEach { fps ->
+                            val formatOptions = viewModel.availableUvcFormats
+                            formatOptions.forEach { fmt ->
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            NumberFormat.getInstance().format(fps),
+                                            "${fmt.fps} fps",
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                     },
                                     onClick = {
-                                        if (cameraSelection == "external") {
-                                            uvcFps = fps
-                                        } else {
-                                            internalFps = fps
-                                        }
-                                        expandedFps = false
+                                        uvcWidth = fmt.width
+                                        uvcHeight = fmt.height
+                                        uvcFps = fmt.fps
+                                        uvcFormat = fmt.format
+                                        expandedFormat = false
                                     }
                                 )
                             }
@@ -524,12 +531,11 @@ fun StartScreen(
                         tempCameras.sortBy { it.first.toIntOrNull() ?: Int.MAX_VALUE }
                         for (cam in tempCameras) {
                             supportsRawMap[cam.first] = cam.third
-                            val fovStr = String.format(Locale.getDefault(), "%.1f", cam.second)
+                            val fovStr = String.format("%.1f", cam.second)
                             list.add(
                                 Pair(
                                     cam.first,
                                     String.format(
-                                        Locale.getDefault(),
                                         cameraFovFormat,
                                         cam.first,
                                         fovStr
@@ -1046,11 +1052,11 @@ fun StartScreen(
                 Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_settings)))
             }
         }
-        if (showCameraFrameRateInfo) {
+        if (showCameraFormatInfo) {
             InfoPopup(
-                title = stringResource(id = Res.string.label_camera_frame_rate),
-                onDismiss = { showCameraFrameRateInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_frame_rate)))
+                title = stringResource(id = Res.string.label_camera_format),
+                onDismiss = { showCameraFormatInfo = false }) {
+                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_format)))
             }
         }
         if (showInternalCameraInfo) {

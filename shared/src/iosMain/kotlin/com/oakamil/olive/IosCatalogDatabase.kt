@@ -1,9 +1,64 @@
 package com.oakamil.olive
 
-import com.oakamil.olive.cinterop.*
-import kotlinx.cinterop.*
-import platform.Foundation.*
-import platform.darwin.*
+import com.oakamil.olive.cinterop.SQLITE_DONE
+import com.oakamil.olive.cinterop.SQLITE_FLOAT
+import com.oakamil.olive.cinterop.SQLITE_INTEGER
+import com.oakamil.olive.cinterop.SQLITE_NULL
+import com.oakamil.olive.cinterop.SQLITE_OK
+import com.oakamil.olive.cinterop.SQLITE_OPEN_FULLMUTEX
+import com.oakamil.olive.cinterop.SQLITE_OPEN_READONLY
+import com.oakamil.olive.cinterop.SQLITE_OPEN_READWRITE
+import com.oakamil.olive.cinterop.SQLITE_ROW
+import com.oakamil.olive.cinterop.olive_sqlite3_bind_text
+import com.oakamil.olive.cinterop.sqlite3_bind_double
+import com.oakamil.olive.cinterop.sqlite3_close_v2
+import com.oakamil.olive.cinterop.sqlite3_column_count
+import com.oakamil.olive.cinterop.sqlite3_column_double
+import com.oakamil.olive.cinterop.sqlite3_column_int
+import com.oakamil.olive.cinterop.sqlite3_column_name
+import com.oakamil.olive.cinterop.sqlite3_column_text
+import com.oakamil.olive.cinterop.sqlite3_column_type
+import com.oakamil.olive.cinterop.sqlite3_db_readonly
+import com.oakamil.olive.cinterop.sqlite3_errmsg
+import com.oakamil.olive.cinterop.sqlite3_exec
+import com.oakamil.olive.cinterop.sqlite3_finalize
+import com.oakamil.olive.cinterop.sqlite3_open_v2
+import com.oakamil.olive.cinterop.sqlite3_prepare_v2
+import com.oakamil.olive.cinterop.sqlite3_reset
+import com.oakamil.olive.cinterop.sqlite3_step
+import kotlinx.cinterop.Arena
+import kotlinx.cinterop.BetaInteropApi
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.CPointer
+import kotlinx.cinterop.CPointerVar
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.reinterpret
+import kotlinx.cinterop.toKString
+import kotlinx.cinterop.value
+import platform.Foundation.NSBundle
+import platform.Foundation.NSData
+import platform.Foundation.NSDocumentDirectory
+import platform.Foundation.NSFileManager
+import platform.Foundation.NSHTTPURLResponse
+import platform.Foundation.NSMutableURLRequest
+import platform.Foundation.NSString
+import platform.Foundation.NSURL
+import platform.Foundation.NSURLSession
+import platform.Foundation.NSUTF8StringEncoding
+import platform.Foundation.NSUserDefaults
+import platform.Foundation.NSUserDomainMask
+import platform.Foundation.create
+import platform.Foundation.dataTaskWithRequest
+import platform.Foundation.setHTTPMethod
+import platform.Foundation.setValue
+import platform.darwin.DISPATCH_TIME_NOW
+import platform.darwin.dispatch_semaphore_create
+import platform.darwin.dispatch_semaphore_signal
+import platform.darwin.dispatch_semaphore_wait
+import platform.darwin.dispatch_time
 import platform.posix.pthread_mutex_init
 import platform.posix.pthread_mutex_lock
 import platform.posix.pthread_mutex_t
@@ -163,7 +218,7 @@ class IosCatalogDatabase : CatalogDatabase {
 
     private fun columnString(stmt: CPointer<cnames.structs.sqlite3_stmt>?, col: Int): String? {
         val ptr = sqlite3_column_text(stmt, col) ?: return null
-        return ptr.reinterpret<kotlinx.cinterop.ByteVar>().toKString()
+        return ptr.reinterpret<ByteVar>().toKString()
     }
 
     override fun getCatalogDescriptions(): Map<String, String> = mutex.withLock {
@@ -324,7 +379,7 @@ class IosCatalogDatabase : CatalogDatabase {
                 return@withLock false
             }
 
-            val text = NSString.create(data, NSUTF8StringEncoding) as? String
+            val text = NSString.create(data, NSUTF8StringEncoding)?.toString()
                 ?: return@withLock false
 
             val lines = text.lines()

@@ -83,6 +83,7 @@ interface EngineBridge {
     fun setGoToTarget(ra: Double, dec: Double, epoch: Double)
     fun clearGoToTarget()
     fun setAlignTargetPixel(x: Double, y: Double)
+    fun clearAlignTargetPixel()
     fun syncTelescope()
     fun syncTelescopeToTarget(ra: Double, dec: Double)
 }

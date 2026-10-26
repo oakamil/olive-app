@@ -3,8 +3,6 @@
 
 package com.oakamil.olive
 
-import kotlin.math.PI
-
 internal object Math {
     const val PI: Double = kotlin.math.PI
     fun toRadians(angdeg: Double): Double = angdeg * (PI / 180.0)

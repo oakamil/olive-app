@@ -4,6 +4,7 @@
 package com.oakamil.olive
 
 import androidx.compose.ui.graphics.asComposeImageBitmap
+import com.oakamil.olive.cinterop.olive_ios_clear_align_target_pixel
 import com.oakamil.olive.cinterop.olive_ios_clear_goto_target
 import com.oakamil.olive.cinterop.olive_ios_free_bytes
 import com.oakamil.olive.cinterop.olive_ios_free_string
@@ -105,7 +106,7 @@ class IosEngineBridge : EngineBridge {
             selectedWidth,
             selectedHeight,
             if (isDemo) 0 else motionSensorMode,
-            if (extractor.isNotEmpty()) extractor else null,
+            extractor.ifEmpty { null },
             if (isDemo) 0 else downsampleMode,
             lat,
             lon,
@@ -347,6 +348,10 @@ class IosEngineBridge : EngineBridge {
 
     override fun setAlignTargetPixel(x: Double, y: Double) {
         olive_ios_set_align_target_pixel(x, y)
+    }
+
+    override fun clearAlignTargetPixel() {
+        olive_ios_clear_align_target_pixel()
     }
 
     override fun syncTelescope() {

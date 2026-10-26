@@ -3,8 +3,8 @@
 # proguardFiles setting in build.gradle.kts.
 
 # Disable obfuscation and shrinking, but keep optimization (needed for log stripping)
--dontobfuscate
--dontshrink
+#-dontobfuscate
+#-dontshrink
 
 # Strip Log.v and Log.d
 -assumenosideeffects class android.util.Log {
@@ -34,3 +34,6 @@
 -dontwarn javax.naming.**
 -dontwarn com.squareup.okhttp.**
 -dontwarn javax.lang.model.element.Modifier
+
+# Preserve UVCCamera library classes and members accessed via reflection and JNI
+-keep class com.jiangdg.uvc.** { *; }

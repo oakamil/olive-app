@@ -87,7 +87,11 @@ object OliveEngine : EngineBridge {
         val pixelCount = width * height
         if (pixelCount !in 1..25000000) return null
 
-        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            width,
+            height,
+            android.graphics.Bitmap.Config.ARGB_8888
+        )
         bitmap.copyPixelsFromBuffer(buffer)
         return LatestFrame(ts, bitmap.asImageBitmap())
     }
@@ -125,6 +129,7 @@ object OliveEngine : EngineBridge {
     external override fun setGoToTarget(ra: Double, dec: Double, epoch: Double)
     external override fun clearGoToTarget()
     external override fun setAlignTargetPixel(x: Double, y: Double)
+    external override fun clearAlignTargetPixel()
     external override fun syncTelescope()
     external override fun syncTelescopeToTarget(ra: Double, dec: Double)
 }

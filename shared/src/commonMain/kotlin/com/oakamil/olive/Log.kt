@@ -1,5 +1,6 @@
 package com.oakamil.olive
 
+@Suppress("unused")
 expect object Log {
     fun v(tag: String, msg: String)
     fun d(tag: String, msg: String)

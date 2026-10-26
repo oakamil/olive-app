@@ -50,6 +50,8 @@ private fun getIosDeviceNetworkEndpoint(): String {
     return "$host ($ip)"
 }
 
+// Public entry point called from Swift (iosApp/ContentView.swift: MainViewControllerKt.MainViewController())
+@Suppress("unused", "FunctionName")
 fun MainViewController(): UIViewController = ComposeUIViewController {
     val storage = remember { NSUserDefaultsStorage() }
     val capabilities = remember { ApplePlatformCapabilities }
@@ -148,7 +150,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
 
     LaunchedEffect(Unit) {
         val launchArgs =
-            platform.Foundation.NSProcessInfo.processInfo.arguments.filterIsInstance<String>()
+            NSProcessInfo.processInfo.arguments.filterIsInstance<String>()
         if (launchArgs.contains("-testEphemeris")) {
             val asteroids = viewModel.getAsteroids()
             println("EPHEMERIS_TEST_ASTEROIDS: count=${asteroids.size}, first=${asteroids.firstOrNull()?.commonName}")

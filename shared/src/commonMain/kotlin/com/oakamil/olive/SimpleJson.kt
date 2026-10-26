@@ -32,7 +32,9 @@ class JsonObject(initialMap: Map<String, Any?> = emptyMap()) {
         val v = map[key] ?: throw NoSuchElementException("Key $key not found")
         return when (v) {
             is Number -> v.toDouble()
-            is String -> v.toDoubleOrNull() ?: throw NumberFormatException("Cannot parse $v as Double")
+            is String -> v.toDoubleOrNull()
+                ?: throw NumberFormatException("Cannot parse $v as Double")
+
             else -> throw NumberFormatException("Cannot parse $v as Double")
         }
     }
@@ -59,7 +61,9 @@ class JsonObject(initialMap: Map<String, Any?> = emptyMap()) {
         val v = map[key] ?: throw NoSuchElementException("Key $key not found")
         return when (v) {
             is Boolean -> v
-            is String -> v.toBooleanStrictOrNull() ?: throw IllegalArgumentException("Cannot parse $v as Boolean")
+            is String -> v.toBooleanStrictOrNull()
+                ?: throw IllegalArgumentException("Cannot parse $v as Boolean")
+
             else -> throw IllegalArgumentException("Cannot parse $v as Boolean")
         }
     }
@@ -188,6 +192,7 @@ internal class SimpleJsonParser(private val src: String) {
                             sb.append(hex.toInt(16).toChar())
                         }
                     }
+
                     else -> sb.append(esc)
                 }
             } else {

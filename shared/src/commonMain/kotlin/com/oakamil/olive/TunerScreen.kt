@@ -168,6 +168,11 @@ fun TunerScreen(
                 baseScale = 1f
             }
 
+            val isMirrored = viewModel.engineStats.isMirrored == true
+            val isRotated90 = (imageRotation.toInt() % 180 != 0)
+            val mirrorX = if (isMirrored && isRotated90) -1f else 1f
+            val mirrorY = if (isMirrored && !isRotated90) -1f else 1f
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -223,8 +228,8 @@ fun TunerScreen(
 
                                     // 4. Remove scale (zoom and base fit)
                                     val totalScale = scale * baseScale
-                                    val unscaledX = rx / totalScale
-                                    val unscaledY = ry / totalScale
+                                    val unscaledX = rx / (totalScale * mirrorX)
+                                    val unscaledY = ry / (totalScale * mirrorY)
 
                                     // 5. Apply to bitmap coordinates
                                     alignTargetX = (unscaledX / fitPxScale) + bW / 2f
@@ -232,40 +237,25 @@ fun TunerScreen(
                                 }
                             }
                             .graphicsLayer(
-                                scaleX = scale * baseScale,
-                                scaleY = scale * baseScale,
+                                scaleX = scale * baseScale * mirrorX,
+                                scaleY = scale * baseScale * mirrorY,
                                 translationX = offset.x,
                                 translationY = offset.y,
                                 rotationZ = imageRotation
                             )
                     )
 
-                    val currentBoresightX: Float
-                    val currentBoresightY: Float
-                    if (viewModel.engineStats.targetPixelX != null && viewModel.engineStats.targetPixelY != null) {
-                        currentBoresightX = viewModel.engineStats.targetPixelX!!.toFloat()
-                        currentBoresightY = viewModel.engineStats.targetPixelY!!.toFloat()
-                    } else {
-                        val alignPixelStr = settingsManager.getString("target_pixel")
-                        var savedX: Float? = null
-                        var savedY: Float? = null
-                        if (alignPixelStr != null) {
-                            val parts = alignPixelStr.split(",")
-                            if (parts.size == 2) {
-                                savedX = parts[0].trim().toFloatOrNull()
-                                savedY = parts[1].trim().toFloatOrNull()
-                            }
-                        }
-                        currentBoresightX = savedX ?: (bW / 2f)
-                        currentBoresightY = savedY ?: (bH / 2f)
-                    }
+                    val currentBoresightX =
+                        (viewModel.engineStats.targetPixelX ?: (bW / 2.0)).toFloat()
+                    val currentBoresightY =
+                        (viewModel.engineStats.targetPixelY ?: (bH / 2.0)).toFloat()
 
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer(
-                                scaleX = scale * baseScale,
-                                scaleY = scale * baseScale,
+                                scaleX = scale * baseScale * mirrorX,
+                                scaleY = scale * baseScale * mirrorY,
                                 translationX = offset.x,
                                 translationY = offset.y,
                                 rotationZ = imageRotation
@@ -434,7 +424,6 @@ fun TunerScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         stringResource(id = Res.string.info_hfr_label) + ": " + String.format(
-                            Locale.getDefault(),
                             "%.2f",
                             viewModel.engineStats.hfr
                         ),
@@ -546,12 +535,7 @@ fun TunerScreen(
             confirmButton = {
                 Button(onClick = {
                     showResetAlignDialog = false
-                    val frame = viewModel.latestFrame
-                    if (frame != null) {
-                        val bW = frame.width.toDouble()
-                        val bH = frame.height.toDouble()
-                        viewModel.setAlignTargetPixel(bW / 2.0, bH / 2.0)
-                    }
+                    viewModel.clearAlignTargetPixel()
                     alignTargetX = null
                     alignTargetY = null
                 }) {
@@ -642,7 +626,7 @@ fun TuningControls(
                     Text(
                         stringResource(id = Res.string.label_zoom) + ": " + stringResource(
                             id = Res.string.format_zoom,
-                            String.format(Locale.getDefault(), "%.1f", viewModel.currentZoom)
+                            String.format("%.1f", viewModel.currentZoom)
                         ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onBackground
@@ -672,7 +656,6 @@ fun TuningControls(
                     stringResource(id = Res.string.label_exposure) + ": " + stringResource(
                         id = Res.string.format_ms,
                         String.format(
-                            Locale.getDefault(),
                             "%.1f",
                             viewModel.currentExposure / 1000f
                         )
@@ -799,7 +782,6 @@ fun TuningControls(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         stringResource(id = Res.string.label_focus) + ": " + String.format(
-                            Locale.getDefault(),
                             focusFormat,
                             viewModel.currentFocus
                         ),
