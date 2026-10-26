@@ -645,6 +645,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearAlignTargetPixel() {
+        if (isEngineRunning) {
+            OliveEngine.clearAlignTargetPixel()
+            Log.i("MainViewModel", "Clear Align Target requested in JNI")
+        } else {
+            Log.w("MainViewModel", "Engine not running, cannot clear align target")
+        }
+    }
+
     fun getPlanets(): List<CatalogObject> {
         val lat = currentLat ?: return emptyList()
         val lon = currentLon ?: return emptyList()
