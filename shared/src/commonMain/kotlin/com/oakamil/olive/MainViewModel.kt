@@ -14,9 +14,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.time.TimeSource
 import kotlinx.datetime.Clock
 import kotlin.concurrent.Volatile
+import kotlin.time.TimeSource
 
 open class MainViewModel(
     val storage: KeyValueStorage,
@@ -25,6 +25,8 @@ open class MainViewModel(
     val catalogDb: CatalogDatabase
 ) : ViewModel() {
     var uvcWrapper: UvcCameraHandler? = null
+    var availableUvcFormats by mutableStateOf(UvcFormat.FALLBACK_FORMATS)
+    private var lastLoggedMirrored: Boolean? = null
 
     private val timeMark = TimeSource.Monotonic.markNow()
     fun getElapsedRealtimeMs(): Long = timeMark.elapsedNow().inWholeMilliseconds
@@ -39,6 +41,7 @@ open class MainViewModel(
 
     var engineStats by mutableStateOf(EngineStats())
         private set
+
 
     enum class LocationRefreshStatus { IDLE, REFRESHING, SUCCESS, FAILURE }
 
@@ -166,6 +169,16 @@ open class MainViewModel(
         val json = engine.getEngineStats()
         try {
             val obj = JSONObject(json)
+            val parsedMirrored =
+                if (obj.isNull("is_mirrored")) null else obj.getBoolean("is_mirrored")
+            if (parsedMirrored != lastLoggedMirrored) {
+                lastLoggedMirrored = parsedMirrored
+                Log.i(
+                    "MainViewModel",
+                    "Engine mirroring state updated: is_mirrored=$parsedMirrored"
+                )
+            }
+
             engineStats = EngineStats(
                 status = obj.optString("status", "Idle"),
                 ra = if (obj.isNull("ra")) null else obj.getDouble("ra"),
@@ -189,7 +202,7 @@ open class MainViewModel(
                 targetRa = if (obj.isNull("target_ra")) null else obj.getDouble("target_ra"),
                 targetDec = if (obj.isNull("target_dec")) null else obj.getDouble("target_dec"),
                 isImuEstimate = obj.optBoolean("is_imu_estimate", false),
-                isMirrored = if (obj.isNull("is_mirrored")) null else obj.getBoolean("is_mirrored"),
+                isMirrored = parsedMirrored,
                 solvedCrop = if (obj.isNull("solved_crop")) null else obj.getString("solved_crop"),
                 targetPixelX = if (obj.isNull("target_pixel_x")) null else obj.getDouble("target_pixel_x"),
                 targetPixelY = if (obj.isNull("target_pixel_y")) null else obj.getDouble("target_pixel_y"),
@@ -222,6 +235,7 @@ open class MainViewModel(
 
     fun dismissCameraStuckDialog() {
         isCameraStuck = false
+        // Offset the timer by 10s so the 15s timeout takes 25s to trigger again
         lastFrameReceivedRealtime = getElapsedRealtimeMs() + 10000L
     }
 
@@ -350,7 +364,8 @@ open class MainViewModel(
                 if (isAutoSettings) {
                     setZoom(1.0f)
                     val savedFocus = settingsManager.manualFocus
-                    val focusToApply = if (savedFocus in capabilities.focusRange) savedFocus else capabilities.defaultFocus
+                    val focusToApply =
+                        if (savedFocus in capabilities.focusRange) savedFocus else capabilities.defaultFocus
                     setFocus(focusToApply)
                     updateUvcStacking(1)
                 } else {
@@ -398,14 +413,17 @@ open class MainViewModel(
             }
 
             val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
-            val pw = uvcWrapper?.previewWidth ?: 640
-            val ph = uvcWrapper?.previewHeight ?: 480
+            val uvcWidth = uvcWrapper?.previewWidth ?: 640
+            val uvcHeight = uvcWrapper?.previewHeight ?: 480
+            val autoDownsampling = if (uvcWidth.toLong() * uvcHeight.toLong() < 1_250_000L) 0 else 2
+            val forcedDownsampling =
+                if (isAutoSettings) autoDownsampling else settingsManager.downsampling
             engine.startExternalCameraEngine(
-                pw,
-                ph,
+                uvcWidth,
+                uvcHeight,
                 settingsManager.motionSensorMode,
                 settingsManager.extractor,
-                settingsManager.downsampling,
+                forcedDownsampling,
                 lat,
                 lon,
                 timeMs,
@@ -423,29 +441,26 @@ open class MainViewModel(
                 minAnalogGain = 0f
                 maxAnalogGain = 100f
 
-                uvcWrapper?.startZeroCopyStream()
-                delay(300)
+                val fps = settingsManager.uvcFps.coerceAtLeast(1)
+                val initialGain = if (isAutoSettings) {
+                    100f
+                } else {
+                    val saved = settingsManager.manualGain
+                    if (saved < 0f) 100f else saved.coerceIn(0f, 100f)
+                }
+
+                // Both Auto and Manual modes run the same AEC Prime-and-Lock startup sequence:
+                // 200ms stabilize -> 750ms Mode 2 prime -> Lock Mode 1 -> 1/fps exposure -> initialGain
+                currentExposure = (1_000_000 / fps).toFloat()
+                currentGain = initialGain
+                uvcWrapper?.startZeroCopyStream(initialGain.toInt())
 
                 if (isAutoSettings) {
-                    val fps = settingsManager.uvcFps.coerceAtLeast(1)
-                    setExposure((1000000 / fps).toFloat())
-
                     updateStarSensitivity(50f)
                     updateUvcStacking(1)
                 } else {
-                    setExposure(settingsManager.manualExposureUs)
                     updateStarSensitivity(settingsManager.manualStarSensitivity)
                     updateUvcStacking(settingsManager.manualUvcStacking)
-
-                    val hwBrightness = uvcWrapper?.getHardwareBrightness()
-                    if (hwBrightness != null && hwBrightness in 0..100) {
-                        currentUvcBrightness = hwBrightness
-                    }
-
-                    var savedGain = settingsManager.manualGain
-                    if (savedGain < 0f) savedGain = 50f
-                    savedGain = savedGain.coerceIn(0f, 100f)
-                    setGain(savedGain)
                 }
 
                 engine.setEngineSigma(currentSigma)
@@ -491,7 +506,7 @@ open class MainViewModel(
                 noiseReductionMode = engine.getNativeCameraNoiseReduction()
             }
             hotPixelMode = engine.getNativeCameraHotPixelMode()
-        } else if (engineMode == EngineMode.UVC) {
+        } else if (engineMode == EngineMode.UVC && uvcWrapper?.isPipelineReady == true) {
             if (settingsManager.cameraSettingsMode == "Auto") {
                 val hwGain = uvcWrapper?.getHardwareGain()
                 if (hwGain != null && hwGain in 0..100) {
@@ -665,6 +680,15 @@ open class MainViewModel(
         }
     }
 
+    fun clearAlignTargetPixel() {
+        if (isEngineRunning) {
+            engine.clearAlignTargetPixel()
+            Log.i("MainViewModel", "Clear Align Target requested")
+        } else {
+            Log.w("MainViewModel", "Engine not running, cannot clear align target")
+        }
+    }
+
     fun getPlanets(): List<CatalogObject> {
         val lat = currentLat ?: return emptyList()
         val lon = currentLon ?: return emptyList()
@@ -740,7 +764,7 @@ open class MainViewModel(
 
     companion object {
         const val INVALID_COORD = 200.0
-        const val CAMERA_STUCK_TIMEOUT_MS = 5000L
+        const val CAMERA_STUCK_TIMEOUT_MS = 15000L
         const val SCREEN_UPDATE_RATE_HZ = 10
         const val SCREEN_UPDATE_INTERVAL_MS = 1000L / SCREEN_UPDATE_RATE_HZ
 

@@ -74,7 +74,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.StrokeCap
@@ -178,7 +177,11 @@ fun EngineRunningScreen(
     var showStackingInfo by remember { mutableStateOf(false) }
     val showCatalog = viewModel.showCatalog
     val coroutineScope = rememberCoroutineScope()
-    var lastInteractionTime by remember { mutableLongStateOf(Clock.System.now().toEpochMilliseconds()) }
+    var lastInteractionTime by remember {
+        mutableLongStateOf(
+            Clock.System.now().toEpochMilliseconds()
+        )
+    }
     val catalogPainters = rememberCatalogPainters()
     val isLowPowerMode = viewModel.isLowPowerMode
     var lowPowerTimeoutSeconds by remember { mutableIntStateOf(settingsManager.lowPowerTimeoutSeconds) }
@@ -384,8 +387,8 @@ fun EngineRunningScreen(
                     ) {
                         val targetName = targetObjName ?: stringResource(
                             Res.string.format_ra_dec,
-                            String.format(Locale.US, "%.2f", stats.targetRa),
-                            String.format(Locale.US, "%.2f", stats.targetDec)
+                            String.format("%.2f", stats.targetRa),
+                            String.format("%.2f", stats.targetDec)
                         )
 
                         Card(
@@ -625,7 +628,6 @@ fun EngineRunningScreen(
                 }
                 if (!hasTarget) {
                     val targetName = targetObjName ?: String.format(
-                        Locale.US,
                         targetLabelFormat,
                         targetRaVal,
                         targetDecVal
@@ -683,27 +685,12 @@ fun EngineRunningScreen(
                     }
                 ) {
                     val currentUiRotation by rememberUpdatedState(uiRotation)
-                    val alignTargetPixel = remember(
-                        stats.targetPixelX,
-                        stats.targetPixelY,
-                        settingsManager.getString("target_pixel"),
-                        frame?.width,
-                        frame?.height
-                    ) {
+                    val alignTargetPixel =
                         if (stats.targetPixelX != null && stats.targetPixelY != null) {
                             Pair(stats.targetPixelX, stats.targetPixelY)
                         } else {
-                            val alignPixelStr = settingsManager.getString("target_pixel")
-                            if (alignPixelStr != null) {
-                                val parts = alignPixelStr.split(",")
-                                if (parts.size == 2) {
-                                    val px = parts[0].trim().toDoubleOrNull()
-                                    val py = parts[1].trim().toDoubleOrNull()
-                                    if (px != null && py != null) Pair(px, py) else null
-                                } else null
-                            } else null
+                            null
                         }
-                    }
 
                     BoxWithConstraints(
                         modifier = Modifier.fillMaxSize(),
@@ -717,10 +704,22 @@ fun EngineRunningScreen(
                             )
                         val bW = frame?.width?.toFloat() ?: 1f
                         val bH = frame?.height?.toFloat() ?: 1f
+
+                        val isMirrored = stats.isMirrored == true
+                        val sensorOrientation =
+                            if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) {
+                                windowController.getCameraSensorOrientation(settingsManager.internalCameraId)
+                            } else {
+                                0
+                            }
+                        val isRotated90 = (sensorOrientation % 180 != 0)
+                        val mirrorScaleX = if (isMirrored && isRotated90) -1f else 1f
+                        val mirrorScaleY = if (isMirrored && !isRotated90) -1f else 1f
+
                         val rawTargetPxX = (alignTargetPixel?.first ?: (bW / 2.0)).toFloat()
-                        val targetPxX =
-                            if (stats.isMirrored == true) bW - rawTargetPxX else rawTargetPxX
-                        val targetPxY = (alignTargetPixel?.second ?: (bH / 2.0)).toFloat()
+                        val rawTargetPxY = (alignTargetPixel?.second ?: (bH / 2.0)).toFloat()
+                        val targetPxX = if (mirrorScaleX < 0f) bW - rawTargetPxX else rawTargetPxX
+                        val targetPxY = if (mirrorScaleY < 0f) bH - rawTargetPxY else rawTargetPxY
                         val baseScale = maxOf(screenSize.width / bW, screenSize.height / bH)
 
                         val fovZoom = if ((stats.fov ?: 0.0) > 0) ((stats.fov
@@ -830,10 +829,8 @@ fun EngineRunningScreen(
                                         translationX = screenTx + manualOffset.x
                                         translationY = screenTy + manualOffset.y
                                         rotationZ = currentUiRotation
-                                        val mirrorMult =
-                                            if (stats.isMirrored == true) -1f else 1f
-                                        scaleX = finalScale * clampedManualScale * mirrorMult
-                                        scaleY = finalScale * clampedManualScale
+                                        scaleX = finalScale * clampedManualScale * mirrorScaleX
+                                        scaleY = finalScale * clampedManualScale * mirrorScaleY
                                     }
                             )
 
@@ -858,11 +855,13 @@ fun EngineRunningScreen(
                             val currentManualScale by rememberUpdatedState(clampedManualScale)
                             val currentMinManualScale by rememberUpdatedState(minManualScale)
                             val currentManualOffset by rememberUpdatedState(manualOffset)
+                            val currentMirrorScaleX by rememberUpdatedState(mirrorScaleX)
+                            val currentMirrorScaleY by rememberUpdatedState(mirrorScaleY)
 
                             Canvas(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    
+
                                     .pointerInput(Unit) {
                                         detectTransformGestures { centroid, pan, zoom, _ ->
                                             if (zoom != 1f || pan != Offset.Zero) {
@@ -959,20 +958,19 @@ fun EngineRunningScreen(
                                                     cy - (rx - cx) * currentSinR + (ry - cy) * currentCosR
                                                 val effectiveScale =
                                                     currentFinalScale * currentManualScale
-                                                val mirrorMult =
-                                                    if (stats.isMirrored == true) -1f else 1f
                                                 val ix =
-                                                    cx + (px - cx) / (effectiveScale * mirrorMult)
-                                                val iy = cy + (py - cy) / effectiveScale
+                                                    cx + (px - cx) / (effectiveScale * currentMirrorScaleX)
+                                                val iy =
+                                                    cy + (py - cy) / (effectiveScale * currentMirrorScaleY)
                                                 val tpx =
                                                     (ix - cx) / currentBaseScale + currentBW / 2f
                                                 val tpy =
                                                     (iy - cy) / currentBaseScale + currentBH / 2f
 
                                                 if (tpx in 0f..currentBW && tpy in 0f..currentBH) {
-                                                    settingsManager.setString(
-                                                        "target_pixel",
-                                                        "${tpx.toInt()},${tpy.toInt()}"
+                                                    viewModel.setAlignTargetPixel(
+                                                        tpx.toDouble(),
+                                                        tpy.toDouble()
                                                     )
                                                     tappedObject = null
                                                 }
@@ -1715,7 +1713,6 @@ fun EngineRunningScreen(
                                     val mag =
                                         obj.magnitude?.let {
                                             String.format(
-                                                Locale.US,
                                                 "%.2f",
                                                 it
                                             )
@@ -1943,7 +1940,6 @@ fun EngineRunningScreen(
                                 stringResource(id = Res.string.label_zoom) + ": " + stringResource(
                                     id = Res.string.format_zoom,
                                     String.format(
-                                        Locale.getDefault(),
                                         "%.1f",
                                         viewModel.currentZoom
                                     )
@@ -2318,7 +2314,8 @@ fun DigitalClock() {
     LaunchedEffect(Unit) {
         while (isActive) {
             val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
-            timeString = "${now.hour.toString().padStart(2, '0')}:${now.minute.toString().padStart(2, '0')}"
+            timeString =
+                "${now.hour.toString().padStart(2, '0')}:${now.minute.toString().padStart(2, '0')}"
             delay(1000)
         }
     }
@@ -2418,7 +2415,7 @@ fun CollapsedStatsDisplay(stats: EngineStats, onClick: () -> Unit) {
                         style = MaterialTheme.typography.labelMedium
                     )
                 },
-                bottom = stats.ra?.let { String.format(Locale.US, "%.1f", it) } ?: "-"
+                bottom = stats.ra?.let { String.format("%.1f", it) } ?: "-"
             )
 
             // 4. Dec
@@ -2431,7 +2428,7 @@ fun CollapsedStatsDisplay(stats: EngineStats, onClick: () -> Unit) {
                         style = MaterialTheme.typography.labelMedium
                     )
                 },
-                bottom = stats.dec?.let { String.format(Locale.US, "%.1f", it) } ?: "-"
+                bottom = stats.dec?.let { String.format("%.1f", it) } ?: "-"
             )
 
             // 5. Exposure
@@ -2519,7 +2516,7 @@ fun StatsDisplay(
                 Text(
                     stringResource(
                         id = Res.string.format_degree,
-                        String.format(Locale.US, "%.2f", fovVal)
+                        String.format("%.2f", fovVal)
                     )
                 )
             }
@@ -2532,7 +2529,7 @@ fun StatsDisplay(
             Text(
                 stringResource(
                     id = Res.string.format_ms,
-                    String.format(Locale.US, "%.2f", stats.exposureMs)
+                    String.format("%.2f", stats.exposureMs)
                 )
             )
         }
@@ -2544,7 +2541,7 @@ fun StatsDisplay(
             Text(
                 stringResource(
                     id = Res.string.format_ms,
-                    String.format(Locale.US, "%.1f", stats.postProcessMs)
+                    String.format("%.1f", stats.postProcessMs)
                 )
             )
         }
@@ -2556,7 +2553,7 @@ fun StatsDisplay(
             Text(
                 stringResource(
                     id = Res.string.format_ms,
-                    String.format(Locale.US, "%.1f", stats.extractMs)
+                    String.format("%.1f", stats.extractMs)
                 )
             )
         }
@@ -2568,7 +2565,7 @@ fun StatsDisplay(
             Text(
                 stringResource(
                     id = Res.string.format_ms,
-                    String.format(Locale.US, "%.1f", stats.solveMs)
+                    String.format("%.1f", stats.solveMs)
                 )
             )
         }
@@ -2580,7 +2577,7 @@ fun StatsDisplay(
             Text(
                 stringResource(
                     id = Res.string.format_hz,
-                    String.format(Locale.US, "%.1f", stats.solveRateHz)
+                    String.format("%.1f", stats.solveRateHz)
                 )
             )
         }

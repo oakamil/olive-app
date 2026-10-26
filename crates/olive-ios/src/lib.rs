@@ -592,8 +592,20 @@ pub extern "C" fn olive_ios_clear_goto_target() {
 pub extern "C" fn olive_ios_set_align_target_pixel(x: f64, y: f64) {
     if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
         if let Ok(mut state) = state_arc.write() {
-            state.requested_align_target_pixel = Some((x, y));
+            state.pending_target_pixel_cmd = Some(olive_engine::engine::TargetPixelCommand::Set(
+                x, y,
+            ));
             info!("Align target pixel requested via iOS C-ABI: ({}, {})", x, y);
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn olive_ios_clear_align_target_pixel() {
+    if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
+        if let Ok(mut state) = state_arc.write() {
+            state.pending_target_pixel_cmd = Some(olive_engine::engine::TargetPixelCommand::Clear);
+            info!("Clear align target pixel requested via iOS C-ABI");
         }
     }
 }

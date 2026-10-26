@@ -2,7 +2,7 @@
 // See LICENSE file in root directory for license terms.
 
 use log::info;
-use olive_engine::{CameraConfig, CameraTrait, Image};
+use olive_engine::{CameraConfig, CameraTrait, CameraType, Image};
 use std::sync::{
     Arc, Condvar, Mutex,
     atomic::{AtomicI32, AtomicU32, Ordering},
@@ -51,6 +51,9 @@ pub struct AppleCamera {
 impl AppleCamera {
     pub fn new(width: u32, height: u32, initial_fov: Option<f32>) -> Arc<Self> {
         let config = CameraConfig {
+            camera_type: CameraType::Internal {
+                id: "back".to_string(),
+            },
             model: "Apple AVFoundation Camera".to_string(),
             width,
             height,

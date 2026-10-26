@@ -145,7 +145,7 @@ fun GuidanceDisplay(
                             contentAlignment = Alignment.Center
                         ) {
                             BasicText(
-                                text = String.format(Locale.getDefault(), "%-+6.1f", displayTilt),
+                                text = String.format("%-+6.1f", displayTilt),
                                 style = offsetStyle,
                                 softWrap = false,
                                 autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
@@ -174,7 +174,7 @@ fun GuidanceDisplay(
                             contentAlignment = Alignment.Center
                         ) {
                             BasicText(
-                                text = String.format(Locale.getDefault(), "%+6.1f", displayRot),
+                                text = String.format("%+6.1f", displayRot),
                                 style = offsetStyle,
                                 softWrap = false,
                                 autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)
@@ -222,7 +222,6 @@ fun GuidanceDisplay(
                             ) {
                                 BasicText(
                                     text = String.format(
-                                        Locale.getDefault(),
                                         "%-+6.1f",
                                         displayTilt
                                     ),
@@ -240,7 +239,7 @@ fun GuidanceDisplay(
                                 contentAlignment = Alignment.BottomCenter
                             ) {
                                 BasicText(
-                                    text = String.format(Locale.getDefault(), "%+6.1f", displayRot),
+                                    text = String.format("%+6.1f", displayRot),
                                     style = offsetStyle,
                                     softWrap = false,
                                     autoSize = TextAutoSize.StepBased(minFontSize = 8.sp)

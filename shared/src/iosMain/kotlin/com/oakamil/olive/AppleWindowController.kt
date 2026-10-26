@@ -18,7 +18,8 @@ class AppleWindowController : PlatformWindowController {
     override var isLandscape: Boolean by mutableStateOf(false)
     private var rotationDegrees: Int by mutableIntStateOf(0)
 
-    private var originalSystemBrightness: Double = UIScreen.mainScreen.brightness.takeIf { it > 0.05 } ?: 0.5
+    private var originalSystemBrightness: Double =
+        UIScreen.mainScreen.brightness.takeIf { it > 0.05 } ?: 0.5
     private var customAppBrightness: Double? = null
     private var keepScreenOn: Boolean = false
     private val observerTokens = mutableListOf<platform.darwin.NSObjectProtocol>()

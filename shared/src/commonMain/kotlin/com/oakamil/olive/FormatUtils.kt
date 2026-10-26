@@ -11,19 +11,7 @@ import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToLong
 
-object Locale {
-    val US = Locale
-    fun getDefault(): Locale = Locale
-}
-
-object NumberFormat {
-    fun getInstance(): NumberFormat = this
-    fun format(number: Number): String = number.toString()
-}
-
 fun String.Companion.format(format: String, vararg args: Any?): String = pureFormat(format, *args)
-
-fun String.Companion.format(locale: Locale, format: String, vararg args: Any?): String = pureFormat(format, *args)
 
 fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
     val clean = htmlString
@@ -50,32 +38,38 @@ fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
                             pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
                             pushedCount++
                         }
+
                         "/b", "/strong" -> {
                             if (pushedCount > 0) {
                                 pop()
                                 pushedCount--
                             }
                         }
+
                         "i", "em" -> {
                             pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
                             pushedCount++
                         }
+
                         "/i", "/em" -> {
                             if (pushedCount > 0) {
                                 pop()
                                 pushedCount--
                             }
                         }
+
                         "u" -> {
                             pushStyle(SpanStyle(textDecoration = TextDecoration.Underline))
                             pushedCount++
                         }
+
                         "/u" -> {
                             if (pushedCount > 0) {
                                 pop()
                                 pushedCount--
                             }
                         }
+
                         "h1" -> {
                             if (lastChar != '\n') {
                                 append('\n')
@@ -84,6 +78,7 @@ fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
                             pushStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 1.3.em))
                             pushedCount++
                         }
+
                         "/h1" -> {
                             if (pushedCount > 0) {
                                 pop()
@@ -94,6 +89,7 @@ fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
                                 lastChar = '\n'
                             }
                         }
+
                         "h2" -> {
                             if (lastChar != '\n') {
                                 append('\n')
@@ -102,6 +98,7 @@ fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
                             pushStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 1.15.em))
                             pushedCount++
                         }
+
                         "/h2" -> {
                             if (pushedCount > 0) {
                                 pop()
@@ -112,6 +109,7 @@ fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
                                 lastChar = '\n'
                             }
                         }
+
                         "h3" -> {
                             if (lastChar != '\n') {
                                 append('\n')
@@ -120,6 +118,7 @@ fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
                             pushStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 1.05.em))
                             pushedCount++
                         }
+
                         "/h3" -> {
                             if (pushedCount > 0) {
                                 pop()
@@ -130,22 +129,26 @@ fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
                                 lastChar = '\n'
                             }
                         }
+
                         "small" -> {
                             pushStyle(SpanStyle(fontSize = 0.85.em))
                             pushedCount++
                         }
+
                         "/small" -> {
                             if (pushedCount > 0) {
                                 pop()
                                 pushedCount--
                             }
                         }
+
                         "p" -> {
                             if (lastChar != '\n') {
                                 append('\n')
                                 lastChar = '\n'
                             }
                         }
+
                         "/p" -> {
                             if (lastChar != '\n') {
                                 append('\n')
@@ -261,21 +264,25 @@ internal fun pureFormat(format: String, vararg args: Any?): String {
                         val signStr = if (n >= 0 && flagPlus) "+" else ""
                         signStr + n.toString()
                     }
+
                     'f' -> {
                         val d = (arg as? Number)?.toDouble() ?: 0.0
                         val prec = if (precision >= 0) precision else 6
                         formatDouble(d, prec, flagPlus)
                     }
+
                     'b', 'B' -> (arg as? Boolean)?.toString() ?: arg?.toString() ?: "false"
                     'c', 'C' -> (arg as? Char)?.toString() ?: arg?.toString() ?: ""
                     'x' -> {
                         val n = (arg as? Number)?.toLong() ?: 0L
                         n.toString(16)
                     }
+
                     'X' -> {
                         val n = (arg as? Number)?.toLong() ?: 0L
                         n.toString(16).uppercase()
                     }
+
                     else -> arg?.toString() ?: ""
                 }
 

@@ -1,5 +1,6 @@
 package com.oakamil.olive
 
+@Suppress("unused")
 actual object Log {
     actual fun v(tag: String, msg: String) {
         android.util.Log.v(tag, msg)
