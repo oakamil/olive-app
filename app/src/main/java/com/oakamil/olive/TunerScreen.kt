@@ -272,25 +272,8 @@ fun TunerScreen(
                             )
                     )
 
-                    val currentBoresightX: Float
-                    val currentBoresightY: Float
-                    if (viewModel.engineStats.targetPixelX != null && viewModel.engineStats.targetPixelY != null) {
-                        currentBoresightX = viewModel.engineStats.targetPixelX!!.toFloat()
-                        currentBoresightY = viewModel.engineStats.targetPixelY!!.toFloat()
-                    } else {
-                        val alignPixelStr = settingsManager.getString("target_pixel")
-                        var savedX: Float? = null
-                        var savedY: Float? = null
-                        if (alignPixelStr != null) {
-                            val parts = alignPixelStr.split(",")
-                            if (parts.size == 2) {
-                                savedX = parts[0].trim().toFloatOrNull()
-                                savedY = parts[1].trim().toFloatOrNull()
-                            }
-                        }
-                        currentBoresightX = savedX ?: (bW / 2f)
-                        currentBoresightY = savedY ?: (bH / 2f)
-                    }
+                    val currentBoresightX = (viewModel.engineStats.targetPixelX ?: (bW / 2.0)).toFloat()
+                    val currentBoresightY = (viewModel.engineStats.targetPixelY ?: (bH / 2.0)).toFloat()
 
                     Canvas(
                         modifier = Modifier
@@ -573,12 +556,7 @@ fun TunerScreen(
             confirmButton = {
                 Button(onClick = {
                     showResetAlignDialog = false
-                    val frame = viewModel.latestFrame
-                    if (frame != null) {
-                        val bW = frame.width.toDouble()
-                        val bH = frame.height.toDouble()
-                        viewModel.setAlignTargetPixel(bW / 2.0, bH / 2.0)
-                    }
+                    viewModel.clearAlignTargetPixel()
                     alignTargetX = null
                     alignTargetY = null
                 }) {

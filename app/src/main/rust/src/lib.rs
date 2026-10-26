@@ -972,11 +972,28 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setAlignTargetPixel(
 ) {
     if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
         if let Ok(mut state) = state_arc.write() {
-            state.requested_align_target_pixel = Some((x as f64, y as f64));
+            state.pending_target_pixel_cmd = Some(olive_engine::engine::TargetPixelCommand::Set(
+                x as f64, y as f64,
+            ));
             log::info!("Align target pixel requested via JNI: ({}, {})", x, y);
         }
     } else {
         log::warn!("setAlignTargetPixel called but ENGINE_STATE is not initialized");
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_clearAlignTargetPixel(
+    _env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+) {
+    if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
+        if let Ok(mut state) = state_arc.write() {
+            state.pending_target_pixel_cmd = Some(olive_engine::engine::TargetPixelCommand::Clear);
+            log::info!("Clear align target pixel requested via JNI");
+        }
+    } else {
+        log::warn!("clearAlignTargetPixel called but ENGINE_STATE is not initialized");
     }
 }
 

@@ -686,27 +686,12 @@ fun EngineRunningScreen(
                     }
                 ) {
                     val currentUiRotation by rememberUpdatedState(uiRotation)
-                    val alignTargetPixel = remember(
-                        stats.targetPixelX,
-                        stats.targetPixelY,
-                        settingsManager.getString("target_pixel"),
-                        frame?.width,
-                        frame?.height
-                    ) {
+                    val alignTargetPixel =
                         if (stats.targetPixelX != null && stats.targetPixelY != null) {
                             Pair(stats.targetPixelX, stats.targetPixelY)
                         } else {
-                            val alignPixelStr = settingsManager.getString("target_pixel")
-                            if (alignPixelStr != null) {
-                                val parts = alignPixelStr.split(",")
-                                if (parts.size == 2) {
-                                    val px = parts[0].trim().toDoubleOrNull()
-                                    val py = parts[1].trim().toDoubleOrNull()
-                                    if (px != null && py != null) Pair(px, py) else null
-                                } else null
-                            } else null
+                            null
                         }
-                    }
 
                     BoxWithConstraints(
                         modifier = Modifier.fillMaxSize(),
@@ -972,9 +957,9 @@ fun EngineRunningScreen(
                                                     (iy - cy) / currentBaseScale + currentBH / 2f
 
                                                 if (tpx in 0f..currentBW && tpy in 0f..currentBH) {
-                                                    settingsManager.setString(
-                                                        "target_pixel",
-                                                        "${tpx.toInt()},${tpy.toInt()}"
+                                                    viewModel.setAlignTargetPixel(
+                                                        tpx.toDouble(),
+                                                        tpy.toDouble()
                                                     )
                                                     tappedObject = null
                                                 }
