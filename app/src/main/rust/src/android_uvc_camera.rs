@@ -1,5 +1,5 @@
 use jni::{JavaVM, objects::GlobalRef};
-use olive_engine::{CameraConfig, CameraTrait, Image};
+use olive_engine::{CameraConfig, CameraTrait, CameraType, Image};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::SystemTime;
@@ -53,6 +53,7 @@ impl AndroidUvcCamera {
 
         Self {
             config: Mutex::new(CameraConfig {
+                camera_type: CameraType::External,
                 model: "External UVC".to_string(),
                 width,
                 height,
