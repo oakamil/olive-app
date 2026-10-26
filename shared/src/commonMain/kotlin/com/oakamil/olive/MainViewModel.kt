@@ -398,7 +398,8 @@ open class MainViewModel(
     fun startUvcEngine(
         lat: Double = 200.0,
         lon: Double = 200.0,
-        timeMs: Long = 0L
+        timeMs: Long = 0L,
+        onFailed: (() -> Unit)? = null
     ) {
         latestFrame = null
         lastFrameTimestamp = 0L
@@ -413,25 +414,34 @@ open class MainViewModel(
             }
 
             val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
-            val uvcWidth = uvcWrapper?.previewWidth ?: 640
-            val uvcHeight = uvcWrapper?.previewHeight ?: 480
+            val uvcWidth = uvcWrapper?.previewWidth ?: settingsManager.uvcWidth
+            val uvcHeight = uvcWrapper?.previewHeight ?: settingsManager.uvcHeight
             val autoDownsampling = if (uvcWidth.toLong() * uvcHeight.toLong() < 1_250_000L) 0 else 2
             val forcedDownsampling =
                 if (isAutoSettings) autoDownsampling else settingsManager.downsampling
-            engine.startExternalCameraEngine(
-                uvcWidth,
-                uvcHeight,
-                settingsManager.motionSensorMode,
-                settingsManager.extractor,
-                forcedDownsampling,
-                lat,
-                lon,
-                timeMs,
-                settingsManager,
-                isAutoSettings,
-                settingsManager.uvcFps,
-                uvcWrapper
-            )
+            try {
+                engine.startExternalCameraEngine(
+                    uvcWidth,
+                    uvcHeight,
+                    settingsManager.motionSensorMode,
+                    settingsManager.extractor,
+                    forcedDownsampling,
+                    lat,
+                    lon,
+                    timeMs,
+                    settingsManager,
+                    isAutoSettings,
+                    settingsManager.uvcFps,
+                    uvcWrapper
+                )
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to start UVC engine", e)
+                launch(Dispatchers.Main) {
+                    stopEngineSync()
+                    onFailed?.invoke()
+                }
+                return@launch
+            }
 
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.UVC
@@ -454,6 +464,10 @@ open class MainViewModel(
                 currentExposure = (1_000_000 / fps).toFloat()
                 currentGain = initialGain
                 uvcWrapper?.startZeroCopyStream(initialGain.toInt())
+
+                val initialBrightness =
+                    if (isAutoSettings) 50 else settingsManager.manualUvcBrightness
+                setUvcBrightness(initialBrightness)
 
                 if (isAutoSettings) {
                     updateStarSensitivity(50f)
@@ -591,6 +605,8 @@ open class MainViewModel(
         if (settingsManager.cameraSettingsMode == "Manual") {
             settingsManager.manualUvcStacking = uvcStacking
         }
+        val fps = settingsManager.uvcFps.coerceAtLeast(1)
+        currentExposure = (1_000_000f / fps) * uvcStacking
         engine.updateUvcStacking(uvcStacking)
     }
 

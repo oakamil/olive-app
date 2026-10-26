@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.useContents
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.UIKit.UIApplication
@@ -25,6 +27,7 @@ class AppleWindowController : PlatformWindowController {
     private val observerTokens = mutableListOf<platform.darwin.NSObjectProtocol>()
 
     init {
+        UIDevice.currentDevice.beginGeneratingDeviceOrientationNotifications()
         updateOrientationState()
 
         val center = NSNotificationCenter.defaultCenter
@@ -74,10 +77,16 @@ class AppleWindowController : PlatformWindowController {
         val center = NSNotificationCenter.defaultCenter
         observerTokens.forEach { center.removeObserver(it) }
         observerTokens.clear()
+        UIDevice.currentDevice.endGeneratingDeviceOrientationNotifications()
         UIApplication.sharedApplication.idleTimerDisabled = false
         customAppBrightness?.let {
             UIScreen.mainScreen.setBrightness(originalSystemBrightness)
         }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun isScreenLandscape(): Boolean {
+        return UIScreen.mainScreen.bounds.useContents { size.width > size.height }
     }
 
     private fun updateOrientationState() {
@@ -104,7 +113,15 @@ class AppleWindowController : PlatformWindowController {
             }
 
             else -> {
-                // Keep existing orientation for flat / unknown
+                // If device is flat (FaceUp/FaceDown), mounted pointing at zenith, or uninitialized:
+                // Fall back to interface screen geometry
+                val screenLandscape = isScreenLandscape()
+                isLandscape = screenLandscape
+                if (screenLandscape && rotationDegrees % 180 == 0) {
+                    rotationDegrees = 90
+                } else if (!screenLandscape && rotationDegrees % 180 != 0) {
+                    rotationDegrees = 0
+                }
             }
         }
     }

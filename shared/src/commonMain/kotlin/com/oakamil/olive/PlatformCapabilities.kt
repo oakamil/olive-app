@@ -25,9 +25,10 @@ object AndroidPlatformCapabilities : PlatformCapabilities {
         16667f..5000000f // 16.7ms to 5000ms
 }
 
-object ApplePlatformCapabilities : PlatformCapabilities {
+open class ApplePlatformCapabilities(
+    override val supportsUsbCamera: Boolean = false
+) : PlatformCapabilities {
     override val isApple: Boolean = true
-    override val supportsUsbCamera: Boolean = false // set true on iPadOS 17+ in Phase 4
     override val supportsPip: Boolean = false
     override val defaultFocus: Float =
         0.92f // Empirical optical infinity baseline (avoids 1.0 hyper-infinity)
@@ -35,6 +36,8 @@ object ApplePlatformCapabilities : PlatformCapabilities {
         0.0f..1.0f // AVFoundation lensPosition stroke
     override val exposureRange: ClosedFloatingPointRange<Float> =
         16667f..1000000f // 16.7ms to 1000ms
+
+    companion object : ApplePlatformCapabilities(false)
 }
 
 val LocalPlatformCapabilities = staticCompositionLocalOf<PlatformCapabilities> {

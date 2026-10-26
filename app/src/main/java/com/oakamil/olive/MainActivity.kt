@@ -973,7 +973,12 @@ class MainActivity : ComponentActivity() {
             ) {
                 if (device != null && ctrlBlock != null) {
                     try {
-                        val parsed = UvcFormat.parseRawDescriptors(ctrlBlock.rawDescriptors)
+                        val isUsb3 = UvcFormat.isUsb3Descriptors(ctrlBlock.rawDescriptors)
+                        Log.i(
+                            "OliveUI",
+                            "USB Device link speed detected: ${if (isUsb3) "SuperSpeed (USB 3.x)" else "High-Speed (USB 2.0)"}"
+                        )
+                        val parsed = UvcFormat.parseRawDescriptors(ctrlBlock.rawDescriptors, isUsb3Override = isUsb3)
                         if (parsed.isNotEmpty()) {
                             viewModel.availableUvcFormats = parsed
                             val best = UvcFormat.findBestFormatForFps(

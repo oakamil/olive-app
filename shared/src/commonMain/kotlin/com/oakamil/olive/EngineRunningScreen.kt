@@ -2203,7 +2203,7 @@ fun EngineRunningScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             val isWideLayout =
-                maxWidth >= 600.dp || (maxWidth > maxHeight && maxHeight < 500.dp)
+                maxWidth > maxHeight && maxWidth >= 480.dp
 
             if (isWideLayout) {
                 Row(

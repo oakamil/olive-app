@@ -33,14 +33,33 @@ import kotlinx.datetime.Clock
 import platform.AVFoundation.AVAuthorizationStatusAuthorized
 import platform.AVFoundation.AVAuthorizationStatusNotDetermined
 import platform.AVFoundation.AVCaptureDevice
+import platform.AVFoundation.AVCaptureDeviceDiscoverySession
+import platform.AVFoundation.AVCaptureDevicePositionUnspecified
+import platform.AVFoundation.AVCaptureDeviceTypeExternal
+import platform.AVFoundation.AVCaptureDeviceWasConnectedNotification
+import platform.AVFoundation.AVCaptureDeviceWasDisconnectedNotification
 import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.authorizationStatusForMediaType
 import platform.AVFoundation.requestAccessForMediaType
+import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSProcessInfo
 import platform.Foundation.NSURL
 import platform.UIKit.UIApplication
 import platform.UIKit.UIApplicationOpenSettingsURLString
+import platform.UIKit.UIDevice
+import platform.UIKit.UIUserInterfaceIdiomPad
 import platform.UIKit.UIViewController
+
+@OptIn(ExperimentalForeignApi::class)
+private fun hasConnectedExternalCamera(): Boolean {
+    val discovery = AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes(
+        deviceTypes = listOf(AVCaptureDeviceTypeExternal),
+        mediaType = AVMediaTypeVideo,
+        position = AVCaptureDevicePositionUnspecified
+    )
+    return discovery.devices.isNotEmpty()
+}
 
 @OptIn(ExperimentalForeignApi::class)
 private fun getIosDeviceNetworkEndpoint(): String {
@@ -54,7 +73,8 @@ private fun getIosDeviceNetworkEndpoint(): String {
 @Suppress("unused", "FunctionName")
 fun MainViewController(): UIViewController = ComposeUIViewController {
     val storage = remember { NSUserDefaultsStorage() }
-    val capabilities = remember { ApplePlatformCapabilities }
+    val isPad = remember { UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad }
+    val capabilities = remember { ApplePlatformCapabilities(supportsUsbCamera = isPad) }
     val engine = remember { IosEngineBridge() }
     val catalogDb = remember { IosCatalogDatabase() }
     val viewModel = remember { MainViewModel(storage, capabilities, engine, catalogDb) }
@@ -67,6 +87,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     }
 
     var currentScreen by remember { mutableStateOf("main") }
+    var isCameraConnected by remember { mutableStateOf(if (isPad) hasConnectedExternalCamera() else false) }
     var activeCameraSelection by remember { mutableStateOf(settingsManager.cameraSelection) }
     var isStarting by remember { mutableStateOf(false) }
     var isStopping by remember { mutableStateOf(false) }
@@ -75,6 +96,50 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     var showLocationRequiredDialog by remember { mutableStateOf(false) }
     var showCameraPermissionDialog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+
+    DisposableEffect(isPad) {
+        if (!isPad) return@DisposableEffect onDispose { }
+
+        val nc = NSNotificationCenter.defaultCenter
+        val connObs = nc.addObserverForName(
+            name = AVCaptureDeviceWasConnectedNotification,
+            `object` = null,
+            queue = NSOperationQueue.mainQueue
+        ) { _ ->
+            val hasExt = hasConnectedExternalCamera()
+            isCameraConnected = hasExt
+            if (hasExt && activeCameraSelection == "internal") {
+                activeCameraSelection = "external"
+                settingsManager.cameraSelection = "external"
+            }
+        }
+
+        val disconnObs = nc.addObserverForName(
+            name = AVCaptureDeviceWasDisconnectedNotification,
+            `object` = null,
+            queue = NSOperationQueue.mainQueue
+        ) { _ ->
+            val hasExt = hasConnectedExternalCamera()
+            isCameraConnected = hasExt
+            if (!hasExt && activeCameraSelection == "external") {
+                activeCameraSelection = "internal"
+                settingsManager.cameraSelection = "internal"
+                currentScreen = "main"
+                if (viewModel.isEngineRunning) {
+                    coroutineScope.launch {
+                        withContext(Dispatchers.IO) {
+                            viewModel.stopEngineSync()
+                        }
+                    }
+                }
+            }
+        }
+
+        onDispose {
+            nc.removeObserver(connObs)
+            nc.removeObserver(disconnObs)
+        }
+    }
 
     val locationProvider = remember {
         IosLocationProvider(
@@ -132,19 +197,32 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             val lat = viewModel.currentLat ?: 0.0
             val lon = viewModel.currentLon ?: 0.0
             val timeMs = Clock.System.now().toEpochMilliseconds()
-            val cameraId =
-                if (activeCameraSelection == "demo") "demo" else settingsManager.internalCameraId
-            viewModel.executeStartEngine(
-                cameraId = cameraId,
-                lat = lat,
-                lon = lon,
-                timeMs = timeMs,
-                onFailed = {
-                    startupTimeoutJob?.cancel()
-                    startupTimeoutJob = null
-                    isStarting = false
-                }
-            )
+            if (activeCameraSelection == "external") {
+                viewModel.startUvcEngine(
+                    lat = lat,
+                    lon = lon,
+                    timeMs = timeMs,
+                    onFailed = {
+                        startupTimeoutJob?.cancel()
+                        startupTimeoutJob = null
+                        isStarting = false
+                    }
+                )
+            } else {
+                val cameraId =
+                    if (activeCameraSelection == "demo") "demo" else settingsManager.internalCameraId
+                viewModel.executeStartEngine(
+                    cameraId = cameraId,
+                    lat = lat,
+                    lon = lon,
+                    timeMs = timeMs,
+                    onFailed = {
+                        startupTimeoutJob?.cancel()
+                        startupTimeoutJob = null
+                        isStarting = false
+                    }
+                )
+            }
         }
     }
 
@@ -193,7 +271,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                     "main" -> MainScreen(
                         viewModel = viewModel,
                         settingsManager = settingsManager,
-                        isCameraConnected = false,
+                        isCameraConnected = isCameraConnected,
                         activeCameraSelection = activeCameraSelection,
                         isStopping = isStopping,
                         isStarting = isStarting,

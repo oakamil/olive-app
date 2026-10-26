@@ -91,4 +91,46 @@ class UvcFormatTest {
         // Target 2 fps (below minimum 5) falls back to minimum available (5 fps)
         assertEquals(UvcFormat(1920, 1080, 5, "YUV2"), UvcFormat.findBestFormatForFps(2, formats))
     }
+
+    @Test
+    fun testUsb3FormatSelection() {
+        val inputList = listOf(
+            UvcFormat(1920, 1080, 30, "MJPEG"),
+            UvcFormat(1920, 1080, 30, "YUV2"), // On USB 2.0 this was excluded; on USB 3.0 it wins!
+            UvcFormat(1920, 1080, 15, "YUV2"),
+            UvcFormat(1920, 1080, 5, "YUV2")
+        )
+
+        val usb2Filtered = UvcFormat.filterFormats(inputList, isUsb3 = false)
+        // On USB 2.0, 30 fps falls back to MJPEG because YUV2 exceeds 24.576 MB/s
+        assertEquals(UvcFormat(1920, 1080, 30, "MJPEG"), usb2Filtered[0])
+
+        val usb3Filtered = UvcFormat.filterFormats(inputList, isUsb3 = true)
+        // On USB 3.0, 30 fps picks uncompressed YUV2 over MJPEG
+        assertEquals(UvcFormat(1920, 1080, 30, "YUV2"), usb3Filtered[0])
+        assertEquals(UvcFormat(1920, 1080, 15, "YUV2"), usb3Filtered[1])
+        assertEquals(UvcFormat(1920, 1080, 5, "YUV2"), usb3Filtered[2])
+    }
+
+    @Test
+    fun testIsUsb3Descriptors() {
+        // USB 2.0 descriptors (e.g. Standard Device + Interface + Isochronous Endpoint, no 0x30)
+        val usb2Raw = byteArrayOf(
+            18, 0x01, 0x10, 0x02, 0, 0, 0, 64, 1, 2, 3, 4, 0, 1, 1, 2, 0, 1, // Device Desc (bcdUSB 0x0210)
+            9, 0x02, 32, 0, 1, 1, 0, 0x80.toByte(), 50,                         // Config Desc
+            7, 0x05, 0x81.toByte(), 0x05, 0x00, 0x0c, 1                         // Endpoint Desc (0x05)
+        )
+        assertFalse(UvcFormat.isUsb3Descriptors(usb2Raw))
+        assertFalse(UvcFormat.isUsb3Descriptors(null))
+        assertFalse(UvcFormat.isUsb3Descriptors(byteArrayOf(1, 2)))
+
+        // USB 3.0 descriptors (Device + Config + Endpoint + SuperSpeed Endpoint Companion Desc 0x30)
+        val usb3Raw = byteArrayOf(
+            18, 0x01, 0x00, 0x03, 0, 0, 0, 9, 1, 2, 3, 4, 0, 1, 1, 2, 0, 1,  // Device Desc (bcdUSB 0x0300)
+            9, 0x02, 38, 0, 1, 1, 0, 0x80.toByte(), 50,                        // Config Desc
+            7, 0x05, 0x81.toByte(), 0x05, 0x00, 0x04, 1,                        // Endpoint Desc (0x05)
+            6, 0x30, 15, 2, 0x00, 0x00                                         // SS Endpoint Companion Desc (0x30)
+        )
+        assertTrue(UvcFormat.isUsb3Descriptors(usb3Raw))
+    }
 }
