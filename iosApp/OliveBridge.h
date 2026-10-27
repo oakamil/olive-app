@@ -49,7 +49,14 @@ void olive_ios_unregister_camera_control_callback(void);
 
 // --- Hardware Capture Lifecycle (Swift) ---
 const char *olive_ios_get_available_cameras(void);
-void olive_ios_start_hardware_capture(const char *camera_id);
+const char *olive_ios_get_external_camera_formats(void);
+void olive_ios_start_hardware_capture(
+    const char *camera_id,
+    int32_t width,
+    int32_t height,
+    int32_t fps,
+    const char *format
+);
 void olive_ios_stop_hardware_capture(void);
 
 // --- Frame and IMU Push Pipelines ---

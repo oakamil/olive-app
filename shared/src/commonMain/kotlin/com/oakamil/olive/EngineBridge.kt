@@ -56,6 +56,7 @@ interface EngineBridge {
     fun setNativeCameraHotPixelMode(mode: Int)
     fun getNativeCameraHotPixelMode(): Int
     fun getAvailableInternalCameras(): String
+    fun getAvailableExternalCameraFormats(): String = ""
     fun getLatestFrame(lastTimestamp: Long): LatestFrame?
     fun setEnginePaused(paused: Boolean)
     fun setEngineSigma(sigma: Float)

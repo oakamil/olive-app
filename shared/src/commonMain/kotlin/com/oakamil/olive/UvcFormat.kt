@@ -43,14 +43,19 @@ data class UvcFormat(
 
         fun filterFormats(all: List<UvcFormat>, isUsb3: Boolean = false): List<UvcFormat> {
             if (all.isEmpty()) return FALLBACK_FORMATS
-            val maxWidth = all.maxOf { it.width }
-            val maxHeight = all.maxOf { it.height }
+            val native = all.maxByOrNull { it.width.toLong() * it.height.toLong() }
+                ?: return FALLBACK_FORMATS
+            val maxWidth = native.width
+            val maxHeight = native.height
             val binnedWidth = maxWidth / 2
             val binnedHeight = maxHeight / 2
 
             val valid = all.filter { fmt ->
-                val matchesRes = (fmt.width == maxWidth && fmt.height == maxHeight) ||
-                        (fmt.width == binnedWidth && fmt.height == binnedHeight)
+                val is1x = (fmt.width == maxWidth && fmt.height == maxHeight)
+                // Allow ±8 px rounding tolerance for macroblock-16 alignment (e.g. 960x544 for 1080p binned)
+                val is2x2Binned = (kotlin.math.abs(fmt.width - binnedWidth) <= 8 &&
+                        kotlin.math.abs(fmt.height - binnedHeight) <= 8)
+                val matchesRes = is1x || is2x2Binned
                 val matchesFormat = fmt.format.equals("MJPEG", ignoreCase = true) ||
                         fmt.format.startsWith("YUV", ignoreCase = true) ||
                         fmt.format.startsWith("YUY", ignoreCase = true)

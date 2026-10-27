@@ -162,6 +162,7 @@ impl AppleCamera {
         timestamp_ns: i64,
         applied_exposure_us: i32,
         applied_iso: f32,
+        receive_time: std::time::Instant,
     ) {
         // Cold startup settle: flush initial 10 frames
         let settle = self.settle_frames.load(Ordering::Relaxed);
@@ -235,6 +236,7 @@ impl AppleCamera {
                     *b = apply_delta(*b);
                 }
             }
+            let post_process_time = receive_time.elapsed();
             let image = Arc::new(Image {
                 data,
                 width,
@@ -242,7 +244,7 @@ impl AppleCamera {
                 timestamp: frame_timestamp,
                 exposure_time_us: effective_exposure_us,
                 gain: applied_iso,
-                post_process_time: Duration::ZERO,
+                post_process_time,
                 frame_interval_us: measured_us,
                 metadata_valid: true,
             });
@@ -277,6 +279,7 @@ impl AppleCamera {
                     let stacked_data = accum.clone();
                     let total_exposure_us =
                         effective_exposure_us.saturating_mul(target_stack as i32);
+                    let post_process_time = receive_time.elapsed();
                     let image = Arc::new(Image {
                         data: stacked_data,
                         width,
@@ -284,7 +287,7 @@ impl AppleCamera {
                         timestamp: frame_timestamp,
                         exposure_time_us: total_exposure_us,
                         gain: applied_iso,
-                        post_process_time: Duration::ZERO,
+                        post_process_time,
                         frame_interval_us: measured_us,
                         metadata_valid: true,
                     });
@@ -459,6 +462,8 @@ pub extern "C" fn olive_ios_push_camera_frame(
         return;
     }
 
+    let receive_time = std::time::Instant::now();
+
     let total_pixels = (width * height) as usize;
     let mut data = Vec::with_capacity(total_pixels);
 
@@ -489,6 +494,7 @@ pub extern "C" fn olive_ios_push_camera_frame(
             timestamp_ns,
             applied_exposure_us,
             applied_iso,
+            receive_time,
         );
     }
 }
@@ -585,13 +591,31 @@ mod tests {
 
         // Frame 1
         let f1 = vec![50u8, 100u8, 150u8, 200u8];
-        camera.push_raw_luminance(f1, 2, 2, SystemTime::now(), 0, 100_000, 100.0);
+        camera.push_raw_luminance(
+            f1,
+            2,
+            2,
+            SystemTime::now(),
+            0,
+            100_000,
+            100.0,
+            std::time::Instant::now(),
+        );
         // After 1 frame, stack of 2 is not complete yet
         assert!(camera.get_last_capture().is_none());
 
         // Frame 2
         let f2 = vec![60u8, 100u8, 120u8, 100u8];
-        camera.push_raw_luminance(f2, 2, 2, SystemTime::now(), 0, 100_000, 100.0);
+        camera.push_raw_luminance(
+            f2,
+            2,
+            2,
+            SystemTime::now(),
+            0,
+            100_000,
+            100.0,
+            std::time::Instant::now(),
+        );
 
         // Stack complete: 50+60=110, 100+100=200, 150+120=270->255 (saturating), 200+100=300->255 (saturating)
         let stacked = camera.get_last_capture().expect("Stack should be complete");
@@ -608,7 +632,16 @@ mod tests {
 
         // Flush 10 settle frames
         for _ in 0..10 {
-            camera.push_raw_luminance(vec![0; 64], 64, 1, SystemTime::now(), 0, 33000, 100.0);
+            camera.push_raw_luminance(
+                vec![0; 64],
+                64,
+                1,
+                SystemTime::now(),
+                0,
+                33000,
+                100.0,
+                std::time::Instant::now(),
+            );
         }
         assert_eq!(camera.settle_frames.load(Ordering::Relaxed), 0);
         assert!(!camera.calibrated.load(Ordering::Relaxed));
@@ -617,7 +650,16 @@ mod tests {
         // Stride 64 samples the first pixel
         let mut cal_frame = vec![4u8; 64];
         cal_frame[0] = 4;
-        camera.push_raw_luminance(cal_frame, 64, 1, SystemTime::now(), 0, 33000, 100.0);
+        camera.push_raw_luminance(
+            cal_frame,
+            64,
+            1,
+            SystemTime::now(),
+            0,
+            33000,
+            100.0,
+            std::time::Instant::now(),
+        );
 
         assert!(camera.calibrated.load(Ordering::Relaxed));
         // delta = 10 - 4 = 6
@@ -646,6 +688,7 @@ mod tests {
             0,
             33_333,
             100.0,
+            std::time::Instant::now(),
         );
         assert_eq!(camera.get_exposure(), 33_333);
         let img = camera.get_last_capture().unwrap();
@@ -663,6 +706,7 @@ mod tests {
             0,
             33_333,
             100.0,
+            std::time::Instant::now(),
         );
         let img = camera.get_last_capture().unwrap();
         assert_eq!(img.data, vec![30, 40, 255, 60]); // 250 + 10 saturates to 255
@@ -678,6 +722,7 @@ mod tests {
             0,
             33_333,
             100.0,
+            std::time::Instant::now(),
         );
         let img = camera.get_last_capture().unwrap();
         assert_eq!(img.data, vec![0, 20, 30, 40]); // 5 - 10 saturates to 0

@@ -69,6 +69,42 @@ private fun getIosDeviceNetworkEndpoint(): String {
     return "$host ($ip)"
 }
 
+private fun refreshExternalCameraFormats(
+    engine: EngineBridge,
+    viewModel: MainViewModel,
+    settingsManager: SettingsManager
+) {
+    val formatsJson = engine.getAvailableExternalCameraFormats()
+    if (formatsJson.isNotEmpty() && formatsJson != "[]") {
+        try {
+            val list = mutableListOf<UvcFormat>()
+            val array = JSONArray(formatsJson)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val w = obj.optInt("width")
+                val h = obj.optInt("height")
+                val fps = obj.optInt("fps")
+                val fmt = obj.optString("format")
+                if (w > 0 && h > 0 && fps > 0) {
+                    list.add(UvcFormat(w, h, fps, fmt))
+                }
+            }
+            if (list.isNotEmpty()) {
+                val filtered = UvcFormat.filterFormats(list)
+                viewModel.availableUvcFormats = filtered
+                val best = UvcFormat.findBestFormatForFps(settingsManager.uvcFps, filtered)
+                settingsManager.uvcFps = best.fps
+                settingsManager.uvcWidth = best.width
+                settingsManager.uvcHeight = best.height
+                settingsManager.uvcFormat = best.format
+                println("Refreshed external camera formats: ${filtered.size} options, active: ${best.label}")
+            }
+        } catch (e: Exception) {
+            println("Failed to parse external camera formats: $e")
+        }
+    }
+}
+
 // Public entry point called from Swift (iosApp/ContentView.swift: MainViewControllerKt.MainViewController())
 @Suppress("unused", "FunctionName")
 fun MainViewController(): UIViewController = ComposeUIViewController {
@@ -108,9 +144,12 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         ) { _ ->
             val hasExt = hasConnectedExternalCamera()
             isCameraConnected = hasExt
-            if (hasExt && activeCameraSelection == "internal") {
-                activeCameraSelection = "external"
-                settingsManager.cameraSelection = "external"
+            if (hasExt) {
+                refreshExternalCameraFormats(engine, viewModel, settingsManager)
+                if (activeCameraSelection == "internal") {
+                    activeCameraSelection = "external"
+                    settingsManager.cameraSelection = "external"
+                }
             }
         }
 
@@ -121,14 +160,17 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         ) { _ ->
             val hasExt = hasConnectedExternalCamera()
             isCameraConnected = hasExt
-            if (!hasExt && activeCameraSelection == "external") {
-                activeCameraSelection = "internal"
-                settingsManager.cameraSelection = "internal"
-                currentScreen = "main"
-                if (viewModel.isEngineRunning) {
-                    coroutineScope.launch {
-                        withContext(Dispatchers.IO) {
-                            viewModel.stopEngineSync()
+            if (!hasExt) {
+                viewModel.availableUvcFormats = UvcFormat.FALLBACK_FORMATS
+                if (activeCameraSelection == "external") {
+                    activeCameraSelection = "internal"
+                    settingsManager.cameraSelection = "internal"
+                    currentScreen = "main"
+                    if (viewModel.isEngineRunning) {
+                        coroutineScope.launch {
+                            withContext(Dispatchers.IO) {
+                                viewModel.stopEngineSync()
+                            }
                         }
                     }
                 }
@@ -138,6 +180,12 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         onDispose {
             nc.removeObserver(connObs)
             nc.removeObserver(disconnObs)
+        }
+    }
+
+    LaunchedEffect(isCameraConnected) {
+        if (isCameraConnected) {
+            refreshExternalCameraFormats(engine, viewModel, settingsManager)
         }
     }
 

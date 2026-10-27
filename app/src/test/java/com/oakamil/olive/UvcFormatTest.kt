@@ -133,4 +133,51 @@ class UvcFormatTest {
         )
         assertTrue(UvcFormat.isUsb3Descriptors(usb3Raw))
     }
+
+    @Test
+    fun testDualModeMjpegAndYuv2Discovery() {
+        // Innomaker U20CAM dual-mode configuration on USB 2.0:
+        // 1080p @ 30 fps MJPEG, 1080p @ 5 fps YUV2
+        val inputList = listOf(
+            UvcFormat(1920, 1080, 30, "MJPEG"),
+            UvcFormat(1920, 1080, 5, "YUV2")
+        )
+        val filtered = UvcFormat.filterFormats(inputList)
+        assertEquals(2, filtered.size)
+        assertEquals(UvcFormat(1920, 1080, 30, "MJPEG"), filtered[0])
+        assertEquals(UvcFormat(1920, 1080, 5, "YUV2"), filtered[1])
+    }
+
+    @Test
+    fun testMacroblock16BinnedAlignment() {
+        // Encoders with macroblock-16 alignment output 960x544 instead of 960x540
+        val inputList = listOf(
+            UvcFormat(1920, 1080, 30, "MJPEG"),
+            UvcFormat(960, 544, 20, "YUV2"), // Macroblock-16 vertical alignment (544 vs 540)
+            UvcFormat(1920, 1080, 5, "YUV2")
+        )
+        val filtered = UvcFormat.filterFormats(inputList)
+        assertEquals(3, filtered.size)
+        assertEquals(UvcFormat(1920, 1080, 30, "MJPEG"), filtered[0])
+        assertEquals(UvcFormat(960, 544, 20, "YUV2"), filtered[1])
+        assertEquals(UvcFormat(1920, 1080, 5, "YUV2"), filtered[2])
+    }
+
+    @Test
+    fun testBinnedModeSelectionHierarchy() {
+        // At 30 fps: 1x (1080p MJPEG) beats 2x2 binned (960x540 MJPEG)
+        // At 20 fps: 1x is NOT available (or exceeds bandwidth), so 2x2 binned is preserved
+        val inputList = listOf(
+            UvcFormat(1920, 1080, 30, "MJPEG"),
+            UvcFormat(960, 540, 30, "MJPEG"),
+            UvcFormat(960, 540, 20, "YUV2"),
+            UvcFormat(1920, 1080, 5, "YUV2")
+        )
+        val filtered = UvcFormat.filterFormats(inputList)
+        assertEquals(3, filtered.size)
+        assertEquals(UvcFormat(1920, 1080, 30, "MJPEG"), filtered[0]) // 1x won at 30 fps
+        assertEquals(UvcFormat(960, 540, 20, "YUV2"), filtered[1])    // 2x2 binned allowed as sole candidate at 20 fps
+        assertEquals(UvcFormat(1920, 1080, 5, "YUV2"), filtered[2])
+    }
 }
+

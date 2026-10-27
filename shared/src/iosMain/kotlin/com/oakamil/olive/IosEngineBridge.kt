@@ -17,6 +17,7 @@ import com.oakamil.olive.cinterop.olive_ios_get_camera_gain
 import com.oakamil.olive.cinterop.olive_ios_get_camera_zoom
 import com.oakamil.olive.cinterop.olive_ios_get_comets
 import com.oakamil.olive.cinterop.olive_ios_get_engine_stats
+import com.oakamil.olive.cinterop.olive_ios_get_external_camera_formats
 import com.oakamil.olive.cinterop.olive_ios_get_latest_frame_into
 import com.oakamil.olive.cinterop.olive_ios_get_planets
 import com.oakamil.olive.cinterop.olive_ios_process_telescope_data
@@ -58,8 +59,16 @@ import platform.posix.size_tVar
 @OptIn(ExperimentalForeignApi::class)
 class IosEngineBridge : EngineBridge {
 
-    private val frameCapacity = 2048 * 1536 * 4 + 8
-    private val frameRawBuffer = ByteArray(frameCapacity)
+    private var frameCapacity = 2048 * 1536 * 4 + 8
+    private var frameRawBuffer = ByteArray(frameCapacity)
+
+    private fun ensureFrameCapacity(requiredBytes: Int) {
+        if (frameCapacity < requiredBytes) {
+            val newCap = requiredBytes.coerceAtLeast(52 * 1024 * 1024)
+            frameCapacity = newCap
+            frameRawBuffer = ByteArray(newCap)
+        }
+    }
 
 
     override fun startNativeCameraEngine(
@@ -75,9 +84,6 @@ class IosEngineBridge : EngineBridge {
         autoMode: Boolean
     ) {
         val isDemo = internalCameraId == "demo"
-        if (!isDemo) {
-            olive_ios_start_hardware_capture(internalCameraId)
-        }
         val camerasJson = getAvailableInternalCameras()
         var selectedFov = 0.0f
         var selectedWidth = 2016u
@@ -103,6 +109,16 @@ class IosEngineBridge : EngineBridge {
                 }
             }
         } catch (_: Exception) {
+        }
+
+        if (!isDemo) {
+            olive_ios_start_hardware_capture(
+                internalCameraId,
+                selectedWidth.toInt(),
+                selectedHeight.toInt(),
+                30,
+                null
+            )
         }
 
         val started = olive_ios_start_engine(
@@ -135,9 +151,23 @@ class IosEngineBridge : EngineBridge {
         uvcFps: Int,
         uvcWrapper: UvcCameraHandler?
     ) {
-        olive_ios_start_hardware_capture("external")
-        val w = if (width > 0) width.toUInt() else 1920u
-        val h = if (height > 0) height.toUInt() else 1080u
+        val reqWidth = if (width > 0) width else settingsManager.uvcWidth
+        val reqHeight = if (height > 0) height else settingsManager.uvcHeight
+        val reqFps = if (uvcFps > 0) uvcFps else settingsManager.uvcFps
+        val reqFormat = settingsManager.uvcFormat
+
+        val requiredBytes = reqWidth * reqHeight * 4 + 8
+        ensureFrameCapacity(requiredBytes)
+
+        olive_ios_start_hardware_capture(
+            "external",
+            reqWidth,
+            reqHeight,
+            reqFps,
+            reqFormat
+        )
+        val w = if (reqWidth > 0) reqWidth.toUInt() else 1920u
+        val h = if (reqHeight > 0) reqHeight.toUInt() else 1080u
         val started = olive_ios_start_engine(
             w,
             h,
@@ -237,6 +267,13 @@ class IosEngineBridge : EngineBridge {
     override fun getAvailableInternalCameras(): String {
         val ptr = olive_ios_get_available_cameras()
             ?: return "[{\"id\":\"0\",\"name\":\"Back Camera (Wide)\",\"fov\":65.0,\"supports_raw\":false}]"
+        val res = ptr.toKString()
+        platform.posix.free(ptr)
+        return res
+    }
+
+    override fun getAvailableExternalCameraFormats(): String {
+        val ptr = olive_ios_get_external_camera_formats() ?: return "[]"
         val res = ptr.toKString()
         platform.posix.free(ptr)
         return res

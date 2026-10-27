@@ -32,7 +32,14 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         super.init()
     }
 
-    public func startCamera(cameraId: String = "0", completion: @escaping (Result<Void, Error>) -> Void) {
+    public func startCamera(
+        cameraId: String = "0",
+        targetWidth: Int32 = 0,
+        targetHeight: Int32 = 0,
+        targetFps: Int32 = 0,
+        targetFormat: String? = nil,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
             if self.isRunning && self.captureSession.isRunning {
@@ -41,7 +48,13 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
             }
 
             do {
-                try self.setupCaptureSession(cameraId: cameraId)
+                try self.setupCaptureSession(
+                    cameraId: cameraId,
+                    targetWidth: targetWidth,
+                    targetHeight: targetHeight,
+                    targetFps: targetFps,
+                    targetFormat: targetFormat
+                )
                 self.setupSessionObservers()
                 self.registerHardwareControlCallback()
                 self.captureSession.startRunning()
@@ -123,7 +136,13 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         sessionObservers.removeAll()
     }
 
-    private func setupCaptureSession(cameraId: String) throws {
+    private func setupCaptureSession(
+        cameraId: String,
+        targetWidth: Int32 = 0,
+        targetHeight: Int32 = 0,
+        targetFps: Int32 = 0,
+        targetFormat: String? = nil
+    ) throws {
         captureSession.beginConfiguration()
         defer { captureSession.commitConfiguration() }
 
@@ -193,20 +212,99 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         }
 
         if isExternalDevice {
-            // Find highest resolution <= 1080p for external cameras
+            // Multi-tier candidate format matching for external camera
             let candidateFormats = device.formats.filter { format in
                 let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-                return dims.width <= 1920 && dims.height <= 1080
+                guard dims.width > 0 && dims.height > 0 else { return false }
+
+                let subType = CMFormatDescriptionGetMediaSubType(format.formatDescription)
+                let isMjpeg = isMjpegCodec(subType: subType)
+                let isYuv = isYuvCodec(subType: subType)
+                guard isMjpeg || isYuv else { return false }
+
+                let matchesRes: Bool
+                if targetWidth > 0 && targetHeight > 0 {
+                    matchesRes = (dims.width == targetWidth && dims.height == targetHeight) ||
+                                 (abs(dims.width - targetWidth) <= 8 && abs(dims.height - targetHeight) <= 8)
+                } else {
+                    matchesRes = true
+                }
+
+                let matchesFormat: Bool
+                if let targetFormat = targetFormat {
+                    if isMjpeg || subType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange {
+                        matchesFormat = targetFormat.caseInsensitiveCompare("MJPEG") == .orderedSame
+                    } else if isYuv || subType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
+                        matchesFormat = targetFormat.caseInsensitiveCompare("YUV2") == .orderedSame
+                    } else {
+                        matchesFormat = true
+                    }
+                } else {
+                    matchesFormat = true
+                }
+
+                let matchesFps: Bool
+                if targetFps > 0 {
+                    let desired = Double(targetFps)
+                    matchesFps = format.videoSupportedFrameRateRanges.contains {
+                        desired >= ($0.minFrameRate - 0.1) && desired <= ($0.maxFrameRate + 0.1)
+                    }
+                } else {
+                    matchesFps = true
+                }
+
+                return matchesRes && matchesFormat && matchesFps
             }
-            if let bestFormat = candidateFormats.max(by: { a, b in
-                let dimsA = CMVideoFormatDescriptionGetDimensions(a.formatDescription)
-                let dimsB = CMVideoFormatDescriptionGetDimensions(b.formatDescription)
-                return (dimsA.width * dimsA.height) < (dimsB.width * dimsB.height)
-            }) ?? device.formats.first {
+
+            // Fallback selection hierarchy: always prioritize full-range '420f' for maximum dynamic range
+            let selectedFormat: AVCaptureDevice.Format? = {
+                // Priority 1: Candidate matching target resolution & FPS that is full-range '420f'
+                if let fullRangeExact = candidateFormats.first(where: {
+                    CMFormatDescriptionGetMediaSubType($0.formatDescription) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+                }) {
+                    return fullRangeExact
+                }
+                // Priority 2: Any candidate matching target resolution & FPS (e.g. video-range '420v')
+                if let exact = candidateFormats.first {
+                    return exact
+                }
+                // Fallback 1: match resolution (with ±8px tolerance) and prefer full-range '420f'
+                if targetWidth > 0 && targetHeight > 0 {
+                    let resMatches = device.formats.filter { format in
+                        let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                        return (dims.width == targetWidth && dims.height == targetHeight) ||
+                               (abs(dims.width - targetWidth) <= 8 && abs(dims.height - targetHeight) <= 8)
+                    }
+                    if let fullRangeMatch = resMatches.first(where: {
+                        CMFormatDescriptionGetMediaSubType($0.formatDescription) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+                    }) {
+                        return fullRangeMatch
+                    }
+                    if let match = resMatches.first { return match }
+                }
+                // Fallback 2: match resolution
+                if targetWidth > 0 && targetHeight > 0 {
+                    let resMatches = device.formats.filter { format in
+                        let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                        return dims.width == targetWidth && dims.height == targetHeight
+                    }
+                    if let match = resMatches.first { return match }
+                }
+                // Fallback 3: highest resolution format
+                return device.formats.max(by: { a, b in
+                    let dimsA = CMVideoFormatDescriptionGetDimensions(a.formatDescription)
+                    let dimsB = CMVideoFormatDescriptionGetDimensions(b.formatDescription)
+                    return (dimsA.width * dimsA.height) < (dimsB.width * dimsB.height)
+                }) ?? device.formats.first
+            }()
+
+            if let bestFormat = selectedFormat {
                 do {
                     try device.lockForConfiguration()
                     device.activeFormat = bestFormat
                     device.unlockForConfiguration()
+                    let dims = CMVideoFormatDescriptionGetDimensions(bestFormat.formatDescription)
+                    print("[CameraService] Set external device.activeFormat: \(dims.width)x\(dims.height)")
                 } catch {
                     print("Failed to set external device.activeFormat: \(error)")
                 }
@@ -250,8 +348,12 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         let output = AVCaptureVideoDataOutput()
         if isExternalDevice {
             let dims = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+            let activeSubType = CMFormatDescriptionGetMediaSubType(device.activeFormat.formatDescription)
+            let pixelFormat = (activeSubType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange || activeSubType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
+                ? activeSubType
+                : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
             output.videoSettings = [
-                kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+                kCVPixelBufferPixelFormatTypeKey as String: Int(pixelFormat),
                 kCVPixelBufferWidthKey as String: Int(dims.width),
                 kCVPixelBufferHeightKey as String: Int(dims.height)
             ]
@@ -285,17 +387,33 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         defer { device.unlockForConfiguration() }
 
         if isExternalDevice {
-            // Two-Class Startup Engine for external cameras
+            // Lock activeVideoMinFrameDuration and activeVideoMaxFrameDuration
+            let desiredFps = Double(targetFps > 0 ? targetFps : 30)
+            let supportedRanges = device.activeFormat.videoSupportedFrameRateRanges
+            if let matchingRange = supportedRanges.first(where: {
+                desiredFps >= ($0.minFrameRate - 0.1) && desiredFps <= ($0.maxFrameRate + 0.1)
+            }) {
+                let targetDuration = CMTime(value: 1, timescale: CMTimeScale(round(desiredFps)))
+                // Safe relative ordering check to prevent NSInvalidArgumentException
+                if CMTimeCompare(targetDuration, device.activeVideoMaxFrameDuration) > 0 {
+                    device.activeVideoMaxFrameDuration = targetDuration
+                    device.activeVideoMinFrameDuration = targetDuration
+                } else {
+                    device.activeVideoMinFrameDuration = targetDuration
+                    device.activeVideoMaxFrameDuration = targetDuration
+                }
+                print("[CameraService] Locked external camera frame duration to \(targetDuration.seconds)s (\(desiredFps) FPS)")
+            } else if let maxRange = supportedRanges.max(by: { $0.maxFrameRate < $1.maxFrameRate }) {
+                device.activeVideoMinFrameDuration = maxRange.minFrameDuration
+                device.activeVideoMaxFrameDuration = maxRange.maxFrameDuration
+            }
+
             let nominalFps: Double = {
                 if device.activeVideoMinFrameDuration.isValid && device.activeVideoMinFrameDuration.seconds > 0.0 {
                     let fps = 1.0 / device.activeVideoMinFrameDuration.seconds
                     if fps.isFinite && fps > 0.0 { return fps }
                 }
-                let ranges = device.activeFormat.videoSupportedFrameRateRanges
-                if let maxFps = ranges.map({ $0.maxFrameRate }).filter({ $0.isFinite && $0 > 0.0 }).max() {
-                    return maxFps
-                }
-                return 30.0
+                return desiredFps
             }()
 
             let nominalExposureUs = Int32(round(1_000_000.0 / nominalFps))
@@ -519,6 +637,47 @@ final class Atomic<T> {
     }
 }
 
+// MARK: - Codec FourCC Helpers
+
+private func fourCCToString(_ code: FourCharCode) -> String {
+    let bytes: [CChar] = [
+        CChar((code >> 24) & 0xff),
+        CChar((code >> 16) & 0xff),
+        CChar((code >> 8) & 0xff),
+        CChar(code & 0xff),
+        0
+    ]
+    return String(cString: bytes)
+}
+
+private func isMjpegCodec(subType: FourCharCode) -> Bool {
+    if subType == kCMVideoCodecType_JPEG ||
+       subType == kCMVideoCodecType_JPEG_OpenDML ||
+       subType == 0x4D4A5047 /* 'MJPG' */ ||
+       subType == 0x6D6A7067 /* 'mjpg' */ ||
+       subType == 0x4156444A /* 'AVDJ' */ {
+        return true
+    }
+    let str = fourCCToString(subType).lowercased()
+    return str.contains("jpg") || str.contains("jpeg")
+}
+
+private func isYuvCodec(subType: FourCharCode) -> Bool {
+    if subType == kCVPixelFormatType_422YpCbCr8_yuvs ||
+       subType == kCVPixelFormatType_422YpCbCr8 ||
+       subType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ||
+       subType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
+       subType == 0x79757632 /* 'yuv2' */ ||
+       subType == 0x59555932 /* 'YUY2' */ ||
+       subType == 0x59555956 /* 'YUYV' */ ||
+       subType == 0x55595659 /* 'UYVY' */ ||
+       subType == 0x32767579 /* '2vuy' */ {
+        return true
+    }
+    let str = fourCCToString(subType).lowercased()
+    return str.contains("yuv") || str.contains("yuy") || str.contains("uyv") || str.contains("420") || str.contains("422")
+}
+
 // MARK: - C-ABI Hardware Capture Hooks
 
 @_cdecl("olive_ios_get_available_cameras")
@@ -575,10 +734,126 @@ public func olive_ios_get_available_cameras() -> UnsafeMutablePointer<CChar>? {
     return strdup(jsonString)
 }
 
+@_cdecl("olive_ios_get_external_camera_formats")
+public func olive_ios_get_external_camera_formats() -> UnsafeMutablePointer<CChar>? {
+    guard #available(iOS 17.0, *) else {
+        return strdup("[]")
+    }
+
+    let discovery = AVCaptureDevice.DiscoverySession(
+        deviceTypes: [.external],
+        mediaType: .video,
+        position: .unspecified
+    )
+    guard let device = discovery.devices.first else {
+        return strdup("[]")
+    }
+
+    var formatsList: [[String: Any]] = []
+    var seenKeys = Set<String>()
+
+    // Helper to check if a full-range '420f' format exists for a given resolution AND frame rate
+    let hasFullRangeForDimsAndFps: (Int32, Int32, Int) -> Bool = { w, h, fps in
+        device.formats.contains { fmt in
+            let dims = CMVideoFormatDescriptionGetDimensions(fmt.formatDescription)
+            guard dims.width == w && dims.height == h else { return false }
+            let subType = CMFormatDescriptionGetMediaSubType(fmt.formatDescription)
+            guard subType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange else { return false }
+            let desired = Double(fps)
+            return fmt.videoSupportedFrameRateRanges.contains {
+                desired >= ($0.minFrameRate - 0.1) && desired <= ($0.maxFrameRate + 0.1)
+            }
+        }
+    }
+
+    for format in device.formats {
+        let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        guard dims.width > 0 && dims.height > 0 else { continue }
+
+        let subType = CMFormatDescriptionGetMediaSubType(format.formatDescription)
+        let fourCC = fourCCToString(subType)
+        let lower = fourCC.lowercased()
+        if lower.contains("avc") || lower.contains("h264") || lower.contains("hvc") || lower.contains("hevc") {
+            continue
+        }
+
+        let isMjpeg = isMjpegCodec(subType: subType)
+        let isYuv = isYuvCodec(subType: subType)
+        guard isMjpeg || isYuv else { continue }
+
+        for range in format.videoSupportedFrameRateRanges {
+            let minFps = Int(floor(range.minFrameRate))
+            let maxFps = Int(ceil(range.maxFrameRate))
+            let candidateFpsList: [Int] = {
+                if minFps == maxFps {
+                    return [maxFps]
+                } else {
+                    return [30, 25, 20, 15, 10, 5, 2, 1].filter { stdFps in
+                        Double(stdFps) >= (range.minFrameRate - 0.1) && Double(stdFps) <= (range.maxFrameRate + 0.1)
+                    }
+                }
+            }()
+
+            for stdFps in candidateFpsList {
+                // If this is video-range '420v' but the device also provides full-range '420f'
+                // for this exact resolution and frame rate, skip '420v' so full range is preserved!
+                if subType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange &&
+                   hasFullRangeForDimsAndFps(dims.width, dims.height, stdFps) {
+                    continue
+                }
+
+                // Determine physical wire format:
+                // On USB 2.0 (High Speed), max isochronous bandwidth is 24,576,000 bytes/sec.
+                // Any mode whose uncompressed rate exceeds 24.576 MB/s is physically transported
+                // as compressed MJPEG over the USB cable and decoded to '420f' by Apple's UVC driver.
+                // Modes <= 24.576 MB/s can be transported as uncompressed YUV2.
+                let uncompressedBytesPerSec = Int64(dims.width) * Int64(dims.height) * 2 * Int64(stdFps)
+                let formatName: String
+                if isMjpeg || subType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange {
+                    formatName = "MJPEG"
+                } else {
+                    formatName = (uncompressedBytesPerSec > 24_576_000) ? "MJPEG" : "YUV2"
+                }
+
+                let key = "\(dims.width)x\(dims.height)@\(stdFps):\(formatName)"
+                if seenKeys.contains(key) { continue }
+                seenKeys.insert(key)
+
+                print("[CameraService] Discovered external format: \(dims.width)x\(dims.height) '\(fourCC)' @ \(stdFps) fps -> \(formatName)")
+                formatsList.append([
+                    "width": Int(dims.width),
+                    "height": Int(dims.height),
+                    "fps": stdFps,
+                    "format": formatName
+                ])
+            }
+        }
+    }
+
+    guard let jsonData = try? JSONSerialization.data(withJSONObject: formatsList, options: []),
+          let jsonString = String(data: jsonData, encoding: .utf8) else {
+        return strdup("[]")
+    }
+    return strdup(jsonString)
+}
+
 @_cdecl("olive_ios_start_hardware_capture")
-public func olive_ios_start_hardware_capture(cameraId: UnsafePointer<CChar>?) {
+public func olive_ios_start_hardware_capture(
+    cameraId: UnsafePointer<CChar>?,
+    width: Int32,
+    height: Int32,
+    fps: Int32,
+    format: UnsafePointer<CChar>?
+) {
     let idStr = cameraId != nil ? String(cString: cameraId!) : "0"
-    CameraService.shared.startCamera(cameraId: idStr) { _ in }
+    let formatStr = format != nil ? String(cString: format!) : nil
+    CameraService.shared.startCamera(
+        cameraId: idStr,
+        targetWidth: width,
+        targetHeight: height,
+        targetFps: fps,
+        targetFormat: formatStr
+    ) { _ in }
     MotionService.shared.startMotionUpdates()
 }
 
