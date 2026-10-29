@@ -67,8 +67,10 @@ struct ImageReaderContext {
     white_level: f32,
     black_level: f32,
     format: i32,
-    frame_exposures: Arc<Mutex<std::collections::VecDeque<(i64, i32, f32, i64)>>>,
+    frame_exposures: Arc<Mutex<std::collections::VecDeque<(i64, i32, f32, i64, f32)>>>,
     prev_sensor_ts: Arc<std::sync::atomic::AtomicI64>,
+    current_zoom: Arc<AtomicU32>,
+    active_array_width: u32,
 }
 
 pub struct AndroidCamera {
@@ -117,6 +119,7 @@ impl CameraTrait for AndroidCamera {
         let gain_clone = Arc::clone(&self.current_gain);
         let focus_clone = Arc::clone(&self.current_focus);
         let nr_clone = Arc::clone(&self.current_nr);
+        let zoom_clone = Arc::clone(&self.current_zoom);
 
         self.capture_thread = Some(thread::spawn(move || unsafe {
             Self::capture_loop(
@@ -127,6 +130,7 @@ impl CameraTrait for AndroidCamera {
                 gain_clone,
                 focus_clone,
                 nr_clone,
+                zoom_clone,
             );
         }));
 
@@ -1103,14 +1107,17 @@ impl AndroidCamera {
                 let mut actual_exp_us = target_exp_us;
                 let mut actual_gain = 100.0; // fallback
                 let mut actual_interval_us = 0;
+                let mut actual_zoom =
+                    f32::from_bits(ctx.current_zoom.load(Ordering::Relaxed)).max(1.0);
                 let mut metadata_valid = false;
 
                 {
                     let mut queue = ctx.frame_exposures.lock().unwrap();
-                    if let Some(pos) = queue.iter().position(|&(ts, _, _, _)| ts == timestamp) {
+                    if let Some(pos) = queue.iter().position(|&(ts, _, _, _, _)| ts == timestamp) {
                         actual_exp_us = queue[pos].1;
                         actual_gain = queue[pos].2;
                         actual_interval_us = queue[pos].3;
+                        actual_zoom = queue[pos].4;
                         metadata_valid = true;
                         queue.drain(0..=pos);
                     }
@@ -1137,6 +1144,7 @@ impl AndroidCamera {
                     post_process_time: receive_time.elapsed(),
                     frame_interval_us: actual_interval_us,
                     metadata_valid,
+                    zoom: actual_zoom,
                 }));
                 ctx.store.cvar.notify_all();
 
@@ -1199,6 +1207,30 @@ impl AndroidCamera {
                 actual_gain = *entry.data.i32_.offset(0) as f32;
             }
 
+            let mut actual_zoom: f32 =
+                f32::from_bits(ctx.current_zoom.load(std::sync::atomic::Ordering::Relaxed))
+                    .max(1.0);
+            if ACameraMetadata_getConstEntry(
+                result,
+                acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO.0 as u32,
+                &mut entry,
+            ) == camera_status_t::ACAMERA_OK
+                && entry.count > 0
+            {
+                actual_zoom = *entry.data.f.offset(0);
+            } else if ACameraMetadata_getConstEntry(
+                result,
+                acamera_metadata_tag::ACAMERA_SCALER_CROP_REGION.0 as u32,
+                &mut entry,
+            ) == camera_status_t::ACAMERA_OK
+                && entry.count >= 4
+            {
+                let crop_w = *entry.data.i32_.offset(2) as f32;
+                if crop_w > 0.0 && ctx.active_array_width > 0 {
+                    actual_zoom = (ctx.active_array_width as f32 / crop_w).max(1.0);
+                }
+            }
+
             if timestamp > 0 && exposure_ns > 0 {
                 let prev = ctx
                     .prev_sensor_ts
@@ -1210,7 +1242,13 @@ impl AndroidCamera {
                 };
                 let exposure_us = (exposure_ns / 1000) as i32;
                 let mut queue = ctx.frame_exposures.lock().unwrap();
-                queue.push_back((timestamp, exposure_us, actual_gain, interval_us));
+                queue.push_back((
+                    timestamp,
+                    exposure_us,
+                    actual_gain,
+                    interval_us,
+                    actual_zoom,
+                ));
                 if queue.len() > 30 {
                     queue.pop_front();
                 }
@@ -1248,6 +1286,7 @@ impl AndroidCamera {
         gain_ref: Arc<AtomicI32>,
         focus_ref: Arc<AtomicU32>,
         nr_ref: Arc<AtomicU32>,
+        zoom_ref: Arc<AtomicU32>,
     ) {
         unsafe {
             let config = config_store
@@ -1273,10 +1312,13 @@ impl AndroidCamera {
                 &mut image_reader,
             );
 
-            let frame_exposures =
-                Arc::new(Mutex::new(
-                    std::collections::VecDeque::<(i64, i32, f32, i64)>::with_capacity(30),
-                ));
+            let frame_exposures = Arc::new(Mutex::new(std::collections::VecDeque::<(
+                i64,
+                i32,
+                f32,
+                i64,
+                f32,
+            )>::with_capacity(30)));
 
             let mut reader_context = Box::new(ImageReaderContext {
                 store: Arc::clone(&store),
@@ -1288,6 +1330,8 @@ impl AndroidCamera {
                 format: config.format,
                 frame_exposures: Arc::clone(&frame_exposures),
                 prev_sensor_ts: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+                current_zoom: Arc::clone(&zoom_ref),
+                active_array_width: config.active_array_size[2].max(0) as u32,
             });
 
             let mut listener = AImageReader_ImageListener {

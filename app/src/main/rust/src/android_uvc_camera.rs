@@ -274,6 +274,7 @@ impl AndroidUvcCamera {
                 post_process_time: std::time::Duration::from_millis(0),
                 frame_interval_us: 0,
                 metadata_valid: true,
+                zoom: 1.0,
             };
 
             let mut lock = self.last_image.lock().unwrap();

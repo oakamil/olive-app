@@ -103,6 +103,10 @@
     <string name="stat_solve_rate">Solve Rate</string>
     <string name="stat_last_solve">Last Solve</string>
     <string name="crop_center">Center</string>
+    <string name="crop_center_2x">Center (2x)</string>
+    <string name="crop_center_2x_hs">Center (2x HS)</string>
+    <string name="crop_center_1_5x">Center (1.5x)</string>
+    <string name="crop_center_1_5x_hs">Center (1.5x HS)</string>
     <string name="crop_top">Top</string>
     <string name="crop_bottom">Bottom</string>
     <string name="crop_left">Left</string>

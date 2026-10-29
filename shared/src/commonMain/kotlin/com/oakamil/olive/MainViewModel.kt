@@ -362,7 +362,10 @@ open class MainViewModel(
                 maxAnalogGain = maxG
 
                 if (isAutoSettings) {
-                    setZoom(1.0f)
+                    setZoom(
+                        if (ENABLE_AUTO_ZOOM) settingsManager.autoZoomRatio.coerceIn(1.0f, 2.0f)
+                        else 1.0f
+                    )
                     val savedFocus = settingsManager.manualFocus
                     val focusToApply =
                         if (savedFocus in capabilities.focusRange) savedFocus else capabilities.defaultFocus
@@ -535,12 +538,16 @@ open class MainViewModel(
     }
 
     fun setZoom(zoom: Float) {
-        currentZoom = zoom
+        val clamped = zoom.coerceIn(1.0f, 2.0f)
+        if (currentZoom == clamped) return
+        currentZoom = clamped
         if (settingsManager.cameraSettingsMode == "Manual") {
-            settingsManager.manualZoomRatio = zoom
+            settingsManager.manualZoomRatio = clamped
+        } else {
+            settingsManager.autoZoomRatio = clamped
         }
         viewModelScope.launch(Dispatchers.IO) {
-            engine.setNativeCameraZoomRatio(zoom)
+            engine.setNativeCameraZoomRatio(clamped)
         }
     }
 
@@ -779,6 +786,7 @@ open class MainViewModel(
     }
 
     companion object {
+        const val ENABLE_AUTO_ZOOM = true
         const val INVALID_COORD = 200.0
         const val CAMERA_STUCK_TIMEOUT_MS = 15000L
         const val SCREEN_UPDATE_RATE_HZ = 10

@@ -67,7 +67,8 @@ void olive_ios_push_camera_frame(
     uint32_t stride,
     int64_t timestamp_ns,
     int32_t applied_exposure_us,
-    float applied_iso
+    float applied_iso,
+    float zoom
 );
 
 void olive_ios_push_gyro_update(

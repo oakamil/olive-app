@@ -56,6 +56,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import kotlin.math.cos
+import kotlin.math.round
 import kotlin.math.sin
 
 @Composable
@@ -600,55 +601,68 @@ fun TuningControls(
         )
 
         if (activeCameraSelection != "demo") {
-            val maxZoom = remember {
-                var mZ = 1f
-                try {
-                    if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE && settingsManager.sensorMode == "Processed") {
-                        val jsonArray = JSONArray(viewModel.getAvailableInternalCameras())
-                        for (i in 0 until jsonArray.length()) {
-                            val obj = jsonArray.getJSONObject(i)
-                            if (obj.getString("id") == settingsManager.internalCameraId) {
-                                mZ =
-                                    if (obj.has("max_zoom")) obj.getDouble("max_zoom")
-                                        .toFloat() else 1f
-                                break
+            val showZoom = activeCameraSelection == "internal" &&
+                    (settingsManager.cameraSettingsMode != "Auto" || MainViewModel.ENABLE_AUTO_ZOOM)
+            if (showZoom) {
+                val maxZoom = remember {
+                    var mZ = 1f
+                    try {
+                        if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE && (settingsManager.cameraSettingsMode == "Auto" || settingsManager.sensorMode == "Processed")) {
+                            val jsonArray = JSONArray(viewModel.getAvailableInternalCameras())
+                            val targetId =
+                                if (settingsManager.cameraSettingsMode == "Auto" && !capabilities.isApple) "0" else settingsManager.internalCameraId
+                            for (i in 0 until jsonArray.length()) {
+                                val obj = jsonArray.getJSONObject(i)
+                                if (obj.getString("id") == targetId) {
+                                    mZ =
+                                        if (obj.has("max_zoom")) obj.getDouble("max_zoom")
+                                            .toFloat() else 1f
+                                    break
+                                }
                             }
                         }
+                    } catch (_: Exception) {
+                        // Ignore JSON parsing errors if internal camera FOV metadata is unavailable
                     }
-                } catch (_: Exception) {
-                    // Ignore JSON parsing errors if internal camera FOV metadata is unavailable
+                    mZ
                 }
-                mZ
-            }
 
-            if (maxZoom > 1f) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(id = Res.string.label_zoom) + ": " + stringResource(
-                            id = Res.string.format_zoom,
-                            String.format("%.1f", viewModel.currentZoom)
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    IconButton(onClick = { showZoomInfo = true }, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = stringResource(id = Res.string.cd_info),
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                val effectiveMaxZoom = minOf(2.0f, maxZoom)
+                if (effectiveMaxZoom >= 1.1f) {
+                    val stepsCount =
+                        (round((effectiveMaxZoom - 1.0f) * 10f).toInt() - 1).coerceAtLeast(0)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(id = Res.string.label_zoom) + ": " + stringResource(
+                                id = Res.string.format_zoom,
+                                String.format("%.1f", viewModel.currentZoom)
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onBackground
                         )
+                        IconButton(
+                            onClick = { showZoomInfo = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = stringResource(id = Res.string.cd_info),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
+                    Slider(
+                        value = viewModel.currentZoom.coerceIn(1.0f, effectiveMaxZoom),
+                        onValueChange = {
+                            val stepped = round(it * 10.0f) / 10.0f
+                            viewModel.setZoom(stepped)
+                        },
+                        valueRange = 1.0f..effectiveMaxZoom,
+                        steps = stepsCount,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
-                Slider(
-                    value = viewModel.currentZoom,
-                    enabled = settingsManager.cameraSettingsMode != "Auto",
-                    onValueChange = {
-                        viewModel.setZoom(it)
-                    },
-                    valueRange = 1f..5f,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
