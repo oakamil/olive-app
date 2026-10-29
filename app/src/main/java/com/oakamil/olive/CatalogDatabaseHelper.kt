@@ -18,6 +18,7 @@ import java.net.URL
 import java.util.zip.GZIPInputStream
 import kotlin.math.cos
 import kotlin.math.sin
+
 class CatalogDatabaseHelper(private val context: Context) :
     SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION), CatalogDatabase {
 
@@ -116,12 +117,43 @@ class CatalogDatabaseHelper(private val context: Context) :
         // Handle upgrades if necessary
     }
 
+    override fun onOpen(db: SQLiteDatabase?) {
+        super.onOpen(db)
+        if (db != null) {
+            registerMathFunctions(db)
+        }
+    }
+
     fun openDatabase() {
         initializeIfNeeded()
         if (db == null || !db!!.isOpen) {
             val dbPath = context.getDatabasePath(DB_NAME).absolutePath
-            db = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READWRITE)
+            val database = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READWRITE)
+            registerMathFunctions(database)
+            db = database
         }
+    }
+
+    private fun registerMathFunctions(database: SQLiteDatabase) {
+        val sinFunc = SQLiteDatabase.Function { args, result ->
+            try {
+                result.set(sin(args.getDouble(0)))
+            } catch (_: Exception) {
+                result.set(0.0)
+            }
+        }
+        val cosFunc = SQLiteDatabase.Function { args, result ->
+            try {
+                result.set(cos(args.getDouble(0)))
+            } catch (_: Exception) {
+                result.set(0.0)
+            }
+        }
+
+        database.addFunction("SIN", 1, sinFunc, SQLiteDatabase.Function.FLAG_DETERMINISTIC)
+        database.addFunction("COS", 1, cosFunc, SQLiteDatabase.Function.FLAG_DETERMINISTIC)
+        database.addFunction("sin", 1, sinFunc, SQLiteDatabase.Function.FLAG_DETERMINISTIC)
+        database.addFunction("cos", 1, cosFunc, SQLiteDatabase.Function.FLAG_DETERMINISTIC)
     }
 
     override fun closeDatabase() {

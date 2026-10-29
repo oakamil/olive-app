@@ -24,6 +24,11 @@ class AndroidWindowController(private val activity: Activity) : PlatformWindowCo
     }
 
     override fun getScreenBrightness(): Float {
+        val currentOverride = activity.window?.attributes?.screenBrightness
+            ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        if (currentOverride in 0f..1f) {
+            return currentOverride
+        }
         return try {
             Settings.System.getFloat(
                 activity.contentResolver,
