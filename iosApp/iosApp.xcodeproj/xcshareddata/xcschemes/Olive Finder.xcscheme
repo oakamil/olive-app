@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "664DD27B60E34DE599FD2CEB"
-               BuildableName = "Olive.app"
-               BlueprintName = "Olive"
+               BuildableName = "Olive Finder.app"
+               BlueprintName = "Olive Finder"
                ReferencedContainer = "container:iosApp.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -27,6 +27,8 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
+      <Testables>
+      </Testables>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -43,8 +45,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "664DD27B60E34DE599FD2CEB"
-            BuildableName = "Olive.app"
-            BlueprintName = "Olive"
+            BuildableName = "Olive Finder.app"
+            BlueprintName = "Olive Finder"
             ReferencedContainer = "container:iosApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -60,8 +62,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "664DD27B60E34DE599FD2CEB"
-            BuildableName = "Olive.app"
-            BlueprintName = "Olive"
+            BuildableName = "Olive Finder.app"
+            BlueprintName = "Olive Finder"
             ReferencedContainer = "container:iosApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
