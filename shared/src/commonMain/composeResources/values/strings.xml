@@ -198,6 +198,7 @@
     <string name="stat_solving">Solving</string>
     <string name="stat_slewing">Slewing</string>
     <string name="stat_idle">Idle</string>
+    <string name="stat_calibrating_focus">Calibrating Focus</string>
     <string name="cd_clear_search">Clear search</string>
     <string name="cd_close_keyboard">Close Keyboard</string>
     <string name="cd_open_catalogs_menu">Open catalogs menu</string>

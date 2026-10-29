@@ -469,6 +469,11 @@ pub extern "C" fn olive_ios_set_camera_focus(distance: f32) {
     if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
         cam.set_focus(distance);
     }
+    if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
+        if let Ok(mut state) = state_arc.write() {
+            state.focus = Some(distance);
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
