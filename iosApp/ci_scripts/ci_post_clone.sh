@@ -13,8 +13,8 @@ if [ ! -d "$PARENT_DIR/olive-engine" ]; then
     git clone --depth 1 https://github.com/oakamil/olive-engine.git "$PARENT_DIR/olive-engine"
 fi
 
-# 2. Install OpenJDK 21 (for Kotlin Multiplatform / Gradle) and CMake (for turbojpeg-sys)
-HOMEBREW_NO_AUTO_UPDATE=1 brew install openjdk@21 cmake
+# 2. Install OpenJDK 21 (for Kotlin Multiplatform / Gradle), CMake (for turbojpeg-sys), and Protobuf (for cedar_detect)
+HOMEBREW_NO_AUTO_UPDATE=1 brew install openjdk@21 cmake protobuf
 
 # 3. Install Rust and iOS targets for olive-ios
 if ! command -v rustup >/dev/null 2>&1; then
