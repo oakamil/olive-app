@@ -293,7 +293,9 @@ fun EngineRunningScreen(
         onDispose {
             viewModel.isLowPowerMode = false
             windowController.setPreferredRefreshRate(0f)
-            windowController.restoreScreenBrightness()
+            if (!viewModel.isEngineRunning) {
+                windowController.restoreScreenBrightness()
+            }
         }
     }
 

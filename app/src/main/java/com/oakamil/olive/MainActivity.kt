@@ -252,11 +252,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.attributes.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
+        window.attributes.layoutInDisplayCutoutMode =
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         hideSystemUI()
 
         lifecycleScope.launch(Dispatchers.IO) {
@@ -312,6 +309,7 @@ class MainActivity : ComponentActivity() {
                         }
                     } else {
                         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        windowController.restoreScreenBrightness()
                     }
                 }
 
@@ -623,6 +621,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        windowController.restoreScreenBrightness()
         viewModel.uvcWrapper?.release()
         viewModel.uvcWrapper = null
 
@@ -978,7 +977,10 @@ class MainActivity : ComponentActivity() {
                             "OliveUI",
                             "USB Device link speed detected: ${if (isUsb3) "SuperSpeed (USB 3.x)" else "High-Speed (USB 2.0)"}"
                         )
-                        val parsed = UvcFormat.parseRawDescriptors(ctrlBlock.rawDescriptors, isUsb3Override = isUsb3)
+                        val parsed = UvcFormat.parseRawDescriptors(
+                            ctrlBlock.rawDescriptors,
+                            isUsb3Override = isUsb3
+                        )
                         if (parsed.isNotEmpty()) {
                             viewModel.availableUvcFormats = parsed
                             val best = UvcFormat.findBestFormatForFps(
