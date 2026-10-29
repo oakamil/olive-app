@@ -43,6 +43,10 @@ pub struct AppleCamera {
     gain: AtomicI32,
     focus: AtomicU32,
     zoom: AtomicU32,
+    hardware_min_exposure_us: AtomicI32,
+    hardware_max_exposure_us: AtomicI32,
+    hardware_min_gain: AtomicU32,
+    hardware_max_gain: AtomicU32,
     last_image: Mutex<Option<Arc<Image>>>,
     image_cvar: Condvar,
     saved_state: Mutex<Option<(i32, f32, f32)>>,
@@ -109,6 +113,10 @@ impl AppleCamera {
             gain: AtomicI32::new(100),
             focus: AtomicU32::new(OPTICAL_INFINITY_FOCUS.to_bits()),
             zoom: AtomicU32::new(1.0f32.to_bits()),
+            hardware_min_exposure_us: AtomicI32::new(MIN_EXPOSURE_US),
+            hardware_max_exposure_us: AtomicI32::new(MAX_EXPOSURE_US),
+            hardware_min_gain: AtomicU32::new(50.0f32.to_bits()),
+            hardware_max_gain: AtomicU32::new(3200.0f32.to_bits()),
             last_image: Mutex::new(None),
             image_cvar: Condvar::new(),
             saved_state: Mutex::new(None),
@@ -123,6 +131,37 @@ impl AppleCamera {
             last_timestamp_ns: AtomicI64::new(0),
             measured_frame_interval_us: AtomicI64::new(33_333),
         })
+    }
+
+    pub fn set_hardware_limits(
+        &self,
+        min_exp_us: i32,
+        max_exp_us: i32,
+        min_gain: f32,
+        max_gain: f32,
+    ) {
+        if min_exp_us > 0 && max_exp_us >= min_exp_us {
+            self.hardware_min_exposure_us
+                .store(min_exp_us, Ordering::SeqCst);
+            self.hardware_max_exposure_us
+                .store(max_exp_us, Ordering::SeqCst);
+            log::info!(
+                "AppleCamera updated hardware exposure range: [{} us, {} us]",
+                min_exp_us,
+                max_exp_us
+            );
+        }
+        if min_gain > 0.0 && max_gain >= min_gain {
+            self.hardware_min_gain
+                .store(min_gain.to_bits(), Ordering::SeqCst);
+            self.hardware_max_gain
+                .store(max_gain.to_bits(), Ordering::SeqCst);
+            log::info!(
+                "AppleCamera updated hardware gain range: [{}, {}]",
+                min_gain,
+                max_gain
+            );
+        }
     }
 
     pub fn set_brightness(&self, val: i32) {
@@ -195,8 +234,8 @@ impl AppleCamera {
         let mut measured_us = 0i64;
         if last_ns > 0 && timestamp_ns > last_ns {
             let delta_us = (timestamp_ns - last_ns) / 1_000;
-            // Sane frame rate range: 2 FPS to 200 FPS (5,000 µs to 500,000 µs)
-            if (5_000..=500_000).contains(&delta_us) {
+            // Sane frame rate range: 0.5 FPS to 200 FPS (5,000 µs to 2,000,000 µs)
+            if (5_000..=2_000_000).contains(&delta_us) {
                 self.measured_frame_interval_us
                     .store(delta_us, Ordering::Relaxed);
                 measured_us = delta_us;
@@ -321,8 +360,9 @@ impl CameraTrait for AppleCamera {
     }
 
     fn get_gain_range(&self) -> (f32, f32, f32) {
-        // iPhone min ISO ~50, max ISO ~3200, analog limit ~3200
-        (50.0, 3200.0, 3200.0)
+        let min_g = f32::from_bits(self.hardware_min_gain.load(Ordering::Relaxed));
+        let max_g = f32::from_bits(self.hardware_max_gain.load(Ordering::Relaxed));
+        (min_g, max_g, max_g)
     }
 
     fn set_gain(&self, gain: f32) {
@@ -346,7 +386,10 @@ impl CameraTrait for AppleCamera {
     }
 
     fn get_exposure_range(&self) -> Option<(i32, i32)> {
-        Some((MIN_EXPOSURE_US, MAX_EXPOSURE_US))
+        Some((
+            self.hardware_min_exposure_us.load(Ordering::Relaxed),
+            self.hardware_max_exposure_us.load(Ordering::Relaxed),
+        ))
     }
 
     fn get_focus(&self) -> Option<f32> {
@@ -519,6 +562,18 @@ pub extern "C" fn olive_ios_set_camera_is_ae(is_ae: bool) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn olive_ios_set_camera_hardware_limits(
+    min_exposure_us: i32,
+    max_exposure_us: i32,
+    min_gain: f32,
+    max_gain: f32,
+) {
+    if let Some(cam) = get_active_apple_camera() {
+        cam.set_hardware_limits(min_exposure_us, max_exposure_us, min_gain, max_gain);
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_set_camera_brightness(brightness: i32) {
     if let Some(cam) = get_active_apple_camera() {
         cam.set_brightness(brightness);
@@ -587,6 +642,11 @@ mod tests {
         // Further increase returns false because already at max
         assert!(!camera.adjust_sensitivity(1.5));
         assert_eq!(camera.get_exposure(), 1_000_000);
+
+        // Hardware limits update
+        camera.set_hardware_limits(20_000, 750_000, 40.0, 2500.0);
+        assert_eq!(camera.get_exposure_range(), Some((20_000, 750_000)));
+        assert_eq!(camera.get_gain_range(), (40.0, 2500.0, 2500.0));
     }
 
     #[test]

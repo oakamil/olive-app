@@ -792,13 +792,14 @@ fun TuningControls(
             if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
                 val focusFormat = if (capabilities.isApple) "%.3f" else "%.2f"
                 val nudgeStep = if (capabilities.isApple) 0.002f else 0.05f
+                val isFocusLocked = viewModel.engineStats.status == "Calibrating Focus"
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         stringResource(id = Res.string.label_focus) + ": " + String.format(
                             focusFormat,
                             viewModel.currentFocus
-                        ),
+                        ) + if (isFocusLocked) " (" + stringResource(Res.string.stat_calibrating_focus) + ")" else "",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onBackground
                     )
@@ -822,6 +823,7 @@ fun TuningControls(
                             )
                             viewModel.setFocus(newFocus)
                         },
+                        enabled = !isFocusLocked,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -839,6 +841,7 @@ fun TuningControls(
                             )
                             viewModel.setFocus(newFocus)
                         },
+                        enabled = !isFocusLocked,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -854,7 +857,7 @@ fun TuningControls(
                         capabilities.focusRange.start,
                         capabilities.focusRange.endInclusive
                     ),
-                    enabled = true,
+                    enabled = !isFocusLocked,
                     onValueChange = {
                         viewModel.setFocus(it)
                     },

@@ -158,6 +158,7 @@ open class MainViewModel(
             }
         }
 
+    private var lastCalibratedFocus: Float? = null
     private var statsJob: Job? = null
     private var frameJob: Job? = null
 
@@ -206,8 +207,20 @@ open class MainViewModel(
                 solvedCrop = if (obj.isNull("solved_crop")) null else obj.getString("solved_crop"),
                 targetPixelX = if (obj.isNull("target_pixel_x")) null else obj.getDouble("target_pixel_x"),
                 targetPixelY = if (obj.isNull("target_pixel_y")) null else obj.getDouble("target_pixel_y"),
-                distortion = if (obj.isNull("distortion")) null else obj.getDouble("distortion")
+                distortion = if (obj.isNull("distortion")) null else obj.getDouble("distortion"),
+                focus = if (obj.isNull("focus")) null else obj.getDouble("focus").toFloat()
             )
+
+            if (!obj.isNull("focus")) {
+                val calibratedFocus = obj.getDouble("focus").toFloat()
+                if (calibratedFocus != lastCalibratedFocus) {
+                    lastCalibratedFocus = calibratedFocus
+                    currentFocus = calibratedFocus
+                    if (settingsManager.cameraSettingsMode == "Auto") {
+                        settingsManager.manualFocus = calibratedFocus
+                    }
+                }
+            }
 
             if (settingsManager.cameraSettingsMode == "Auto" && !obj.isNull("current_sigma")) {
                 val currentSigmaVal = obj.getDouble("current_sigma").toFloat()
@@ -306,6 +319,7 @@ open class MainViewModel(
 
         isCameraStuck = false
         lastFrameReceivedRealtime = getElapsedRealtimeMs()
+        lastCalibratedFocus = null
         currentLat = lat
         currentLon = lon
         val downsampling = if (cameraId == "demo") 0 else settingsManager.downsampling
@@ -409,6 +423,7 @@ open class MainViewModel(
 
         isCameraStuck = false
         lastFrameReceivedRealtime = getElapsedRealtimeMs()
+        lastCalibratedFocus = null
         currentLat = lat
         currentLon = lon
         viewModelScope.launch(Dispatchers.IO) {
@@ -564,6 +579,7 @@ open class MainViewModel(
     fun setFocus(focus: Float) {
         currentFocus = focus
         settingsManager.manualFocus = focus
+        lastCalibratedFocus = focus
         viewModelScope.launch(Dispatchers.IO) {
             engine.setNativeCameraFocus(focus)
         }
@@ -786,7 +802,7 @@ open class MainViewModel(
     }
 
     companion object {
-        const val ENABLE_AUTO_ZOOM = true
+        const val ENABLE_AUTO_ZOOM = false
         const val INVALID_COORD = 200.0
         const val CAMERA_STUCK_TIMEOUT_MS = 15000L
         const val SCREEN_UPDATE_RATE_HZ = 10

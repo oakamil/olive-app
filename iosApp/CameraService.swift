@@ -320,11 +320,25 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
                 return isUnder13MP && is4to3 && (subType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange || subType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
             }
 
+            func formatAchievableMaxExposure(_ f: AVCaptureDevice.Format) -> CMTime {
+                let maxRangeDur = f.videoSupportedFrameRateRanges.map { $0.maxFrameDuration }.max(by: { CMTimeCompare($0, $1) < 0 }) ?? .zero
+                let maxExpDur = f.maxExposureDuration
+                if maxRangeDur.isValid && maxRangeDur.seconds > 0.0 && maxExpDur.isValid && maxExpDur.seconds > 0.0 {
+                    return min(maxRangeDur, maxExpDur)
+                }
+                return maxRangeDur.isValid && maxRangeDur.seconds > 0.0 ? maxRangeDur : maxExpDur
+            }
+
             if let bestFormat = candidateFormats.max(by: { a, b in
-                let maxDurA = a.videoSupportedFrameRateRanges.map { $0.maxFrameDuration }.max(by: { CMTimeCompare($0, $1) < 0 }) ?? .zero
-                let maxDurB = b.videoSupportedFrameRateRanges.map { $0.maxFrameDuration }.max(by: { CMTimeCompare($0, $1) < 0 }) ?? .zero
-                if CMTimeCompare(maxDurA, maxDurB) != 0 {
-                    return CMTimeCompare(maxDurA, maxDurB) < 0
+                let achA = formatAchievableMaxExposure(a)
+                let achB = formatAchievableMaxExposure(b)
+                if CMTimeCompare(achA, achB) != 0 {
+                    return CMTimeCompare(achA, achB) < 0
+                }
+                let subA = CMFormatDescriptionGetMediaSubType(a.formatDescription)
+                let subB = CMFormatDescriptionGetMediaSubType(b.formatDescription)
+                if subA != subB {
+                    return subB == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
                 }
                 let dimsA = CMVideoFormatDescriptionGetDimensions(a.formatDescription)
                 let dimsB = CMVideoFormatDescriptionGetDimensions(b.formatDescription)
@@ -334,6 +348,13 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
                     try device.lockForConfiguration()
                     device.activeFormat = bestFormat
                     device.unlockForConfiguration()
+
+                    let achMax = formatAchievableMaxExposure(bestFormat)
+                    let minExp = bestFormat.minExposureDuration
+                    let minExpUs = Int32(round(minExp.seconds * 1_000_000.0))
+                    let maxExpUs = Int32(round(achMax.seconds * 1_000_000.0))
+                    olive_ios_set_camera_hardware_limits(minExpUs, maxExpUs, bestFormat.minISO, bestFormat.maxISO)
+                    print("[CameraService] Locked active format: maxAchievableExposure=\(maxExpUs)us, minExp=\(minExpUs)us, ISO=[\(bestFormat.minISO), \(bestFormat.maxISO)]")
                 } catch {
                     print("Failed to set device.activeFormat to 4:3 12MP: \(error)")
                 }
@@ -524,30 +545,34 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
 
                         let reqDuration = CMTimeMake(value: Int64(newExp), timescale: 1_000_000)
 
-                        // Expand max frame duration if exposure duration is longer than current max frame duration
-                        if CMTimeCompare(reqDuration, device.activeVideoMaxFrameDuration) > 0 {
-                            var maxAllowed = device.activeVideoMaxFrameDuration
-                            for range in device.activeFormat.videoSupportedFrameRateRanges {
-                                if CMTimeCompare(range.maxFrameDuration, maxAllowed) > 0 {
-                                    maxAllowed = range.maxFrameDuration
-                                }
-                            }
-                            device.activeVideoMaxFrameDuration = CMTimeCompare(reqDuration, maxAllowed) < 0 ? reqDuration : maxAllowed
-                        }
-
                         let minDuration = device.activeFormat.minExposureDuration
-                        let maxDuration = CMTimeCompare(device.activeFormat.maxExposureDuration, device.activeVideoMaxFrameDuration) < 0
-                            ? device.activeFormat.maxExposureDuration
-                            : device.activeVideoMaxFrameDuration
-                        let targetDuration = CMTimeCompare(reqDuration, minDuration) < 0
-                            ? minDuration
-                            : (CMTimeCompare(reqDuration, maxDuration) > 0 ? maxDuration : reqDuration)
+                        let formatMaxDuration = device.activeFormat.maxExposureDuration
+                        let supportedRanges = device.activeFormat.videoSupportedFrameRateRanges
+                        let maxRangeDuration: CMTime = supportedRanges.map { $0.maxFrameDuration }.max(by: { CMTimeCompare($0, $1) < 0 }) ?? formatMaxDuration
+                        let minRangeDuration: CMTime = supportedRanges.map { $0.minFrameDuration }.min(by: { CMTimeCompare($0, $1) < 0 }) ?? CMTime(value: 1, timescale: 30)
+                        let maxAchievableDuration = min(formatMaxDuration, maxRangeDuration)
+
+                        // Clamp to true achievable hardware shutter bounds
+                        let targetDuration = min(max(reqDuration, minDuration), maxAchievableDuration)
+
+                        // Dynamically adjust activeVideoMaxFrameDuration to match targetDuration.
+                        // When exposure drops, shorten max frame duration so frame rate speeds up.
+                        // When exposure lengthens, expand it up to maxRangeDuration.
+                        let desiredFrameDuration = max(minRangeDuration, min(targetDuration, maxRangeDuration))
+                        if CMTimeCompare(desiredFrameDuration, device.activeVideoMinFrameDuration) >= 0 {
+                            device.activeVideoMaxFrameDuration = desiredFrameDuration
+                        }
 
                         let minIso = device.activeFormat.minISO
                         let maxIso = device.activeFormat.maxISO
                         let targetIso = min(max(newIso, minIso), maxIso)
 
                         device.setExposureModeCustom(duration: targetDuration, iso: targetIso, completionHandler: nil)
+
+                        // Record actual commanded hardware exposure
+                        let appliedUs = Int32(round(CMTimeGetSeconds(targetDuration) * 1_000_000.0))
+                        self.appliedExposureUs = appliedUs
+                        self.appliedIso = targetIso
                     }
                 }
 
@@ -588,13 +613,17 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         let timestampNs = Int64(CMTimeGetSeconds(timestamp) * 1_000_000_000.0)
 
-        if #available(iOS 17.0, *), currentCameraDevice?.deviceType == .external {
-            let rawExp = currentCameraDevice?.exposureDuration ?? .zero
+        if let dev = currentCameraDevice {
+            let rawExp = dev.exposureDuration
             if rawExp.isValid && rawExp.seconds > 0.0 {
                 let measuredUs = Int32(round(CMTimeGetSeconds(rawExp) * 1_000_000.0))
                 if measuredUs > 0 {
                     self.appliedExposureUs = measuredUs
                 }
+            }
+            let rawIso = dev.iso
+            if rawIso > 0.0 {
+                self.appliedIso = rawIso
             }
         }
 

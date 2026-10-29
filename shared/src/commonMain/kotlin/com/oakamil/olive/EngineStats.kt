@@ -27,5 +27,6 @@ data class EngineStats(
     val solvedCrop: String? = null,
     val targetPixelX: Double? = null,
     val targetPixelY: Double? = null,
-    val distortion: Double? = null
+    val distortion: Double? = null,
+    val focus: Float? = null
 )

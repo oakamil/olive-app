@@ -1882,7 +1882,7 @@ fun EngineRunningScreen(
                 )
 
                 val showZoom = activeCameraSelection == "internal" &&
-                    (settingsManager.cameraSettingsMode != "Auto" || MainViewModel.ENABLE_AUTO_ZOOM)
+                        (settingsManager.cameraSettingsMode != "Auto" || MainViewModel.ENABLE_AUTO_ZOOM)
                 if (showZoom) {
                     val maxZoom = remember {
                         var mZ = 1f
@@ -1890,7 +1890,8 @@ fun EngineRunningScreen(
                             if (settingsManager.cameraSettingsMode == "Auto" || settingsManager.sensorMode == "Processed") {
                                 val jsonArray =
                                     JSONArray(viewModel.getAvailableInternalCameras())
-                                val targetId = if (settingsManager.cameraSettingsMode == "Auto" && !capabilities.isApple) "0" else settingsManager.internalCameraId
+                                val targetId =
+                                    if (settingsManager.cameraSettingsMode == "Auto" && !capabilities.isApple) "0" else settingsManager.internalCameraId
                                 for (i in 0 until jsonArray.length()) {
                                     val obj = jsonArray.getJSONObject(i)
                                     if (obj.getString("id") == targetId) {
@@ -1908,7 +1909,8 @@ fun EngineRunningScreen(
 
                     val effectiveMaxZoom = minOf(2.0f, maxZoom)
                     if (effectiveMaxZoom >= 1.1f) {
-                        val stepsCount = (round((effectiveMaxZoom - 1.0f) * 10f).toInt() - 1).coerceAtLeast(0)
+                        val stepsCount =
+                            (round((effectiveMaxZoom - 1.0f) * 10f).toInt() - 1).coerceAtLeast(0)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 stringResource(id = Res.string.label_zoom) + ": " + stringResource(
@@ -2390,7 +2392,7 @@ fun CollapsedStatsDisplay(stats: EngineStats, onClick: () -> Unit) {
             StatCol(
                 top = {
                     Icon(
-                        if (stats.status == "Calibrating") Icons.Outlined.Loop
+                        if (stats.status == "Calibrating" || stats.status == "Calibrating Focus") Icons.Outlined.Loop
                         else if (isGoodSolve) Icons.Outlined.Check
                         else Icons.Outlined.ErrorOutline,
                         contentDescription = stringResource(Res.string.cd_solve_status),
@@ -2492,6 +2494,7 @@ fun StatsDisplay(
                     "Slewing" -> stringResource(id = Res.string.stat_slewing)
                     "Idle" -> stringResource(id = Res.string.stat_idle)
                     "Camera Mode" -> stringResource(id = Res.string.btn_camera_mode)
+                    "Calibrating Focus" -> stringResource(id = Res.string.stat_calibrating_focus)
                     else -> stats.status
                 }
             )

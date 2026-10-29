@@ -59,6 +59,13 @@ void olive_ios_start_hardware_capture(
 );
 void olive_ios_stop_hardware_capture(void);
 
+void olive_ios_set_camera_hardware_limits(
+    int32_t min_exposure_us,
+    int32_t max_exposure_us,
+    float min_gain,
+    float max_gain
+);
+
 // --- Frame and IMU Push Pipelines ---
 void olive_ios_push_camera_frame(
     const uint8_t *buffer,
