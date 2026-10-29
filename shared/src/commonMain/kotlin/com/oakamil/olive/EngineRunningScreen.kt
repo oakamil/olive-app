@@ -1881,6 +1881,71 @@ fun EngineRunningScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                val showZoom = activeCameraSelection == "internal" &&
+                    (settingsManager.cameraSettingsMode != "Auto" || MainViewModel.ENABLE_AUTO_ZOOM)
+                if (showZoom) {
+                    val maxZoom = remember {
+                        var mZ = 1f
+                        try {
+                            if (settingsManager.cameraSettingsMode == "Auto" || settingsManager.sensorMode == "Processed") {
+                                val jsonArray =
+                                    JSONArray(viewModel.getAvailableInternalCameras())
+                                val targetId = if (settingsManager.cameraSettingsMode == "Auto" && !capabilities.isApple) "0" else settingsManager.internalCameraId
+                                for (i in 0 until jsonArray.length()) {
+                                    val obj = jsonArray.getJSONObject(i)
+                                    if (obj.getString("id") == targetId) {
+                                        mZ = if (obj.has("max_zoom")) obj.getDouble("max_zoom")
+                                            .toFloat() else 1f
+                                        break
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {
+                            // Fallback to 1f if camera characteristics JSON parsing fails
+                        }
+                        mZ
+                    }
+
+                    val effectiveMaxZoom = minOf(2.0f, maxZoom)
+                    if (effectiveMaxZoom >= 1.1f) {
+                        val stepsCount = (round((effectiveMaxZoom - 1.0f) * 10f).toInt() - 1).coerceAtLeast(0)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stringResource(id = Res.string.label_zoom) + ": " + stringResource(
+                                    id = Res.string.format_zoom,
+                                    String.format(
+                                        "%.1f",
+                                        viewModel.currentZoom
+                                    )
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            IconButton(
+                                onClick = { showZoomInfo = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = stringResource(id = Res.string.cd_info),
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Slider(
+                            value = viewModel.currentZoom.coerceIn(1.0f, effectiveMaxZoom),
+                            onValueChange = {
+                                val stepped = round(it * 10.0f) / 10.0f
+                                viewModel.setZoom(stepped)
+                            },
+                            valueRange = 1.0f..effectiveMaxZoom,
+                            steps = stepsCount,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
                 if (settingsManager.cameraSettingsMode != "Auto") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -1912,62 +1977,6 @@ fun EngineRunningScreen(
                         valueRange = 1f..100f,
                         modifier = Modifier.fillMaxWidth()
                     )
-
-                    val maxZoom = remember {
-                        var mZ = 1f
-                        try {
-                            if (activeCameraSelection == "internal" && settingsManager.sensorMode == "Processed") {
-                                val jsonArray =
-                                    JSONArray(viewModel.getAvailableInternalCameras())
-                                for (i in 0 until jsonArray.length()) {
-                                    val obj = jsonArray.getJSONObject(i)
-                                    if (obj.getString("id") == settingsManager.internalCameraId) {
-                                        mZ = if (obj.has("max_zoom")) obj.getDouble("max_zoom")
-                                            .toFloat() else 1f
-                                        break
-                                    }
-                                }
-                            }
-                        } catch (_: Exception) {
-                            // Fallback to 1f if camera characteristics JSON parsing fails
-                        }
-                        mZ
-                    }
-
-                    if (maxZoom > 1f) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                stringResource(id = Res.string.label_zoom) + ": " + stringResource(
-                                    id = Res.string.format_zoom,
-                                    String.format(
-                                        "%.1f",
-                                        viewModel.currentZoom
-                                    )
-                                ),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            IconButton(
-                                onClick = { showZoomInfo = true },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Info,
-                                    contentDescription = stringResource(id = Res.string.cd_info),
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                        Slider(
-                            value = viewModel.currentZoom,
-                            onValueChange = {
-                                viewModel.setZoom(it)
-                            },
-                            valueRange = 1f..5f,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
 
                     if (activeCameraSelection == "internal") {
                         LaunchedEffect(viewModel.isEngineRunning) {
@@ -2587,17 +2596,16 @@ fun StatsDisplay(
             Text(stringResource(id = Res.string.stat_last_solve), fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.width(4.dp))
             val cropString = when (stats.solvedCrop) {
-                "Center" -> stringResource(id = Res.string.crop_center)
+                "Center2x", "Center" -> stringResource(id = Res.string.crop_center_2x)
+                "Center2xHighSens", "CenterHighSens" -> stringResource(id = Res.string.crop_center_2x_hs)
+                "Center1_5x", "CenterWide" -> stringResource(id = Res.string.crop_center_1_5x)
+                "Center1_5xHighSens", "CenterWideHighSens" -> stringResource(id = Res.string.crop_center_1_5x_hs)
                 "Top" -> stringResource(id = Res.string.crop_top)
                 "Bottom" -> stringResource(id = Res.string.crop_bottom)
                 "Left" -> stringResource(id = Res.string.crop_left)
                 "Right" -> stringResource(id = Res.string.crop_right)
                 "Full" -> stringResource(id = Res.string.crop_full)
                 "Failed" -> stringResource(id = Res.string.crop_failed)
-                "CenterHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_center)
-                )
 
                 "TopHighSens" -> stringResource(
                     id = Res.string.format_high_sens,

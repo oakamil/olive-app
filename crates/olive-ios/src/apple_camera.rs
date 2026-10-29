@@ -163,6 +163,7 @@ impl AppleCamera {
         applied_exposure_us: i32,
         applied_iso: f32,
         receive_time: std::time::Instant,
+        zoom: f32,
     ) {
         // Cold startup settle: flush initial 10 frames
         let settle = self.settle_frames.load(Ordering::Relaxed);
@@ -247,6 +248,7 @@ impl AppleCamera {
                 post_process_time,
                 frame_interval_us: measured_us,
                 metadata_valid: true,
+                zoom: zoom.max(1.0),
             });
             self.push_frame(image);
         } else {
@@ -290,6 +292,7 @@ impl AppleCamera {
                         post_process_time,
                         frame_interval_us: measured_us,
                         metadata_valid: true,
+                        zoom: zoom.max(1.0),
                     });
                     self.push_frame(image);
                 }
@@ -457,6 +460,7 @@ pub extern "C" fn olive_ios_push_camera_frame(
     timestamp_ns: i64,
     applied_exposure_us: i32,
     applied_iso: f32,
+    zoom: f32,
 ) {
     if buffer.is_null() || width == 0 || height == 0 || stride < width {
         return;
@@ -495,6 +499,7 @@ pub extern "C" fn olive_ios_push_camera_frame(
             applied_exposure_us,
             applied_iso,
             receive_time,
+            zoom,
         );
     }
 }
@@ -555,7 +560,7 @@ mod tests {
             50, 60, 70, 80, 255, 255, // row 1 + pad
         ];
 
-        olive_ios_push_camera_frame(raw_buffer.as_ptr(), 4, 2, 6, 0, 33000, 100.0);
+        olive_ios_push_camera_frame(raw_buffer.as_ptr(), 4, 2, 6, 0, 33000, 100.0, 1.0);
 
         let img = camera
             .get_last_capture()
@@ -600,6 +605,7 @@ mod tests {
             100_000,
             100.0,
             std::time::Instant::now(),
+            1.0,
         );
         // After 1 frame, stack of 2 is not complete yet
         assert!(camera.get_last_capture().is_none());
@@ -615,6 +621,7 @@ mod tests {
             100_000,
             100.0,
             std::time::Instant::now(),
+            1.0,
         );
 
         // Stack complete: 50+60=110, 100+100=200, 150+120=270->255 (saturating), 200+100=300->255 (saturating)
@@ -641,6 +648,7 @@ mod tests {
                 33000,
                 100.0,
                 std::time::Instant::now(),
+                1.0,
             );
         }
         assert_eq!(camera.settle_frames.load(Ordering::Relaxed), 0);
@@ -659,6 +667,7 @@ mod tests {
             33000,
             100.0,
             std::time::Instant::now(),
+            1.0,
         );
 
         assert!(camera.calibrated.load(Ordering::Relaxed));
@@ -689,6 +698,7 @@ mod tests {
             33_333,
             100.0,
             std::time::Instant::now(),
+            1.0,
         );
         assert_eq!(camera.get_exposure(), 33_333);
         let img = camera.get_last_capture().unwrap();
@@ -707,6 +717,7 @@ mod tests {
             33_333,
             100.0,
             std::time::Instant::now(),
+            1.0,
         );
         let img = camera.get_last_capture().unwrap();
         assert_eq!(img.data, vec![30, 40, 255, 60]); // 250 + 10 saturates to 255
@@ -723,6 +734,7 @@ mod tests {
             33_333,
             100.0,
             std::time::Instant::now(),
+            1.0,
         );
         let img = camera.get_last_capture().unwrap();
         assert_eq!(img.data, vec![0, 20, 30, 40]); // 5 - 10 saturates to 0

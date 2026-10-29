@@ -600,6 +600,7 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
 
         let exposure = self.appliedExposureUs
         let iso = self.appliedIso
+        let zoom = Float(self.currentCameraDevice?.videoZoomFactor ?? 1.0)
 
         olive_ios_push_camera_frame(
             baseAddress.assumingMemoryBound(to: UInt8.self),
@@ -608,7 +609,8 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
             stride,
             timestampNs,
             exposure,
-            iso
+            iso,
+            zoom
         )
     }
 }
