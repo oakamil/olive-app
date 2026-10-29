@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Olive</string>
+	<string>Olive Finder</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -31,13 +31,13 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Olive needs camera access to detect stars and align the telescope.</string>
+	<string>Olive Finder needs camera access to detect stars and align the telescope.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Olive needs location access to calculate astronomical ephemeris and telescope alignment.</string>
+	<string>Olive Finder needs location access to calculate astronomical ephemeris and telescope alignment.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Olive needs motion sensor access to track telescope orientation.</string>
+	<string>Olive Finder needs motion sensor access to track telescope orientation.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Olive provides telescope control and server networking for planetarium apps like SkySafari and Stellarium.</string>
+	<string>Olive Finder provides telescope control and server networking for planetarium apps like SkySafari and Stellarium.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_alpaca._tcp</string>
