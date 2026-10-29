@@ -15,7 +15,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		034BD6AACCDA40B2AD06BC86 /* Olive.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Olive.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		034BD6AACCDA40B2AD06BC86 /* Olive Finder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Olive Finder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		0BCA8BE1C1FA4C238756F477 /* OliveBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OliveBridge.h; sourceTree = "<group>"; };
 		2895390114EC4D76A79BE472 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		7B79493A8B7FC1F200000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -39,12 +39,12 @@
 		86F435ECF44E451F8FA1FDCE = {
 			isa = PBXGroup;
 			children = (
-				D384F34C348C4467BB976747 /* Olive */,
+				D384F34C348C4467BB976747 /* Olive Finder */,
 				E10F638F3F374563ACC7EB48 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		D384F34C348C4467BB976747 /* Olive */ = {
+		D384F34C348C4467BB976747 /* Olive Finder */ = {
 			isa = PBXGroup;
 			children = (
 				D3DF066B6D0541DDAFBC5D62 /* OliveApp.swift */,
@@ -55,13 +55,13 @@
 				8AA86AD28C394E35ACC06ABD /* Info.plist */,
 				7B79493A8B7FC1F200000002 /* Assets.xcassets */,
 			);
-			name = Olive;
+			name = "Olive Finder";
 			sourceTree = "<group>";
 		};
 		E10F638F3F374563ACC7EB48 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				034BD6AACCDA40B2AD06BC86 /* Olive.app */,
+				034BD6AACCDA40B2AD06BC86 /* Olive Finder.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -69,9 +69,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		664DD27B60E34DE599FD2CEB /* Olive */ = {
+		664DD27B60E34DE599FD2CEB /* Olive Finder */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 886C8D36D0AB40A7B6DB3D6A /* Build configuration list for PBXNativeTarget "Olive" */;
+			buildConfigurationList = 886C8D36D0AB40A7B6DB3D6A /* Build configuration list for PBXNativeTarget "Olive Finder" */;
 			buildPhases = (
 				A1B2C3D4E5F60718293A4B5C /* Embed and Sign Shared KMP Framework */,
 				ED300B470E9546389864B9B5 /* Build Rust olive-ios Library */,
@@ -84,9 +84,9 @@
 			);
 			dependencies = (
 			);
-			name = Olive;
+			name = "Olive Finder";
 			productName = Olive;
-			productReference = 034BD6AACCDA40B2AD06BC86 /* Olive.app */;
+			productReference = 034BD6AACCDA40B2AD06BC86 /* Olive Finder.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -117,7 +117,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				664DD27B60E34DE599FD2CEB /* Olive */,
+				664DD27B60E34DE599FD2CEB /* Olive Finder */,
 			);
 		};
 /* End PBXProject section */
@@ -408,7 +408,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		886C8D36D0AB40A7B6DB3D6A /* Build configuration list for PBXNativeTarget "Olive" */ = {
+		886C8D36D0AB40A7B6DB3D6A /* Build configuration list for PBXNativeTarget "Olive Finder" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				E534B4DEF8C34B529EB270D6 /* Debug */,
