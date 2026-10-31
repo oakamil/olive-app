@@ -142,7 +142,6 @@ pub extern "C" fn olive_ios_start_engine(
     downsample_mode: i32,
     lat: f64,
     lon: f64,
-    time_ms: i64,
     auto_mode: bool,
     initial_fov_deg: f32,
     camera_id: *const c_char,
@@ -223,10 +222,6 @@ pub extern "C" fn olive_ios_start_engine(
     if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon) {
         initial_state.client_latitude = Some(lat);
         initial_state.client_longitude = Some(lon);
-    }
-    if time_ms > 0 {
-        use chrono::TimeZone;
-        initial_state.client_date = chrono::Utc.timestamp_millis_opt(time_ms).single();
     }
 
     let engine_state = Arc::new(RwLock::new(initial_state));

@@ -890,7 +890,6 @@ class MainActivity : ComponentActivity() {
                 showLocationRequiredDialog = true
                 return@launch
             }
-            val timeMs = System.currentTimeMillis()
             var engineStarted = false
 
             startupTimeoutJob?.cancel()
@@ -931,7 +930,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val camId =
                     if (activeCameraSelection == "demo") "demo" else settingsManager.internalCameraId
-                viewModel.executeStartEngine(camId, lat, lon, timeMs)
+                viewModel.executeStartEngine(camId, lat, lon)
                 startBackgroundService("NATIVE")
                 engineStarted = true
             }
@@ -1013,8 +1012,7 @@ class MainActivity : ComponentActivity() {
                             val lon = viewModel.currentLon ?: 0.0
                             viewModel.startUvcEngine(
                                 lat,
-                                lon,
-                                System.currentTimeMillis()
+                                lon
                             )
                             startBackgroundService("UVC")
                         }

@@ -107,7 +107,6 @@ bool olive_ios_start_engine(
     int32_t downsample_mode,
     double lat,
     double lon,
-    int64_t time_ms,
     bool auto_mode,
     float initial_fov_deg,
     const char *camera_id

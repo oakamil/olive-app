@@ -19,7 +19,6 @@ object OliveEngine : EngineBridge {
         downsampleMode: Int,
         lat: Double,
         lon: Double,
-        timeMs: Long,
         settingsManager: SettingsManager,
         autoMode: Boolean
     )
@@ -32,7 +31,6 @@ object OliveEngine : EngineBridge {
         downsampleMode: Int,
         lat: Double,
         lon: Double,
-        timeMs: Long,
         settingsManager: SettingsManager,
         autoMode: Boolean,
         uvcFps: Int,
