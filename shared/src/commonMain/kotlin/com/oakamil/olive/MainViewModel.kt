@@ -311,7 +311,6 @@ open class MainViewModel(
         cameraId: String,
         lat: Double = INVALID_COORD,
         lon: Double = INVALID_COORD,
-        timeMs: Long = 0L,
         onFailed: (() -> Unit)? = null
     ) {
         latestFrame = null
@@ -349,7 +348,6 @@ open class MainViewModel(
                     forcedDownsampling,
                     lat,
                     lon,
-                    timeMs,
                     settingsManager,
                     isAutoSettings
                 )
@@ -415,7 +413,6 @@ open class MainViewModel(
     fun startUvcEngine(
         lat: Double = 200.0,
         lon: Double = 200.0,
-        timeMs: Long = 0L,
         onFailed: (() -> Unit)? = null
     ) {
         latestFrame = null
@@ -446,7 +443,6 @@ open class MainViewModel(
                     forcedDownsampling,
                     lat,
                     lon,
-                    timeMs,
                     settingsManager,
                     isAutoSettings,
                     settingsManager.uvcFps,

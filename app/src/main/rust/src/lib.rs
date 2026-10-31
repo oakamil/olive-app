@@ -149,7 +149,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     downsample_mode: jni::sys::jint,
     latitude: jni::sys::jdouble,
     longitude: jni::sys::jdouble,
-    time_ms: jni::sys::jlong,
     settings_manager: jni::objects::JObject,
     auto_mode: jni::sys::jboolean,
 ) {
@@ -246,10 +245,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
                 initial_state.client_latitude = Some(latitude);
                 initial_state.client_longitude = Some(longitude);
-            }
-            if time_ms > 0 {
-                use chrono::TimeZone;
-                initial_state.client_date = chrono::Utc.timestamp_millis_opt(time_ms).single();
             }
 
             let engine_state = Arc::new(std::sync::RwLock::new(initial_state));
@@ -1413,7 +1408,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
     downsample_mode: jni::sys::jint,
     latitude: jni::sys::jdouble,
     longitude: jni::sys::jdouble,
-    time_ms: jni::sys::jlong,
     settings_manager: jni::objects::JObject,
     auto_mode: jni::sys::jboolean,
     fps: jint,
@@ -1506,10 +1500,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
             if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
                 initial_state.client_latitude = Some(latitude);
                 initial_state.client_longitude = Some(longitude);
-            }
-            if time_ms > 0 {
-                use chrono::TimeZone;
-                initial_state.client_date = chrono::Utc.timestamp_millis_opt(time_ms).single();
             }
 
             let engine_state = Arc::new(std::sync::RwLock::new(initial_state));

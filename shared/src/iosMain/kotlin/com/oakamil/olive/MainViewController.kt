@@ -29,7 +29,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Clock
 import platform.AVFoundation.AVAuthorizationStatusAuthorized
 import platform.AVFoundation.AVAuthorizationStatusNotDetermined
 import platform.AVFoundation.AVCaptureDevice
@@ -244,12 +243,10 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             }
             val lat = viewModel.currentLat ?: 0.0
             val lon = viewModel.currentLon ?: 0.0
-            val timeMs = Clock.System.now().toEpochMilliseconds()
             if (activeCameraSelection == "external") {
                 viewModel.startUvcEngine(
                     lat = lat,
                     lon = lon,
-                    timeMs = timeMs,
                     onFailed = {
                         startupTimeoutJob?.cancel()
                         startupTimeoutJob = null
@@ -263,7 +260,6 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                     cameraId = cameraId,
                     lat = lat,
                     lon = lon,
-                    timeMs = timeMs,
                     onFailed = {
                         startupTimeoutJob?.cancel()
                         startupTimeoutJob = null

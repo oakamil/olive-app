@@ -79,7 +79,6 @@ class IosEngineBridge : EngineBridge {
         downsampleMode: Int,
         lat: Double,
         lon: Double,
-        timeMs: Long,
         settingsManager: SettingsManager,
         autoMode: Boolean
     ) {
@@ -129,7 +128,6 @@ class IosEngineBridge : EngineBridge {
             if (isDemo) 0 else downsampleMode,
             lat,
             lon,
-            timeMs,
             if (isDemo) false else autoMode,
             selectedFov,
             internalCameraId
@@ -145,7 +143,6 @@ class IosEngineBridge : EngineBridge {
         downsampleMode: Int,
         lat: Double,
         lon: Double,
-        timeMs: Long,
         settingsManager: SettingsManager,
         autoMode: Boolean,
         uvcFps: Int,
@@ -176,7 +173,6 @@ class IosEngineBridge : EngineBridge {
             downsampleMode,
             lat,
             lon,
-            timeMs,
             autoMode,
             0.0f,
             "external"
