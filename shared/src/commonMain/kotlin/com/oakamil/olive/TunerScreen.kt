@@ -627,7 +627,8 @@ fun TuningControls(
                     mZ
                 }
 
-                val effectiveMaxZoom = minOf(2.0f, maxZoom)
+                val effectiveMaxZoom =
+                    if (settingsManager.cameraSettingsMode == "Auto") minOf(2.0f, maxZoom) else maxZoom
                 if (effectiveMaxZoom >= 1.1f) {
                     val stepsCount =
                         (round((effectiveMaxZoom - 1.0f) * 10f).toInt() - 1).coerceAtLeast(0)

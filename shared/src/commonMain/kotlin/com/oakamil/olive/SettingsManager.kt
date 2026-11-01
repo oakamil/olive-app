@@ -77,7 +77,7 @@ SettingsManager(
         set(value) = storage.putFloat("manual_zoom_ratio", value)
 
     var autoZoomRatio: Float
-        get() = storage.getFloat("auto_zoom_ratio", 1.0f)
+        get() = storage.getFloat("auto_zoom_ratio", 2.0f)
         set(value) = storage.putFloat("auto_zoom_ratio", value)
 
     var manualExposureUs: Float

@@ -549,7 +549,11 @@ open class MainViewModel(
     }
 
     fun setZoom(zoom: Float) {
-        val clamped = zoom.coerceIn(1.0f, 2.0f)
+        val clamped = if (settingsManager.cameraSettingsMode == "Manual") {
+            zoom.coerceAtLeast(1.0f)
+        } else {
+            zoom.coerceIn(1.0f, 2.0f)
+        }
         if (currentZoom == clamped) return
         currentZoom = clamped
         if (settingsManager.cameraSettingsMode == "Manual") {
@@ -798,7 +802,7 @@ open class MainViewModel(
     }
 
     companion object {
-        const val ENABLE_AUTO_ZOOM = false
+        const val ENABLE_AUTO_ZOOM = true
         const val INVALID_COORD = 200.0
         const val CAMERA_STUCK_TIMEOUT_MS = 15000L
         const val SCREEN_UPDATE_RATE_HZ = 10

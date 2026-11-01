@@ -293,7 +293,7 @@
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/release",
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/debug",
 				);
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.8.0;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -357,7 +357,7 @@
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/release",
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/debug",
 				);
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.8.0;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
