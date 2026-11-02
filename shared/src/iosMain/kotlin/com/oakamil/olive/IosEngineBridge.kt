@@ -80,11 +80,13 @@ class IosEngineBridge : EngineBridge {
         lat: Double,
         lon: Double,
         settingsManager: SettingsManager,
-        autoMode: Boolean
+        autoMode: Boolean,
+        initialZoom: Float
     ) {
         val isDemo = internalCameraId == "demo"
         val camerasJson = getAvailableInternalCameras()
         var selectedFov = 0.0f
+        var selectedMaxZoom = 1.0f
         var selectedWidth = 2016u
         var selectedHeight = 1512u
         try {
@@ -95,6 +97,10 @@ class IosEngineBridge : EngineBridge {
                     val f = obj.getDouble("fov").toFloat()
                     if (f >= 10.0f) {
                         selectedFov = f
+                    }
+                    val mz = obj.optDouble("max_zoom", 1.0).toFloat()
+                    if (mz >= 1.0f) {
+                        selectedMaxZoom = mz
                     }
                     if (obj.has("width") && obj.has("height")) {
                         val w = obj.optInt("width", 2016)
@@ -110,13 +116,16 @@ class IosEngineBridge : EngineBridge {
         } catch (_: Exception) {
         }
 
+        val effectiveZoom = if (isDemo) 1.0f else initialZoom.coerceIn(1.0f, maxOf(1.0f, selectedMaxZoom))
+
         if (!isDemo) {
             olive_ios_start_hardware_capture(
                 internalCameraId,
                 selectedWidth.toInt(),
                 selectedHeight.toInt(),
                 30,
-                null
+                null,
+                effectiveZoom
             )
         }
 
@@ -130,7 +139,8 @@ class IosEngineBridge : EngineBridge {
             lon,
             if (isDemo) false else autoMode,
             selectedFov,
-            internalCameraId
+            internalCameraId,
+            effectiveZoom
         )
         check(started) { "Failed to initialize Olive iOS engine (check database path and permissions)" }
     }
@@ -161,7 +171,8 @@ class IosEngineBridge : EngineBridge {
             reqWidth,
             reqHeight,
             reqFps,
-            reqFormat
+            reqFormat,
+            1.0f
         )
         val w = if (reqWidth > 0) reqWidth.toUInt() else 1920u
         val h = if (reqHeight > 0) reqHeight.toUInt() else 1080u
@@ -175,7 +186,8 @@ class IosEngineBridge : EngineBridge {
             lon,
             autoMode,
             0.0f,
-            "external"
+            "external",
+            1.0f
         )
         check(started) { "Failed to initialize Olive iOS external UVC engine" }
     }

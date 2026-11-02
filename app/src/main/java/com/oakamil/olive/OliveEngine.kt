@@ -20,7 +20,8 @@ object OliveEngine : EngineBridge {
         lat: Double,
         lon: Double,
         settingsManager: SettingsManager,
-        autoMode: Boolean
+        autoMode: Boolean,
+        initialZoom: Float
     )
 
     external override fun startExternalCameraEngine(

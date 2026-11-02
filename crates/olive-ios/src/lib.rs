@@ -145,6 +145,7 @@ pub extern "C" fn olive_ios_start_engine(
     auto_mode: bool,
     initial_fov_deg: f32,
     camera_id: *const c_char,
+    initial_zoom: f32,
 ) -> bool {
     init_ios_logger();
     let camera_id_str = unsafe { c_str_to_str(camera_id) };
@@ -174,7 +175,12 @@ pub extern "C" fn olive_ios_start_engine(
         apple_camera::set_active_apple_camera(None);
         Arc::new(cam)
     } else {
-        let cam = AppleCamera::new(width, height, if is_external { None } else { fov });
+        let cam = AppleCamera::new(
+            width,
+            height,
+            if is_external { None } else { fov },
+            if is_external { 1.0 } else { initial_zoom },
+        );
         apple_camera::set_active_apple_camera(Some(cam.clone()));
         cam
     };

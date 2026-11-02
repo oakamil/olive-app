@@ -22,6 +22,12 @@ static ACTIVE_APPLE_CAMERA: Mutex<Option<Arc<AppleCamera>>> = Mutex::new(None);
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_register_camera_control_callback(cb: AppleCameraControlCallback) {
     *CAMERA_CONTROL_CB.lock().unwrap() = Some(cb);
+    if let Some(cam) = get_active_apple_camera() {
+        let z = cam.get_zoom().unwrap_or(1.0);
+        if (z - 1.0).abs() > 0.01 {
+            cb(-1, -1.0, -1.0, z);
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -94,7 +100,7 @@ fn measure_p5_and_median(y_plane: &[u8]) -> (i32, i32) {
 }
 
 impl AppleCamera {
-    pub fn new(width: u32, height: u32, initial_fov: Option<f32>) -> Arc<Self> {
+    pub fn new(width: u32, height: u32, initial_fov: Option<f32>, initial_zoom: f32) -> Arc<Self> {
         let config = CameraConfig {
             camera_type: CameraType::Internal {
                 id: "back".to_string(),
@@ -112,7 +118,7 @@ impl AppleCamera {
             exposure_us: AtomicI32::new(250_000),
             gain: AtomicI32::new(100),
             focus: AtomicU32::new(OPTICAL_INFINITY_FOCUS.to_bits()),
-            zoom: AtomicU32::new(1.0f32.to_bits()),
+            zoom: AtomicU32::new(initial_zoom.max(1.0).to_bits()),
             hardware_min_exposure_us: AtomicI32::new(MIN_EXPOSURE_US),
             hardware_max_exposure_us: AtomicI32::new(MAX_EXPOSURE_US),
             hardware_min_gain: AtomicU32::new(50.0f32.to_bits()),
