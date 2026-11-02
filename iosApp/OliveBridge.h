@@ -55,7 +55,8 @@ void olive_ios_start_hardware_capture(
     int32_t width,
     int32_t height,
     int32_t fps,
-    const char *format
+    const char *format,
+    float initial_zoom
 );
 void olive_ios_stop_hardware_capture(void);
 
@@ -109,7 +110,8 @@ bool olive_ios_start_engine(
     double lon,
     bool auto_mode,
     float initial_fov_deg,
-    const char *camera_id
+    const char *camera_id,
+    float initial_zoom
 );
 
 void olive_ios_stop_engine(void);

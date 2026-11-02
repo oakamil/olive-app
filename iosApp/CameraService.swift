@@ -38,6 +38,7 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         targetHeight: Int32 = 0,
         targetFps: Int32 = 0,
         targetFormat: String? = nil,
+        initialZoom: Float = 1.0,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         sessionQueue.async { [weak self] in
@@ -53,7 +54,8 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
                     targetWidth: targetWidth,
                     targetHeight: targetHeight,
                     targetFps: targetFps,
-                    targetFormat: targetFormat
+                    targetFormat: targetFormat,
+                    initialZoom: initialZoom
                 )
                 self.setupSessionObservers()
                 self.registerHardwareControlCallback()
@@ -141,7 +143,8 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         targetWidth: Int32 = 0,
         targetHeight: Int32 = 0,
         targetFps: Int32 = 0,
-        targetFormat: String? = nil
+        targetFormat: String? = nil,
+        initialZoom: Float = 1.0
     ) throws {
         captureSession.beginConfiguration()
         defer { captureSession.commitConfiguration() }
@@ -498,6 +501,14 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
             // Lock to optical infinity baseline
             if device.isFocusModeSupported(.locked) {
                 device.setFocusModeLocked(lensPosition: CameraService.opticalInfinityFocus, completionHandler: nil)
+            }
+
+            // Apply initial hardware zoom
+            if initialZoom > 0.0 {
+                let minZoom = CGFloat(1.0)
+                let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 10.0)
+                let targetZoom = min(max(CGFloat(initialZoom), minZoom), maxZoom)
+                device.videoZoomFactor = targetZoom
             }
         }
     }
@@ -874,7 +885,8 @@ public func olive_ios_start_hardware_capture(
     width: Int32,
     height: Int32,
     fps: Int32,
-    format: UnsafePointer<CChar>?
+    format: UnsafePointer<CChar>?,
+    initialZoom: Float
 ) {
     let idStr = cameraId != nil ? String(cString: cameraId!) : "0"
     let formatStr = format != nil ? String(cString: format!) : nil
@@ -883,7 +895,8 @@ public func olive_ios_start_hardware_capture(
         targetWidth: width,
         targetHeight: height,
         targetFps: fps,
-        targetFormat: formatStr
+        targetFormat: formatStr,
+        initialZoom: initialZoom
     ) { _ in }
     MotionService.shared.startMotionUpdates()
 }

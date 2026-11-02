@@ -321,11 +321,21 @@ open class MainViewModel(
         lastCalibratedFocus = null
         currentLat = lat
         currentLon = lon
+        currentZoom = 1.0f
         val downsampling = if (cameraId == "demo") 0 else settingsManager.downsampling
 
         val motionSensorMode = if (cameraId == "demo") 0 else settingsManager.motionSensorMode
         val isAutoSettings =
             if (cameraId == "demo") false else settingsManager.cameraSettingsMode == "Auto"
+
+        val initialZoom = if (cameraId == "demo") 1.0f else {
+            if (isAutoSettings) {
+                if (ENABLE_AUTO_ZOOM) settingsManager.autoZoomRatio.coerceIn(1.0f, 2.0f) else 1.0f
+            } else {
+                settingsManager.manualZoomRatio.coerceAtLeast(1.0f)
+            }
+        }
+        currentZoom = initialZoom
 
         viewModelScope.launch(Dispatchers.IO) {
             val forcedSensorMode = if (isAutoSettings) "Processed" else settingsManager.sensorMode
@@ -349,7 +359,8 @@ open class MainViewModel(
                     lat,
                     lon,
                     settingsManager,
-                    isAutoSettings
+                    isAutoSettings,
+                    initialZoom
                 )
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Failed to start camera engine", e)
@@ -374,10 +385,6 @@ open class MainViewModel(
                 maxAnalogGain = maxG
 
                 if (isAutoSettings) {
-                    setZoom(
-                        if (ENABLE_AUTO_ZOOM) settingsManager.autoZoomRatio.coerceIn(1.0f, 2.0f)
-                        else 1.0f
-                    )
                     val savedFocus = settingsManager.manualFocus
                     val focusToApply =
                         if (savedFocus in capabilities.focusRange) savedFocus else capabilities.defaultFocus
@@ -389,7 +396,6 @@ open class MainViewModel(
                     savedGain = savedGain.coerceIn(minAnalogGain, maxAnalogGain)
                     setGain(savedGain)
 
-                    setZoom(settingsManager.manualZoomRatio)
                     setFocus(settingsManager.manualFocus)
                     setNoiseReduction(settingsManager.manualNoiseReduction)
                     updateHotPixelMode(settingsManager.manualHotPixelMode)
@@ -423,6 +429,7 @@ open class MainViewModel(
         lastCalibratedFocus = null
         currentLat = lat
         currentLon = lon
+        currentZoom = 1.0f
         viewModelScope.launch(Dispatchers.IO) {
             if (isEngineRunning) {
                 engine.stopEngine()
@@ -790,6 +797,7 @@ open class MainViewModel(
 
         engineMode = EngineMode.STOPPED
         isLowPowerMode = false
+        currentZoom = 1.0f
         stopPolling()
 
         uvcWrapper?.release()

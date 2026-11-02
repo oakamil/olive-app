@@ -151,6 +151,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     longitude: jni::sys::jdouble,
     settings_manager: jni::objects::JObject,
     auto_mode: jni::sys::jboolean,
+    initial_zoom: jni::sys::jfloat,
 ) {
     let jvm = env.get_java_vm().unwrap();
     let settings_mgr = env.new_global_ref(&settings_manager).unwrap();
@@ -214,7 +215,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 let mut cam = AndroidCamera::new(
                     Some(internal_camera_id_str.clone()),
                     Some(sensor_mode_str.clone()),
-                    Some(1.0f32),
+                    Some(if internal_camera_id_str == "demo" { 1.0f32 } else { initial_zoom.max(1.0) }),
                 );
                 if let Err(e) = cam.start_capture() {
                     log::error!("Failed to start Android camera: {}", e);
