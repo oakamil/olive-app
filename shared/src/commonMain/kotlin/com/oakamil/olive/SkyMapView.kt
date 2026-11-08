@@ -32,7 +32,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -73,6 +72,31 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.hypot
 import kotlin.time.Duration.Companion.milliseconds
 
+
+// =========================================================================
+// Sky Map Sizing & Typography Tuning Constants
+// =========================================================================
+object SkyMapTuning {
+    // Catalog Icons & Labels
+    val BASE_DSO_ICON_SIZE_DP =
+        14.dp              // Base icon size at wide FOV (compact relative to text)
+    const val BASE_DSO_LABEL_FONT_SIZE_SP = 13.5f  // Base catalog label font size
+
+    // Zoom Scaling Tiers for Catalog Items
+    const val DSO_SCALE_WIDE = 1.0f                // Wide FOV (>= 45°)
+    const val DSO_SCALE_MID = 1.20f                // Constellation zoom (10° - 45°)
+    const val DSO_SCALE_DEEP = 1.40f               // Deep telescopic zoom (< 10°)
+
+    // Non-Catalog Sky Map Typography (Fixed)
+    const val CONSTELLATION_FONT_SIZE_SP = 13f
+    const val ZENITH_NADIR_FONT_SIZE_SP = 12.5f
+    const val CARDINAL_FONT_SIZE_SP = 14.5f
+    const val BADGE_FONT_SIZE_SP = 12.5f
+
+    // Visual Controls
+    const val BELOW_HORIZON_ALPHA = 0.85f
+    const val MAX_DSO_LABELS = 25
+}
 
 @OptIn(FlowPreview::class)
 @Composable
@@ -154,32 +178,56 @@ fun SkyMapView(
     val zenithTextLayout = remember(textMeasurer, zenithText) {
         textMeasurer.measure(
             text = zenithText,
-            style = TextStyle(color = DarkRed, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            style = TextStyle(
+                color = DarkRed,
+                fontSize = SkyMapTuning.ZENITH_NADIR_FONT_SIZE_SP.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         )
     }
     val nadirTextLayout = remember(textMeasurer, nadirText) {
         textMeasurer.measure(
             text = nadirText,
-            style = TextStyle(color = DarkRed, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            style = TextStyle(
+                color = DarkRed,
+                fontSize = SkyMapTuning.ZENITH_NADIR_FONT_SIZE_SP.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         )
     }
     val cardinalLayouts = remember(textMeasurer) {
         mapOf(
             "N" to textMeasurer.measure(
                 "N",
-                style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                style = TextStyle(
+                    color = PureRed,
+                    fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
+                    fontWeight = FontWeight.Bold
+                )
             ),
             "E" to textMeasurer.measure(
                 "E",
-                style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                style = TextStyle(
+                    color = PureRed,
+                    fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
+                    fontWeight = FontWeight.Bold
+                )
             ),
             "S" to textMeasurer.measure(
                 "S",
-                style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                style = TextStyle(
+                    color = PureRed,
+                    fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
+                    fontWeight = FontWeight.Bold
+                )
             ),
             "W" to textMeasurer.measure(
                 "W",
-                style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                style = TextStyle(
+                    color = PureRed,
+                    fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
+                    fontWeight = FontWeight.Bold
+                )
             )
         )
     }
@@ -189,16 +237,16 @@ fun SkyMapView(
                 text = c.name,
                 style = TextStyle(
                     color = DarkRed.copy(alpha = 0.85f),
-                    fontSize = 11.sp,
+                    fontSize = SkyMapTuning.CONSTELLATION_FONT_SIZE_SP.sp,
                     fontWeight = FontWeight.Medium
                 )
             )
         }
     }
 
-    // Tier 1 in-memory objects (Bright stars & Messier)
+    // Tier 1 in-memory objects (Bright stars <= 5.0 mag & all Messier + bright showcase DSOs)
     var tier1Stars by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
-    var tier1Messier by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
+    var tier1Dso by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             tier1Stars = viewModel.catalogDb.searchObjects(
@@ -206,13 +254,21 @@ fun SkyMapView(
                 magLimit = 5.0,
                 visibilityFilter = "Any",
                 sortBy = "brightness",
-                limit = 1000
+                limit = 2000
             )
-            tier1Messier = viewModel.catalogDb.searchObjects(
+            val messier = viewModel.catalogDb.searchObjects(
                 catalogFilter = "M",
                 visibilityFilter = "Any",
                 limit = 110
             )
+            val brightDso = viewModel.catalogDb.searchObjects(
+                starFilter = false,
+                magLimit = 5.0,
+                visibilityFilter = "Any",
+                sortBy = "brightness",
+                limit = 50
+            )
+            tier1Dso = (messier + brightDso).distinctBy { it.id }
         }
     }
 
@@ -233,8 +289,9 @@ fun SkyMapView(
         }
     }
 
-    // Tier 2 dynamic background query for dense deep sky objects when zoomed in
+    // Tier 2 dynamic background query for dense deep sky objects and stars when zoomed in
     var dynamicCatalogObjects by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
+    var dynamicStars by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     val currentTypeFilters = viewModel.catalogTypeFilters
     val currentMagLimit = viewModel.catalogMagLimit
     val isAllTypes =
@@ -246,66 +303,114 @@ fun SkyMapView(
             .collectLatest { (az, alt, currentFov) ->
                 if (currentFov < 60.0) {
                     val (ra, dec) = AstrometryUtils.altAzToRaDec(az, alt, lat, lst)
-                    withContext(Dispatchers.IO) {
-                        val searchRadius = (currentFov * 0.75).coerceIn(5.0, 45.0)
-                        val objects = viewModel.catalogDb.searchObjects(
+                    val searchRadius = (currentFov * 1.35).coerceIn(0.5, 45.0)
+                    val queryMagLimit = when {
+                        currentFov > 30.0 -> minOf(6.5, currentMagLimit ?: 6.5)
+                        currentFov > 15.0 -> minOf(8.0, currentMagLimit ?: 8.0)
+                        currentFov > 5.0 -> minOf(10.0, currentMagLimit ?: 10.0)
+                        else -> currentMagLimit ?: 12.0
+                    }
+                    val (dsoObjects, stars) = withContext(Dispatchers.IO) {
+                        val dso = viewModel.catalogDb.searchObjects(
                             targetRa = ra,
                             targetDec = dec,
                             maxDistanceDegrees = searchRadius,
-                            magLimit = currentMagLimit,
+                            magLimit = if (currentFov <= 15.0) null else queryMagLimit,
                             typeFilters = if (isAllTypes) null else currentTypeFilters,
                             starFilter = false,
                             visibilityFilter = "Any",
                             sortBy = "brightness",
                             limit = 200
                         )
-                        dynamicCatalogObjects = objects
+                        val st = viewModel.catalogDb.searchObjects(
+                            targetRa = ra,
+                            targetDec = dec,
+                            maxDistanceDegrees = searchRadius,
+                            magLimit = queryMagLimit,
+                            starFilter = true,
+                            visibilityFilter = "Any",
+                            sortBy = "brightness",
+                            limit = 500
+                        )
+                        Pair(dso, st)
                     }
+                    dynamicCatalogObjects = dsoObjects
+                    dynamicStars = stars
                 } else {
                     dynamicCatalogObjects = emptyList()
+                    dynamicStars = emptyList()
                 }
             }
     }
 
-    val starMagCutoff = when {
-        fov > 90.0 -> 4.2
-        fov > 45.0 -> 5.0
-        else -> currentMagLimit ?: 6.5
+    val effectiveMagLimit = when {
+        fov > 60.0 -> minOf(5.0, currentMagLimit ?: 5.0)
+        fov > 30.0 -> minOf(6.5, currentMagLimit ?: 6.5)
+        fov > 15.0 -> minOf(8.0, currentMagLimit ?: 8.0)
+        fov > 10.0 -> minOf(10.0, currentMagLimit ?: 10.0)
+        fov > 5.0 -> minOf(12.0, currentMagLimit ?: 12.0)
+        else -> currentMagLimit ?: 99.9
     }
+
+    val targetRa = stats.targetRa ?: stats.ra
+    val targetDec = stats.targetDec ?: stats.dec
 
     // Pre-filter and deduplicate candidates outside the Canvas draw loop to avoid allocations at 60fps
     val visibleCandidates = remember(
         solPlanets, solComets, solAsteroids,
-        tier1Messier, tier1Stars, dynamicCatalogObjects,
-        currentTypeFilters, currentMagLimit, isAllTypes, starMagCutoff
+        tier1Dso, tier1Stars, dynamicCatalogObjects, dynamicStars,
+        currentTypeFilters, currentMagLimit, isAllTypes, effectiveMagLimit, fov,
+        targetRa, targetDec
     ) {
         val list = mutableListOf<CatalogObject>()
 
+        fun isCurrentTarget(obj: CatalogObject): Boolean {
+            return targetRa != null && targetDec != null &&
+                    AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+        }
+
         // 1. Solar System
         list.addAll(solPlanets.filter { p ->
-            (isAllTypes || "Planet" in currentTypeFilters || p.objectType in currentTypeFilters) &&
-                    (currentMagLimit == null || (p.magnitude != null && p.magnitude <= currentMagLimit))
+            isCurrentTarget(p) || (
+                    (isAllTypes || "Planet" in currentTypeFilters || p.objectType in currentTypeFilters) &&
+                            (p.magnitude == null || p.magnitude <= effectiveMagLimit)
+                    )
         })
         list.addAll(solComets.filter { c ->
-            (isAllTypes || "Comet" in currentTypeFilters || c.objectType in currentTypeFilters) &&
-                    (currentMagLimit == null || (c.magnitude != null && c.magnitude <= currentMagLimit))
+            isCurrentTarget(c) || (
+                    (isAllTypes || "Comet" in currentTypeFilters || c.objectType in currentTypeFilters) &&
+                            (c.magnitude != null && c.magnitude <= effectiveMagLimit)
+                    )
         })
         list.addAll(solAsteroids.filter { a ->
-            (isAllTypes || "Asteroid" in currentTypeFilters || a.objectType in currentTypeFilters) &&
-                    (currentMagLimit == null || (a.magnitude != null && a.magnitude <= currentMagLimit))
+            isCurrentTarget(a) || (
+                    (isAllTypes || "Asteroid" in currentTypeFilters || a.objectType in currentTypeFilters) &&
+                            (a.magnitude != null && a.magnitude <= effectiveMagLimit)
+                    )
         })
 
-        // 2. Messier & DSOs
-        list.addAll(tier1Messier.filter { m ->
-            (isAllTypes || m.objectType in currentTypeFilters || m.broadCategory in currentTypeFilters) &&
-                    (currentMagLimit == null || (m.magnitude != null && m.magnitude <= currentMagLimit))
-        })
+        // 2. DSOs (Tier 1 Baseline + Dynamic Local Field, deduplicated by ID)
+        list.addAll(
+            (tier1Dso + dynamicCatalogObjects)
+                .filter { obj ->
+                    if (isCurrentTarget(obj)) return@filter true
+                    val typeMatches =
+                        isAllTypes || obj.objectType in currentTypeFilters || obj.broadCategory in currentTypeFilters
+                    val magMatches = when {
+                        obj.magnitude != null -> obj.magnitude <= effectiveMagLimit
+                        else -> fov <= 15.0
+                    }
+                    typeMatches && magMatches
+                }
+                .distinctBy { it.id }
+        )
 
-        // 3. Dynamic Tier 2 DSOs
-        list.addAll(dynamicCatalogObjects)
-
-        // 4. Stars
-        list.addAll(tier1Stars.filter { (it.magnitude ?: 99.0) <= starMagCutoff })
+        // 3. Stars (Tier 1 + Dynamic, deduplicated by ID)
+        list.addAll(
+            (tier1Stars + dynamicStars)
+                .filter { isCurrentTarget(it) || (it.magnitude ?: 99.0) <= effectiveMagLimit }
+                .distinctBy { it.id }
+        )
 
         list
     }
@@ -343,7 +448,7 @@ fun SkyMapView(
                 .pointerInput(Unit) {
                     detectTransformGestures { _, pan, zoom, _ ->
                         if (zoom != 1f) {
-                            fov = (fov / zoom.toDouble()).coerceIn(4.0, 180.0)
+                            fov = (fov / zoom.toDouble()).coerceIn(0.5, 180.0)
                         }
                         if (pan != Offset.Zero) {
                             if (isCameraLocked && zoom !in 0.98f..1.02f) {
@@ -520,7 +625,8 @@ fun SkyMapView(
             // 5. Constellation Names
             if (fov in 20.0..130.0) {
                 for (constell in ConstellationData.CONSTELLATIONS) {
-                    val pt = projection.toScreenRaDec(constell.centerRa, constell.centerDec, lat, lst)
+                    val pt =
+                        projection.toScreenRaDec(constell.centerRa, constell.centerDec, lat, lst)
                     if (pt != null && pt.first in 0f..size.width && pt.second in 0f..size.height) {
                         val textLayout = constellationLayouts[constell.name]
                         if (textLayout != null) {
@@ -548,18 +654,28 @@ fun SkyMapView(
             val (starObjects, nonStarObjects) = visibleCandidates.partition { it.objectType == "Star" || it.catalogLabel == "Str" }
 
             // Pass 1: DSOs, Planets, Comets, Asteroids (placed first to establish priority icons and decrowding)
+            val dsoScale = when {
+                fov < 10.0 -> SkyMapTuning.DSO_SCALE_DEEP
+                fov < 45.0 -> SkyMapTuning.DSO_SCALE_MID
+                else -> SkyMapTuning.DSO_SCALE_WIDE
+            }
+            val baseFontSize = SkyMapTuning.BASE_DSO_LABEL_FONT_SIZE_SP
+            val iconSize = (SkyMapTuning.BASE_DSO_ICON_SIZE_DP * dsoScale).toPx()
+
             val dsoCandidates = nonStarObjects.mapNotNull { obj ->
-                projection.toScreenRaDec(obj.ra, obj.dec, lat, lst)?.let { (x, y) -> obj to Offset(x, y) }
+                projection.toScreenRaDec(obj.ra, obj.dec, lat, lst)
+                    ?.let { (x, y) -> obj to Offset(x, y) }
             }
             val placedDsoItems = layoutCatalogItems(
                 candidates = dsoCandidates,
                 textMeasurer = textMeasurer,
                 viewportWidth = size.width,
                 viewportHeight = size.height,
-                targetRa = stats.ra,
-                targetDec = stats.dec,
-                maxLabels = if (fov < 80.0) 25 else 0,
-                fontSizeSp = 10f,
+                targetRa = targetRa,
+                targetDec = targetDec,
+                maxLabels = if (fov < 80.0) SkyMapTuning.MAX_DSO_LABELS else 0,
+                uiScale = dsoScale,
+                fontSizeSp = baseFontSize,
                 placedReticles = placedReticleRects,
                 placedLabels = placedLabelRects
             )
@@ -571,12 +687,12 @@ fun SkyMapView(
                     lat,
                     lst
                 ).second >= 0.0
-                val baseColor = if (isAbove) PureRed else DarkRed.copy(alpha = 0.45f)
+                val baseColor =
+                    if (isAbove) PureRed else DarkRed.copy(alpha = SkyMapTuning.BELOW_HORIZON_ALPHA)
                 val screenPt = Offset(item.screenX, item.screenY)
 
                 val (iconVector, _) = item.obj.getIconAndColor()
                 val painter = catalogPainters[iconVector]
-                val iconSize = 18f
 
                 if (painter != null) {
                     translate(left = screenPt.x - iconSize / 2f, top = screenPt.y - iconSize / 2f) {
@@ -594,7 +710,7 @@ fun SkyMapView(
                         text = item.obj.displayName,
                         style = TextStyle(
                             color = baseColor,
-                            fontSize = 10.sp,
+                            fontSize = (baseFontSize * dsoScale).sp,
                             fontWeight = if (item.isTarget) FontWeight.Bold else FontWeight.Normal
                         )
                     )
@@ -609,22 +725,26 @@ fun SkyMapView(
             // Pass 2: Starfield Dots (rendered under icons, avoiding clumping on top of placed icons or stars)
             val placedStarItems = mutableListOf<PlacedCatalogItem>()
             val placedStarPoints = mutableListOf<Offset>()
+            val maxMag = (effectiveMagLimit + 0.5).coerceAtLeast(6.0)
+            val minStarDistPx = if (fov < 5.0) 1.2f else 3.0f
+
             for (obj in starObjects) {
                 val (az, alt) = AstrometryUtils.raDecToAltAz(obj.ra, obj.dec, lat, lst)
                 val pt = projection.toScreen(az, alt) ?: continue
                 if (pt.first < -20f || pt.first > size.width + 20f || pt.second < -20f || pt.second > size.height + 20f) continue
 
                 val isAbove = !hasValidLocation || alt >= 0.0
-                val baseColor = if (isAbove) PureRed else DarkRed.copy(alpha = 0.45f)
+                val baseColor =
+                    if (isAbove) PureRed else DarkRed.copy(alpha = SkyMapTuning.BELOW_HORIZON_ALPHA)
                 val screenPt = Offset(pt.first, pt.second)
 
-                // Decrowding: skip star dot if an icon is already placed here or another star is within 3px
+                // Decrowding: skip star dot if an icon is already placed here or another star is within minStarDistPx
                 if (placedReticleRects.any { it.contains(screenPt) }) continue
                 if (placedStarPoints.any {
                         hypot(
                             it.x - screenPt.x,
                             it.y - screenPt.y
-                        ) < 3f
+                        ) < minStarDistPx
                     }) continue
 
                 placedStarPoints.add(screenPt)
@@ -637,8 +757,7 @@ fun SkyMapView(
                 )
 
                 val mag = obj.magnitude ?: 5.0
-                val radius =
-                    ((6.5 - mag).coerceIn(1.0, 5.5) * (if (fov < 45.0) 1.3 else 1.0)).toFloat()
+                val radius = (maxMag - mag).coerceIn(0.8, 5.0).toFloat()
                 drawCircle(
                     color = baseColor,
                     radius = radius,
@@ -667,7 +786,8 @@ fun SkyMapView(
                     imageAspect = aspect
                 )
 
-                val cornerPoints = corners.mapNotNull { projection.toScreenRaDec(it.first, it.second, lat, lst) }
+                val cornerPoints =
+                    corners.mapNotNull { projection.toScreenRaDec(it.first, it.second, lat, lst) }
                 if (cornerPoints.size == 4) {
                     val boxPath = Path().apply {
                         moveTo(cornerPoints[0].first, cornerPoints[0].second)
@@ -809,12 +929,23 @@ fun SkyMapView(
             Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                 Text(
                     text = "RA ${formatRa(centerRa)} Dec ${formatDec(centerDec)}",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = TextStyle(
+                        fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
+                        fontWeight = FontWeight.Normal
+                    ),
                     color = PureRed
                 )
                 Text(
-                    text = "Az ${String.format("%.0f", centerAz)}° Alt ${String.format("%.0f", centerAlt)}°  FOV ${String.format("%.1f", fov)}°",
-                    style = MaterialTheme.typography.labelSmall,
+                    text = "Az ${String.format("%.0f", centerAz)}° Alt ${
+                        String.format(
+                            "%.0f",
+                            centerAlt
+                        )
+                    }°  FOV ${String.format("%.1f", fov)}°",
+                    style = TextStyle(
+                        fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
+                        fontWeight = FontWeight.Normal
+                    ),
                     color = DarkRed
                 )
             }
@@ -831,7 +962,12 @@ fun SkyMapView(
                 OutlinedIconButton(
                     onClick = {
                         isCameraLocked = false
-                        val (tAz, tAlt) = AstrometryUtils.raDecToAltAz(stats.targetRa, stats.targetDec, lat, lst)
+                        val (tAz, tAlt) = AstrometryUtils.raDecToAltAz(
+                            stats.targetRa,
+                            stats.targetDec,
+                            lat,
+                            lst
+                        )
                         centerAz = tAz
                         centerAlt = tAlt
                         fov = 30.0
@@ -858,7 +994,12 @@ fun SkyMapView(
                 OutlinedIconButton(
                     onClick = {
                         isCameraLocked = true
-                        val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(stats.ra, stats.dec, lat, lst)
+                        val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
+                            stats.ra,
+                            stats.dec,
+                            lat,
+                            lst
+                        )
                         centerAz = cAz
                         centerAlt = cAlt
                         fov = maxOf(stats.fov ?: 15.0, 25.0)
@@ -910,7 +1051,7 @@ fun SkyMapView(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OutlinedIconButton(
-                onClick = { fov = (fov / 1.4).coerceIn(4.0, 180.0) },
+                onClick = { fov = (fov / 1.4).coerceIn(0.5, 180.0) },
                 border = BorderStroke(1.dp, DarkRed),
                 colors = IconButtonDefaults.outlinedIconButtonColors(
                     containerColor = PureBlack.copy(
@@ -923,7 +1064,7 @@ fun SkyMapView(
                 Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = PureRed)
             }
             OutlinedIconButton(
-                onClick = { fov = (fov * 1.4).coerceIn(4.0, 180.0) },
+                onClick = { fov = (fov * 1.4).coerceIn(0.5, 180.0) },
                 border = BorderStroke(1.dp, DarkRed),
                 colors = IconButtonDefaults.outlinedIconButtonColors(
                     containerColor = PureBlack.copy(

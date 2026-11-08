@@ -79,7 +79,7 @@ class SkyMapProjection(
         val clampedAlt = centerAlt.coerceIn(-89.0, 89.0)
         val cosAlt = cos(Math.toRadians(clampedAlt)).coerceAtLeast(0.1)
         val rawDAz = Math.toDegrees(-deltaScreenX.toDouble() / (scale * cosAlt))
-        val maxDAz = maxOf(fov * 0.5, 12.0)
+        val maxDAz = (fov * 0.8).coerceIn(0.2, 45.0)
         val dAz = rawDAz.coerceIn(-maxDAz, maxDAz)
 
         centerAlt = (centerAlt + dAlt).coerceIn(-90.0, 90.0)
