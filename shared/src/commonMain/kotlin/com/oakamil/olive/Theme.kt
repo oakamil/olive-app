@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 val PureRed = Color(0xFFFF0000)
 val DarkRed = Color(0xFF8B0000)
 val PureBlack = Color(0xFF000000)
+val DeepMaroon = Color(0xFF4A1010)
 
 private val NightVisionColorScheme = darkColorScheme(
     primary = PureRed,
@@ -20,13 +21,14 @@ private val NightVisionColorScheme = darkColorScheme(
     onBackground = PureRed,
     surface = PureBlack,
     onSurface = PureRed,
-    secondary = PureRed,
+    secondary = DarkRed,
     onSecondary = PureBlack,
-    tertiary = PureRed,
+    tertiary = DarkRed,
     onTertiary = PureBlack,
-    surfaceVariant = PureBlack,
+    surfaceVariant = DeepMaroon,
     onSurfaceVariant = PureRed,
-    outline = PureRed
+    outline = DarkRed,
+    outlineVariant = DarkRed
 )
 
 @Composable

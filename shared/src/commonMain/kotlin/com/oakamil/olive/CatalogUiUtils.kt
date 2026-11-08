@@ -13,13 +13,20 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Storm
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlin.math.hypot
 
 fun getIconAndColorForType(objectType: String): Pair<ImageVector, Color> {
     val defaultColor = Color.Red
@@ -27,7 +34,7 @@ fun getIconAndColorForType(objectType: String): Pair<ImageVector, Color> {
         "Asterism" -> Icons.Filled.Timeline to defaultColor
         "Cluster + Nebula" -> Icons.Filled.BlurCircular to defaultColor
         "Nebula" -> Icons.Filled.Air to defaultColor
-        "Dark Nebula" -> Icons.Filled.Cloud to Color(0xFF8B0000) // dark red
+        "Dark Nebula" -> Icons.Filled.Cloud to DarkRed
         "Multiple Star", "Double Star" -> Icons.Outlined.AutoAwesome to defaultColor
         "Galaxy" -> Icons.Outlined.Storm to defaultColor
         "Asteroid" -> Icons.Filled.Cookie to defaultColor
@@ -209,4 +216,190 @@ fun getLocalizedObjectType(type: String): String = when (type) {
     "Asteroid" -> stringResource(Res.string.type_asteroid)
     "Comet" -> stringResource(Res.string.type_comet)
     else -> type
+}
+
+data class PlacedCatalogItem(
+    val obj: CatalogObject,
+    val screenX: Float,
+    val screenY: Float,
+    val isTarget: Boolean = false,
+    val labelOffset: Offset? = null,
+    val labelWidth: Float = 0f,
+    val labelHeight: Float = 0f,
+    val labelRect: Rect? = null
+)
+
+fun layoutCatalogItems(
+    candidates: List<Pair<CatalogObject, Offset>>,
+    textMeasurer: TextMeasurer,
+    viewportWidth: Float,
+    viewportHeight: Float,
+    targetRa: Double? = null,
+    targetDec: Double? = null,
+    maxLabels: Int = 20,
+    uiScale: Float = 1.0f,
+    fontSizeSp: Float = 12f,
+    placedReticles: MutableList<Rect> = mutableListOf(),
+    placedLabels: MutableList<Rect> = mutableListOf()
+): List<PlacedCatalogItem> {
+    if (candidates.isEmpty()) return emptyList()
+
+    // 1. Sort: Target first, then catalog priority (M > C > NGC), then brightness
+    val sorted = candidates.sortedWith(
+        compareByDescending<Pair<CatalogObject, Offset>> { (obj, _) ->
+            targetRa != null && targetDec != null &&
+                AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+        }.thenBy { (obj, _) ->
+            getCatalogPriority(obj)
+        }.thenBy { (obj, _) ->
+            obj.magnitude ?: 99.0
+        }
+    )
+
+    // 2. Reticle Decrowding
+    val validCandidates = mutableListOf<Pair<CatalogObject, Offset>>()
+    for ((obj, pt) in sorted) {
+        if (pt.x < -20f || pt.x > viewportWidth + 20f || pt.y < -20f || pt.y > viewportHeight + 20f) continue
+
+        val isTarget = targetRa != null && targetDec != null &&
+            AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+
+        val radius = if (isTarget) 20f * uiScale else 12f * uiScale
+        val reticleBox = Rect(pt.x - radius, pt.y - radius, pt.x + radius, pt.y + radius)
+
+        val collides = placedReticles.any { it.overlaps(reticleBox) } || placedLabels.any { it.overlaps(reticleBox) }
+        if (!collides || isTarget) {
+            placedReticles.add(reticleBox)
+            validCandidates.add(obj to pt)
+        }
+    }
+
+    // 3. Multi-Slot Label Placement (Right -> Left -> Bottom -> Top -> Clamped Fallback)
+    var labelsPlaced = 0
+    val result = ArrayList<PlacedCatalogItem>(validCandidates.size)
+    val labelDist = 20f * uiScale
+    val targetLabelDist = 26f * uiScale
+    val pad = 4f * uiScale
+
+    for ((obj, pt) in validCandidates) {
+        val isTarget = targetRa != null && targetDec != null &&
+            AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+
+        var acceptedOffset: Offset? = null
+        var acceptedRect: Rect? = null
+        var textW = 0f
+        var textH = 0f
+
+        if (labelsPlaced < maxLabels || isTarget) {
+            val textLayout = textMeasurer.measure(
+                text = obj.displayName,
+                style = TextStyle(
+                    fontSize = (fontSizeSp * uiScale).sp,
+                    fontWeight = if (isTarget) FontWeight.Bold else FontWeight.Normal
+                )
+            )
+            textW = textLayout.size.width.toFloat()
+            textH = textLayout.size.height.toFloat()
+            val dist = if (isTarget) targetLabelDist else labelDist
+
+            // Try 4 cardinal slots without heap list allocations:
+            // 0: Right, 1: Left, 2: Bottom, 3: Top
+            for (slot in 0..3) {
+                val left = when (slot) {
+                    0 -> pt.x + dist
+                    1 -> pt.x - dist - textW
+                    else -> pt.x - textW / 2f
+                }
+                val top = when (slot) {
+                    0, 1 -> pt.y - textH / 2f
+                    2 -> pt.y + dist
+                    else -> pt.y - dist - textH
+                }
+                val candRect = Rect(left, top, left + textW, top + textH)
+
+                // Must fit within screen boundaries
+                if (candRect.left < 0f || candRect.right > viewportWidth ||
+                    candRect.top < 0f || candRect.bottom > viewportHeight
+                ) continue
+
+                val inflated = candRect.inflate(pad)
+                if (!placedLabels.any { it.overlaps(inflated) } && !placedReticles.any { it.overlaps(inflated) }) {
+                    acceptedRect = candRect
+                    break
+                }
+            }
+
+            // Clamped fallback if no natural slot fits entirely inside screen
+            if (acceptedRect == null) {
+                for (slot in 0..3) {
+                    val rawLeft = when (slot) {
+                        0 -> pt.x + dist
+                        1 -> pt.x - dist - textW
+                        else -> pt.x - textW / 2f
+                    }
+                    val rawTop = when (slot) {
+                        0, 1 -> pt.y - textH / 2f
+                        2 -> pt.y + dist
+                        else -> pt.y - dist - textH
+                    }
+                    val clampLeft = rawLeft.coerceIn(0f, maxOf(0f, viewportWidth - textW))
+                    val clampTop = rawTop.coerceIn(0f, maxOf(0f, viewportHeight - textH))
+                    val candRect = Rect(clampLeft, clampTop, clampLeft + textW, clampTop + textH)
+                    val inflated = candRect.inflate(pad)
+
+                    if (!placedLabels.any { it.overlaps(inflated) } && !placedReticles.any { it.overlaps(inflated) }) {
+                        acceptedRect = candRect
+                        break
+                    }
+                }
+            }
+
+            if (acceptedRect != null) {
+                acceptedOffset = Offset(acceptedRect.left - pt.x, acceptedRect.top - pt.y)
+                placedLabels.add(acceptedRect)
+                labelsPlaced++
+            }
+        }
+
+        result.add(
+            PlacedCatalogItem(
+                obj = obj,
+                screenX = pt.x,
+                screenY = pt.y,
+                isTarget = isTarget,
+                labelOffset = acceptedOffset,
+                labelWidth = textW,
+                labelHeight = textH,
+                labelRect = acceptedRect
+            )
+        )
+    }
+
+    return result
+}
+
+fun findTappedCatalogItem(
+    items: List<PlacedCatalogItem>,
+    tapOffset: Offset,
+    maxHitRadiusPx: Float,
+    labelInflatePx: Float = 12f
+): CatalogObject? {
+    // 1. Direct hit on inflated label text
+    for (item in items) {
+        if (item.labelRect?.inflate(labelInflatePx)?.contains(tapOffset) == true) {
+            return item.obj
+        }
+    }
+
+    // 2. Nearest icon center within hit radius
+    var closest: CatalogObject? = null
+    var minDist = maxHitRadiusPx
+    for (item in items) {
+        val dist = hypot(item.screenX - tapOffset.x, item.screenY - tapOffset.y)
+        if (dist < minDist) {
+            minDist = dist
+            closest = item.obj
+        }
+    }
+    return closest
 }

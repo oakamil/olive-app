@@ -512,7 +512,7 @@ fun SkyCatalogDialog(
                                     },
                                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                                     colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = Color(0xFF4A1010),
+                                        selectedContainerColor = DeepMaroon,
                                         selectedTextColor = Color.Red,
                                         unselectedTextColor = Color.Red,
                                         selectedIconColor = Color.Red,
@@ -850,9 +850,7 @@ fun SkyCatalogDialog(
 
                                 ListItem(
                                     colors = if (isBelowHorizon) ListItemDefaults.colors(
-                                        containerColor = Color(
-                                            0xFF4A1010
-                                        )
+                                        containerColor = DeepMaroon
                                     ) else ListItemDefaults.colors(),
                                     headlineContent = { Text(obj.displayName) },
                                     supportingContent = {
