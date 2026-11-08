@@ -42,7 +42,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -66,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.withContext
@@ -73,6 +73,7 @@ import kotlinx.datetime.Clock
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.hypot
 import kotlin.time.Duration.Companion.milliseconds
+
 
 @OptIn(FlowPreview::class)
 @Composable
@@ -97,6 +98,7 @@ fun SkyMapView(
             centerRa = stats.ra
             centerDec = stats.dec
             fov = maxOf(stats.fov ?: 30.0, 50.0)
+            @Suppress("AssignedValueIsNeverRead")
             hasAutoCentered = true
         }
     }
@@ -106,8 +108,8 @@ fun SkyMapView(
     val hasValidLocation = rawLat != null && rawLon != null &&
             rawLat != MainViewModel.INVALID_COORD && rawLon != MainViewModel.INVALID_COORD &&
             rawLat in -90.0..90.0 && rawLon in -180.0..360.0
-    val lat = if (hasValidLocation) rawLat!! else 0.0
-    val lon = if (hasValidLocation) rawLon!! else 0.0
+    val lat = if (hasValidLocation) rawLat else 0.0
+    val lon = if (hasValidLocation) rawLon else 0.0
 
     var currentTimeMs by remember { mutableStateOf(Clock.System.now().toEpochMilliseconds()) }
     LaunchedEffect(Unit) {
@@ -120,7 +122,6 @@ fun SkyMapView(
         if (hasValidLocation) AstrometryUtils.calculateLST(lon, currentTimeMs) else 0.0
     }
 
-    val coroutineScope = rememberCoroutineScope()
     val textMeasurer = rememberTextMeasurer(cacheSize = 256)
     val catalogPainters = rememberCatalogPainters()
 

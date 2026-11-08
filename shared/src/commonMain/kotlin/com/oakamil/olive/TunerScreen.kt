@@ -500,11 +500,15 @@ fun TunerScreen(
 
     if (showAlignDialog) {
         AlertDialog(
-            onDismissRequest = { showAlignDialog = false },
+            onDismissRequest = {
+                @Suppress("AssignedValueIsNeverRead")
+                showAlignDialog = false
+            },
             title = { Text(stringResource(Res.string.title_confirm_alignment)) },
             text = { Text(stringResource(Res.string.inst_confirm_alignment)) },
             confirmButton = {
                 Button(onClick = {
+                    @Suppress("AssignedValueIsNeverRead")
                     showAlignDialog = false
                     val targetX = alignTargetX
                     val targetY = alignTargetY
@@ -521,7 +525,10 @@ fun TunerScreen(
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showAlignDialog = false }) {
+                OutlinedButton(onClick = {
+                    @Suppress("AssignedValueIsNeverRead")
+                    showAlignDialog = false
+                }) {
                     Text(stringResource(id = Res.string.btn_cancel))
                 }
             }
@@ -530,11 +537,15 @@ fun TunerScreen(
 
     if (showResetAlignDialog) {
         AlertDialog(
-            onDismissRequest = { showResetAlignDialog = false },
+            onDismissRequest = {
+                @Suppress("AssignedValueIsNeverRead")
+                showResetAlignDialog = false
+            },
             title = { Text(stringResource(Res.string.title_reset_alignment)) },
             text = { Text(stringResource(Res.string.inst_reset_alignment)) },
             confirmButton = {
                 Button(onClick = {
+                    @Suppress("AssignedValueIsNeverRead")
                     showResetAlignDialog = false
                     viewModel.clearAlignTargetPixel()
                     alignTargetX = null
@@ -544,7 +555,10 @@ fun TunerScreen(
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showResetAlignDialog = false }) {
+                OutlinedButton(onClick = {
+                    @Suppress("AssignedValueIsNeverRead")
+                    showResetAlignDialog = false
+                }) {
                     Text(stringResource(id = Res.string.btn_cancel))
                 }
             }
