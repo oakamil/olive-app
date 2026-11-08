@@ -273,7 +273,7 @@ fun TunerScreen(
                         val s = 32f / (scale * baseScale)
                         val arm = 14f / (scale * baseScale)
                         val bracketStroke = 3f / (scale * baseScale)
-                        val darkRed = Color(0xFFAA0000)
+                        val darkRed = DarkRed
 
                         // ┌ Top-Left
                         drawLine(

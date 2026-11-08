@@ -551,10 +551,17 @@ class IosCatalogDatabase : CatalogDatabase {
             val deltaRa = radius / c
 
             selection += " AND (dec BETWEEN ${targetDec - radius} AND ${targetDec + radius})"
-            if (targetRa - deltaRa >= 0.0 && targetRa + deltaRa <= 360.0) {
-                selection += " AND (ra BETWEEN ${targetRa - deltaRa} AND ${targetRa + deltaRa})"
+            if (deltaRa < 180.0) {
+                if (targetRa - deltaRa >= 0.0 && targetRa + deltaRa <= 360.0) {
+                    selection += " AND (ra BETWEEN ${targetRa - deltaRa} AND ${targetRa + deltaRa})"
+                } else {
+                    val raMin = (targetRa - deltaRa + 360.0) % 360.0
+                    val raMax = (targetRa + deltaRa) % 360.0
+                    selection += " AND (ra >= $raMin OR ra <= $raMax)"
+                }
             }
-            selection += " AND ((((ra - $targetRa) * $c) * ((ra - $targetRa) * $c) + (dec - $targetDec) * (dec - $targetDec)) <= $maxDistSq)"
+            val raDiff = "min(abs(ra - $targetRa), 360.0 - abs(ra - $targetRa))"
+            selection += " AND (((($raDiff) * $c) * (($raDiff) * $c) + (dec - $targetDec) * (dec - $targetDec)) <= $maxDistSq)"
         }
 
         if (catalogFilter != null && catalogFilter != "All Objects" && catalogFilter != "Solar System" && catalogFilter != "Nearest Objects") {
@@ -625,7 +632,8 @@ class IosCatalogDatabase : CatalogDatabase {
                 if (targetRa != null && targetDec != null) {
                     val c = cos(targetDec * PI / 180.0)
                     val c2 = c * c
-                    "((ra - $targetRa) * (ra - $targetRa) * $c2) + ((dec - $targetDec) * (dec - $targetDec)) ASC"
+                    val raDiff = "min(abs(ra - $targetRa), 360.0 - abs(ra - $targetRa))"
+                    "(($raDiff) * ($raDiff) * $c2) + ((dec - $targetDec) * (dec - $targetDec)) ASC"
                 } else {
                     "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
                 }

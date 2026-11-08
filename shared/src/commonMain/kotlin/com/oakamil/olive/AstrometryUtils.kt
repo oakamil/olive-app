@@ -129,4 +129,13 @@ object AstrometryUtils {
         val qRad = atan2(y, x)
         return Math.toDegrees(qRad)
     }
+
+    fun computeCameraFovCorners(
+        boresightRa: Double,
+        boresightDec: Double,
+        fovDeg: Double,
+        rollDeg: Double,
+        imageAspect: Double = 1.0
+    ): List<Pair<Double, Double>> =
+        SkyMapProjection.computeCameraFovCorners(boresightRa, boresightDec, fovDeg, rollDeg, imageAspect)
 }

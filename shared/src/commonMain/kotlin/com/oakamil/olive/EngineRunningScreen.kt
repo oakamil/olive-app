@@ -43,6 +43,8 @@ import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.TravelExplore
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -115,32 +117,8 @@ import kotlin.math.round
 import kotlin.math.sin
 import kotlin.math.tan
 
-private data class PlacedScreenItem(
-    val obj: CatalogObject,
-    val screenX: Float,
-    val screenY: Float,
-    var labelRect: Rect?
-)
-
-private data class VisibleCandidate(
-    val obj: CatalogObject,
-    val canvasX: Float,
-    val canvasY: Float,
-    val screenX: Float,
-    val screenY: Float,
-    val isTarget: Boolean
-)
-
-private data class PlacedLabel(
-    val obj: CatalogObject,
-    val isTarget: Boolean,
-    val labelOffset: Offset?,
-    val labelWidth: Float = 0f,
-    val labelHeight: Float = 0f
-)
-
 private class LabelLayoutState {
-    var activeLabels: List<PlacedLabel> = emptyList()
+    var activeItems: List<PlacedCatalogItem> = emptyList()
     var lastLayoutRa: Double? = null
     var lastLayoutDec: Double? = null
     var lastLayoutFov: Double? = null
@@ -305,7 +283,13 @@ fun EngineRunningScreen(
         label = "alpha"
     )
 
-    BackHandler(enabled = !isStopping && !isStarting) {
+    var isSkyMapExpanded by rememberSaveable { mutableStateOf(false) }
+
+    BackHandler(enabled = isSkyMapExpanded) {
+        isSkyMapExpanded = false
+    }
+
+    BackHandler(enabled = !isSkyMapExpanded && !isStopping && !isStarting) {
         onToggleEngine()
     }
 
@@ -341,7 +325,7 @@ fun EngineRunningScreen(
                 colors = CardDefaults.cardColors(containerColor = Color.Black),
                 border = BorderStroke(
                     2.dp,
-                    if (isLowPowerMode) Color.Transparent else Color(0xFF4A1010)
+                    if (isLowPowerMode) Color.Transparent else DeepMaroon
                 )
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
@@ -836,10 +820,10 @@ fun EngineRunningScreen(
                                     }
                             )
 
-                            val textMeasurer = rememberTextMeasurer()
+                            val textMeasurer = rememberTextMeasurer(cacheSize = 256)
                             val primaryColor = MaterialTheme.colorScheme.primary
                             val placedScreenItems =
-                                remember { mutableListOf<PlacedScreenItem>() }
+                                remember { mutableListOf<PlacedCatalogItem>() }
                             val labelLayoutState = remember { LabelLayoutState() }
 
                             // Base UI scaling factor to preserve comfortable element sizing previously scaled by the 1.414 rotation safety margin
@@ -924,26 +908,12 @@ fun EngineRunningScreen(
                                     }
                                     .pointerInput(Unit) {
                                         detectTapGestures { tapOffset ->
-                                            var closest: CatalogObject? = null
-                                            var minDist = 40f * uiScale
-
-                                            for (item in placedScreenItems) {
-                                                val hitText =
-                                                    item.labelRect?.inflate(12f * uiScale)
-                                                        ?.contains(tapOffset) == true
-                                                if (hitText) {
-                                                    closest = item.obj
-                                                    break
-                                                }
-                                                val dist = hypot(
-                                                    item.screenX - tapOffset.x,
-                                                    item.screenY - tapOffset.y
-                                                )
-                                                if (dist < minDist) {
-                                                    closest = item.obj
-                                                    minDist = dist
-                                                }
-                                            }
+                                            val closest = findTappedCatalogItem(
+                                                placedScreenItems,
+                                                tapOffset,
+                                                40f * uiScale,
+                                                12f * uiScale
+                                            )
 
                                             if (closest != null) {
                                                 tappedObject = closest
@@ -1043,7 +1013,7 @@ fun EngineRunningScreen(
                                         allObjects.size != labelLayoutState.lastAllObjectsCount
 
                                     val shouldRelayout =
-                                        labelLayoutState.activeLabels.isEmpty() ||
+                                        labelLayoutState.activeItems.isEmpty() ||
                                                 distMoved >= fov * LABEL_REDRAW_FOV_DELTA ||
                                                 fovChanged ||
                                                 targetChanged ||
@@ -1052,14 +1022,7 @@ fun EngineRunningScreen(
                                                 objectsChanged
 
                                     if (shouldRelayout) {
-                                        val visibleCandidates =
-                                            mutableListOf<VisibleCandidate>()
-                                        for (obj in allObjects) {
-                                            val isTarget =
-                                                targetRaVal != null && targetDecVal != null && hypot(
-                                                    obj.ra - targetRaVal,
-                                                    obj.dec - targetDecVal
-                                                ) < 0.05
+                                        val candidates = allObjects.mapNotNull { obj ->
                                             val projRa =
                                                 if (stats.isImuEstimate || stats.centerRa == null) ra else stats.centerRa
                                             val projDec =
@@ -1071,7 +1034,7 @@ fun EngineRunningScreen(
                                                 projRa,
                                                 projDec
                                             )
-                                            if (dist > fov * 1.5) continue
+                                            if (dist > fov * 1.5) return@mapNotNull null
 
                                             val projCx =
                                                 if (!stats.isImuEstimate && stats.centerRa != null) cx else boresightProjX
@@ -1092,208 +1055,28 @@ fun EngineRunningScreen(
                                                 projCx,
                                                 projCy,
                                                 stats.distortion
-                                            ) ?: continue
+                                            ) ?: return@mapNotNull null
 
                                             val phys = toPhysical(proj.first, proj.second)
-
-                                            if (phys.x < 0f || phys.x > size.width || phys.y < 0f || phys.y > size.height) {
-                                                continue
-                                            }
-
-                                            val isDuplicate = visibleCandidates.any {
-                                                hypot(
-                                                    it.screenX - phys.x,
-                                                    it.screenY - phys.y
-                                                ) < 25f
-                                            }
-                                            if (!isDuplicate || isTarget) {
-                                                visibleCandidates.add(
-                                                    VisibleCandidate(
-                                                        obj,
-                                                        proj.first,
-                                                        proj.second,
-                                                        phys.x,
-                                                        phys.y,
-                                                        isTarget
-                                                    )
-                                                )
+                                            if (phys.x in 0f..size.width && phys.y in 0f..size.height) {
+                                                obj to phys
+                                            } else {
+                                                null
                                             }
                                         }
 
-                                        visibleCandidates.sortByDescending { it.isTarget }
+                                        labelLayoutState.activeItems = layoutCatalogItems(
+                                            candidates = candidates,
+                                            textMeasurer = textMeasurer,
+                                            viewportWidth = size.width,
+                                            viewportHeight = size.height,
+                                            targetRa = targetRaVal,
+                                            targetDec = targetDecVal,
+                                            maxLabels = MAX_LABELS,
+                                            uiScale = uiScale,
+                                            fontSizeSp = 12f
+                                        )
 
-                                        val placedReticleRects = mutableListOf<Rect>()
-                                        val validCandidates = mutableListOf<VisibleCandidate>()
-
-                                        // Select candidates that don't collide with other reticles
-                                        for (cand in visibleCandidates) {
-                                            val physPt = Offset(cand.screenX, cand.screenY)
-                                            val collisionRadius =
-                                                if (cand.isTarget) 20f * uiScale else 12f * uiScale
-                                            val candReticleBox = Rect(
-                                                physPt.x - collisionRadius,
-                                                physPt.y - collisionRadius,
-                                                physPt.x + collisionRadius,
-                                                physPt.y + collisionRadius
-                                            )
-
-                                            val collision =
-                                                placedReticleRects.any {
-                                                    it.overlaps(
-                                                        candReticleBox
-                                                    )
-                                                }
-                                            if (!collision || cand.isTarget) {
-                                                validCandidates.add(cand)
-                                                placedReticleRects.add(candReticleBox)
-                                            }
-                                        }
-
-                                        var labelsPlaced = 0
-                                        val layoutLabelRects = mutableListOf<Rect>()
-                                        val newActiveLabels = mutableListOf<PlacedLabel>()
-
-                                        for (cand in validCandidates) {
-                                            val physPt = Offset(cand.screenX, cand.screenY)
-                                            val objColor =
-                                                if (cand.isTarget) Color.Red else primaryColor
-
-                                            var acceptedOffset: Offset? = null
-                                            var textW = 0f
-                                            var textH = 0f
-
-                                            if (labelsPlaced < MAX_LABELS || cand.isTarget) {
-                                                val textLayout = textMeasurer.measure(
-                                                    text = cand.obj.displayName,
-                                                    style = TextStyle(
-                                                        color = objColor,
-                                                        fontSize = (12f * uiScale).sp,
-                                                        fontWeight = if (cand.isTarget) FontWeight.Bold else FontWeight.Normal
-                                                    )
-                                                )
-                                                textW = textLayout.size.width.toFloat()
-                                                textH = textLayout.size.height.toFloat()
-
-                                                val labelOffsetDist =
-                                                    if (cand.isTarget) 26f * uiScale else 20f * uiScale
-                                                val positions = listOf(
-                                                    Offset(
-                                                        labelOffsetDist,
-                                                        -textLayout.size.height / 2f
-                                                    ),
-                                                    Offset(
-                                                        -textLayout.size.width - labelOffsetDist,
-                                                        -textLayout.size.height / 2f
-                                                    ),
-                                                    Offset(
-                                                        -textLayout.size.width / 2f,
-                                                        labelOffsetDist
-                                                    ),
-                                                    Offset(
-                                                        -textLayout.size.width / 2f,
-                                                        -textLayout.size.height - labelOffsetDist
-                                                    )
-                                                )
-
-                                                var acceptedRect: Rect? = null
-                                                for (pos in positions) {
-                                                    val textX = physPt.x + pos.x
-                                                    val textY = physPt.y + pos.y
-
-                                                    val candidateRect = Rect(
-                                                        textX,
-                                                        textY,
-                                                        textX + textW,
-                                                        textY + textH
-                                                    )
-
-                                                    // Only accept positions that naturally fit entirely inside the screen
-                                                    if (candidateRect.left < 0f || candidateRect.right > size.width ||
-                                                        candidateRect.top < 0f || candidateRect.bottom > size.height
-                                                    ) {
-                                                        continue
-                                                    }
-
-                                                    val inflatedCandidate =
-                                                        candidateRect.inflate(4f * uiScale)
-
-                                                    if (!layoutLabelRects.any {
-                                                            it.overlaps(
-                                                                inflatedCandidate
-                                                            )
-                                                        } &&
-                                                        !placedReticleRects.any {
-                                                            it.overlaps(
-                                                                inflatedCandidate
-                                                            )
-                                                        }
-                                                    ) {
-                                                        acceptedRect = candidateRect
-                                                        break
-                                                    }
-                                                }
-
-                                                // Fallback: If no position fits naturally, clamp first non-colliding
-                                                if (acceptedRect == null) {
-                                                    for (pos in positions) {
-                                                        var textX = physPt.x + pos.x
-                                                        var textY = physPt.y + pos.y
-                                                        if (textX < 0f) textX = 0f
-                                                        if (textX + textW > size.width) textX =
-                                                            size.width - textW
-                                                        if (textY < 0f) textY = 0f
-                                                        if (textY + textH > size.height) textY =
-                                                            size.height - textH
-
-                                                        val clampedRect = Rect(
-                                                            textX,
-                                                            textY,
-                                                            textX + textW,
-                                                            textY + textH
-                                                        )
-
-                                                        val inflatedCandidate =
-                                                            clampedRect.inflate(4f * uiScale)
-
-                                                        if (!layoutLabelRects.any {
-                                                                it.overlaps(
-                                                                    inflatedCandidate
-                                                                )
-                                                            } &&
-                                                            !placedReticleRects.any {
-                                                                it.overlaps(
-                                                                    inflatedCandidate
-                                                                )
-                                                            }
-                                                        ) {
-                                                            acceptedRect = clampedRect
-                                                            break
-                                                        }
-                                                    }
-                                                }
-
-                                                if (acceptedRect != null) {
-                                                    acceptedOffset = Offset(
-                                                        acceptedRect.left - physPt.x,
-                                                        acceptedRect.top - physPt.y
-                                                    )
-                                                    layoutLabelRects.add(acceptedRect)
-                                                    labelsPlaced++
-                                                }
-                                            }
-
-                                            newActiveLabels.add(
-                                                PlacedLabel(
-                                                    obj = cand.obj,
-                                                    isTarget = cand.isTarget,
-                                                    labelOffset = acceptedOffset,
-                                                    labelWidth = textW,
-                                                    labelHeight = textH
-                                                )
-                                            )
-                                        }
-
-                                        labelLayoutState.activeLabels = newActiveLabels
                                         labelLayoutState.lastLayoutRa = ra
                                         labelLayoutState.lastLayoutDec = dec
                                         labelLayoutState.lastLayoutFov = fov
@@ -1305,7 +1088,7 @@ fun EngineRunningScreen(
                                     }
 
                                     // Draw active labels every frame with updated coordinates
-                                    for (item in labelLayoutState.activeLabels) {
+                                    for (item in labelLayoutState.activeItems) {
                                         val isTarget =
                                             item.isTarget || (targetRaVal != null && targetDecVal != null &&
                                                     AstrometryUtils.angularDistance(
@@ -1368,11 +1151,15 @@ fun EngineRunningScreen(
                                         }
 
                                         placedScreenItems.add(
-                                            PlacedScreenItem(
-                                                item.obj,
-                                                physPt.x,
-                                                physPt.y,
-                                                labelRect
+                                            PlacedCatalogItem(
+                                                obj = item.obj,
+                                                screenX = physPt.x,
+                                                screenY = physPt.y,
+                                                isTarget = isTarget,
+                                                labelOffset = item.labelOffset,
+                                                labelWidth = item.labelWidth,
+                                                labelHeight = item.labelHeight,
+                                                labelRect = labelRect
                                             )
                                         )
 
@@ -1519,7 +1306,7 @@ fun EngineRunningScreen(
                                     ) {
                                         val arm = 20f * uiScale
                                         val stroke = 6f * uiScale
-                                        val clr = Color(0xFF8B0000)
+                                        val clr = DarkRed
                                         drawLine(
                                             clr,
                                             Offset(clampedX, clampedY),
@@ -1554,7 +1341,7 @@ fun EngineRunningScreen(
                                     val s = 32f * uiScale
                                     val arm = 20f * uiScale
                                     val stroke = 3f * uiScale
-                                    val clr = Color(0xFF8B0000)
+                                    val clr = DarkRed
                                     drawLine(
                                         clr,
                                         Offset(
@@ -1676,6 +1463,25 @@ fun EngineRunningScreen(
                                     tint = Color.Red
                                 )
                             }
+                        }
+
+                        OutlinedIconButton(
+                            onClick = { isSkyMapExpanded = true },
+                            border = BorderStroke(1.5.dp, PureRed),
+                            colors = IconButtonDefaults.outlinedIconButtonColors(
+                                contentColor = PureRed,
+                                containerColor = PureBlack.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.TravelExplore,
+                                contentDescription = stringResource(Res.string.btn_sky_map),
+                                tint = PureRed
+                            )
                         }
                     }
 
@@ -2061,17 +1867,12 @@ fun EngineRunningScreen(
 
 
         @Composable
-        fun ActionButtons() {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp, bottom = 0.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.Top
-            ) {
+        fun ActionButtons(isVertical: Boolean = false, modifier: Modifier = Modifier) {
+            @Composable
+            fun Buttons(itemModifier: Modifier = Modifier) {
                 // Catalog
                 IconBarItem(
-                    modifier = Modifier.weight(1f),
+                    modifier = itemModifier,
                     icon = Icons.Default.AutoAwesome,
                     label = stringResource(Res.string.btn_catalog),
                     onClick = { viewModel.showCatalog = true }
@@ -2079,7 +1880,7 @@ fun EngineRunningScreen(
 
                 // Camera / Align
                 IconBarItem(
-                    modifier = Modifier.weight(1f),
+                    modifier = itemModifier,
                     icon = Icons.Outlined.PhotoCamera,
                     label = stringResource(id = Res.string.btn_camera_align),
                     onClick = {
@@ -2114,7 +1915,7 @@ fun EngineRunningScreen(
                 if (capabilities.supportsPip) {
                     // Picture in Picture
                     IconBarItem(
-                        modifier = Modifier.weight(1f),
+                        modifier = itemModifier,
                         icon = Icons.Default.PictureInPicture,
                         label = if (isEnteringPip) stringResource(id = Res.string.btn_entering_pip) else "Picture\nin Picture",
                         enabled = !isEnteringPip,
@@ -2131,7 +1932,7 @@ fun EngineRunningScreen(
 
                 // Stop Engine
                 IconBarItem(
-                    modifier = Modifier.weight(1f),
+                    modifier = itemModifier,
                     icon = Icons.Outlined.Cancel,
                     label = when {
                         isStopping -> stringResource(id = Res.string.btn_stopping)
@@ -2141,6 +1942,29 @@ fun EngineRunningScreen(
                     enabled = !isStopping && !isStarting,
                     onClick = onToggleEngine
                 )
+            }
+
+            if (isVertical) {
+                Column(
+                    modifier = modifier
+                        .fillMaxHeight()
+                        .width(76.dp)
+                        .padding(vertical = 8.dp),
+                    verticalArrangement = Arrangement.SpaceEvenly,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Buttons()
+                }
+            } else {
+                Row(
+                    modifier = modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 0.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Buttons(itemModifier = Modifier.weight(1f))
+                }
             }
         }
 
@@ -2218,7 +2042,60 @@ fun EngineRunningScreen(
             val isWideLayout =
                 maxWidth > maxHeight && maxWidth >= 480.dp
 
-            if (isWideLayout) {
+            if (isSkyMapExpanded) {
+                if (isWideLayout) {
+                    Row(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        ) {
+                            SkyMapView(
+                                viewModel = viewModel,
+                                stats = stats,
+                                isExpanded = true,
+                                onToggleExpanded = { isSkyMapExpanded = false },
+                                modifier = Modifier.fillMaxSize(),
+                                planets = planets,
+                                comets = comets,
+                                asteroids = asteroids
+                            )
+                        }
+                        ActionButtons(
+                            isVertical = true,
+                            modifier = Modifier.fillMaxHeight()
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                        ) {
+                            SkyMapView(
+                                viewModel = viewModel,
+                                stats = stats,
+                                isExpanded = true,
+                                onToggleExpanded = { isSkyMapExpanded = false },
+                                modifier = Modifier.fillMaxSize(),
+                                planets = planets,
+                                comets = comets,
+                                asteroids = asteroids
+                            )
+                        }
+                        ActionButtons(
+                            isVertical = false,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            } else if (isWideLayout) {
                 Row(
                     modifier = Modifier.fillMaxSize(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)

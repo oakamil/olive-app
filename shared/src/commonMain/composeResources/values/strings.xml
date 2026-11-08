@@ -284,4 +284,15 @@
     <string name="desc_location_permission_required">Location permission is required to determine your observer coordinates in Auto mode. Please grant Location permission in Settings, or set coordinates manually.</string>
     <string name="title_location_services_disabled">Location Services Disabled</string>
     <string name="desc_location_services_disabled">Location services are turned off on your device. Please turn on Location in system settings to use Auto mode.</string>
+
+    <!-- Sky Map -->
+    <string name="btn_sky_map">Sky Map</string>
+    <string name="btn_camera_view">Camera View</string>
+    <string name="btn_center_telescope">Center Scope</string>
+    <string name="btn_center_target">Center Target</string>
+    <string name="label_constellations">Constellations</string>
+    <string name="label_horizon">Horizon</string>
+    <string name="label_zenith">Zenith</string>
+    <string name="label_nadir">Nadir</string>
+    <string name="cd_sky_map">Sky Map View</string>
 </resources>
