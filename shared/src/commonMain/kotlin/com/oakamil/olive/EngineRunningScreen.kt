@@ -230,11 +230,15 @@ fun EngineRunningScreen(
 
     if (showSyncDialog) {
         AlertDialog(
-            onDismissRequest = { showSyncDialog = false },
+            onDismissRequest = {
+                @Suppress("AssignedValueIsNeverRead")
+                showSyncDialog = false
+            },
             title = { Text(stringResource(Res.string.title_confirm_alignment)) },
             text = { Text(stringResource(Res.string.msg_confirm_alignment)) },
             confirmButton = {
                 Button(onClick = {
+                    @Suppress("AssignedValueIsNeverRead")
                     showSyncDialog = false
                     viewModel.syncTelescope(stats.targetRa, stats.targetDec)
                 }) {
@@ -242,7 +246,10 @@ fun EngineRunningScreen(
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showSyncDialog = false }) {
+                OutlinedButton(onClick = {
+                    @Suppress("AssignedValueIsNeverRead")
+                    showSyncDialog = false
+                }) {
                     Text(stringResource(id = Res.string.btn_cancel))
                 }
             }
@@ -303,6 +310,7 @@ fun EngineRunningScreen(
                     while (true) {
                         awaitPointerEvent(PointerEventPass.Initial)
                         val ev = awaitPointerEvent(PointerEventPass.Initial)
+                        @Suppress("AssignedValueIsNeverRead")
                         lastInteractionTime = Clock.System.now().toEpochMilliseconds()
                         if (viewModel.isLowPowerMode) {
                             viewModel.isLowPowerMode = false
@@ -455,7 +463,10 @@ fun EngineRunningScreen(
                                 if (isTargetVisible) {
                                     Spacer(modifier = Modifier.width(8.dp))
                                     IconButton(
-                                        onClick = { showSyncDialog = true },
+                                        onClick = {
+                                            @Suppress("AssignedValueIsNeverRead")
+                                            showSyncDialog = true
+                                        },
                                         modifier = Modifier.size(32.dp)
                                     ) {
                                         Icon(
@@ -1715,10 +1726,9 @@ fun EngineRunningScreen(
                         mZ
                     }
 
-                    val effectiveMaxZoom = maxZoom
-                    if (effectiveMaxZoom >= 1.1f) {
+                    if (maxZoom >= 1.1f) {
                         val stepsCount =
-                            (round((effectiveMaxZoom - 1.0f) * 10f).toInt() - 1).coerceAtLeast(0)
+                            (round((maxZoom - 1.0f) * 10f).toInt() - 1).coerceAtLeast(0)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 stringResource(id = Res.string.label_zoom) + ": " + stringResource(
@@ -1744,12 +1754,12 @@ fun EngineRunningScreen(
                             }
                         }
                         Slider(
-                            value = viewModel.currentZoom.coerceIn(1.0f, effectiveMaxZoom),
+                            value = viewModel.currentZoom.coerceIn(1.0f, maxZoom),
                             onValueChange = {
                                 val stepped = round(it * 10.0f) / 10.0f
                                 viewModel.setZoom(stepped)
                             },
-                            valueRange = 1.0f..effectiveMaxZoom,
+                            valueRange = 1.0f..maxZoom,
                             steps = stepsCount,
                             modifier = Modifier.fillMaxWidth()
                         )

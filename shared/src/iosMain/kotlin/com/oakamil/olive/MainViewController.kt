@@ -321,7 +321,10 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         isStarting = isStarting,
                         detectedIpAddress = detectedIpAddress,
                         onCameraSelectionChanged = { activeCameraSelection = it },
-                        onNavigateToTuner = { currentScreen = "tuner" },
+                        onNavigateToTuner = {
+                            @Suppress("AssignedValueIsNeverRead")
+                            currentScreen = "tuner"
+                        },
                         onEnterPipMode = { },
                         onToggleEngine = {
                             if (isStarting || isStopping) return@MainScreen
@@ -387,14 +390,20 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         viewModel = viewModel,
                         settingsManager = settingsManager,
                         activeCameraSelection = activeCameraSelection,
-                        onBack = { currentScreen = "main" }
+                        onBack = {
+                            @Suppress("AssignedValueIsNeverRead")
+                            currentScreen = "main"
+                        }
                     )
                 }
 
                 if (showLocationRequiredDialog) {
                     InfoPopup(
                         title = stringResource(Res.string.title_observer_location),
-                        onDismiss = { showLocationRequiredDialog = false }
+                        onDismiss = {
+                            @Suppress("AssignedValueIsNeverRead")
+                            showLocationRequiredDialog = false
+                        }
                     ) {
                         Text(
                             stringResource(Res.string.info_location),
@@ -409,6 +418,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         text = stringResource(Res.string.desc_permissions_required),
                         confirmButtonText = stringResource(Res.string.btn_open_settings),
                         onConfirm = {
+                            @Suppress("AssignedValueIsNeverRead")
                             showCameraPermissionDialog = false
                             val url = NSURL.URLWithString(UIApplicationOpenSettingsURLString)
                             if (url != null) {
@@ -416,7 +426,10 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                             }
                         },
                         dismissButtonText = stringResource(Res.string.btn_cancel),
-                        onDismiss = { showCameraPermissionDialog = false }
+                        onDismiss = {
+                            @Suppress("AssignedValueIsNeverRead")
+                            showCameraPermissionDialog = false
+                        }
                     )
                 }
 

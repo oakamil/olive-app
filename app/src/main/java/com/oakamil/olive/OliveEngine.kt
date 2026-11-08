@@ -1,6 +1,7 @@
 package com.oakamil.olive
 
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.createBitmap
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -86,11 +87,7 @@ object OliveEngine : EngineBridge {
         val pixelCount = width * height
         if (pixelCount !in 1..25000000) return null
 
-        val bitmap = android.graphics.Bitmap.createBitmap(
-            width,
-            height,
-            android.graphics.Bitmap.Config.ARGB_8888
-        )
+        val bitmap = createBitmap(width, height)
         bitmap.copyPixelsFromBuffer(buffer)
         return LatestFrame(ts, bitmap.asImageBitmap())
     }

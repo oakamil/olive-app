@@ -405,6 +405,7 @@ class UvcCameraWrapper() : UvcCameraHandler {
 
     // Used from native (JNI) to query if camera is running pure Auto-Exposure (Mode 8 or 2)
     @Keep
+    @Suppress("unused")
     fun isAutoExposure(): Boolean = isAutoExposureActive
 
     override fun release() {
