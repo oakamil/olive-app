@@ -248,7 +248,7 @@ fun layoutCatalogItems(
     val sorted = candidates.sortedWith(
         compareByDescending<Pair<CatalogObject, Offset>> { (obj, _) ->
             targetRa != null && targetDec != null &&
-                AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+                    AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
         }.thenBy { (obj, _) ->
             getCatalogPriority(obj)
         }.thenBy { (obj, _) ->
@@ -262,12 +262,14 @@ fun layoutCatalogItems(
         if (pt.x < -20f || pt.x > viewportWidth + 20f || pt.y < -20f || pt.y > viewportHeight + 20f) continue
 
         val isTarget = targetRa != null && targetDec != null &&
-            AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+                AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
 
         val radius = if (isTarget) 20f * uiScale else 12f * uiScale
         val reticleBox = Rect(pt.x - radius, pt.y - radius, pt.x + radius, pt.y + radius)
 
-        val collides = placedReticles.any { it.overlaps(reticleBox) } || placedLabels.any { it.overlaps(reticleBox) }
+        val collides = placedReticles.any { it.overlaps(reticleBox) } || placedLabels.any {
+            it.overlaps(reticleBox)
+        }
         if (!collides || isTarget) {
             placedReticles.add(reticleBox)
             validCandidates.add(obj to pt)
@@ -283,7 +285,7 @@ fun layoutCatalogItems(
 
     for ((obj, pt) in validCandidates) {
         val isTarget = targetRa != null && targetDec != null &&
-            AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+                AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
 
         var acceptedOffset: Offset? = null
         var acceptedRect: Rect? = null
@@ -323,7 +325,11 @@ fun layoutCatalogItems(
                 ) continue
 
                 val inflated = candRect.inflate(pad)
-                if (!placedLabels.any { it.overlaps(inflated) } && !placedReticles.any { it.overlaps(inflated) }) {
+                if (!placedLabels.any { it.overlaps(inflated) } && !placedReticles.any {
+                        it.overlaps(
+                            inflated
+                        )
+                    }) {
                     acceptedRect = candRect
                     break
                 }
@@ -347,7 +353,11 @@ fun layoutCatalogItems(
                     val candRect = Rect(clampLeft, clampTop, clampLeft + textW, clampTop + textH)
                     val inflated = candRect.inflate(pad)
 
-                    if (!placedLabels.any { it.overlaps(inflated) } && !placedReticles.any { it.overlaps(inflated) }) {
+                    if (!placedLabels.any { it.overlaps(inflated) } && !placedReticles.any {
+                            it.overlaps(
+                                inflated
+                            )
+                        }) {
                         acceptedRect = candRect
                         break
                     }

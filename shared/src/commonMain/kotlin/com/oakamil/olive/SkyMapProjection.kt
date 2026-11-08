@@ -43,8 +43,10 @@ class SkyMapProjection(
         val yProj = -k * (cos(dec0Rad) * sin(decRad) - sin(dec0Rad) * cos(decRad) * cos(dRa))
 
         // Optional view rotation (e.g. around Zenith/center)
-        val xRot = if (rotationRad != 0.0) xProj * cos(rotationRad) - yProj * sin(rotationRad) else xProj
-        val yRot = if (rotationRad != 0.0) xProj * sin(rotationRad) + yProj * cos(rotationRad) else yProj
+        val xRot =
+            if (rotationRad != 0.0) xProj * cos(rotationRad) - yProj * sin(rotationRad) else xProj
+        val yRot =
+            if (rotationRad != 0.0) xProj * sin(rotationRad) + yProj * cos(rotationRad) else yProj
 
         val scale = minOf(viewportWidth, viewportHeight) / (4.0 * tan(Math.toRadians(fov) / 4.0))
         val screenX = (viewportWidth / 2f) + (xRot * scale).toFloat()
@@ -68,8 +70,10 @@ class SkyMapProjection(
         val yRel = (screenY - viewportHeight / 2f) / scale
 
         // Invert rotation
-        val xProj = if (rotationRad != 0.0) xRel * cos(-rotationRad) - yRel * sin(-rotationRad) else xRel.toDouble()
-        val yProj = if (rotationRad != 0.0) xRel * sin(-rotationRad) + yRel * cos(-rotationRad) else yRel.toDouble()
+        val xProj =
+            if (rotationRad != 0.0) xRel * cos(-rotationRad) - yRel * sin(-rotationRad) else xRel.toDouble()
+        val yProj =
+            if (rotationRad != 0.0) xRel * sin(-rotationRad) + yRel * cos(-rotationRad) else yRel.toDouble()
 
         val rho = hypot(xProj, yProj)
         if (rho < 1e-9) return Pair((centerRa % 360.0 + 360.0) % 360.0, centerDec)
@@ -80,8 +84,10 @@ class SkyMapProjection(
         val dec0Rad = Math.toRadians(centerDec)
         val ra0Rad = Math.toRadians(centerRa)
 
-        val decRad = asin((cosC * sin(dec0Rad) - (yProj * sinC * cos(dec0Rad) / rho)).coerceIn(-1.0, 1.0))
-        val raRad = ra0Rad + atan2(-xProj * sinC, rho * cos(dec0Rad) * cosC + yProj * sin(dec0Rad) * sinC)
+        val decRad =
+            asin((cosC * sin(dec0Rad) - (yProj * sinC * cos(dec0Rad) / rho)).coerceIn(-1.0, 1.0))
+        val raRad =
+            ra0Rad + atan2(-xProj * sinC, rho * cos(dec0Rad) * cosC + yProj * sin(dec0Rad) * sinC)
 
         val raDeg = (Math.toDegrees(raRad) % 360.0 + 360.0) % 360.0
         val decDeg = Math.toDegrees(decRad).coerceIn(-90.0, 90.0)
@@ -145,7 +151,11 @@ class SkyMapProjection(
         /**
          * Computes points along the local horizon great circle (Alt = 0 degrees) in J2000 celestial coordinates.
          */
-        fun computeHorizonPoints(lat: Double, lst: Double, steps: Int = 72): List<Pair<Double, Double>> {
+        fun computeHorizonPoints(
+            lat: Double,
+            lst: Double,
+            steps: Int = 72
+        ): List<Pair<Double, Double>> {
             val points = mutableListOf<Pair<Double, Double>>()
             val latRad = Math.toRadians(lat)
             val cosLat = cos(latRad)
@@ -172,7 +182,10 @@ class SkyMapProjection(
         /**
          * Computes the 4 Cardinal direction points (N, E, S, W) on the horizon in J2000 celestial coordinates.
          */
-        fun computeCardinalPoints(lat: Double, lst: Double): List<Pair<String, Pair<Double, Double>>> {
+        fun computeCardinalPoints(
+            lat: Double,
+            lst: Double
+        ): List<Pair<String, Pair<Double, Double>>> {
             fun azToRaDec(azDeg: Double): Pair<Double, Double> {
                 val azRad = Math.toRadians(azDeg)
                 val latRad = Math.toRadians(lat)
@@ -213,9 +226,9 @@ class SkyMapProjection(
             // 4 corners: Top-Left, Top-Right, Bottom-Right, Bottom-Left
             val rawCorners = listOf(
                 Pair(-halfTanX, -halfTanY),
-                Pair( halfTanX, -halfTanY),
-                Pair( halfTanX,  halfTanY),
-                Pair(-halfTanX,  halfTanY)
+                Pair(halfTanX, -halfTanY),
+                Pair(halfTanX, halfTanY),
+                Pair(-halfTanX, halfTanY)
             )
 
             val ra0Rad = Math.toRadians(boresightRa)

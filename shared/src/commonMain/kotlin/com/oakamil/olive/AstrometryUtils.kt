@@ -80,6 +80,7 @@ object AstrometryUtils {
                 val kp = distortion * (2.0 / effectiveImageWidth).pow(2)
                 val inv1K = 1.0 / (1.0 - distortion)
                 var rDist = rRundist.toDouble()
+                @Suppress("unused")
                 for (i in 0 until 10) {
                     val rRundistEst = rDist * (1.0 - kp * rDist.pow(2)) * inv1K
                     val druDrd = (1.0 - 3.0 * kp * rDist.pow(2)) * inv1K
@@ -129,13 +130,4 @@ object AstrometryUtils {
         val qRad = atan2(y, x)
         return Math.toDegrees(qRad)
     }
-
-    fun computeCameraFovCorners(
-        boresightRa: Double,
-        boresightDec: Double,
-        fovDeg: Double,
-        rollDeg: Double,
-        imageAspect: Double = 1.0
-    ): List<Pair<Double, Double>> =
-        SkyMapProjection.computeCameraFovCorners(boresightRa, boresightDec, fovDeg, rollDeg, imageAspect)
 }
