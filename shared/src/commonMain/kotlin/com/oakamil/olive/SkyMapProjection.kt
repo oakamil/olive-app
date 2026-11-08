@@ -12,37 +12,37 @@ import kotlin.math.sin
 import kotlin.math.tan
 
 /**
- * Conformal Stereographic Projection for full sky map rendering, gestures, and astrometric calculations.
+ * Conformal Stereographic Projection for full sky map rendering, gestures, and astrometric calculations
+ * centered in Topocentric Horizontal (Azimuth, Altitude) coordinates.
+ * Zenith (+90° Altitude) is mathematically guaranteed to be directly UP on screen at all times.
  */
 class SkyMapProjection(
-    var centerRa: Double,
-    var centerDec: Double,
+    var centerAz: Double,
+    var centerAlt: Double,
     var fov: Double,
     var viewportWidth: Float,
     var viewportHeight: Float,
     var rotationRad: Double = 0.0
 ) {
     /**
-     * Projects celestial coordinate (RA, Dec in degrees J2000) to viewport (x, y) pixels.
+     * Projects horizontal coordinates (Azimuth, Altitude in degrees) to viewport (x, y) pixels.
      * Applies antipode culling (1 + cos(c) >= 0.05) to prevent division by zero near the rear hemisphere.
      */
-    fun toScreen(ra: Double, dec: Double): Pair<Float, Float>? {
-        val raRad = Math.toRadians(ra)
-        val decRad = Math.toRadians(dec)
-        val ra0Rad = Math.toRadians(centerRa)
-        val dec0Rad = Math.toRadians(centerDec)
+    fun toScreen(az: Double, alt: Double): Pair<Float, Float>? {
+        val altRad = Math.toRadians(alt)
+        val alt0Rad = Math.toRadians(centerAlt)
 
-        val dRa = Math.toRadians(((ra - centerRa) % 360.0 + 540.0) % 360.0 - 180.0)
-        val cosC = sin(dec0Rad) * sin(decRad) + cos(dec0Rad) * cos(decRad) * cos(dRa)
+        val dAz = Math.toRadians(((az - centerAz) % 360.0 + 540.0) % 360.0 - 180.0)
+        val cosC = sin(alt0Rad) * sin(altRad) + cos(alt0Rad) * cos(altRad) * cos(dAz)
 
         // Strict antipode culling to prevent distortion & division by zero
         if (1.0 + cosC < 0.05) return null
 
         val k = 2.0 / (1.0 + cosC)
-        val xProj = -k * cos(decRad) * sin(dRa)
-        val yProj = -k * (cos(dec0Rad) * sin(decRad) - sin(dec0Rad) * cos(decRad) * cos(dRa))
+        // Facing centerAz: increasing Azimuth is to the right (East/South/West clockwise)
+        val xProj = k * cos(altRad) * sin(dAz)
+        val yProj = -k * (cos(alt0Rad) * sin(altRad) - sin(alt0Rad) * cos(altRad) * cos(dAz))
 
-        // Optional view rotation (e.g. around Zenith/center)
         val xRot =
             if (rotationRad != 0.0) xProj * cos(rotationRad) - yProj * sin(rotationRad) else xProj
         val yRot =
@@ -56,151 +56,67 @@ class SkyMapProjection(
     }
 
     /**
-     * Inverse projection from screen pixel coordinates (screenX, screenY) to celestial (RA, Dec in degrees).
+     * Projects celestial coordinates (RA, Dec in degrees J2000) to viewport (x, y) pixels
+     * using the observer's latitude and Local Sidereal Time.
      */
-    fun toSky(screenX: Float, screenY: Float): Pair<Double, Double> {
-        if (viewportWidth <= 0f || viewportHeight <= 0f) {
-            return Pair((centerRa % 360.0 + 360.0) % 360.0, centerDec)
-        }
-        val scale = minOf(viewportWidth, viewportHeight) / (4.0 * tan(Math.toRadians(fov) / 4.0))
-        if (scale <= 1e-6) {
-            return Pair((centerRa % 360.0 + 360.0) % 360.0, centerDec)
-        }
-        val xRel = (screenX - viewportWidth / 2f) / scale
-        val yRel = (screenY - viewportHeight / 2f) / scale
-
-        // Invert rotation
-        val xProj =
-            if (rotationRad != 0.0) xRel * cos(-rotationRad) - yRel * sin(-rotationRad) else xRel.toDouble()
-        val yProj =
-            if (rotationRad != 0.0) xRel * sin(-rotationRad) + yRel * cos(-rotationRad) else yRel.toDouble()
-
-        val rho = hypot(xProj, yProj)
-        if (rho < 1e-9) return Pair((centerRa % 360.0 + 360.0) % 360.0, centerDec)
-
-        val c = 2.0 * atan(rho / 2.0)
-        val sinC = sin(c)
-        val cosC = cos(c)
-        val dec0Rad = Math.toRadians(centerDec)
-        val ra0Rad = Math.toRadians(centerRa)
-
-        val decRad =
-            asin((cosC * sin(dec0Rad) - (yProj * sinC * cos(dec0Rad) / rho)).coerceIn(-1.0, 1.0))
-        val raRad =
-            ra0Rad + atan2(-xProj * sinC, rho * cos(dec0Rad) * cosC + yProj * sin(dec0Rad) * sinC)
-
-        val raDeg = (Math.toDegrees(raRad) % 360.0 + 360.0) % 360.0
-        val decDeg = Math.toDegrees(decRad).coerceIn(-90.0, 90.0)
-        return Pair(raDeg, decDeg)
+    fun toScreenRaDec(ra: Double, dec: Double, lat: Double, lst: Double): Pair<Float, Float>? {
+        val (az, alt) = AstrometryUtils.raDecToAltAz(ra, dec, lat, lst)
+        return toScreen(az, alt)
     }
 
     /**
-     * Shifts map center by screen pixel delta, taking into account current FOV zoom,
-     * declination compression, and applying continuous pole reflection kinematics.
+     * Shifts map center by screen pixel delta in Horizontal (Azimuth, Altitude) coordinates.
+     * Altitude is strictly clamped in [-90.0, +90.0] degrees:
+     * - Once Zenith (+90°) is centered on screen, it cannot be pulled lower (horizontal dragging rotates the sky).
+     * - Once Nadir (-90°) is centered on screen, it cannot be pulled higher.
      */
     fun panBy(deltaScreenX: Float, deltaScreenY: Float) {
         val scale = minOf(viewportWidth, viewportHeight) / (4.0 * tan(Math.toRadians(fov) / 4.0))
         if (scale <= 0.0) return
 
-        val dDec = Math.toDegrees(deltaScreenY.toDouble() / scale)
-        val cosDec = cos(Math.toRadians(centerDec)).coerceAtLeast(0.01)
-        val dRa = Math.toDegrees(deltaScreenX.toDouble() / (scale * cosDec))
+        // Dragging down on screen moves view UP towards Zenith (+Alt)
+        val dAlt = Math.toDegrees(deltaScreenY.toDouble() / scale)
+        val clampedAlt = centerAlt.coerceIn(-89.0, 89.0)
+        val cosAlt = cos(Math.toRadians(clampedAlt)).coerceAtLeast(0.1)
+        val rawDAz = Math.toDegrees(-deltaScreenX.toDouble() / (scale * cosAlt))
+        val maxDAz = maxOf(fov * 0.5, 12.0)
+        val dAz = rawDAz.coerceIn(-maxDAz, maxDAz)
 
-        var newDec = centerDec + dDec
-        var newRa = centerRa + dRa
-
-        // Continuous reflection across poles so panning does not lock up at +/- 90 degrees
-        if (newDec > 90.0) {
-            newDec = 180.0 - newDec
-            newRa += 180.0
-        } else if (newDec < -90.0) {
-            newDec = -180.0 - newDec
-            newRa += 180.0
-        }
-
-        centerDec = newDec.coerceIn(-90.0, 90.0)
-        centerRa = (newRa % 360.0 + 360.0) % 360.0
+        centerAlt = (centerAlt + dAlt).coerceIn(-90.0, 90.0)
+        centerAz = ((centerAz + dAz) % 360.0 + 360.0) % 360.0
     }
 
     companion object {
         /**
-         * Returns Zenith celestial coordinates (RA, Dec) for given Local Sidereal Time and latitude.
+         * Returns Zenith horizontal coordinates (Azimuth, Altitude).
          */
-        fun getZenith(lst: Double, lat: Double): Pair<Double, Double> {
-            return Pair((lst % 360.0 + 360.0) % 360.0, lat.coerceIn(-90.0, 90.0))
-        }
+        fun getZenith(): Pair<Double, Double> = Pair(0.0, 90.0)
 
         /**
-         * Returns Nadir celestial coordinates (RA, Dec) for given Local Sidereal Time and latitude.
+         * Returns Nadir horizontal coordinates (Azimuth, Altitude).
          */
-        fun getNadir(lst: Double, lat: Double): Pair<Double, Double> {
-            return Pair(((lst + 180.0) % 360.0 + 360.0) % 360.0, (-lat).coerceIn(-90.0, 90.0))
-        }
+        fun getNadir(): Pair<Double, Double> = Pair(0.0, -90.0)
 
         /**
-         * Checks whether an object (RA, Dec) is above the local observer horizon.
+         * Computes points along the local horizon circle (Alt = 0 degrees) in horizontal coordinates.
          */
-        fun isAboveHorizon(ra: Double, dec: Double, lat: Double, lst: Double): Boolean {
-            val ha = Math.toRadians((lst - ra) % 360.0)
-            val decRad = Math.toRadians(dec)
-            val latRad = Math.toRadians(lat)
-            val sinAlt = sin(decRad) * sin(latRad) + cos(decRad) * cos(latRad) * cos(ha)
-            return sinAlt >= 0.0
-        }
-
-        /**
-         * Computes points along the local horizon great circle (Alt = 0 degrees) in J2000 celestial coordinates.
-         */
-        fun computeHorizonPoints(
-            lat: Double,
-            lst: Double,
-            steps: Int = 72
-        ): List<Pair<Double, Double>> {
-            val points = mutableListOf<Pair<Double, Double>>()
-            val latRad = Math.toRadians(lat)
-            val cosLat = cos(latRad)
-            val sinLat = sin(latRad)
-
+        fun computeHorizonPoints(steps: Int = 72): List<Pair<Double, Double>> {
+            val points = ArrayList<Pair<Double, Double>>(steps)
             for (i in 0 until steps) {
-                val azDeg = (i * 360.0) / steps
-                val azRad = Math.toRadians(azDeg)
-                val cosAz = cos(azRad)
-                val sinAz = sin(azRad)
-
-                val sinDec = cosLat * cosAz
-                val decRad = asin(sinDec.coerceIn(-1.0, 1.0))
-
-                val haRad = atan2(-sinAz, -sinLat * cosAz)
-                val raRad = Math.toRadians(lst) - haRad
-                val raDeg = (Math.toDegrees(raRad) % 360.0 + 360.0) % 360.0
-                val decDeg = Math.toDegrees(decRad)
-                points.add(Pair(raDeg, decDeg))
+                points.add(Pair((i * 360.0) / steps, 0.0))
             }
             return points
         }
 
         /**
-         * Computes the 4 Cardinal direction points (N, E, S, W) on the horizon in J2000 celestial coordinates.
+         * Computes the 4 Cardinal direction points (N, E, S, W) on the horizon in horizontal coordinates.
          */
-        fun computeCardinalPoints(
-            lat: Double,
-            lst: Double
-        ): List<Pair<String, Pair<Double, Double>>> {
-            fun azToRaDec(azDeg: Double): Pair<Double, Double> {
-                val azRad = Math.toRadians(azDeg)
-                val latRad = Math.toRadians(lat)
-                val sinDec = cos(latRad) * cos(azRad)
-                val decRad = asin(sinDec.coerceIn(-1.0, 1.0))
-                val haRad = atan2(-sin(azRad), -sin(latRad) * cos(azRad))
-                val raRad = Math.toRadians(lst) - haRad
-                return Pair((Math.toDegrees(raRad) % 360.0 + 360.0) % 360.0, Math.toDegrees(decRad))
-            }
-
+        fun computeCardinalPoints(): List<Pair<String, Pair<Double, Double>>> {
             return listOf(
-                Pair("N", azToRaDec(0.0)),
-                Pair("E", azToRaDec(90.0)),
-                Pair("S", azToRaDec(180.0)),
-                Pair("W", azToRaDec(270.0))
+                Pair("N", Pair(0.0, 0.0)),
+                Pair("E", Pair(90.0, 0.0)),
+                Pair("S", Pair(180.0, 0.0)),
+                Pair("W", Pair(270.0, 0.0))
             )
         }
 
@@ -255,11 +171,13 @@ class SkyMapProjection(
                 val sinC = sin(c)
                 val cosC = cos(c)
 
-                val dec = asin((cosC * sinDec0 + (yRad * sinC * cosDec0 / rho)).coerceIn(-1.0, 1.0))
-                val ra = ra0Rad + atan2(xRad * sinC, rho * cosDec0 * cosC - yRad * sinDec0 * sinC)
+                val decRad =
+                    asin((cosC * sinDec0 + (yRad * sinC * cosDec0 / rho)).coerceIn(-1.0, 1.0))
+                val raRad =
+                    ra0Rad + atan2(-xRad * sinC, rho * cosDec0 * cosC - yRad * sinDec0 * sinC)
 
-                val raDeg = (Math.toDegrees(ra) % 360.0 + 360.0) % 360.0
-                val decDeg = Math.toDegrees(dec).coerceIn(-90.0, 90.0)
+                val raDeg = (Math.toDegrees(raRad) % 360.0 + 360.0) % 360.0
+                val decDeg = Math.toDegrees(decRad).coerceIn(-90.0, 90.0)
                 celestialCorners.add(Pair(raDeg, decDeg))
             }
             return celestialCorners
