@@ -2,6 +2,7 @@ package com.oakamil.olive
 
 import kotlin.math.abs
 import kotlin.math.acos
+import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -129,5 +130,47 @@ object AstrometryUtils {
 
         val qRad = atan2(y, x)
         return Math.toDegrees(qRad)
+    }
+
+    /**
+     * Converts celestial coordinates (RA, Dec in degrees J2000) to horizontal coordinates (Azimuth, Altitude in degrees).
+     * Azimuth: North = 0°, East = 90°, South = 180°, West = 270°.
+     * Altitude: -90° (Nadir) to +90° (Zenith).
+     */
+    fun raDecToAltAz(ra: Double, dec: Double, lat: Double, lst: Double): Pair<Double, Double> {
+        val haRad = Math.toRadians((lst - ra) % 360.0)
+        val decRad = Math.toRadians(dec)
+        val latRad = Math.toRadians(lat)
+
+        val sinAlt = sin(latRad) * sin(decRad) + cos(latRad) * cos(decRad) * cos(haRad)
+        val altRad = asin(sinAlt.coerceIn(-1.0, 1.0))
+
+        val y = -cos(decRad) * sin(haRad)
+        val x = cos(latRad) * sin(decRad) - sin(latRad) * cos(decRad) * cos(haRad)
+        val azRad = atan2(y, x)
+
+        val azDeg = (Math.toDegrees(azRad) % 360.0 + 360.0) % 360.0
+        val altDeg = Math.toDegrees(altRad)
+        return Pair(azDeg, altDeg)
+    }
+
+    /**
+     * Converts horizontal coordinates (Azimuth, Altitude in degrees) to celestial coordinates (RA, Dec in degrees J2000).
+     */
+    fun altAzToRaDec(az: Double, alt: Double, lat: Double, lst: Double): Pair<Double, Double> {
+        val azRad = Math.toRadians(az)
+        val altRad = Math.toRadians(alt)
+        val latRad = Math.toRadians(lat)
+
+        val sinDec = sin(latRad) * sin(altRad) + cos(latRad) * cos(altRad) * cos(azRad)
+        val decRad = asin(sinDec.coerceIn(-1.0, 1.0))
+
+        val y = -cos(altRad) * sin(azRad)
+        val x = cos(latRad) * sin(altRad) - sin(latRad) * cos(altRad) * cos(azRad)
+        val haRad = atan2(y, x)
+
+        val raDeg = ((lst - Math.toDegrees(haRad)) % 360.0 + 360.0) % 360.0
+        val decDeg = Math.toDegrees(decRad).coerceIn(-90.0, 90.0)
+        return Pair(raDeg, decDeg)
     }
 }
