@@ -32,17 +32,14 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -62,7 +58,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -73,15 +68,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import org.jetbrains.compose.resources.stringResource
-import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.hypot
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(FlowPreview::class)
@@ -114,8 +104,8 @@ fun SkyMapView(
     val rawLat = viewModel.currentLat
     val rawLon = viewModel.currentLon
     val hasValidLocation = rawLat != null && rawLon != null &&
-        rawLat != MainViewModel.INVALID_COORD && rawLon != MainViewModel.INVALID_COORD &&
-        rawLat in -90.0..90.0 && rawLon in -180.0..360.0
+            rawLat != MainViewModel.INVALID_COORD && rawLon != MainViewModel.INVALID_COORD &&
+            rawLat in -90.0..90.0 && rawLon in -180.0..360.0
     val lat = if (hasValidLocation) rawLat!! else 0.0
     val lon = if (hasValidLocation) rawLon!! else 0.0
 
@@ -157,17 +147,33 @@ fun SkyMapView(
     }
     val cardinalLayouts = remember(textMeasurer) {
         mapOf(
-            "N" to textMeasurer.measure("N", style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)),
-            "E" to textMeasurer.measure("E", style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)),
-            "S" to textMeasurer.measure("S", style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)),
-            "W" to textMeasurer.measure("W", style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold))
+            "N" to textMeasurer.measure(
+                "N",
+                style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            ),
+            "E" to textMeasurer.measure(
+                "E",
+                style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            ),
+            "S" to textMeasurer.measure(
+                "S",
+                style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            ),
+            "W" to textMeasurer.measure(
+                "W",
+                style = TextStyle(color = PureRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            )
         )
     }
     val constellationLayouts = remember(textMeasurer) {
         ConstellationData.CONSTELLATIONS.associate { c ->
             c.name to textMeasurer.measure(
                 text = c.name,
-                style = TextStyle(color = DarkRed.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                style = TextStyle(
+                    color = DarkRed.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
             )
         }
     }
@@ -213,7 +219,8 @@ fun SkyMapView(
     var dynamicCatalogObjects by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     val currentTypeFilters = viewModel.catalogTypeFilters
     val currentMagLimit = viewModel.catalogMagLimit
-    val isAllTypes = currentTypeFilters.isEmpty() || currentTypeFilters == DEFAULT_CATALOG_TYPE_FILTERS
+    val isAllTypes =
+        currentTypeFilters.isEmpty() || currentTypeFilters == DEFAULT_CATALOG_TYPE_FILTERS
 
     LaunchedEffect(currentTypeFilters, currentMagLimit, isAllTypes) {
         snapshotFlow { Triple(centerRa, centerDec, fov) }
@@ -258,21 +265,21 @@ fun SkyMapView(
         // 1. Solar System
         list.addAll(solPlanets.filter { p ->
             (isAllTypes || "Planet" in currentTypeFilters || p.objectType in currentTypeFilters) &&
-            (currentMagLimit == null || (p.magnitude != null && p.magnitude <= currentMagLimit))
+                    (currentMagLimit == null || (p.magnitude != null && p.magnitude <= currentMagLimit))
         })
         list.addAll(solComets.filter { c ->
             (isAllTypes || "Comet" in currentTypeFilters || c.objectType in currentTypeFilters) &&
-            (currentMagLimit == null || (c.magnitude != null && c.magnitude <= currentMagLimit))
+                    (currentMagLimit == null || (c.magnitude != null && c.magnitude <= currentMagLimit))
         })
         list.addAll(solAsteroids.filter { a ->
             (isAllTypes || "Asteroid" in currentTypeFilters || a.objectType in currentTypeFilters) &&
-            (currentMagLimit == null || (a.magnitude != null && a.magnitude <= currentMagLimit))
+                    (currentMagLimit == null || (a.magnitude != null && a.magnitude <= currentMagLimit))
         })
 
         // 2. Messier & DSOs
         list.addAll(tier1Messier.filter { m ->
             (isAllTypes || m.objectType in currentTypeFilters || m.broadCategory in currentTypeFilters) &&
-            (currentMagLimit == null || (m.magnitude != null && m.magnitude <= currentMagLimit))
+                    (currentMagLimit == null || (m.magnitude != null && m.magnitude <= currentMagLimit))
         })
 
         // 3. Dynamic Tier 2 DSOs
@@ -355,7 +362,11 @@ fun SkyMapView(
                         if (firstPt == null) {
                             horizonPath.moveTo(off.x, off.y)
                             firstPt = off
-                        } else if (prevPt != null && hypot(off.x - prevPt.x, off.y - prevPt.y) < widthPx * 0.5f) {
+                        } else if (prevPt != null && hypot(
+                                off.x - prevPt.x,
+                                off.y - prevPt.y
+                            ) < widthPx * 0.5f
+                        ) {
                             horizonPath.lineTo(off.x, off.y)
                         } else {
                             horizonPath.moveTo(off.x, off.y)
@@ -365,7 +376,11 @@ fun SkyMapView(
                         prevPt = null
                     }
                 }
-                if (firstPt != null && prevPt != null && hypot(firstPt.x - prevPt.x, firstPt.y - prevPt.y) < widthPx * 0.5f) {
+                if (firstPt != null && prevPt != null && hypot(
+                        firstPt.x - prevPt.x,
+                        firstPt.y - prevPt.y
+                    ) < widthPx * 0.5f
+                ) {
                     horizonPath.close()
                 }
 
@@ -384,7 +399,14 @@ fun SkyMapView(
                         if (textLayout != null) {
                             val cLeft = pt.first - textLayout.size.width / 2f
                             val cTop = pt.second - textLayout.size.height / 2f
-                            placedLabelRects.add(Rect(cLeft - 4f, cTop - 4f, cLeft + textLayout.size.width + 4f, cTop + textLayout.size.height + 4f))
+                            placedLabelRects.add(
+                                Rect(
+                                    cLeft - 4f,
+                                    cTop - 4f,
+                                    cLeft + textLayout.size.width + 4f,
+                                    cTop + textLayout.size.height + 4f
+                                )
+                            )
                             drawText(
                                 textLayoutResult = textLayout,
                                 color = PureRed,
@@ -402,11 +424,28 @@ fun SkyMapView(
                     val zX = zenithPt.first
                     val zY = zenithPt.second
                     // Simple crosshair (+)
-                    drawLine(DarkRed, Offset(zX - zArm, zY), Offset(zX + zArm, zY), strokeWidth = 1.5.dp.toPx())
-                    drawLine(DarkRed, Offset(zX, zY - zArm), Offset(zX, zY + zArm), strokeWidth = 1.5.dp.toPx())
+                    drawLine(
+                        DarkRed,
+                        Offset(zX - zArm, zY),
+                        Offset(zX + zArm, zY),
+                        strokeWidth = 1.5.dp.toPx()
+                    )
+                    drawLine(
+                        DarkRed,
+                        Offset(zX, zY - zArm),
+                        Offset(zX, zY + zArm),
+                        strokeWidth = 1.5.dp.toPx()
+                    )
                     val zTop = zY - zenithTextLayout.size.height / 2f
                     val zLeft = zX + 6.dp.toPx()
-                    placedLabelRects.add(Rect(zLeft - 2f, zTop - 2f, zLeft + zenithTextLayout.size.width + 2f, zTop + zenithTextLayout.size.height + 2f))
+                    placedLabelRects.add(
+                        Rect(
+                            zLeft - 2f,
+                            zTop - 2f,
+                            zLeft + zenithTextLayout.size.width + 2f,
+                            zTop + zenithTextLayout.size.height + 2f
+                        )
+                    )
                     drawText(zenithTextLayout, color = DarkRed, topLeft = Offset(zLeft, zTop))
                 }
 
@@ -417,11 +456,28 @@ fun SkyMapView(
                     val nX = nadirPt.first
                     val nY = nadirPt.second
                     // Simple crosshair (+)
-                    drawLine(DarkRed, Offset(nX - nArm, nY), Offset(nX + nArm, nY), strokeWidth = 1.5.dp.toPx())
-                    drawLine(DarkRed, Offset(nX, nY - nArm), Offset(nX, nY + nArm), strokeWidth = 1.5.dp.toPx())
+                    drawLine(
+                        DarkRed,
+                        Offset(nX - nArm, nY),
+                        Offset(nX + nArm, nY),
+                        strokeWidth = 1.5.dp.toPx()
+                    )
+                    drawLine(
+                        DarkRed,
+                        Offset(nX, nY - nArm),
+                        Offset(nX, nY + nArm),
+                        strokeWidth = 1.5.dp.toPx()
+                    )
                     val nTop = nY - nadirTextLayout.size.height / 2f
                     val nLeft = nX + 6.dp.toPx()
-                    placedLabelRects.add(Rect(nLeft - 2f, nTop - 2f, nLeft + nadirTextLayout.size.width + 2f, nTop + nadirTextLayout.size.height + 2f))
+                    placedLabelRects.add(
+                        Rect(
+                            nLeft - 2f,
+                            nTop - 2f,
+                            nLeft + nadirTextLayout.size.width + 2f,
+                            nTop + nadirTextLayout.size.height + 2f
+                        )
+                    )
                     drawText(nadirTextLayout, color = DarkRed, topLeft = Offset(nLeft, nTop))
                 }
             }
@@ -453,7 +509,14 @@ fun SkyMapView(
                         if (textLayout != null) {
                             val cLeft = pt.first - textLayout.size.width / 2f
                             val cTop = pt.second - textLayout.size.height / 2f
-                            placedLabelRects.add(Rect(cLeft - 2f, cTop - 2f, cLeft + textLayout.size.width + 2f, cTop + textLayout.size.height + 2f))
+                            placedLabelRects.add(
+                                Rect(
+                                    cLeft - 2f,
+                                    cTop - 2f,
+                                    cLeft + textLayout.size.width + 2f,
+                                    cTop + textLayout.size.height + 2f
+                                )
+                            )
                             drawText(
                                 textLayoutResult = textLayout,
                                 color = DarkRed.copy(alpha = 0.85f),
@@ -485,7 +548,12 @@ fun SkyMapView(
             )
 
             for (item in placedDsoItems) {
-                val isAbove = !hasValidLocation || SkyMapProjection.isAboveHorizon(item.obj.ra, item.obj.dec, lat, lst)
+                val isAbove = !hasValidLocation || SkyMapProjection.isAboveHorizon(
+                    item.obj.ra,
+                    item.obj.dec,
+                    lat,
+                    lst
+                )
                 val baseColor = if (isAbove) PureRed else DarkRed.copy(alpha = 0.45f)
                 val screenPt = Offset(item.screenX, item.screenY)
 
@@ -496,7 +564,10 @@ fun SkyMapView(
                 if (painter != null) {
                     translate(left = screenPt.x - iconSize / 2f, top = screenPt.y - iconSize / 2f) {
                         with(painter) {
-                            draw(size = Size(iconSize, iconSize), colorFilter = ColorFilter.tint(baseColor))
+                            draw(
+                                size = Size(iconSize, iconSize),
+                                colorFilter = ColorFilter.tint(baseColor)
+                            )
                         }
                     }
                 }
@@ -510,7 +581,11 @@ fun SkyMapView(
                             fontWeight = if (item.isTarget) FontWeight.Bold else FontWeight.Normal
                         )
                     )
-                    drawText(textLayout, color = baseColor, topLeft = Offset(item.labelRect.left, item.labelRect.top))
+                    drawText(
+                        textLayout,
+                        color = baseColor,
+                        topLeft = Offset(item.labelRect.left, item.labelRect.top)
+                    )
                 }
             }
 
@@ -521,19 +596,32 @@ fun SkyMapView(
                 val pt = projection.toScreen(obj.ra, obj.dec) ?: continue
                 if (pt.first < -20f || pt.first > size.width + 20f || pt.second < -20f || pt.second > size.height + 20f) continue
 
-                val isAbove = !hasValidLocation || SkyMapProjection.isAboveHorizon(obj.ra, obj.dec, lat, lst)
+                val isAbove =
+                    !hasValidLocation || SkyMapProjection.isAboveHorizon(obj.ra, obj.dec, lat, lst)
                 val baseColor = if (isAbove) PureRed else DarkRed.copy(alpha = 0.45f)
                 val screenPt = Offset(pt.first, pt.second)
 
                 // Decrowding: skip star dot if an icon is already placed here or another star is within 3px
                 if (placedReticleRects.any { it.contains(screenPt) }) continue
-                if (placedStarPoints.any { hypot(it.x - screenPt.x, it.y - screenPt.y) < 3f }) continue
+                if (placedStarPoints.any {
+                        hypot(
+                            it.x - screenPt.x,
+                            it.y - screenPt.y
+                        ) < 3f
+                    }) continue
 
                 placedStarPoints.add(screenPt)
-                placedStarItems.add(PlacedCatalogItem(obj = obj, screenX = screenPt.x, screenY = screenPt.y))
+                placedStarItems.add(
+                    PlacedCatalogItem(
+                        obj = obj,
+                        screenX = screenPt.x,
+                        screenY = screenPt.y
+                    )
+                )
 
                 val mag = obj.magnitude ?: 5.0
-                val radius = ((6.5 - mag).coerceIn(1.0, 5.5) * (if (fov < 45.0) 1.3 else 1.0)).toFloat()
+                val radius =
+                    ((6.5 - mag).coerceIn(1.0, 5.5) * (if (fov < 45.0) 1.3 else 1.0)).toFloat()
                 drawCircle(
                     color = baseColor,
                     radius = radius,
@@ -551,8 +639,16 @@ fun SkyMapView(
             if (camRa != null && camDec != null) {
                 val camFov = stats.fov ?: 8.0
                 val camRoll = stats.roll ?: 0.0
-                val aspect = viewModel.latestFrame?.let { it.width.toDouble() / it.height.toDouble() } ?: 1.333
-                val corners = SkyMapProjection.computeCameraFovCorners(camRa, camDec, camFov, camRoll, imageAspect = aspect)
+                val aspect =
+                    viewModel.latestFrame?.let { it.width.toDouble() / it.height.toDouble() }
+                        ?: 1.333
+                val corners = SkyMapProjection.computeCameraFovCorners(
+                    camRa,
+                    camDec,
+                    camFov,
+                    camRoll,
+                    imageAspect = aspect
+                )
 
                 val cornerPoints = corners.mapNotNull { projection.toScreen(it.first, it.second) }
                 if (cornerPoints.size == 4) {
@@ -577,8 +673,18 @@ fun SkyMapView(
                 val bPt = projection.toScreen(camRa, camDec)
                 if (bPt != null) {
                     val bArm = 10f
-                    drawLine(DarkRed, Offset(bPt.first - bArm, bPt.second), Offset(bPt.first + bArm, bPt.second), strokeWidth = 2f)
-                    drawLine(DarkRed, Offset(bPt.first, bPt.second - bArm), Offset(bPt.first, bPt.second + bArm), strokeWidth = 2f)
+                    drawLine(
+                        DarkRed,
+                        Offset(bPt.first - bArm, bPt.second),
+                        Offset(bPt.first + bArm, bPt.second),
+                        strokeWidth = 2f
+                    )
+                    drawLine(
+                        DarkRed,
+                        Offset(bPt.first, bPt.second - bArm),
+                        Offset(bPt.first, bPt.second + bArm),
+                        strokeWidth = 2f
+                    )
                 }
             }
 
@@ -591,14 +697,54 @@ fun SkyMapView(
                     val s = 14f
                     val stroke = 2.dp.toPx()
                     // Corner brackets
-                    drawLine(PureRed, Offset(tPt.first - s, tPt.second - s), Offset(tPt.first - s + 8f, tPt.second - s), strokeWidth = stroke)
-                    drawLine(PureRed, Offset(tPt.first - s, tPt.second - s), Offset(tPt.first - s, tPt.second - s + 8f), strokeWidth = stroke)
-                    drawLine(PureRed, Offset(tPt.first + s, tPt.second - s), Offset(tPt.first + s - 8f, tPt.second - s), strokeWidth = stroke)
-                    drawLine(PureRed, Offset(tPt.first + s, tPt.second - s), Offset(tPt.first + s, tPt.second - s + 8f), strokeWidth = stroke)
-                    drawLine(PureRed, Offset(tPt.first - s, tPt.second + s), Offset(tPt.first - s + 8f, tPt.second + s), strokeWidth = stroke)
-                    drawLine(PureRed, Offset(tPt.first - s, tPt.second + s), Offset(tPt.first - s, tPt.second + s - 8f), strokeWidth = stroke)
-                    drawLine(PureRed, Offset(tPt.first + s, tPt.second + s), Offset(tPt.first + s - 8f, tPt.second + s), strokeWidth = stroke)
-                    drawLine(PureRed, Offset(tPt.first + s, tPt.second + s), Offset(tPt.first + s, tPt.second + s - 8f), strokeWidth = stroke)
+                    drawLine(
+                        PureRed,
+                        Offset(tPt.first - s, tPt.second - s),
+                        Offset(tPt.first - s + 8f, tPt.second - s),
+                        strokeWidth = stroke
+                    )
+                    drawLine(
+                        PureRed,
+                        Offset(tPt.first - s, tPt.second - s),
+                        Offset(tPt.first - s, tPt.second - s + 8f),
+                        strokeWidth = stroke
+                    )
+                    drawLine(
+                        PureRed,
+                        Offset(tPt.first + s, tPt.second - s),
+                        Offset(tPt.first + s - 8f, tPt.second - s),
+                        strokeWidth = stroke
+                    )
+                    drawLine(
+                        PureRed,
+                        Offset(tPt.first + s, tPt.second - s),
+                        Offset(tPt.first + s, tPt.second - s + 8f),
+                        strokeWidth = stroke
+                    )
+                    drawLine(
+                        PureRed,
+                        Offset(tPt.first - s, tPt.second + s),
+                        Offset(tPt.first - s + 8f, tPt.second + s),
+                        strokeWidth = stroke
+                    )
+                    drawLine(
+                        PureRed,
+                        Offset(tPt.first - s, tPt.second + s),
+                        Offset(tPt.first - s, tPt.second + s - 8f),
+                        strokeWidth = stroke
+                    )
+                    drawLine(
+                        PureRed,
+                        Offset(tPt.first + s, tPt.second + s),
+                        Offset(tPt.first + s - 8f, tPt.second + s),
+                        strokeWidth = stroke
+                    )
+                    drawLine(
+                        PureRed,
+                        Offset(tPt.first + s, tPt.second + s),
+                        Offset(tPt.first + s, tPt.second + s - 8f),
+                        strokeWidth = stroke
+                    )
 
                     // Guide line from camera boresight to target
                     if (camRa != null && camDec != null) {
@@ -669,7 +815,11 @@ fun SkyMapView(
                         fov = 30.0
                     },
                     border = BorderStroke(1.dp, PureRed),
-                    colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = PureBlack.copy(alpha = 0.6f)),
+                    colors = IconButtonDefaults.outlinedIconButtonColors(
+                        containerColor = PureBlack.copy(
+                            alpha = 0.6f
+                        )
+                    ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.size(36.dp)
                 ) {
@@ -690,7 +840,11 @@ fun SkyMapView(
                         fov = maxOf(stats.fov ?: 15.0, 25.0)
                     },
                     border = BorderStroke(1.dp, DarkRed),
-                    colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = PureBlack.copy(alpha = 0.6f)),
+                    colors = IconButtonDefaults.outlinedIconButtonColors(
+                        containerColor = PureBlack.copy(
+                            alpha = 0.6f
+                        )
+                    ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.size(36.dp)
                 ) {
@@ -707,7 +861,11 @@ fun SkyMapView(
             OutlinedIconButton(
                 onClick = onToggleExpanded,
                 border = BorderStroke(1.dp, DarkRed),
-                colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = PureBlack.copy(alpha = 0.6f)),
+                colors = IconButtonDefaults.outlinedIconButtonColors(
+                    containerColor = PureBlack.copy(
+                        alpha = 0.6f
+                    )
+                ),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.size(36.dp)
             ) {
@@ -730,7 +888,11 @@ fun SkyMapView(
             OutlinedIconButton(
                 onClick = { fov = (fov / 1.4).coerceIn(4.0, 180.0) },
                 border = BorderStroke(1.dp, DarkRed),
-                colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = PureBlack.copy(alpha = 0.6f)),
+                colors = IconButtonDefaults.outlinedIconButtonColors(
+                    containerColor = PureBlack.copy(
+                        alpha = 0.6f
+                    )
+                ),
                 shape = CircleShape,
                 modifier = Modifier.size(40.dp)
             ) {
@@ -739,7 +901,11 @@ fun SkyMapView(
             OutlinedIconButton(
                 onClick = { fov = (fov * 1.4).coerceIn(4.0, 180.0) },
                 border = BorderStroke(1.dp, DarkRed),
-                colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = PureBlack.copy(alpha = 0.6f)),
+                colors = IconButtonDefaults.outlinedIconButtonColors(
+                    containerColor = PureBlack.copy(
+                        alpha = 0.6f
+                    )
+                ),
                 shape = CircleShape,
                 modifier = Modifier.size(40.dp)
             ) {
@@ -792,7 +958,12 @@ fun SkyMapView(
                     Row {
                         Text("Magnitude: ", fontWeight = FontWeight.Bold, color = PureRed)
                         Spacer(Modifier.width(4.dp))
-                        Text(if (obj.magnitude != null) String.format("%.2f", obj.magnitude) else "N/A", color = PureRed)
+                        Text(
+                            if (obj.magnitude != null) String.format(
+                                "%.2f",
+                                obj.magnitude
+                            ) else "N/A", color = PureRed
+                        )
                     }
                     Spacer(Modifier.height(4.dp))
                     if (!obj.constellation.isNullOrBlank()) {
