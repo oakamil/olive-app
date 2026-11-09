@@ -184,6 +184,14 @@ SettingsManager(
         get() = storage.getString("app_theme", "red") ?: "red"
         set(value) = storage.putString("app_theme", value)
 
+    var showMapPosition: Boolean
+        get() = storage.getBoolean("show_map_position", true)
+        set(value) = storage.putBoolean("show_map_position", value)
+
+    var showStats: Boolean
+        get() = storage.getBoolean("show_stats", true)
+        set(value) = storage.putBoolean("show_stats", value)
+
     /* Native layer callbacks */
     @Keep
     fun getString(key: String): String? {

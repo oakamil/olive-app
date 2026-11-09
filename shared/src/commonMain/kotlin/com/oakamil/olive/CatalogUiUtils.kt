@@ -419,3 +419,30 @@ fun findTappedCatalogItem(
     }
     return closest
 }
+
+fun findTappedStar(
+    stars: List<CatalogObject>,
+    starXs: List<Float>,
+    starYs: List<Float>,
+    tapOffset: Offset,
+    maxHitRadiusPx: Float
+): CatalogObject? {
+    var closest: CatalogObject? = null
+    var minDist = maxHitRadiusPx
+    val maxHitRadiusSq = maxHitRadiusPx * maxHitRadiusPx
+    val n = minOf(stars.size, starXs.size, starYs.size)
+    for (i in 0 until n) {
+        val dx = starXs[i] - tapOffset.x
+        val dy = starYs[i] - tapOffset.y
+        val distSq = dx * dx + dy * dy
+        if (distSq < maxHitRadiusSq) {
+            val dist = kotlin.math.sqrt(distSq)
+            if (dist < minDist) {
+                minDist = dist
+                closest = stars[i]
+            }
+        }
+    }
+    return closest
+}
+

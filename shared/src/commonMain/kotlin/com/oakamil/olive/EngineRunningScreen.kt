@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material3.AlertDialog
@@ -292,12 +293,17 @@ fun EngineRunningScreen(
     )
 
     var isSkyMapExpanded by rememberSaveable { mutableStateOf(false) }
+    var showSkyMapSettings by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = isSkyMapExpanded) {
+    BackHandler(enabled = showSkyMapSettings) {
+        showSkyMapSettings = false
+    }
+
+    BackHandler(enabled = isSkyMapExpanded && !showSkyMapSettings) {
         isSkyMapExpanded = false
     }
 
-    BackHandler(enabled = !isSkyMapExpanded && !isStopping && !isStarting) {
+    BackHandler(enabled = !isSkyMapExpanded && !showSkyMapSettings && !isStopping && !isStarting) {
         onToggleEngine()
     }
 
@@ -340,7 +346,7 @@ fun EngineRunningScreen(
                 Column(modifier = Modifier.padding(8.dp)) {
                     GuidanceDisplay(
                         viewModel.engineStats,
-                        settingsManager.guidanceMode == "alt_az",
+                        viewModel.guidanceMode == "alt_az",
                         isLowPowerMode,
                         settingsManager.motionSensorMode != 0,
                         isCompactLayout = false
@@ -365,7 +371,7 @@ fun EngineRunningScreen(
                 ) {
                     GuidanceDisplay(
                         viewModel.engineStats,
-                        settingsManager.guidanceMode == "alt_az",
+                        viewModel.guidanceMode == "alt_az",
                         isLowPowerMode,
                         settingsManager.motionSensorMode != 0,
                         isCompactLayout = true
@@ -1175,7 +1181,10 @@ fun EngineRunningScreen(
                                             )
                                         )
 
-                                        val (iconVector, defaultColor) = item.obj.getIconAndColor(colors.primary, colors.secondary)
+                                        val (iconVector, defaultColor) = item.obj.getIconAndColor(
+                                            colors.primary,
+                                            colors.secondary
+                                        )
                                         val iconColor =
                                             if (isTarget) colors.primary else defaultColor
                                         val iconPainter = catalogPainters[iconVector]
@@ -1941,6 +1950,15 @@ fun EngineRunningScreen(
                     )
                 }
 
+                if (isSkyMapExpanded) {
+                    IconBarItem(
+                        modifier = itemModifier,
+                        icon = Icons.Outlined.Settings,
+                        label = stringResource(Res.string.title_settings),
+                        onClick = { showSkyMapSettings = true }
+                    )
+                }
+
                 // Stop Engine
                 IconBarItem(
                     modifier = itemModifier,
@@ -2208,6 +2226,13 @@ fun EngineRunningScreen(
                     viewModel.skyMapCenterTarget = Pair(ra, dec)
                     viewModel.showCatalog = false
                 } else null
+            )
+        }
+
+        if (showSkyMapSettings) {
+            SkyMapSettingsDialog(
+                viewModel = viewModel,
+                onDismiss = { showSkyMapSettings = false }
             )
         }
     }

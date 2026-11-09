@@ -1,6 +1,7 @@
 package com.oakamil.olive
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -54,8 +55,44 @@ open class MainViewModel(
     var locationRefreshStatus by mutableStateOf(LocationRefreshStatus.IDLE)
 
     val settingsManager = SettingsManager(storage, capabilities.defaultFocus)
-    var currentTheme by mutableStateOf(settingsManager.appTheme)
+
+    private val _currentTheme = mutableStateOf(settingsManager.appTheme)
+    var currentTheme: String
+        get() = _currentTheme.value
+        set(value) {
+            _currentTheme.value = value
+            settingsManager.appTheme = value
+        }
+
+    private val _guidanceMode = mutableStateOf(settingsManager.guidanceMode)
+    var guidanceMode: String
+        get() = _guidanceMode.value
+        set(value) {
+            _guidanceMode.value = value
+            settingsManager.guidanceMode = value
+        }
+
+    private val _showMapPosition = mutableStateOf(settingsManager.showMapPosition)
+    var showMapPosition: Boolean
+        get() = _showMapPosition.value
+        set(value) {
+            _showMapPosition.value = value
+            settingsManager.showMapPosition = value
+        }
+
+    private val _showStats = mutableStateOf(settingsManager.showStats)
+    var showStats: Boolean
+        get() = _showStats.value
+        set(value) {
+            _showStats.value = value
+            settingsManager.showStats = value
+        }
+
     var skyMapCenterTarget by mutableStateOf<Pair<Double, Double>?>(null)
+    var skyMapFov by mutableDoubleStateOf(15.0)
+    var skyMapCenterAz by mutableStateOf<Double?>(null)
+    var skyMapCenterAlt by mutableStateOf<Double?>(null)
+    var skyMapCameraLocked by mutableStateOf(true)
 
     init {
         settingsManager.savedLocation?.let { (lat, lon) ->
@@ -376,6 +413,10 @@ open class MainViewModel(
             launch(Dispatchers.Main) {
                 isLowPowerMode = false
                 engineMode = EngineMode.NATIVE
+                skyMapFov = 15.0
+                skyMapCameraLocked = true
+                skyMapCenterAz = null
+                skyMapCenterAlt = null
 
                 val gainRange = engine.getNativeCameraGainRange()
                 val (minG, maxG, defaultG) = if (gainRange != null && gainRange.size >= 3) {
@@ -468,6 +509,10 @@ open class MainViewModel(
 
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.UVC
+                skyMapFov = 15.0
+                skyMapCameraLocked = true
+                skyMapCenterAz = null
+                skyMapCenterAlt = null
 
                 uvcBrightnessMin = 0
                 uvcBrightnessMax = 100
@@ -800,6 +845,10 @@ open class MainViewModel(
         engineMode = EngineMode.STOPPED
         isLowPowerMode = false
         currentZoom = 1.0f
+        skyMapFov = 15.0
+        skyMapCameraLocked = true
+        skyMapCenterAz = null
+        skyMapCenterAlt = null
         stopPolling()
 
         uvcWrapper?.release()
