@@ -55,10 +55,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -66,6 +70,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -123,6 +129,13 @@ fun SkyMapView(
 ) {
     val rawLat = viewModel.currentLat
     val rawLon = viewModel.currentLon
+    val windowController = LocalPlatformWindowController.current
+    val sensorOrientation =
+        if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) {
+            windowController.getCameraSensorOrientation(viewModel.settingsManager.internalCameraId)
+        } else {
+            0
+        }
     val hasValidLocation = rawLat != null && rawLon != null &&
             rawLat != MainViewModel.INVALID_COORD && rawLon != MainViewModel.INVALID_COORD &&
             rawLat in -90.0..90.0 && rawLon in -180.0..360.0
@@ -515,7 +528,7 @@ fun SkyMapView(
 
             // 1. Local Horizon Circle & Below-Horizon Shading (only if observer location is known)
             if (hasValidLocation) {
-                val horizonPoints = SkyMapProjection.computeHorizonPoints(steps = 72)
+                val horizonPoints = SkyMapProjection.HORIZON_POINTS
                 val screenPoints = horizonPoints.map { projection.toScreen(it.first, it.second) }
                 val horizonPath = Path()
 
@@ -559,7 +572,7 @@ fun SkyMapView(
                 )
 
                 // 2. Cardinal Points (N, E, S, W)
-                val cardinals = SkyMapProjection.computeCardinalPoints()
+                val cardinals = SkyMapProjection.CARDINAL_POINTS
                 for ((cardinal, coords) in cardinals) {
                     val pt = projection.toScreen(coords.first, coords.second)
                     if (pt != null && pt.first in 0f..size.width && pt.second in 0f..size.height) {
@@ -694,10 +707,29 @@ fun SkyMapView(
                 }
             }
 
-            // 6. Stars & Catalog Objects Rendering
-            val (starObjects, nonStarObjects) = visibleCandidates.partition { it.objectType == "Star" || it.catalogLabel == "Str" }
+            // 6. Camera FOV Box & Live Video Preview (rendered before stars/labels so overlays remain visible)
+            val camRa = stats.ra
+            val camDec = stats.dec
+            val camCenterRa = stats.centerRa ?: camRa
+            val camCenterDec = stats.centerDec ?: camDec
+            val cameraFrame = viewModel.latestFrame
 
-            // Pass 1: DSOs, Planets, Comets, Asteroids (placed first to establish priority icons and decrowding)
+            val isMirrored = stats.isMirrored == true
+            val isRotated90 = (sensorOrientation % 180 != 0)
+            val mirrorScaleX = if (isMirrored && isRotated90) -1f else 1f
+            val mirrorScaleY = if (isMirrored && !isRotated90) -1f else 1f
+
+            val baseFovRad = Math.toRadians(stats.fov ?: 8.0)
+            val aspect =
+                cameraFrame?.let { it.width.toDouble() / it.height.toDouble() } ?: 1.333
+            val effectiveFovRad = if (aspect > 1.0) {
+                2.0 * kotlin.math.atan(kotlin.math.tan(baseFovRad / 2.0) / aspect)
+            } else {
+                baseFovRad
+            }
+            val camFov = Math.toDegrees(effectiveFovRad)
+            val camRoll = stats.roll ?: 0.0
+
             val dsoScale = when {
                 fov < 10.0 -> SkyMapTuning.DSO_SCALE_DEEP
                 fov < 45.0 -> SkyMapTuning.DSO_SCALE_MID
@@ -706,9 +738,154 @@ fun SkyMapView(
             val baseFontSize = SkyMapTuning.BASE_DSO_LABEL_FONT_SIZE_SP
             val iconSize = (SkyMapTuning.BASE_DSO_ICON_SIZE_DP * dsoScale).toPx()
 
+            var boxPath: Path? = null
+            var matrix: Matrix? = null
+            var camBoxRect: Rect? = null
+            var alignPt: Offset? = null
+
+            if (camCenterRa != null && camCenterDec != null) {
+                val corners = SkyMapProjection.computeCameraFovCorners(
+                    camCenterRa,
+                    camCenterDec,
+                    camFov,
+                    camRoll,
+                    imageAspect = aspect
+                )
+                val cornerPoints =
+                    corners.mapNotNull { projection.toScreenRaDec(it.first, it.second, lat, lst) }
+                if (cornerPoints.size == 4) {
+                    val p0 = cornerPoints[0]
+                    val p1 = cornerPoints[1]
+                    val p2 = cornerPoints[2]
+                    val p3 = cornerPoints[3]
+
+                    val minX = minOf(p0.first, p1.first, p2.first, p3.first)
+                    val maxX = maxOf(p0.first, p1.first, p2.first, p3.first)
+                    val minY = minOf(p0.second, p1.second, p2.second, p3.second)
+                    val maxY = maxOf(p0.second, p1.second, p2.second, p3.second)
+                    camBoxRect = Rect(minX - 20f, minY - 20f, maxX + 20f, maxY + 20f)
+
+                    val bPath = Path().apply {
+                        moveTo(p0.first, p0.second)
+                        lineTo(p1.first, p1.second)
+                        lineTo(p2.first, p2.second)
+                        lineTo(p3.first, p3.second)
+                        close()
+                    }
+                    boxPath = bPath
+
+                    val mat = if (cameraFrame != null) {
+                        computeQuadHomography(
+                            srcW = cameraFrame.width.toFloat(),
+                            srcH = cameraFrame.height.toFloat(),
+                            p0 = p0,
+                            p1 = p1,
+                            p2 = p2,
+                            p3 = p3,
+                            mirrorScaleX = mirrorScaleX,
+                            mirrorScaleY = mirrorScaleY
+                        )
+                    } else null
+                    matrix = mat
+
+                    // Live Camera Video stretched to fit the camera bounding box exactly
+                    if (mat != null && cameraFrame != null) {
+                        clipPath(bPath) {
+                            withTransform({
+                                transform(mat)
+                            }) {
+                                drawImage(
+                                    image = cameraFrame,
+                                    srcOffset = IntOffset.Zero,
+                                    srcSize = IntSize(cameraFrame.width, cameraFrame.height),
+                                    dstOffset = IntOffset.Zero,
+                                    dstSize = IntSize(cameraFrame.width, cameraFrame.height)
+                                )
+                            }
+                        }
+                    }
+
+                    // Dashed FOV border framing the camera view
+                    val isEstimate = stats.isImuEstimate || stats.solvedCrop == "Failed"
+                    val boxColor =
+                        if (isEstimate) colors.secondary.copy(alpha = 0.7f) else colors.primary
+                    drawPath(
+                        path = bPath,
+                        color = boxColor,
+                        style = Stroke(width = 2.dp.toPx(), pathEffect = fovDashEffect)
+                    )
+                }
+            }
+
+            // Compute alignment reticle point and register in decrowding list
+            if (boxPath != null) {
+                alignPt = if (matrix != null && cameraFrame != null) {
+                    val rawTargetPxX = (stats.targetPixelX ?: (cameraFrame.width / 2.0)).toFloat()
+                    val rawTargetPxY = (stats.targetPixelY ?: (cameraFrame.height / 2.0)).toFloat()
+                    matrix.map(Offset(rawTargetPxX, rawTargetPxY))
+                } else if (camRa != null && camDec != null) {
+                    projection.toScreenRaDec(camRa, camDec, lat, lst)
+                        ?.let { (x, y) -> Offset(x, y) }
+                } else null
+
+                if (alignPt != null) {
+                    val s = iconSize / 2f
+                    placedReticleRects.add(
+                        Rect(
+                            alignPt.x - s,
+                            alignPt.y - s,
+                            alignPt.x + s,
+                            alignPt.y + s
+                        )
+                    )
+                }
+            }
+
+            // Coordinate mapper for catalog objects (applying optical distortion correction inside camera box)
+            val projectWithDistortion: (Double, Double) -> Offset? = { objRa, objDec ->
+                val stdPt = projection.toScreenRaDec(objRa, objDec, lat, lst)
+                if (stdPt == null) {
+                    null
+                } else {
+                    val stdOffset = Offset(stdPt.first, stdPt.second)
+                    var screenOffset: Offset? = null
+                    if (camBoxRect != null && camBoxRect.contains(stdOffset) &&
+                        matrix != null && cameraFrame != null && camCenterRa != null && camCenterDec != null
+                    ) {
+                        val camPix = AstrometryUtils.projectToScreen(
+                            ra = objRa,
+                            dec = objDec,
+                            centerRa = camCenterRa,
+                            centerDec = camCenterDec,
+                            roll = camRoll,
+                            fov = camFov,
+                            screenWidth = cameraFrame.width.toFloat(),
+                            screenHeight = cameraFrame.height.toFloat(),
+                            imageWidth = cameraFrame.width,
+                            imageHeight = cameraFrame.height,
+                            centerPixelX = cameraFrame.width / 2f,
+                            centerPixelY = cameraFrame.height / 2f,
+                            distortion = stats.distortion
+                        )
+                        if (camPix != null && camPix.first in 0f..cameraFrame.width.toFloat() && camPix.second in 0f..cameraFrame.height.toFloat()) {
+                            val px =
+                                if (mirrorScaleX < 0f) cameraFrame.width.toFloat() - camPix.first else camPix.first
+                            val py =
+                                if (mirrorScaleY < 0f) cameraFrame.height.toFloat() - camPix.second else camPix.second
+                            screenOffset = matrix.map(Offset(px, py))
+                        }
+                    }
+                    screenOffset ?: stdOffset
+                }
+            }
+
+            // 7. Stars & Catalog Objects Rendering
+            val (starObjects, nonStarObjects) = visibleCandidates.partition { it.objectType == "Star" || it.catalogLabel == "Str" }
+
+            // Pass 1: DSOs, Planets, Comets, Asteroids (placed first to establish priority icons and decrowding)
             val dsoCandidates = nonStarObjects.mapNotNull { obj ->
-                projection.toScreenRaDec(obj.ra, obj.dec, lat, lst)
-                    ?.let { (x, y) -> obj to Offset(x, y) }
+                projectWithDistortion(obj.ra, obj.dec)
+                    ?.let { obj to it }
             }
             val placedDsoItems = layoutCatalogItems(
                 candidates = dsoCandidates,
@@ -776,14 +953,17 @@ fun SkyMapView(
             val minStarDistPx = if (fov < 5.0) 1.2f else 3.0f
 
             for (obj in starObjects) {
-                val (az, alt) = AstrometryUtils.raDecToAltAz(obj.ra, obj.dec, lat, lst)
-                val pt = projection.toScreen(az, alt) ?: continue
-                if (pt.first < -20f || pt.first > size.width + 20f || pt.second < -20f || pt.second > size.height + 20f) continue
+                val screenPt = projectWithDistortion(obj.ra, obj.dec) ?: continue
+                if (screenPt.x < -20f || screenPt.x > size.width + 20f || screenPt.y < -20f || screenPt.y > size.height + 20f) continue
 
-                val isAbove = !hasValidLocation || alt >= 0.0
+                val isAbove = !hasValidLocation || (AstrometryUtils.raDecToAltAz(
+                    obj.ra,
+                    obj.dec,
+                    lat,
+                    lst
+                ).second >= 0.0)
                 val baseColor =
                     if (isAbove) colors.primary else colors.secondary.copy(alpha = SkyMapTuning.BELOW_HORIZON_ALPHA)
-                val screenPt = Offset(pt.first, pt.second)
 
                 // Decrowding: skip star dot if an icon is already placed here or another star is within minStarDistPx
                 if (placedReticleRects.any { it.contains(screenPt) }) continue
@@ -812,68 +992,82 @@ fun SkyMapView(
                 )
             }
 
-            allPlacedItems.clear()
             allPlacedItems.addAll(placedDsoItems)
             allPlacedItems.addAll(placedStarItems)
 
-            // 7. Rotated Dashed Camera FOV Box
-            val camRa = stats.ra
-            val camDec = stats.dec
-            if (camRa != null && camDec != null) {
-                val camFov = stats.fov ?: 8.0
-                val camRoll = stats.roll ?: 0.0
-                val aspect =
-                    viewModel.latestFrame?.let { it.width.toDouble() / it.height.toDouble() }
-                        ?: 1.333
-                val corners = SkyMapProjection.computeCameraFovCorners(
-                    camRa,
-                    camDec,
-                    camFov,
-                    camRoll,
-                    imageAspect = aspect
+            // 8. Telescope Alignment Point Reticle (same 4-corner bracket as EngineRunningScreen, scaled to catalog icons)
+            if (alignPt != null) {
+                val s = iconSize / 2f
+                val arm = s * 0.6f
+                val stroke = 1.5.dp.toPx()
+                val reticleColor = colors.secondary
+
+                // Top-Left corner
+                drawLine(
+                    reticleColor,
+                    Offset(alignPt.x - s, alignPt.y - s),
+                    Offset(alignPt.x - s + arm, alignPt.y - s),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    reticleColor,
+                    Offset(alignPt.x - s, alignPt.y - s),
+                    Offset(alignPt.x - s, alignPt.y - s + arm),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
                 )
 
-                val cornerPoints =
-                    corners.mapNotNull { projection.toScreenRaDec(it.first, it.second, lat, lst) }
-                if (cornerPoints.size == 4) {
-                    val boxPath = Path().apply {
-                        moveTo(cornerPoints[0].first, cornerPoints[0].second)
-                        lineTo(cornerPoints[1].first, cornerPoints[1].second)
-                        lineTo(cornerPoints[2].first, cornerPoints[2].second)
-                        lineTo(cornerPoints[3].first, cornerPoints[3].second)
-                        close()
-                    }
-                    val isEstimate = stats.isImuEstimate || stats.solvedCrop == "Failed"
-                    val boxColor =
-                        if (isEstimate) colors.secondary.copy(alpha = 0.7f) else colors.primary
+                // Top-Right corner
+                drawLine(
+                    reticleColor,
+                    Offset(alignPt.x + s, alignPt.y - s),
+                    Offset(alignPt.x + s - arm, alignPt.y - s),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    reticleColor,
+                    Offset(alignPt.x + s, alignPt.y - s),
+                    Offset(alignPt.x + s, alignPt.y - s + arm),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
 
-                    drawPath(
-                        path = boxPath,
-                        color = boxColor,
-                        style = Stroke(width = 2.dp.toPx(), pathEffect = fovDashEffect)
-                    )
-                }
+                // Bottom-Left corner
+                drawLine(
+                    reticleColor,
+                    Offset(alignPt.x - s, alignPt.y + s),
+                    Offset(alignPt.x - s + arm, alignPt.y + s),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    reticleColor,
+                    Offset(alignPt.x - s, alignPt.y + s),
+                    Offset(alignPt.x - s, alignPt.y + s - arm),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
 
-                // Boresight Crosshair
-                val bPt = projection.toScreenRaDec(camRa, camDec, lat, lst)
-                if (bPt != null) {
-                    val bArm = 10f
-                    drawLine(
-                        colors.secondary,
-                        Offset(bPt.first - bArm, bPt.second),
-                        Offset(bPt.first + bArm, bPt.second),
-                        strokeWidth = 2f
-                    )
-                    drawLine(
-                        colors.secondary,
-                        Offset(bPt.first, bPt.second - bArm),
-                        Offset(bPt.first, bPt.second + bArm),
-                        strokeWidth = 2f
-                    )
-                }
+                // Bottom-Right corner
+                drawLine(
+                    reticleColor,
+                    Offset(alignPt.x + s, alignPt.y + s),
+                    Offset(alignPt.x + s - arm, alignPt.y + s),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    reticleColor,
+                    Offset(alignPt.x + s, alignPt.y + s),
+                    Offset(alignPt.x + s, alignPt.y + s - arm),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
             }
 
-            // 8. Target Marker & Bearing Line
+            // 9. Target Marker & Bearing Line
             val targetRa = stats.targetRa
             val targetDec = stats.targetDec
             if (targetRa != null && targetDec != null) {
@@ -931,18 +1125,20 @@ fun SkyMapView(
                         strokeWidth = stroke
                     )
 
-                    // Guide line from camera boresight to target
-                    if (camRa != null && camDec != null) {
-                        val cPt = projection.toScreenRaDec(camRa, camDec, lat, lst)
-                        if (cPt != null) {
-                            drawLine(
-                                color = colors.primary.copy(alpha = 0.5f),
-                                start = Offset(cPt.first, cPt.second),
-                                end = Offset(tPt.first, tPt.second),
-                                strokeWidth = 1.5.dp.toPx(),
-                                pathEffect = horizonDashEffect
-                            )
-                        }
+                    // Guide line from camera boresight/alignment reticle to target
+                    val guideStart = alignPt ?: if (camRa != null && camDec != null) {
+                        projection.toScreenRaDec(camRa, camDec, lat, lst)
+                            ?.let { Offset(it.first, it.second) }
+                    } else null
+
+                    if (guideStart != null) {
+                        drawLine(
+                            color = colors.primary.copy(alpha = 0.5f),
+                            start = guideStart,
+                            end = Offset(tPt.first, tPt.second),
+                            strokeWidth = 1.5.dp.toPx(),
+                            pathEffect = horizonDashEffect
+                        )
                     }
                 }
             }
@@ -1252,3 +1448,87 @@ fun SkyMapView(
         }
     }
 }
+
+/**
+ * Computes a 3x3 projective homography matrix mapping rectangle [0, srcW] x [0, srcH]
+ * into quadrilateral (p0, p1, p2, p3).
+ *
+ * p0 = Top-Left
+ * p1 = Top-Right
+ * p2 = Bottom-Right
+ * p3 = Bottom-Left
+ *
+ * Mirrors coordinates along X or Y if [mirrorScaleX] < 0 or [mirrorScaleY] < 0,
+ * matching the orientation and mirroring logic in EngineRunningScreen.
+ */
+private fun computeQuadHomography(
+    srcW: Float,
+    srcH: Float,
+    p0: Pair<Float, Float>,
+    p1: Pair<Float, Float>,
+    p2: Pair<Float, Float>,
+    p3: Pair<Float, Float>,
+    mirrorScaleX: Float = 1f,
+    mirrorScaleY: Float = 1f
+): Matrix {
+    var c0 = p0
+    var c1 = p1
+    var c2 = p2
+    var c3 = p3
+
+    if (mirrorScaleX < 0f) {
+        val t0 = c0;
+        val t3 = c3
+        c0 = c1; c1 = t0
+        c3 = c2; c2 = t3
+    }
+    if (mirrorScaleY < 0f) {
+        val t0 = c0;
+        val t1 = c1
+        c0 = c3; c3 = t0
+        c1 = c2; c2 = t1
+    }
+
+    val x0 = c0.first
+    val y0 = c0.second
+    val x1 = c1.first
+    val y1 = c1.second
+    val x2 = c2.first
+    val y2 = c2.second
+    val x3 = c3.first
+    val y3 = c3.second
+
+    val dx1 = x1 - x2
+    val dx2 = x3 - x2
+    val dx3 = x0 - x1 + x2 - x3
+    val dy1 = y1 - y2
+    val dy2 = y3 - y2
+    val dy3 = y0 - y1 + y2 - y3
+
+    var g = 0f
+    var h = 0f
+    if (kotlin.math.abs(dx3) >= 1e-4f || kotlin.math.abs(dy3) >= 1e-4f) {
+        val det = dx1 * dy2 - dy1 * dx2
+        if (kotlin.math.abs(det) >= 1e-7f) {
+            g = (dx3 * dy2 - dy3 * dx2) / det
+            h = (dx1 * dy3 - dy1 * dx3) / det
+        }
+    }
+
+    val a = x1 - x0 + g * x1
+    val b = x3 - x0 + h * x3
+    val c = x0
+    val d = y1 - y0 + g * y1
+    val e = y3 - y0 + h * y3
+    val f = y0
+
+    return Matrix(
+        floatArrayOf(
+            a / srcW, d / srcW, 0f, g / srcW,
+            b / srcH, e / srcH, 0f, h / srcH,
+            0f, 0f, 1f, 0f,
+            c, f, 0f, 1f
+        )
+    )
+}
+
