@@ -180,6 +180,10 @@ SettingsManager(
             } else null
         }
 
+    var appTheme: String
+        get() = storage.getString("app_theme", "red") ?: "red"
+        set(value) = storage.putString("app_theme", value)
+
     /* Native layer callbacks */
     @Keep
     fun getString(key: String): String? {

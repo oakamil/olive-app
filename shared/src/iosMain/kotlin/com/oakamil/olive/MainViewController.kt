@@ -309,7 +309,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         LocalPlatformCapabilities provides capabilities,
         LocalPlatformWindowController provides windowController
     ) {
-        NightVisionTheme {
+        OliveTheme(theme = viewModel.currentTheme) {
             Surface(modifier = Modifier.fillMaxSize()) {
                 when (currentScreen) {
                     "main" -> MainScreen(

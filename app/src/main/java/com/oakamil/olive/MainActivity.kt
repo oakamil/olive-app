@@ -313,7 +313,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                NightVisionTheme {
+                OliveTheme(theme = viewModel.currentTheme) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background

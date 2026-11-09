@@ -380,6 +380,7 @@ fun GuidanceDisplay(
         }
 
         if (isImuEnabled && (stats.ra != null || stats.isImuEstimate)) {
+            val colors = LocalOliveColors.current
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -390,14 +391,14 @@ fun GuidanceDisplay(
                     Icon(
                         imageVector = Icons.Outlined.Sensors,
                         contentDescription = stringResource(Res.string.cd_imu_estimate),
-                        tint = DarkRed,
+                        tint = colors.secondary,
                         modifier = Modifier.size(12.dp)
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Outlined.PhotoCamera,
                         contentDescription = stringResource(Res.string.cd_plate_solving),
-                        tint = DarkRed,
+                        tint = colors.secondary,
                         modifier = Modifier.size(12.dp)
                     )
                 }
@@ -408,6 +409,7 @@ fun GuidanceDisplay(
 
 @Composable
 fun DirectionArrow(rotation: Int, alignRight: Boolean, isOutlined: Boolean) {
+    val colors = LocalOliveColors.current
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -431,7 +433,7 @@ fun DirectionArrow(rotation: Int, alignRight: Boolean, isOutlined: Boolean) {
                 }
 
                 val paint = Paint().apply {
-                    color = PureRed
+                    color = colors.primary
                     style =
                         if (isOutlined) PaintingStyle.Stroke else PaintingStyle.Fill
                     strokeWidth = size.minDimension / 50f
@@ -453,6 +455,7 @@ fun DirectionArrow(rotation: Int, alignRight: Boolean, isOutlined: Boolean) {
 
 @Composable
 fun TargetArrow(rotation: Double, isOutlined: Boolean) {
+    val colors = LocalOliveColors.current
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -463,7 +466,7 @@ fun TargetArrow(rotation: Double, isOutlined: Boolean) {
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer(rotationZ = -rotation.toFloat()),
-            tint = if (isOutlined) DarkRed else PureRed
+            tint = if (isOutlined) colors.secondary else colors.primary
         )
     }
 }

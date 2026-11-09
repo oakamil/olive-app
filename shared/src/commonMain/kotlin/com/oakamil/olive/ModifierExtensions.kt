@@ -18,8 +18,9 @@ import androidx.compose.ui.unit.dp
 fun Modifier.simpleVerticalScrollbar(
     state: ScrollState,
     width: Dp = 4.dp,
-    color: Color = Color.Red
+    color: Color? = null
 ): Modifier = composed {
+    val clr = color ?: LocalOliveColors.current.primary
     val targetAlpha = if (state.isScrollInProgress) 1f else 0.4f
     val duration = if (state.isScrollInProgress) 150 else 500
 
@@ -38,7 +39,7 @@ fun Modifier.simpleVerticalScrollbar(
 
             // Draw background track
             drawRect(
-                color = color.copy(alpha = alpha * 0.2f),
+                color = clr.copy(alpha = alpha * 0.2f),
                 topLeft = Offset(size.width - width.toPx(), 0f),
                 size = Size(width.toPx(), visibleHeight)
             )
@@ -47,7 +48,7 @@ fun Modifier.simpleVerticalScrollbar(
             val scrollbarOffsetY =
                 (state.value.toFloat() / state.maxValue) * (visibleHeight - scrollbarHeight)
             drawRect(
-                color = color.copy(alpha = alpha),
+                color = clr.copy(alpha = alpha),
                 topLeft = Offset(size.width - width.toPx(), scrollbarOffsetY),
                 size = Size(width.toPx(), scrollbarHeight)
             )
@@ -61,7 +62,7 @@ fun Modifier.verticalScrollWithScrollbar(
     flingBehavior: FlingBehavior? = null,
     reverseScrolling: Boolean = false,
     scrollbarWidth: Dp = 4.dp,
-    scrollbarColor: Color = Color.Red
+    scrollbarColor: Color? = null
 ): Modifier = this
     .verticalScroll(state, enabled, flingBehavior, reverseScrolling)
     .simpleVerticalScrollbar(state, scrollbarWidth, scrollbarColor)

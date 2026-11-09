@@ -48,7 +48,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -86,6 +85,7 @@ fun TunerScreen(
     }
 
     val windowController = LocalPlatformWindowController.current
+    val colors = LocalOliveColors.current
     val isLandscape = windowController.isLandscape
     val displayRotationDegrees = windowController.getDisplayRotationDegrees()
 
@@ -273,7 +273,7 @@ fun TunerScreen(
                         val s = 32f / (scale * baseScale)
                         val arm = 14f / (scale * baseScale)
                         val bracketStroke = 3f / (scale * baseScale)
-                        val darkRed = DarkRed
+                        val darkRed = colors.secondary
 
                         // ┌ Top-Left
                         drawLine(
@@ -344,19 +344,19 @@ fun TunerScreen(
                             val strokeW = 3f / (scale * baseScale)
 
                             drawCircle(
-                                color = Color.Red,
+                                color = colors.primary,
                                 radius = 20f / (scale * baseScale),
                                 center = Offset(canvasX, canvasY),
                                 style = Stroke(width = strokeW)
                             )
                             drawLine(
-                                color = Color.Red,
+                                color = colors.primary,
                                 start = Offset(canvasX - crosshairSize, canvasY),
                                 end = Offset(canvasX + crosshairSize, canvasY),
                                 strokeWidth = strokeW
                             )
                             drawLine(
-                                color = Color.Red,
+                                color = colors.primary,
                                 start = Offset(canvasX, canvasY - crosshairSize),
                                 end = Offset(canvasX, canvasY + crosshairSize),
                                 strokeWidth = strokeW

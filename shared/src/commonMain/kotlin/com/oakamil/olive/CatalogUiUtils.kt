@@ -28,28 +28,34 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.hypot
 
-fun getIconAndColorForType(objectType: String): Pair<ImageVector, Color> {
-    val defaultColor = Color.Red
+fun getIconAndColorForType(
+    objectType: String,
+    primaryColor: Color = PureRed,
+    secondaryColor: Color = DarkRed
+): Pair<ImageVector, Color> {
     return when (objectType) {
-        "Asterism" -> Icons.Filled.Timeline to defaultColor
-        "Cluster + Nebula" -> Icons.Filled.BlurCircular to defaultColor
-        "Nebula" -> Icons.Filled.Air to defaultColor
-        "Dark Nebula" -> Icons.Filled.Cloud to DarkRed
-        "Multiple Star", "Double Star" -> Icons.Outlined.AutoAwesome to defaultColor
-        "Galaxy" -> Icons.Outlined.Storm to defaultColor
-        "Asteroid" -> Icons.Filled.Cookie to defaultColor
-        "Planet", "Moon" -> CustomIcons.Planet to defaultColor
-        "Globular Cluster" -> Icons.Filled.LensBlur to defaultColor
-        "Open Cluster", "Cluster" -> Icons.Filled.ScatterPlot to defaultColor
-        "Comet" -> CustomIcons.TrailLength to defaultColor
-        "Star" -> Icons.Outlined.StarOutline to defaultColor
-        "Planetary Nebula" -> CustomIcons.CircleCircle to defaultColor
-        else -> Icons.Filled.LocationSearching to defaultColor
+        "Asterism" -> Icons.Filled.Timeline to primaryColor
+        "Cluster + Nebula" -> Icons.Filled.BlurCircular to primaryColor
+        "Nebula" -> Icons.Filled.Air to primaryColor
+        "Dark Nebula" -> Icons.Filled.Cloud to secondaryColor
+        "Multiple Star", "Double Star" -> Icons.Outlined.AutoAwesome to primaryColor
+        "Galaxy" -> Icons.Outlined.Storm to primaryColor
+        "Asteroid" -> Icons.Filled.Cookie to primaryColor
+        "Planet", "Moon" -> CustomIcons.Planet to primaryColor
+        "Globular Cluster" -> Icons.Filled.LensBlur to primaryColor
+        "Open Cluster", "Cluster" -> Icons.Filled.ScatterPlot to primaryColor
+        "Comet" -> CustomIcons.TrailLength to primaryColor
+        "Star" -> Icons.Outlined.StarOutline to primaryColor
+        "Planetary Nebula" -> CustomIcons.CircleCircle to primaryColor
+        else -> Icons.Filled.LocationSearching to primaryColor
     }
 }
 
-fun CatalogObject.getIconAndColor(): Pair<ImageVector, Color> =
-    getIconAndColorForType(this.objectType)
+fun CatalogObject.getIconAndColor(
+    primaryColor: Color = PureRed,
+    secondaryColor: Color = DarkRed
+): Pair<ImageVector, Color> =
+    getIconAndColorForType(this.objectType, primaryColor, secondaryColor)
 
 @Composable
 fun rememberCatalogPainters(): Map<ImageVector, Painter> {
