@@ -113,7 +113,6 @@ import kotlin.math.atan
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
-import kotlin.math.hypot
 import kotlin.math.round
 import kotlin.math.sin
 import kotlin.math.tan
@@ -422,38 +421,7 @@ fun EngineRunningScreen(
                                         maxFontSize = baseStyle.fontSize
                                     )
                                 )
-                                val isTargetVisible = remember(
-                                    stats.centerRa,
-                                    stats.centerDec,
-                                    stats.ra,
-                                    stats.dec,
-                                    stats.fov,
-                                    stats.targetRa,
-                                    stats.targetDec,
-                                    stats.isImuEstimate,
-                                    stats.solvedCrop
-                                ) {
-                                    val isStale =
-                                        stats.solvedCrop == "Failed" && !stats.isImuEstimate
-                                    if (stats.fov == null || isStale) false
-                                    else {
-                                        val projRa =
-                                            if (stats.isImuEstimate || stats.centerRa == null) stats.ra else stats.centerRa
-                                        val projDec =
-                                            if (stats.isImuEstimate || stats.centerDec == null) stats.dec else stats.centerDec
-                                        if (projRa == null || projDec == null) false
-                                        else {
-                                            var raDiff = abs(stats.targetRa - projRa)
-                                            if (raDiff > 180.0) raDiff = 360.0 - raDiff
-                                            val decDiff = abs(stats.targetDec - projDec)
-                                            val dist = hypot(
-                                                raDiff * cos(Math.toRadians(projDec)),
-                                                decDiff
-                                            )
-                                            dist < stats.fov * 0.75
-                                        }
-                                    }
-                                }
+                                val isTargetVisible = stats.isTargetVisible
 
                                 Spacer(modifier = Modifier.width(8.dp))
                                 IconButton(
@@ -2089,7 +2057,9 @@ fun EngineRunningScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 planets = planets,
                                 comets = comets,
-                                asteroids = asteroids
+                                asteroids = asteroids,
+                                detectedIpAddress = detectedIpAddress,
+                                activeCameraSelection = activeCameraSelection
                             )
                         }
                         ActionButtons(
@@ -2115,7 +2085,9 @@ fun EngineRunningScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 planets = planets,
                                 comets = comets,
-                                asteroids = asteroids
+                                asteroids = asteroids,
+                                detectedIpAddress = detectedIpAddress,
+                                activeCameraSelection = activeCameraSelection
                             )
                         }
                         ActionButtons(
@@ -2396,189 +2368,4 @@ fun CollapsedStatsDisplay(stats: EngineStats, onClick: () -> Unit) {
     }
 }
 
-@Composable
-fun StatsDisplay(
-    stats: EngineStats,
-    detectedIpAddress: String,
-    activeCameraSelection: String,
-    onInfoClick: () -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row {
-            Text(stringResource(id = Res.string.stat_status), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                when (stats.status) {
-                    "Solving" -> stringResource(id = Res.string.stat_solving)
-                    "Slewing" -> stringResource(id = Res.string.stat_slewing)
-                    "Idle" -> stringResource(id = Res.string.stat_idle)
-                    "Camera Mode" -> stringResource(id = Res.string.btn_camera_mode)
-                    "Calibrating Focus" -> stringResource(id = Res.string.stat_calibrating_focus)
-                    else -> stats.status
-                }
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Row {
-            Text(stringResource(id = Res.string.stat_star_count), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("${stats.centroidCount}")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row {
-            Text(stringResource(id = Res.string.ra_j2000_label), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(stats.ra?.let { formatRa(it) } ?: "-")
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Row {
-            Text(stringResource(id = Res.string.dec_j2000_label), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(stats.dec?.let { formatDec(it) } ?: "-")
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-
-        stats.fov?.let { fovVal ->
-            Row {
-                Text(stringResource(id = Res.string.stat_fov), fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    stringResource(
-                        id = Res.string.format_degree,
-                        String.format("%.2f", fovVal)
-                    )
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row {
-            Text(stringResource(id = Res.string.stat_exposure), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                stringResource(
-                    id = Res.string.format_ms,
-                    String.format("%.2f", stats.exposureMs)
-                )
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Row {
-            Text(stringResource(id = Res.string.stat_post_process), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                stringResource(
-                    id = Res.string.format_ms,
-                    String.format("%.1f", stats.postProcessMs)
-                )
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Row {
-            Text(stringResource(id = Res.string.stat_extraction), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                stringResource(
-                    id = Res.string.format_ms,
-                    String.format("%.1f", stats.extractMs)
-                )
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Row {
-            Text(stringResource(id = Res.string.stat_solve), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                stringResource(
-                    id = Res.string.format_ms,
-                    String.format("%.1f", stats.solveMs)
-                )
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Row {
-            Text(stringResource(id = Res.string.stat_solve_rate), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                stringResource(
-                    id = Res.string.format_hz,
-                    String.format("%.1f", stats.solveRateHz)
-                )
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Row {
-            Text(stringResource(id = Res.string.stat_last_solve), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            val cropString = when (stats.solvedCrop) {
-                "Center2x", "Center" -> stringResource(id = Res.string.crop_center_2x)
-                "Center2xHighSens", "CenterHighSens" -> stringResource(id = Res.string.crop_center_2x_hs)
-                "Center1_5x", "CenterWide" -> stringResource(id = Res.string.crop_center_1_5x)
-                "Center1_5xHighSens", "CenterWideHighSens" -> stringResource(id = Res.string.crop_center_1_5x_hs)
-                "Top" -> stringResource(id = Res.string.crop_top)
-                "Bottom" -> stringResource(id = Res.string.crop_bottom)
-                "Left" -> stringResource(id = Res.string.crop_left)
-                "Right" -> stringResource(id = Res.string.crop_right)
-                "Full" -> stringResource(id = Res.string.crop_full)
-                "Failed" -> stringResource(id = Res.string.crop_failed)
-
-                "TopHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_top)
-                )
-
-                "BottomHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_bottom)
-                )
-
-                "LeftHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_left)
-                )
-
-                "RightHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_right)
-                )
-
-                "FullHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_full)
-                )
-
-                else -> stats.solvedCrop ?: "-"
-            }
-            Text(cropString)
-        }
-
-        if (activeCameraSelection != "cedar") {
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(Res.string.stat_ip_address), fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(detectedIpAddress)
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(
-                    onClick = onInfoClick,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = stringResource(id = Res.string.cd_info),
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        }
-    }
-}
 

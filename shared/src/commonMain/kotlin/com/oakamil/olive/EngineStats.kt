@@ -29,4 +29,14 @@ data class EngineStats(
     val targetPixelY: Double? = null,
     val distortion: Double? = null,
     val focus: Float? = null
-)
+) {
+    val isTargetVisible: Boolean
+        get() {
+            val isStale = solvedCrop == "Failed" && !isImuEstimate
+            if (fov == null || isStale || targetRa == null || targetDec == null) return false
+            val projRa = if (isImuEstimate || centerRa == null) ra else centerRa
+            val projDec = if (isImuEstimate || centerDec == null) dec else centerDec
+            if (projRa == null || projDec == null) return false
+            return AstrometryUtils.angularDistance(projRa, projDec, targetRa, targetDec) < fov * 0.75
+        }
+}

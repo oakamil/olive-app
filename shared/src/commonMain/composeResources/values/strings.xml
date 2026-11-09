@@ -43,6 +43,7 @@
     <string name="btn_camera_mode">Camera Mode</string>
 
     <string name="btn_stop_engine">Stop Engine</string>
+    <string name="btn_stop">Stop</string>
     <string name="btn_start_engine">Start Engine</string>
     <string name="btn_stopping">Stopping …</string>
     <string name="btn_starting">Starting …</string>
@@ -157,7 +158,7 @@
     <string name="title_confirm_alignment">Confirm Alignment</string>
     <string name="inst_confirm_alignment">Please ensure that the selected target is centered in your eyepiece before continuing.</string>
     <string name="title_reset_alignment">Reset Alignment</string>
-    <string name="inst_reset_alignment">The alignment will be reset to the center of the camera\'s field of view.</string>
+    <string name="inst_reset_alignment">The alignment will be reset to the center of the camera's field of view.</string>
     <string name="title_reset_calibration">Reset Calibration</string>
     <string name="inst_reset_calibration">The calibration data for the motion sensor will be removed.</string>
     <string name="inst_reset_camera_calibration">The saved Auto settings for this camera will be removed, requiring the app to learn them again.</string>
@@ -241,7 +242,7 @@
     <string name="format_ra_dec">RA %1$s Dec %2$s</string>
     <string name="target_label_format">Target (%1$.2f, %2$.2f)</string>
     <string name="stat_ip_address">IP Address</string>
-    <string name="msg_confirm_alignment">Are you sure you want to sync the telescope\'s coordinates to this target?</string>
+    <string name="msg_confirm_alignment">Are you sure you want to sync the telescope's coordinates to this target?</string>
     <string name="btn_cancel_goto">Cancel GoTo target</string>
     <string name="btn_recenter">Recenter camera view</string>
 
