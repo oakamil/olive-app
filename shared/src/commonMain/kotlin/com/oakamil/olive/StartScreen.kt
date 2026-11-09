@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsBackupRestore
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -46,7 +48,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
@@ -176,7 +177,8 @@ fun StartScreen(
         Spacer(modifier = Modifier.height(16.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             IconBarItem(
                 icon = Icons.Outlined.PlayCircle,
@@ -189,6 +191,23 @@ fun StartScreen(
                 isLoading = isStarting || isStopping,
                 iconSize = 36.dp,
                 onClick = onToggleEngine,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+
+            Spacer(modifier = Modifier.width(24.dp))
+
+            val isDayVision = viewModel.currentTheme == "blue"
+            IconBarItem(
+                icon = if (isDayVision) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                label = if (isDayVision) stringResource(Res.string.theme_night_vision) else stringResource(
+                    Res.string.theme_day_vision
+                ),
+                iconSize = 36.dp,
+                onClick = {
+                    val newTheme = if (isDayVision) "red" else "blue"
+                    settingsManager.appTheme = newTheme
+                    viewModel.currentTheme = newTheme
+                },
                 modifier = Modifier.weight(1f, fill = false)
             )
         }
@@ -448,7 +467,7 @@ fun StartScreen(
                     Box(
                         modifier = Modifier.border(
                             1.dp,
-                            Color.Red,
+                            MaterialTheme.colorScheme.outline,
                             shape = RoundedCornerShape(4.dp)
                         )
                     ) {
@@ -463,7 +482,7 @@ fun StartScreen(
                             onDismissRequest = { expandedFormat = false },
                             modifier = Modifier.border(
                                 1.dp,
-                                Color.Red,
+                                MaterialTheme.colorScheme.outline,
                                 shape = RoundedCornerShape(4.dp)
                             )
                         ) {
@@ -558,7 +577,7 @@ fun StartScreen(
                     Box(
                         modifier = Modifier.border(
                             1.dp,
-                            Color.Red,
+                            MaterialTheme.colorScheme.outline,
                             shape = RoundedCornerShape(4.dp)
                         )
                     ) {
@@ -573,7 +592,7 @@ fun StartScreen(
                             onDismissRequest = { expanded = false },
                             modifier = Modifier.border(
                                 1.dp,
-                                Color.Red,
+                                MaterialTheme.colorScheme.outline,
                                 shape = RoundedCornerShape(4.dp)
                             )
                         ) {

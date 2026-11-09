@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons.Default
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GpsFixed
@@ -103,7 +104,9 @@ fun SkyCatalogDialog(
     viewModel: MainViewModel,
     onDismiss: () -> Unit,
     onGoTo: (Double, Double, Double) -> Unit,
+    onCenter: ((Double, Double) -> Unit)? = null
 ) {
+    val colors = LocalOliveColors.current
     val focusManager = LocalFocusManager.current
     var showKeyboard by remember { mutableStateOf(false) }
     var searchQuery by viewModel::catalogSearchQuery
@@ -512,11 +515,11 @@ fun SkyCatalogDialog(
                                     },
                                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                                     colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = DeepMaroon,
-                                        selectedTextColor = Color.Red,
-                                        unselectedTextColor = Color.Red,
-                                        selectedIconColor = Color.Red,
-                                        unselectedIconColor = Color.Red
+                                        selectedContainerColor = colors.surfaceVariant,
+                                        selectedTextColor = colors.primary,
+                                        unselectedTextColor = colors.primary,
+                                        selectedIconColor = colors.primary,
+                                        unselectedIconColor = colors.primary
                                     )
                                 )
                             }
@@ -681,7 +684,11 @@ fun SkyCatalogDialog(
                                         val isSelected = type in typeFilters
                                         DropdownMenuItem(
                                             leadingIcon = {
-                                                val (iVec, iCol) = getIconAndColorForType(type)
+                                                val (iVec, iCol) = getIconAndColorForType(
+                                                    type,
+                                                    colors.primary,
+                                                    colors.secondary
+                                                )
                                                 Icon(
                                                     iVec,
                                                     contentDescription = null,
@@ -850,7 +857,7 @@ fun SkyCatalogDialog(
 
                                 ListItem(
                                     colors = if (isBelowHorizon) ListItemDefaults.colors(
-                                        containerColor = DeepMaroon
+                                        containerColor = colors.surfaceVariant
                                     ) else ListItemDefaults.colors(),
                                     headlineContent = { Text(obj.displayName) },
                                     supportingContent = {
@@ -868,7 +875,10 @@ fun SkyCatalogDialog(
                                             verticalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                val (iVec, iCol) = obj.getIconAndColor()
+                                                val (iVec, iCol) = obj.getIconAndColor(
+                                                    colors.primary,
+                                                    colors.secondary
+                                                )
                                                 Icon(
                                                     imageVector = iVec,
                                                     contentDescription = null,
@@ -905,13 +915,32 @@ fun SkyCatalogDialog(
                                                 Text(
                                                     stringResource(Res.string.status_below_horizon),
                                                     style = MaterialTheme.typography.labelMedium,
-                                                    color = Color.Red,
+                                                    color = colors.primary,
                                                     modifier = Modifier
                                                         .clickable { showRaDecForObj = obj }
                                                         .padding(4.dp)
                                                 )
                                             } else {
-                                                if (telescopeAltAz != null && currentRa != null && currentDec != null && lat != null && lon != null) {
+                                                if (onCenter != null) {
+                                                    IconBarItem(
+                                                        icon = Default.CenterFocusStrong,
+                                                        label = stringResource(Res.string.crop_center),
+                                                        onClick = {
+                                                            onCenter(obj.ra, obj.dec)
+                                                        }
+                                                    )
+                                                    IconBarItem(
+                                                        icon = Default.GpsFixed,
+                                                        label = stringResource(Res.string.btn_goto),
+                                                        onClick = {
+                                                            onGoTo(
+                                                                obj.ra,
+                                                                obj.dec,
+                                                                2000.0
+                                                            )
+                                                        }
+                                                    )
+                                                } else if (telescopeAltAz != null && currentRa != null && currentDec != null && lat != null && lon != null) {
                                                     val objAltAz =
                                                         raDecToAltAz(
                                                             obj.ra,
@@ -1051,7 +1080,7 @@ fun SkyCatalogDialog(
                                     Icon(
                                         Default.Close,
                                         contentDescription = stringResource(Res.string.cd_close_keyboard),
-                                        tint = Color.Red
+                                        tint = colors.primary
                                     )
                                 }
                                 IconButton(onClick = {
@@ -1061,7 +1090,7 @@ fun SkyCatalogDialog(
                                     Icon(
                                         imageVector = if (viewModel.landscapeKeyboardOnRight) Filled.KeyboardArrowLeft else Filled.KeyboardArrowRight,
                                         contentDescription = stringResource(Res.string.cd_swap_keyboard_side),
-                                        tint = Color.Red
+                                        tint = colors.primary
                                     )
                                 }
                             }
@@ -1099,7 +1128,7 @@ fun SkyCatalogDialog(
                                         Icon(
                                             Default.Close,
                                             contentDescription = stringResource(Res.string.cd_close_keyboard),
-                                            tint = Color.Red
+                                            tint = colors.primary
                                         )
                                     }
                                 }
@@ -1243,6 +1272,7 @@ fun NightVisionKeyboard(
     onSpace: () -> Unit,
     onBackspace: () -> Unit,
 ) {
+    val colors = LocalOliveColors.current
     val keys = listOf(
         listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
         listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"),
@@ -1252,7 +1282,7 @@ fun NightVisionKeyboard(
 
     Column(
         modifier = modifier
-            .background(Color.Black)
+            .background(colors.background)
             .padding(2.dp)
             .pointerInput(Unit) {
                 // Consume taps inside keyboard so they don't propagate to the parent and dismiss it
@@ -1307,16 +1337,17 @@ fun NightVisionKey(
     isLandscape: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val colors = LocalOliveColors.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressedState by interactionSource.collectIsPressedAsState()
 
-    val bgColor = if (isPressedState) Color.Red else Color.Black
-    val textColor = if (isPressedState) Color.Black else Color.Red
+    val bgColor = if (isPressedState) colors.primary else colors.surface
+    val textColor = if (isPressedState) colors.background else colors.primary
 
     val boxModifier = if (isLandscape) modifier.fillMaxHeight() else modifier.height(36.dp)
     Box(
         modifier = boxModifier
-            .border(1.dp, Color.Red, RoundedCornerShape(4.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(4.dp))
             .background(bgColor, RoundedCornerShape(4.dp))
             .clickable(
                 interactionSource = interactionSource,

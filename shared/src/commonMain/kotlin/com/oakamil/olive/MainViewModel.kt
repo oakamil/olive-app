@@ -54,6 +54,8 @@ open class MainViewModel(
     var locationRefreshStatus by mutableStateOf(LocationRefreshStatus.IDLE)
 
     val settingsManager = SettingsManager(storage, capabilities.defaultFocus)
+    var currentTheme by mutableStateOf(settingsManager.appTheme)
+    var skyMapCenterTarget by mutableStateOf<Pair<Double, Double>?>(null)
 
     init {
         settingsManager.savedLocation?.let { (lat, lon) ->

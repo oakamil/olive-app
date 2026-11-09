@@ -295,4 +295,6 @@
     <string name="label_zenith">Zenith</string>
     <string name="label_nadir">Nadir</string>
     <string name="cd_sky_map">Sky Map View</string>
+    <string name="theme_day_vision">Day Vision</string>
+    <string name="theme_night_vision">Night Vision</string>
 </resources>

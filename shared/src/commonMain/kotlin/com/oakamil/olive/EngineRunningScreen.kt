@@ -146,6 +146,7 @@ fun EngineRunningScreen(
     onEnterPipMode: () -> Unit,
     onToggleEngine: () -> Unit
 ) {
+    val colors = LocalOliveColors.current
     var mainScreenExposure by remember { mutableFloatStateOf(1.0f) }
     var isEnteringPip by remember { mutableStateOf(false) }
     var showTelescopeControlInfo by remember { mutableStateOf(false) }
@@ -333,7 +334,7 @@ fun EngineRunningScreen(
                 colors = CardDefaults.cardColors(containerColor = Color.Black),
                 border = BorderStroke(
                     2.dp,
-                    if (isLowPowerMode) Color.Transparent else DeepMaroon
+                    if (isLowPowerMode) Color.Transparent else colors.surfaceVariant
                 )
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
@@ -456,7 +457,7 @@ fun EngineRunningScreen(
                                     Icon(
                                         Icons.Outlined.Cancel,
                                         contentDescription = stringResource(Res.string.btn_cancel_goto),
-                                        tint = Color.Red
+                                        tint = colors.primary
                                     )
                                 }
 
@@ -472,7 +473,7 @@ fun EngineRunningScreen(
                                         Icon(
                                             Icons.Default.FilterCenterFocus,
                                             contentDescription = stringResource(Res.string.btn_align),
-                                            tint = Color.Red
+                                            tint = colors.primary
                                         )
                                     }
                                 }
@@ -1174,9 +1175,9 @@ fun EngineRunningScreen(
                                             )
                                         )
 
-                                        val (iconVector, defaultColor) = item.obj.getIconAndColor()
+                                        val (iconVector, defaultColor) = item.obj.getIconAndColor(colors.primary, colors.secondary)
                                         val iconColor =
-                                            if (isTarget) Color.Red else defaultColor
+                                            if (isTarget) colors.primary else defaultColor
                                         val iconPainter = catalogPainters[iconVector]
                                         val iconSize = 24f * uiScale
 
@@ -1199,7 +1200,7 @@ fun EngineRunningScreen(
                                             val s = 18f * uiScale
                                             val stroke = 3f * uiScale
                                             drawLine(
-                                                Color.Red,
+                                                colors.primary,
                                                 Offset(physPt.x - s, physPt.y - s),
                                                 Offset(
                                                     physPt.x - s + 10f * uiScale,
@@ -1207,7 +1208,7 @@ fun EngineRunningScreen(
                                                 ), strokeWidth = stroke
                                             )
                                             drawLine(
-                                                Color.Red,
+                                                colors.primary,
                                                 Offset(physPt.x - s, physPt.y - s),
                                                 Offset(
                                                     physPt.x - s,
@@ -1215,7 +1216,7 @@ fun EngineRunningScreen(
                                                 ), strokeWidth = stroke
                                             )
                                             drawLine(
-                                                Color.Red,
+                                                colors.primary,
                                                 Offset(physPt.x + s, physPt.y - s),
                                                 Offset(
                                                     physPt.x + s - 10f * uiScale,
@@ -1223,7 +1224,7 @@ fun EngineRunningScreen(
                                                 ), strokeWidth = stroke
                                             )
                                             drawLine(
-                                                Color.Red,
+                                                colors.primary,
                                                 Offset(physPt.x + s, physPt.y - s),
                                                 Offset(
                                                     physPt.x + s,
@@ -1231,7 +1232,7 @@ fun EngineRunningScreen(
                                                 ), strokeWidth = stroke
                                             )
                                             drawLine(
-                                                Color.Red,
+                                                colors.primary,
                                                 Offset(physPt.x - s, physPt.y + s),
                                                 Offset(
                                                     physPt.x - s + 10f * uiScale,
@@ -1239,7 +1240,7 @@ fun EngineRunningScreen(
                                                 ), strokeWidth = stroke
                                             )
                                             drawLine(
-                                                Color.Red,
+                                                colors.primary,
                                                 Offset(physPt.x - s, physPt.y + s),
                                                 Offset(
                                                     physPt.x - s,
@@ -1247,7 +1248,7 @@ fun EngineRunningScreen(
                                                 ), strokeWidth = stroke
                                             )
                                             drawLine(
-                                                Color.Red,
+                                                colors.primary,
                                                 Offset(physPt.x + s, physPt.y + s),
                                                 Offset(
                                                     physPt.x + s - 10f * uiScale,
@@ -1255,7 +1256,7 @@ fun EngineRunningScreen(
                                                 ), strokeWidth = stroke
                                             )
                                             drawLine(
-                                                Color.Red,
+                                                colors.primary,
                                                 Offset(physPt.x + s, physPt.y + s),
                                                 Offset(
                                                     physPt.x + s,
@@ -1266,7 +1267,7 @@ fun EngineRunningScreen(
 
                                         if (item.labelOffset != null && labelRect != null) {
                                             val objColor =
-                                                if (isTarget) Color.Red else primaryColor
+                                                if (isTarget) colors.primary else primaryColor
                                             val textLayout = textMeasurer.measure(
                                                 text = item.obj.displayName,
                                                 style = TextStyle(
@@ -1317,7 +1318,7 @@ fun EngineRunningScreen(
                                     ) {
                                         val arm = 20f * uiScale
                                         val stroke = 6f * uiScale
-                                        val clr = DarkRed
+                                        val clr = colors.secondary
                                         drawLine(
                                             clr,
                                             Offset(clampedX, clampedY),
@@ -1352,7 +1353,7 @@ fun EngineRunningScreen(
                                     val s = 32f * uiScale
                                     val arm = 20f * uiScale
                                     val stroke = 3f * uiScale
-                                    val clr = DarkRed
+                                    val clr = colors.secondary
                                     drawLine(
                                         clr,
                                         Offset(
@@ -1460,10 +1461,10 @@ fun EngineRunningScreen(
                                 },
                                 border = BorderStroke(
                                     1.5.dp,
-                                    Color.Red
+                                    colors.primary
                                 ),
                                 colors = IconButtonDefaults.outlinedIconButtonColors(
-                                    contentColor = Color.Red,
+                                    contentColor = colors.primary,
                                     containerColor = Color.Transparent
                                 ),
                                 shape = RoundedCornerShape(12.dp)
@@ -1471,17 +1472,17 @@ fun EngineRunningScreen(
                                 Icon(
                                     imageVector = Icons.Default.FilterCenterFocus,
                                     contentDescription = stringResource(Res.string.btn_recenter),
-                                    tint = Color.Red
+                                    tint = colors.primary
                                 )
                             }
                         }
 
                         OutlinedIconButton(
                             onClick = { isSkyMapExpanded = true },
-                            border = BorderStroke(1.5.dp, PureRed),
+                            border = BorderStroke(1.5.dp, colors.primary),
                             colors = IconButtonDefaults.outlinedIconButtonColors(
-                                contentColor = PureRed,
-                                containerColor = PureBlack.copy(alpha = 0.5f)
+                                contentColor = colors.primary,
+                                containerColor = colors.background.copy(alpha = 0.5f)
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
@@ -1491,7 +1492,7 @@ fun EngineRunningScreen(
                             Icon(
                                 imageVector = Icons.Outlined.TravelExplore,
                                 contentDescription = stringResource(Res.string.btn_sky_map),
-                                tint = PureRed
+                                tint = colors.primary
                             )
                         }
                     }
@@ -2202,7 +2203,11 @@ fun EngineRunningScreen(
                 onGoTo = { ra, dec, epoch ->
                     viewModel.setGoToTarget(ra, dec, epoch)
                     viewModel.showCatalog = false
-                }
+                },
+                onCenter = if (isSkyMapExpanded) { ra, dec ->
+                    viewModel.skyMapCenterTarget = Pair(ra, dec)
+                    viewModel.showCatalog = false
+                } else null
             )
         }
     }
@@ -2210,12 +2215,12 @@ fun EngineRunningScreen(
 
 @Composable
 fun DigitalClock() {
+    val is24Hour = is24HourFormat()
     var timeString by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(is24Hour) {
         while (isActive) {
             val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
-            timeString =
-                "${now.hour.toString().padStart(2, '0')}:${now.minute.toString().padStart(2, '0')}"
+            timeString = formatSystemTime(now, is24Hour)
             delay(1000)
         }
     }
