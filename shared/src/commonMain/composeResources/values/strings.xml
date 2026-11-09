@@ -297,4 +297,7 @@
     <string name="cd_sky_map">Sky Map View</string>
     <string name="theme_day_vision">Day Vision</string>
     <string name="theme_night_vision">Night Vision</string>
+    <string name="title_settings">Settings</string>
+    <string name="label_show_map_position">Show Map Position</string>
+    <string name="label_show_stats">Show Stats</string>
 </resources>

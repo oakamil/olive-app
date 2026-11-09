@@ -3,6 +3,7 @@
 
 package com.oakamil.olive
 
+import androidx.compose.ui.graphics.Matrix
 import kotlin.math.asin
 import kotlin.math.atan
 import kotlin.math.atan2
@@ -24,6 +25,9 @@ class SkyMapProjection(
     var viewportHeight: Float,
     var rotationRad: Double = 0.0
 ) {
+    val scale: Double =
+        minOf(viewportWidth, viewportHeight) / (4.0 * tan(Math.toRadians(fov) / 4.0))
+
     /**
      * Projects horizontal coordinates (Azimuth, Altitude in degrees) to viewport (x, y) pixels.
      * Applies antipode culling (1 + cos(c) >= 0.05) to prevent division by zero near the rear hemisphere.
@@ -48,7 +52,6 @@ class SkyMapProjection(
         val yRot =
             if (rotationRad != 0.0) xProj * sin(rotationRad) + yProj * cos(rotationRad) else yProj
 
-        val scale = minOf(viewportWidth, viewportHeight) / (4.0 * tan(Math.toRadians(fov) / 4.0))
         val screenX = (viewportWidth / 2f) + (xRot * scale).toFloat()
         val screenY = (viewportHeight / 2f) + (yRot * scale).toFloat()
 
@@ -71,7 +74,6 @@ class SkyMapProjection(
      * - Once Nadir (-90°) is centered on screen, it cannot be pulled higher.
      */
     fun panBy(deltaScreenX: Float, deltaScreenY: Float) {
-        val scale = minOf(viewportWidth, viewportHeight) / (4.0 * tan(Math.toRadians(fov) / 4.0))
         if (scale <= 0.0) return
 
         // Dragging down on screen moves view UP towards Zenith (+Alt)
@@ -192,6 +194,145 @@ class SkyMapProjection(
                 celestialCorners.add(Pair(raDeg, decDeg))
             }
             return celestialCorners
+        }
+
+        /**
+         * Unprojects a camera pixel coordinate (pixelX, pixelY) into celestial J2000 (RA, Dec in degrees)
+         * using the camera's optical center, vertical FOV, roll, and aspect ratio.
+         */
+        fun unprojectCameraPixel(
+            pixelX: Double,
+            pixelY: Double,
+            imageWidth: Double,
+            imageHeight: Double,
+            centerRa: Double,
+            centerDec: Double,
+            fovDeg: Double,
+            rollDeg: Double,
+            imageAspect: Double = 1.0
+        ): Pair<Double, Double> {
+            if (imageWidth <= 0.0 || imageHeight <= 0.0) return Pair(centerRa, centerDec)
+
+            val fovRad = Math.toRadians(fovDeg)
+            val halfTanY =
+                if (imageAspect >= 1.0) tan(fovRad / 2.0) else tan(fovRad / 2.0) / (if (imageAspect > 0.0) imageAspect else 1.0)
+            val halfTanX = if (imageAspect >= 1.0) halfTanY * imageAspect else tan(fovRad / 2.0)
+
+            val cx = ((pixelX - imageWidth / 2.0) / (imageWidth / 2.0)) * halfTanX
+            val cy = ((pixelY - imageHeight / 2.0) / (imageHeight / 2.0)) * halfTanY
+
+            val rollRad = Math.toRadians(-rollDeg)
+            val cosR = cos(rollRad)
+            val sinR = sin(rollRad)
+
+            val xPx = cx * cosR + cy * sinR
+            val yPx = -cx * sinR + cy * cosR
+
+            val xRad = -xPx
+            val yRad = -yPx
+
+            val rho = hypot(xRad, yRad)
+            if (rho < 1e-9) return Pair(centerRa, centerDec)
+
+            val c = atan(rho)
+            val sinC = sin(c)
+            val cosC = cos(c)
+
+            val ra0Rad = Math.toRadians(centerRa)
+            val dec0Rad = Math.toRadians(centerDec)
+            val sinDec0 = sin(dec0Rad)
+            val cosDec0 = cos(dec0Rad)
+
+            val decRad =
+                asin((cosC * sinDec0 + (yRad * sinC * cosDec0 / rho)).coerceIn(-1.0, 1.0))
+            val raRad =
+                ra0Rad + atan2(xRad * sinC, rho * cosDec0 * cosC - yRad * sinDec0 * sinC)
+
+            val raDeg = (Math.toDegrees(raRad) % 360.0 + 360.0) % 360.0
+            val decDeg = Math.toDegrees(decRad).coerceIn(-90.0, 90.0)
+            return Pair(raDeg, decDeg)
+        }
+
+        /**
+         * Computes a 3x3 homography matrix (represented as Compose 4x4 Matrix) mapping
+         * the rectangle (0,0)-(srcW, srcH) to the convex quad defined by (p0, p1, p2, p3):
+         * p0 = Top-Left
+         * p1 = Top-Right
+         * p2 = Bottom-Right
+         * p3 = Bottom-Left
+         *
+         * Mirrors coordinates along X or Y if [mirrorScaleX] < 0 or [mirrorScaleY] < 0,
+         * matching the orientation and mirroring logic in EngineRunningScreen.
+         */
+        fun computeQuadHomography(
+            srcW: Float,
+            srcH: Float,
+            p0: Pair<Float, Float>,
+            p1: Pair<Float, Float>,
+            p2: Pair<Float, Float>,
+            p3: Pair<Float, Float>,
+            mirrorScaleX: Float = 1f,
+            mirrorScaleY: Float = 1f
+        ): Matrix {
+            var c0 = p0
+            var c1 = p1
+            var c2 = p2
+            var c3 = p3
+
+            if (mirrorScaleX < 0f) {
+                val t0 = c0;
+                val t3 = c3
+                c0 = c1; c1 = t0
+                c3 = c2; c2 = t3
+            }
+            if (mirrorScaleY < 0f) {
+                val t0 = c0;
+                val t1 = c1
+                c0 = c3; c3 = t0
+                c1 = c2; c2 = t1
+            }
+
+            val x0 = c0.first
+            val y0 = c0.second
+            val x1 = c1.first
+            val y1 = c1.second
+            val x2 = c2.first
+            val y2 = c2.second
+            val x3 = c3.first
+            val y3 = c3.second
+
+            val dx1 = x1 - x2
+            val dx2 = x3 - x2
+            val dx3 = x0 - x1 + x2 - x3
+            val dy1 = y1 - y2
+            val dy2 = y3 - y2
+            val dy3 = y0 - y1 + y2 - y3
+
+            var g = 0f
+            var h = 0f
+            if (kotlin.math.abs(dx3) >= 1e-4f || kotlin.math.abs(dy3) >= 1e-4f) {
+                val det = dx1 * dy2 - dy1 * dx2
+                if (kotlin.math.abs(det) >= 1e-7f) {
+                    g = (dx3 * dy2 - dy3 * dx2) / det
+                    h = (dx1 * dy3 - dy1 * dx3) / det
+                }
+            }
+
+            val a = x1 - x0 + g * x1
+            val b = x3 - x0 + h * x3
+            val c = x0
+            val d = y1 - y0 + g * y1
+            val e = y3 - y0 + h * y3
+            val f = y0
+
+            return Matrix(
+                floatArrayOf(
+                    a / srcW, d / srcW, 0f, g / srcW,
+                    b / srcH, e / srcH, 0f, h / srcH,
+                    0f, 0f, 1f, 0f,
+                    c, f, 0f, 1f
+                )
+            )
         }
     }
 }
