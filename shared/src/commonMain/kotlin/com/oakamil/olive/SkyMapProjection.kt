@@ -98,6 +98,16 @@ class SkyMapProjection(
         fun getNadir(): Pair<Double, Double> = Pair(0.0, -90.0)
 
         /**
+         * Precomputed points along the local horizon circle (Alt = 0 degrees) in horizontal coordinates.
+         */
+        val HORIZON_POINTS: List<Pair<Double, Double>> = computeHorizonPoints(72)
+
+        /**
+         * Precomputed 4 Cardinal direction points (N, E, S, W) on the horizon in horizontal coordinates.
+         */
+        val CARDINAL_POINTS: List<Pair<String, Pair<Double, Double>>> = computeCardinalPoints()
+
+        /**
          * Computes points along the local horizon circle (Alt = 0 degrees) in horizontal coordinates.
          */
         fun computeHorizonPoints(steps: Int = 72): List<Pair<Double, Double>> {
@@ -132,8 +142,9 @@ class SkyMapProjection(
             imageAspect: Double = 1.0
         ): List<Pair<Double, Double>> {
             val fovRad = Math.toRadians(fovDeg)
-            val halfTanY = tan(fovRad / 2.0)
-            val halfTanX = halfTanY * (if (imageAspect > 0.0) imageAspect else 1.0)
+            val halfTanY =
+                if (imageAspect >= 1.0) tan(fovRad / 2.0) else tan(fovRad / 2.0) / (if (imageAspect > 0.0) imageAspect else 1.0)
+            val halfTanX = if (imageAspect >= 1.0) halfTanY * imageAspect else tan(fovRad / 2.0)
 
             val rollRad = Math.toRadians(-rollDeg)
             val cosR = cos(rollRad)
@@ -174,7 +185,7 @@ class SkyMapProjection(
                 val decRad =
                     asin((cosC * sinDec0 + (yRad * sinC * cosDec0 / rho)).coerceIn(-1.0, 1.0))
                 val raRad =
-                    ra0Rad + atan2(-xRad * sinC, rho * cosDec0 * cosC - yRad * sinDec0 * sinC)
+                    ra0Rad + atan2(xRad * sinC, rho * cosDec0 * cosC - yRad * sinDec0 * sinC)
 
                 val raDeg = (Math.toDegrees(raRad) % 360.0 + 360.0) % 360.0
                 val decDeg = Math.toDegrees(decRad).coerceIn(-90.0, 90.0)
