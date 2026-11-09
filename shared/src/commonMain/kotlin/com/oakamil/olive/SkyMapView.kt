@@ -6,12 +6,14 @@ package com.oakamil.olive
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -32,14 +34,26 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterCenterFocus
 import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.HourglassEmpty
+import androidx.compose.material.icons.outlined.Loop
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,10 +79,12 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -86,6 +102,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.hypot
+import kotlin.math.round
 import kotlin.time.Duration.Companion.milliseconds
 
 
@@ -124,7 +141,9 @@ fun SkyMapView(
     modifier: Modifier = Modifier,
     planets: List<CatalogObject> = emptyList(),
     comets: List<CatalogObject> = emptyList(),
-    asteroids: List<CatalogObject> = emptyList()
+    asteroids: List<CatalogObject> = emptyList(),
+    detectedIpAddress: String = "",
+    activeCameraSelection: String = ""
 ) {
     val rawLat = viewModel.currentLat
     val rawLon = viewModel.currentLon
@@ -250,10 +269,90 @@ fun SkyMapView(
     val textMeasurer = rememberTextMeasurer(cacheSize = 256)
     val catalogPainters = rememberCatalogPainters()
 
-    // Dismiss InfoPopup on Back button before closing sky map
+    // Solar system ephemeris: use provided list or load asynchronously off the main thread
+    var solPlanets by remember { mutableStateOf(planets) }
+    var solComets by remember { mutableStateOf(comets) }
+    var solAsteroids by remember { mutableStateOf(asteroids) }
+    LaunchedEffect(planets, comets, asteroids, hasValidLocation) {
+        if (planets.isNotEmpty()) solPlanets = planets
+        if (comets.isNotEmpty()) solComets = comets
+        if (asteroids.isNotEmpty()) solAsteroids = asteroids
+        if (hasValidLocation && solPlanets.isEmpty() && solComets.isEmpty() && solAsteroids.isEmpty()) {
+            withContext(Dispatchers.IO) {
+                solPlanets = viewModel.getPlanets()
+                solComets = viewModel.getComets()
+                solAsteroids = viewModel.getAsteroids()
+            }
+        }
+    }
+
+    // Dismiss popups on Back button before closing sky map
     var selectedObject by remember { mutableStateOf<CatalogObject?>(null) }
-    BackHandler(enabled = isExpanded && selectedObject != null) {
-        selectedObject = null
+    var showFullStats by remember { mutableStateOf(false) }
+    var showTelescopeControlInfo by remember { mutableStateOf(false) }
+    var showTargetPopup by remember { mutableStateOf(false) }
+    var showSyncDialog by remember { mutableStateOf(false) }
+
+    var targetObjName by remember(
+        stats.targetRa,
+        stats.targetDec
+    ) { mutableStateOf<String?>(null) }
+    var targetObject by remember(
+        stats.targetRa,
+        stats.targetDec
+    ) { mutableStateOf<CatalogObject?>(null) }
+
+    LaunchedEffect(stats.targetRa, stats.targetDec, solPlanets, solComets, solAsteroids) {
+        if (stats.targetRa != null && stats.targetDec != null) {
+            val targetRa = stats.targetRa
+            val targetDec = stats.targetDec
+
+            val solarSystemMatch = (solPlanets + solComets + solAsteroids).firstOrNull {
+                AstrometryUtils.angularDistance(it.ra, it.dec, targetRa, targetDec) < 0.5
+            }
+
+            if (solarSystemMatch != null) {
+                targetObjName = solarSystemMatch.displayName
+                targetObject = solarSystemMatch
+            } else {
+                withContext(Dispatchers.IO) {
+                    val obj = viewModel.catalogDb.searchObjects(
+                        targetRa = targetRa,
+                        targetDec = targetDec,
+                        limit = 1,
+                        sortBy = "distance"
+                    ).firstOrNull()
+                    if (obj != null && AstrometryUtils.angularDistance(
+                            obj.ra,
+                            obj.dec,
+                            targetRa,
+                            targetDec
+                        ) < 0.5
+                    ) {
+                        targetObjName = obj.displayName
+                        targetObject = obj
+                    } else {
+                        targetObjName = null
+                        targetObject = null
+                    }
+                }
+            }
+        } else {
+            targetObjName = null
+            targetObject = null
+            showTargetPopup = false
+            showSyncDialog = false
+        }
+    }
+
+    BackHandler(enabled = isExpanded && (selectedObject != null || showTargetPopup || showFullStats || showTelescopeControlInfo || showSyncDialog)) {
+        when {
+            showSyncDialog -> showSyncDialog = false
+            showTelescopeControlInfo -> showTelescopeControlInfo = false
+            showFullStats -> showFullStats = false
+            showTargetPopup -> showTargetPopup = false
+            selectedObject != null -> selectedObject = null
+        }
     }
 
     // Pre-measured static text layouts to avoid allocations during drawing
@@ -353,23 +452,6 @@ fun SkyMapView(
                 limit = 50
             )
             tier1Dso = (messier + brightDso).distinctBy { it.id }
-        }
-    }
-
-    // Solar system ephemeris: use provided list or load asynchronously off the main thread
-    var solPlanets by remember { mutableStateOf(planets) }
-    var solComets by remember { mutableStateOf(comets) }
-    var solAsteroids by remember { mutableStateOf(asteroids) }
-    LaunchedEffect(planets, comets, asteroids, hasValidLocation) {
-        if (planets.isNotEmpty()) solPlanets = planets
-        if (comets.isNotEmpty()) solComets = comets
-        if (asteroids.isNotEmpty()) solAsteroids = asteroids
-        if (hasValidLocation && solPlanets.isEmpty() && solComets.isEmpty() && solAsteroids.isEmpty()) {
-            withContext(Dispatchers.IO) {
-                solPlanets = viewModel.getPlanets()
-                solComets = viewModel.getComets()
-                solAsteroids = viewModel.getAsteroids()
-            }
         }
     }
 
@@ -1303,37 +1385,169 @@ fun SkyMapView(
         }
         val topControlsY = maxOf(safeTop, 36.dp)
 
-        if (viewModel.showMapPosition) {
-            Card(
+        if (viewModel.showMapPosition || viewModel.showStats) {
+            Column(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = safeStart, top = topControlsY),
-                colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.75f)),
-                border = BorderStroke(1.dp, colors.outline),
-                shape = RoundedCornerShape(8.dp)
+                    .padding(start = safeStart, top = topControlsY)
+                    .width(IntrinsicSize.Max),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text(
-                        text = "RA ${formatRa(centerRa)} Dec ${formatDec(centerDec)}",
-                        style = TextStyle(
-                            fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
-                            fontWeight = FontWeight.Normal
-                        ),
-                        color = colors.primary
-                    )
-                    Text(
-                        text = "Az ${String.format("%.0f", centerAz)}° Alt ${
-                            String.format(
-                                "%.0f",
-                                centerAlt
+                // Map Position Bubble (Untappable, outline border)
+                if (viewModel.showMapPosition) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.75f)),
+                        border = BorderStroke(1.dp, colors.outline),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Map,
+                                contentDescription = null,
+                                tint = colors.primary,
+                                modifier = Modifier.size(24.dp)
                             )
-                        }°  FOV ${String.format("%.1f", fov)}°",
-                        style = TextStyle(
-                            fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
-                            fontWeight = FontWeight.Normal
-                        ),
-                        color = colors.secondary
-                    )
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                val raStr = String.format("%.2f°", centerRa)
+                                val decStr = String.format("%+.2f°", centerDec)
+                                Text(
+                                    text = "RA $raStr Dec $decStr",
+                                    style = TextStyle(
+                                        fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
+                                        fontWeight = FontWeight.Normal
+                                    ),
+                                    color = colors.primary,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = "Az ${String.format("%.0f", centerAz)}° Alt ${
+                                        String.format(
+                                            "%.0f",
+                                            centerAlt
+                                        )
+                                    }°  FOV ${String.format("%.1f", fov)}°",
+                                    style = TextStyle(
+                                        fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
+                                        fontWeight = FontWeight.Normal
+                                    ),
+                                    color = colors.secondary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Stats Bubble (Tappable, primary border)
+                if (viewModel.showStats) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showFullStats = true },
+                        colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.75f)),
+                        border = BorderStroke(1.dp, colors.primary),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val currentStats = viewModel.engineStats
+                            val isGoodSolve =
+                                currentStats.solvedCrop != "Failed" && !currentStats.isImuEstimate && currentStats.solvedCrop != null
+                            val statusIcon =
+                                if (currentStats.status == "Calibrating" || currentStats.status == "Calibrating Focus") Icons.Outlined.Loop
+                                else if (isGoodSolve) Icons.Outlined.Check
+                                else Icons.Outlined.ErrorOutline
+                            Icon(
+                                imageVector = statusIcon,
+                                contentDescription = stringResource(Res.string.cd_solve_status),
+                                tint = colors.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                val raStr =
+                                    currentStats.ra?.let { String.format("%.2f°", it) } ?: "-"
+                                val decStr =
+                                    currentStats.dec?.let { String.format("%+.2f°", it) } ?: "-"
+                                Text(
+                                    text = "RA $raStr Dec $decStr",
+                                    style = TextStyle(
+                                        fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
+                                        fontWeight = FontWeight.Normal
+                                    ),
+                                    color = colors.primary,
+                                    maxLines = 1
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.StarOutline,
+                                            contentDescription = stringResource(Res.string.cd_stars),
+                                            tint = colors.secondary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(Modifier.width(2.dp))
+                                        Text(
+                                            text = "${currentStats.centroidCount}",
+                                            style = TextStyle(fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp),
+                                            color = colors.secondary
+                                        )
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.PhotoCamera,
+                                            contentDescription = stringResource(Res.string.stat_exposure),
+                                            tint = colors.secondary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(Modifier.width(2.dp))
+                                        Text(
+                                            text = "${round(currentStats.exposureMs).toInt()}",
+                                            style = TextStyle(fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp),
+                                            color = colors.secondary
+                                        )
+                                    }
+                                    val pipelineTotalMs =
+                                        currentStats.postProcessMs + currentStats.extractMs + currentStats.solveMs
+                                    val pipelineStr = if (pipelineTotalMs < 100.0) {
+                                        stringResource(
+                                            Res.string.format_pipeline_ms,
+                                            round(pipelineTotalMs).toInt()
+                                        )
+                                    } else {
+                                        stringResource(
+                                            Res.string.format_pipeline_s,
+                                            pipelineTotalMs / 1000f
+                                        )
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.HourglassEmpty,
+                                            contentDescription = stringResource(Res.string.cd_pipeline_time),
+                                            tint = colors.secondary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(Modifier.width(2.dp))
+                                        Text(
+                                            text = pipelineStr,
+                                            style = TextStyle(fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp),
+                                            color = colors.secondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1376,56 +1590,57 @@ fun SkyMapView(
                 }
             }
 
-            if (stats.ra != null && stats.dec != null) {
-                OutlinedIconButton(
-                    onClick = {
-                        viewModel.skyMapCameraLocked = true
-                        val alignCoord = getAlignmentPointRaDec()
-                        if (alignCoord != null) {
-                            val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
-                                alignCoord.first,
-                                alignCoord.second,
-                                lat,
-                                lst
-                            )
-                            viewModel.skyMapCenterAz = cAz
-                            viewModel.skyMapCenterAlt = cAlt
-                        } else {
-                            val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
-                                stats.ra,
-                                stats.dec,
-                                lat,
-                                lst
-                            )
-                            viewModel.skyMapCenterAz = cAz
-                            viewModel.skyMapCenterAlt = cAlt
-                        }
-                    },
-                    border = BorderStroke(
-                        1.dp,
-                        if (isCameraLocked) colors.primary else colors.outline
-                    ),
-                    colors = IconButtonDefaults.outlinedIconButtonColors(
-                        containerColor = if (isCameraLocked) colors.primary.copy(alpha = 0.25f) else colors.surface.copy(
-                            alpha = 0.6f
+            val hasSolve = stats.ra != null && stats.dec != null
+            OutlinedIconButton(
+                onClick = {
+                    viewModel.skyMapCameraLocked = true
+                    val alignCoord = getAlignmentPointRaDec()
+                    if (alignCoord != null) {
+                        val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
+                            alignCoord.first,
+                            alignCoord.second,
+                            lat,
+                            lst
                         )
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CenterFocusStrong,
-                        contentDescription = stringResource(Res.string.btn_center_telescope),
-                        tint = colors.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                        viewModel.skyMapCenterAz = cAz
+                        viewModel.skyMapCenterAlt = cAlt
+                    } else if (stats.ra != null && stats.dec != null) {
+                        val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
+                            stats.ra,
+                            stats.dec,
+                            lat,
+                            lst
+                        )
+                        viewModel.skyMapCenterAz = cAz
+                        viewModel.skyMapCenterAlt = cAlt
+                    }
+                },
+                enabled = hasSolve,
+                border = BorderStroke(
+                    1.dp,
+                    if (hasSolve) colors.primary else colors.outline.copy(alpha = 0.4f)
+                ),
+                colors = IconButtonDefaults.outlinedIconButtonColors(
+                    containerColor = if (hasSolve && isCameraLocked) colors.primary.copy(alpha = 0.25f)
+                    else if (hasSolve) colors.surface.copy(alpha = 0.6f)
+                    else colors.surface.copy(alpha = 0.3f),
+                    disabledContainerColor = colors.surface.copy(alpha = 0.3f)
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CenterFocusStrong,
+                    contentDescription = stringResource(Res.string.btn_center_telescope),
+                    tint = if (hasSolve) colors.primary else colors.secondary.copy(alpha = 0.4f),
+                    modifier = Modifier.size(20.dp)
+                )
             }
 
             // Visual Close/Exit button for iOS & Touch parity
             OutlinedIconButton(
                 onClick = onToggleExpanded,
-                border = BorderStroke(1.dp, colors.outline),
+                border = BorderStroke(1.dp, colors.primary),
                 colors = IconButtonDefaults.outlinedIconButtonColors(
                     containerColor = colors.surface.copy(
                         alpha = 0.6f
@@ -1478,31 +1693,77 @@ fun SkyMapView(
             }
         }
 
-        // Overlay Bottom-Left: Mini Guidance Bubble (shown only when a GoTo is active)
+        // Overlay Bottom-Left: Target Object Bubble & Mini Guidance Bubble (shown only when a GoTo is active)
         if (stats.targetRa != null && stats.targetDec != null) {
-            Card(
+            val guidanceWidth = 88.dp * 16f / 9f
+            val targetDisplayName = targetObjName ?: stats.targetRa?.let { r ->
+                stats.targetDec?.let { d ->
+                    stringResource(
+                        Res.string.format_ra_dec,
+                        String.format("%.2f", r),
+                        String.format("%.2f", d)
+                    )
+                }
+            } ?: "Target"
+
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(start = safeStart, bottom = 8.dp)
-                    .height(88.dp)
-                    .aspectRatio(16f / 9f),
-                colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.85f)),
-                border = BorderStroke(1.dp, colors.outline),
-                shape = RoundedCornerShape(8.dp)
+                    .width(guidanceWidth),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Box(
+                // Target Object Bubble (Tappable, primary border)
+                Card(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(4.dp),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .clickable { showTargetPopup = true },
+                    colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.85f)),
+                    border = BorderStroke(1.dp, colors.primary),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    GuidanceDisplay(
-                        stats = stats,
-                        isAltAz = viewModel.guidanceMode == "alt_az",
-                        isLowPowerMode = false,
-                        isImuEnabled = viewModel.settingsManager.motionSensorMode != 0,
-                        isCompactLayout = false
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = targetDisplayName,
+                            style = TextStyle(
+                                fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = colors.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Mini Guidance Bubble (Untappable, outline border)
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f),
+                    colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.85f)),
+                    border = BorderStroke(1.dp, colors.outline),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        GuidanceDisplay(
+                            stats = stats,
+                            isAltAz = viewModel.guidanceMode == "alt_az",
+                            isLowPowerMode = false,
+                            isImuEnabled = viewModel.settingsManager.motionSensorMode != 0,
+                            isCompactLayout = false
+                        )
+                    }
                 }
             }
         }
@@ -1519,7 +1780,7 @@ fun SkyMapView(
                     if (!obj.commonName.isNullOrBlank() && !obj.isFakeCommonName) {
                         Row {
                             Text(
-                                "Designation: ",
+                                "${stringResource(Res.string.label_designation)}: ",
                                 fontWeight = FontWeight.Bold,
                                 color = colors.primary
                             )
@@ -1529,26 +1790,35 @@ fun SkyMapView(
                         Spacer(Modifier.height(4.dp))
                     }
                     Row {
-                        Text("Type: ", fontWeight = FontWeight.Bold, color = colors.primary)
+                        Text(
+                            "${stringResource(Res.string.label_type)}: ",
+                            fontWeight = FontWeight.Bold,
+                            color = colors.primary
+                        )
                         Spacer(Modifier.width(4.dp))
                         Text(obj.objectType, color = colors.primary)
                     }
                     Spacer(Modifier.height(4.dp))
                     Row {
-                        Text("Magnitude: ", fontWeight = FontWeight.Bold, color = colors.primary)
+                        Text(
+                            "${stringResource(Res.string.label_magnitude)}: ",
+                            fontWeight = FontWeight.Bold,
+                            color = colors.primary
+                        )
                         Spacer(Modifier.width(4.dp))
                         Text(
                             if (obj.magnitude != null) String.format(
                                 "%.2f",
                                 obj.magnitude
-                            ) else "N/A", color = colors.primary
+                            ) else stringResource(Res.string.value_not_available),
+                            color = colors.primary
                         )
                     }
                     Spacer(Modifier.height(4.dp))
                     if (!obj.constellation.isNullOrBlank()) {
                         Row {
                             Text(
-                                "Constellation: ",
+                                "${stringResource(Res.string.label_constellation)}: ",
                                 fontWeight = FontWeight.Bold,
                                 color = colors.primary
                             )
@@ -1558,13 +1828,21 @@ fun SkyMapView(
                         Spacer(Modifier.height(4.dp))
                     }
                     Row {
-                        Text("RA (J2000): ", fontWeight = FontWeight.Bold, color = colors.primary)
+                        Text(
+                            "${stringResource(Res.string.ra_j2000_label)}: ",
+                            fontWeight = FontWeight.Bold,
+                            color = colors.primary
+                        )
                         Spacer(Modifier.width(4.dp))
                         Text(formatRa(obj.ra), color = colors.primary)
                     }
                     Spacer(Modifier.height(4.dp))
                     Row {
-                        Text("Dec (J2000): ", fontWeight = FontWeight.Bold, color = colors.primary)
+                        Text(
+                            "${stringResource(Res.string.dec_j2000_label)}: ",
+                            fontWeight = FontWeight.Bold,
+                            color = colors.primary
+                        )
                         Spacer(Modifier.width(4.dp))
                         Text(formatDec(obj.dec), color = colors.primary)
                     }
@@ -1572,7 +1850,7 @@ fun SkyMapView(
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         IconBarItem(
                             icon = Icons.Default.GpsFixed,
-                            label = "GoTo",
+                            label = stringResource(Res.string.btn_goto),
                             onClick = {
                                 viewModel.setGoToTarget(obj.ra, obj.dec)
                                 selectedObject = null
@@ -1580,6 +1858,204 @@ fun SkyMapView(
                         )
                     }
                 }
+            }
+        }
+
+        // Target Object Info Popup (opened by tapping Target Object Bubble)
+        if (showTargetPopup && stats.targetRa != null && stats.targetDec != null) {
+            val targetDisplayName = targetObjName ?: stats.targetRa?.let { r ->
+                stats.targetDec?.let { d ->
+                    stringResource(
+                        Res.string.format_ra_dec,
+                        String.format("%.2f", r),
+                        String.format("%.2f", d)
+                    )
+                }
+            } ?: stringResource(Res.string.cd_target)
+            val target = targetObject
+
+            InfoPopup(
+                title = targetDisplayName,
+                onDismiss = { showTargetPopup = false }
+            ) {
+                Column {
+                    if (target != null) {
+                        if (!target.commonName.isNullOrBlank() && !target.isFakeCommonName) {
+                            Row {
+                                Text(
+                                    "${stringResource(Res.string.label_designation)}: ",
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.primary
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(target.designation, color = colors.primary)
+                            }
+                            Spacer(Modifier.height(4.dp))
+                        }
+                        Row {
+                            Text(
+                                "${stringResource(Res.string.label_type)}: ",
+                                fontWeight = FontWeight.Bold,
+                                color = colors.primary
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(target.objectType, color = colors.primary)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row {
+                            Text(
+                                "${stringResource(Res.string.label_magnitude)}: ",
+                                fontWeight = FontWeight.Bold,
+                                color = colors.primary
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                if (target.magnitude != null) String.format(
+                                    "%.2f",
+                                    target.magnitude
+                                ) else stringResource(Res.string.value_not_available),
+                                color = colors.primary
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        if (!target.constellation.isNullOrBlank()) {
+                            Row {
+                                Text(
+                                    "${stringResource(Res.string.label_constellation)}: ",
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.primary
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(target.constellation, color = colors.primary)
+                            }
+                            Spacer(Modifier.height(4.dp))
+                        }
+                        Row {
+                            Text(
+                                "${stringResource(Res.string.ra_j2000_label)}: ",
+                                fontWeight = FontWeight.Bold,
+                                color = colors.primary
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(formatRa(target.ra), color = colors.primary)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row {
+                            Text(
+                                "${stringResource(Res.string.dec_j2000_label)}: ",
+                                fontWeight = FontWeight.Bold,
+                                color = colors.primary
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(formatDec(target.dec), color = colors.primary)
+                        }
+                    } else {
+                        Row {
+                            Text(
+                                "${stringResource(Res.string.ra_j2000_label)}: ",
+                                fontWeight = FontWeight.Bold,
+                                color = colors.primary
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(formatRa(stats.targetRa), color = colors.primary)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row {
+                            Text(
+                                "${stringResource(Res.string.dec_j2000_label)}: ",
+                                fontWeight = FontWeight.Bold,
+                                color = colors.primary
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(formatDec(stats.targetDec), color = colors.primary)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconBarItem(
+                            icon = Icons.Default.Stop,
+                            label = stringResource(Res.string.btn_stop),
+                            onClick = {
+                                viewModel.clearGoToTarget()
+                                showTargetPopup = false
+                            }
+                        )
+                        val liveStats = viewModel.engineStats
+                        if (liveStats.isTargetVisible) {
+                            IconBarItem(
+                                icon = Icons.Default.FilterCenterFocus,
+                                label = stringResource(Res.string.btn_align),
+                                onClick = {
+                                    showSyncDialog = true
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Align Confirmation Dialog
+        if (showSyncDialog) {
+            AlertDialog(
+                onDismissRequest = { showSyncDialog = false },
+                title = { Text(stringResource(Res.string.title_confirm_alignment)) },
+                text = { Text(stringResource(Res.string.msg_confirm_alignment)) },
+                confirmButton = {
+                    Button(onClick = {
+                        showSyncDialog = false
+                        showTargetPopup = false
+                        viewModel.syncTelescope(
+                            viewModel.engineStats.targetRa,
+                            viewModel.engineStats.targetDec
+                        )
+                    }) {
+                        Text(stringResource(Res.string.btn_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSyncDialog = false }) {
+                        Text(stringResource(Res.string.btn_cancel))
+                    }
+                }
+            )
+        }
+
+        // Engine Stats Full Popup
+        if (showFullStats) {
+            InfoPopup(
+                title = stringResource(Res.string.title_engine_info),
+                onDismiss = { showFullStats = false }
+            ) {
+                StatsDisplay(
+                    stats = viewModel.engineStats,
+                    detectedIpAddress = detectedIpAddress,
+                    activeCameraSelection = activeCameraSelection,
+                    onInfoClick = {
+                        showFullStats = false
+                        showTelescopeControlInfo = true
+                    }
+                )
+            }
+        }
+
+        // Telescope Control Info Popup
+        if (showTelescopeControlInfo) {
+            val capabilities = LocalPlatformCapabilities.current
+            InfoPopup(
+                title = stringResource(id = Res.string.heading_telescope_control),
+                onDismiss = { showTelescopeControlInfo = false }
+            ) {
+                val infoRes = if (capabilities.isApple) {
+                    Res.string.info_telescope_control_ios
+                } else {
+                    Res.string.info_telescope_control
+                }
+                Text(AnnotatedString.fromHtml(stringResource(id = infoRes)))
             }
         }
     }
