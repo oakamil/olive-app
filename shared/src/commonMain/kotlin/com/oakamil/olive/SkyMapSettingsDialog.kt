@@ -469,35 +469,50 @@ fun SkyMapSettingsDialog(
     when (activeInfoDialog) {
         "guidance_mode" -> InfoPopup(
             title = stringResource(id = Res.string.label_guidance_mode),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_guidance_mode)))
         }
 
         "zoom" -> InfoPopup(
             title = stringResource(id = Res.string.label_zoom),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_zoom)))
         }
 
         "star_sensitivity" -> InfoPopup(
             title = stringResource(id = Res.string.label_star_sensitivity),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_star_sensitivity)))
         }
 
         "exposure" -> InfoPopup(
             title = stringResource(id = Res.string.label_exposure),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_exposure)))
         }
 
         "stacking" -> InfoPopup(
             title = stringResource(id = Res.string.label_stacking_frames),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_stacking)))
         }

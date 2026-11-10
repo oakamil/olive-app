@@ -1158,7 +1158,10 @@ fun SkyCatalogDialog(
     if (currentCategoryInfo != null) {
         InfoPopup(
             title = currentCategoryInfo,
-            onDismiss = { showInfoForCategory = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showInfoForCategory = null
+            }
         ) {
             val shortCode = categoryToShortCode[currentCategoryInfo]
             val desc = catalogDescriptions[shortCode] ?: ""
@@ -1170,7 +1173,10 @@ fun SkyCatalogDialog(
     if (currentRaDecObj != null) {
         InfoPopup(
             title = currentRaDecObj.displayName,
-            onDismiss = { showRaDecForObj = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showRaDecForObj = null
+            }
         ) {
             Column {
                 Row {
@@ -1190,8 +1196,12 @@ fun SkyCatalogDialog(
 
     if (showGotoRaDecPopup) {
         GotoRaDecPopup(
-            onDismiss = { showGotoRaDecPopup = false },
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showGotoRaDecPopup = false
+            },
             onGoTo = { ra, dec, epoch ->
+                @Suppress("AssignedValueIsNeverRead")
                 showGotoRaDecPopup = false
                 onGoTo(ra, dec, epoch)
             }
@@ -1203,8 +1213,14 @@ fun SkyCatalogDialog(
             title = stringResource(Res.string.comets_catalog_title),
             text = stringResource(Res.string.error_comets_download),
             confirmButtonText = stringResource(Res.string.btn_confirm),
-            onConfirm = { showCometsError = false },
-            onDismiss = { showCometsError = false }
+            onConfirm = {
+                @Suppress("AssignedValueIsNeverRead")
+                showCometsError = false
+            },
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showCometsError = false
+            }
         )
     }
 }

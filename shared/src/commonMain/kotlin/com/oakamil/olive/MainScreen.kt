@@ -221,10 +221,12 @@ fun MainScreen(
                     label = if (isEnteringPip) stringResource(id = Res.string.btn_entering_pip) else "Picture\nin Picture",
                     enabled = viewModel.isEngineRunning && !isStarting && !isStopping && !isEnteringPip,
                     onClick = {
+                        @Suppress("AssignedValueIsNeverRead")
                         isEnteringPip = true
                         onEnterPipMode()
                         coroutineScope.launch {
                             delay(1000)
+                            @Suppress("AssignedValueIsNeverRead")
                             isEnteringPip = false
                         }
                     }
@@ -315,15 +317,6 @@ fun MainScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer { alpha = controlsAlpha }
-                    .pointerInput(isLowPowerMode) {
-                        if (isLowPowerMode) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-                                }
-                            }
-                        }
-                    }
             ) {
                 if (isWideLayout) {
                     Row(
@@ -454,7 +447,10 @@ fun MainScreen(
         if (showSkyMapSettings) {
             SkyMapSettingsDialog(
                 viewModel = viewModel,
-                onDismiss = { showSkyMapSettings = false }
+                onDismiss = {
+                    @Suppress("AssignedValueIsNeverRead")
+                    showSkyMapSettings = false
+                }
             )
         }
 
@@ -468,7 +464,10 @@ fun MainScreen(
                 isStarting = isStarting,
                 onCameraSelectionChanged = onCameraSelectionChanged,
                 onToggleEngine = onToggleEngine,
-                onDismiss = { showStartEngineDialog = false },
+                onDismiss = {
+                    @Suppress("AssignedValueIsNeverRead")
+                    showStartEngineDialog = false
+                },
                 onRefreshLocation = onRefreshLocation
             )
         }
@@ -478,7 +477,10 @@ fun MainScreen(
 @Composable
 fun DigitalClock() {
     val is24Hour = is24HourFormat()
-    var timeString by remember { mutableStateOf("") }
+    var timeString by remember(is24Hour) {
+        val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+        mutableStateOf(formatSystemTime(now, is24Hour))
+    }
     LaunchedEffect(is24Hour) {
         while (isActive) {
             val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
