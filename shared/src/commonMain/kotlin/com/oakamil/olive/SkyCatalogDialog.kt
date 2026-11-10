@@ -928,7 +928,7 @@ fun SkyCatalogDialog(
                                                     color = colors.primary,
                                                     modifier = Modifier
                                                         .clickable { showRaDecForObj = obj }
-                                                        .padding(4.dp)
+                                                        .padding(end = 8.dp, start = 4.dp)
                                                 )
                                             } else {
                                                 val hasSolve =
@@ -979,28 +979,28 @@ fun SkyCatalogDialog(
                                                         )
                                                     }
                                                 }
+                                            }
 
+                                            IconBarItem(
+                                                icon = Default.CenterFocusStrong,
+                                                label = stringResource(Res.string.crop_center),
+                                                onClick = {
+                                                    onCenter(obj.ra, obj.dec)
+                                                }
+                                            )
+
+                                            if (!isBelowHorizon && viewModel.isEngineRunning) {
                                                 IconBarItem(
-                                                    icon = Default.CenterFocusStrong,
-                                                    label = stringResource(Res.string.crop_center),
+                                                    icon = Default.GpsFixed,
+                                                    label = stringResource(Res.string.btn_goto),
                                                     onClick = {
-                                                        onCenter(obj.ra, obj.dec)
+                                                        onGoTo(
+                                                            obj.ra,
+                                                            obj.dec,
+                                                            2000.0
+                                                        )
                                                     }
                                                 )
-
-                                                if (viewModel.isEngineRunning) {
-                                                    IconBarItem(
-                                                        icon = Default.GpsFixed,
-                                                        label = stringResource(Res.string.btn_goto),
-                                                        onClick = {
-                                                            onGoTo(
-                                                                obj.ra,
-                                                                obj.dec,
-                                                                2000.0
-                                                            )
-                                                        }
-                                                    )
-                                                }
                                             }
                                         }
                                     }

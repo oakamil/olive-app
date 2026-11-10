@@ -88,6 +88,16 @@ open class MainViewModel(
             settingsManager.showStats = value
         }
 
+    private val _reverseLayout = mutableStateOf(settingsManager.reverseLayout)
+    var reverseLayout: Boolean
+        get() = _reverseLayout.value
+        set(value) {
+            if (_reverseLayout.value != value) {
+                _reverseLayout.value = value
+                settingsManager.reverseLayout = value
+            }
+        }
+
     var skyMapCenterTarget by mutableStateOf<Pair<Double, Double>?>(null)
 
     private val _skyMapFov = mutableDoubleStateOf(settingsManager.skyMapFov)
@@ -879,7 +889,5 @@ open class MainViewModel(
             if (lat == null || lon == null) return false
             return lat in -90.0..90.0 && lon in -180.0..180.0
         }
-
-        val DEFAULT_CATALOG_TYPE_FILTERS = com.oakamil.olive.DEFAULT_CATALOG_TYPE_FILTERS
     }
 }

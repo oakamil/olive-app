@@ -50,6 +50,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -214,6 +215,7 @@ fun SkyMapView(
     val centerAlt = viewModel.skyMapCenterAlt ?: initialAltAz.second
     val fov = viewModel.skyMapFov
     val isCameraLocked = viewModel.skyMapCameraLocked
+    val isReversed = viewModel.reverseLayout
 
     LaunchedEffect(Unit) {
         if (viewModel.skyMapCenterAz == null) viewModel.skyMapCenterAz = initialAltAz.first
@@ -1450,14 +1452,17 @@ fun SkyMapView(
 
         val topControlsY = maxOf(safeTop, 36.dp)
 
-        // Overlay Top-Left: Digital Clock (in cutout row / left ear, rendered at bottom of unsafe cutout area)
+        // Overlay Top Controls: Digital Clock (in cutout row / left or right ear, rendered at bottom of unsafe cutout area)
         if (timeString.isNotEmpty()) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = safeStart + 2.dp)
+                    .align(if (isReversed) Alignment.TopEnd else Alignment.TopStart)
+                    .padding(
+                        start = if (isReversed) 0.dp else safeStart + 2.dp,
+                        end = if (isReversed) safeEnd + 2.dp else 0.dp
+                    )
                     .height(topControlsY),
-                contentAlignment = Alignment.BottomStart
+                contentAlignment = if (isReversed) Alignment.BottomEnd else Alignment.BottomStart
             ) {
                 Text(
                     text = timeString,
@@ -1471,7 +1476,7 @@ fun SkyMapView(
             }
         }
 
-        // Overlay Top Controls: In-line FOV Badge (Left) and Action Buttons (Right)
+        // Overlay Top Controls: In-line FOV Badge (Left/Right) and Action Buttons (Right/Left)
         val (centerRa, centerDec) = remember(centerAz, centerAlt, lat, lst) {
             AstrometryUtils.altAzToRaDec(centerAz, centerAlt, lat, lst)
         }
@@ -1479,8 +1484,12 @@ fun SkyMapView(
         if (viewModel.showMapPosition || (viewModel.showStats && viewModel.isEngineRunning)) {
             Column(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = safeStart, top = topControlsY)
+                    .align(if (isReversed) Alignment.TopEnd else Alignment.TopStart)
+                    .padding(
+                        start = if (isReversed) 0.dp else safeStart,
+                        end = if (isReversed) safeEnd else 0.dp,
+                        top = topControlsY
+                    )
                     .width(IntrinsicSize.Max),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -1643,11 +1652,15 @@ fun SkyMapView(
             }
         }
 
-        // Overlay Top-Right: Action buttons ("Center Scope", "Center Target")
+        // Overlay Top Action buttons ("Center Scope", "Center Target")
         Row(
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = topControlsY, end = safeEnd),
+                .align(if (isReversed) Alignment.TopStart else Alignment.TopEnd)
+                .padding(
+                    top = topControlsY,
+                    start = if (isReversed) safeStart else 0.dp,
+                    end = if (isReversed) 0.dp else safeEnd
+                ),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
@@ -1736,11 +1749,15 @@ fun SkyMapView(
             }
         }
 
-        // Overlay Bottom-Right: Zoom +/- Controls
+        // Overlay Bottom Zoom +/- Controls
         Column(
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(8.dp),
+                .align(if (isReversed) Alignment.BottomStart else Alignment.BottomEnd)
+                .padding(
+                    start = if (isReversed) safeStart else 0.dp,
+                    end = if (isReversed) 0.dp else safeEnd,
+                    bottom = 8.dp
+                ),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OutlinedIconButton(
@@ -1754,7 +1771,11 @@ fun SkyMapView(
                 shape = CircleShape,
                 modifier = Modifier.size(40.dp)
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = colors.primary)
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = stringResource(Res.string.cd_zoom_in),
+                    tint = colors.primary
+                )
             }
             OutlinedIconButton(
                 onClick = { viewModel.skyMapFov = (fov * 1.4).coerceIn(0.5, 180.0) },
@@ -1767,11 +1788,15 @@ fun SkyMapView(
                 shape = CircleShape,
                 modifier = Modifier.size(40.dp)
             ) {
-                Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = colors.primary)
+                Icon(
+                    Icons.Default.Remove,
+                    contentDescription = stringResource(Res.string.cd_zoom_out),
+                    tint = colors.primary
+                )
             }
         }
 
-        // Overlay Bottom-Left: Target Object Bubble & Mini Guidance Bubble (shown only when a GoTo is active)
+        // Overlay Bottom: Target Object Bubble & Mini Guidance Bubble (shown only when a GoTo is active)
         if (viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
             val guidanceWidth = 88.dp * 16f / 9f
             val targetDisplayName = targetObjName ?: stringResource(
@@ -1782,8 +1807,12 @@ fun SkyMapView(
 
             Column(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = safeStart, bottom = 8.dp)
+                    .align(if (isReversed) Alignment.BottomEnd else Alignment.BottomStart)
+                    .padding(
+                        start = if (isReversed) 0.dp else safeStart,
+                        end = if (isReversed) safeEnd else 0.dp,
+                        bottom = 8.dp
+                    )
                     .width(guidanceWidth),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -1920,7 +1949,13 @@ fun SkyMapView(
                         Spacer(Modifier.width(4.dp))
                         Text(formatDec(obj.dec), color = colors.primary)
                     }
-                    if (viewModel.isEngineRunning) {
+                    val isAbove = !viewModel.hasValidLocation || AstrometryUtils.raDecToAltAz(
+                        obj.ra,
+                        obj.dec,
+                        lat,
+                        lst
+                    ).second >= 0.0
+                    if (viewModel.isEngineRunning && isAbove) {
                         Spacer(Modifier.height(12.dp))
                         Box(
                             modifier = Modifier.fillMaxWidth(),
@@ -1933,6 +1968,18 @@ fun SkyMapView(
                                     viewModel.setGoToTarget(obj.ra, obj.dec)
                                     selectedObject = null
                                 }
+                            )
+                        }
+                    } else if (viewModel.isEngineRunning && !isAbove) {
+                        Spacer(Modifier.height(12.dp))
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                stringResource(Res.string.status_below_horizon),
+                                color = colors.primary,
+                                style = MaterialTheme.typography.labelSmall
                             )
                         }
                     }
