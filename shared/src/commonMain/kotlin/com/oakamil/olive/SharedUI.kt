@@ -33,10 +33,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift.Companion.Superscript
 import androidx.compose.ui.text.style.TextAlign
@@ -45,7 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import org.jetbrains.compose.resources.stringResource
+
+val LocalOnUserInteraction = compositionLocalOf { {} }
 
 @Composable
 fun IconBarItem(
@@ -191,8 +195,10 @@ fun NightVisionDialog(
 fun InfoPopup(
     title: String,
     onDismiss: () -> Unit,
+    bottomBar: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
+    val onUserInteraction = LocalOnUserInteraction.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -208,6 +214,14 @@ fun InfoPopup(
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     RoundedCornerShape(16.dp)
                 )
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial)
+                            onUserInteraction()
+                        }
+                    }
+                }
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -234,10 +248,21 @@ fun InfoPopup(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .weight(1f, fill = false)
                         .padding(16.dp)
                         .verticalScrollWithScrollbar(androidx.compose.foundation.rememberScrollState())
                 ) {
                     content()
+                }
+                if (bottomBar != null) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        bottomBar()
+                    }
                 }
             }
         }

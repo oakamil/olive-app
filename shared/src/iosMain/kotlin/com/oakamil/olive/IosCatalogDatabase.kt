@@ -483,6 +483,7 @@ class IosCatalogDatabase : CatalogDatabase {
         catalogFilter: String?,
         sortBy: String,
         magLimit: Double?,
+        includeNullMagnitude: Boolean,
         typeFilters: Set<String>?,
         starFilter: Boolean?,
         visibilityFilter: String,
@@ -570,7 +571,11 @@ class IosCatalogDatabase : CatalogDatabase {
         }
 
         if (magLimit != null) {
-            selection += " AND (magnitude IS NOT NULL AND magnitude <= $magLimit)"
+            selection += if (includeNullMagnitude) {
+                " AND (magnitude IS NULL OR magnitude <= $magLimit)"
+            } else {
+                " AND (magnitude IS NOT NULL AND magnitude <= $magLimit)"
+            }
         }
 
         if (typeFilters != null) {
@@ -641,6 +646,7 @@ class IosCatalogDatabase : CatalogDatabase {
 
             "name" -> "(common_name IS NULL OR common_name = '') ASC, common_name ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
             "brightness" -> "magnitude IS NULL ASC, magnitude ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
+            "priority" -> "priority ASC, magnitude IS NULL ASC, magnitude ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
             "catalog ID" -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
             else -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
         }

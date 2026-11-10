@@ -262,7 +262,7 @@ class SkyMapProjection(
          * p3 = Bottom-Left
          *
          * Mirrors coordinates along X or Y if [mirrorScaleX] < 0 or [mirrorScaleY] < 0,
-         * matching the orientation and mirroring logic in EngineRunningScreen.
+         * matching the camera orientation and mirroring logic.
          */
         fun computeQuadHomography(
             srcW: Float,
@@ -280,13 +280,13 @@ class SkyMapProjection(
             var c3 = p3
 
             if (mirrorScaleX < 0f) {
-                val t0 = c0;
+                val t0 = c0
                 val t3 = c3
                 c0 = c1; c1 = t0
                 c3 = c2; c2 = t3
             }
             if (mirrorScaleY < 0f) {
-                val t0 = c0;
+                val t0 = c0
                 val t1 = c1
                 c0 = c3; c3 = t0
                 c1 = c2; c2 = t1
@@ -320,19 +320,29 @@ class SkyMapProjection(
 
             val a = x1 - x0 + g * x1
             val b = x3 - x0 + h * x3
-            val c = x0
             val d = y1 - y0 + g * y1
             val e = y3 - y0 + h * y3
-            val f = y0
 
             return Matrix(
                 floatArrayOf(
                     a / srcW, d / srcW, 0f, g / srcW,
                     b / srcH, e / srcH, 0f, h / srcH,
                     0f, 0f, 1f, 0f,
-                    c, f, 0f, 1f
+                    x0, y0, 0f, 1f
                 )
             )
+        }
+
+        /**
+         * Computes the angular distance (in degrees) from the viewport center to the viewport corners
+         * in stereographic projection, accounting for both horizontal and vertical viewport dimensions.
+         */
+        fun cornerRadiusDeg(fovDeg: Double, viewportWidth: Float, viewportHeight: Float): Double {
+            val minDim = minOf(viewportWidth, viewportHeight).toDouble()
+            if (minDim <= 0.0) return fovDeg * 1.2
+            val diagRatio = hypot(viewportWidth.toDouble(), viewportHeight.toDouble()) / minDim
+            val fovRad = Math.toRadians(fovDeg)
+            return Math.toDegrees(2.0 * atan(diagRatio * tan(fovRad / 4.0)))
         }
     }
 }

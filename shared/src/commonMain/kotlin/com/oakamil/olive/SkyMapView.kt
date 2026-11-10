@@ -33,7 +33,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterCenterFocus
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Map
@@ -100,7 +99,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import org.jetbrains.compose.resources.stringResource
 import kotlin.math.hypot
 import kotlin.math.round
 import kotlin.time.Duration.Companion.milliseconds
@@ -136,12 +134,9 @@ object SkyMapTuning {
 fun SkyMapView(
     viewModel: MainViewModel,
     stats: EngineStats,
-    isExpanded: Boolean,
-    onToggleExpanded: () -> Unit,
     modifier: Modifier = Modifier,
-    planets: List<CatalogObject> = emptyList(),
-    comets: List<CatalogObject> = emptyList(),
-    asteroids: List<CatalogObject> = emptyList(),
+    isStarting: Boolean = false,
+    isStopping: Boolean = false,
     detectedIpAddress: String = "",
     activeCameraSelection: String = ""
 ) {
@@ -269,24 +264,24 @@ fun SkyMapView(
     val textMeasurer = rememberTextMeasurer(cacheSize = 256)
     val catalogPainters = rememberCatalogPainters()
 
-    // Solar system ephemeris: use provided list or load asynchronously off the main thread
-    var solPlanets by remember { mutableStateOf(planets) }
-    var solComets by remember { mutableStateOf(comets) }
-    var solAsteroids by remember { mutableStateOf(asteroids) }
-    LaunchedEffect(planets, comets, asteroids, hasValidLocation) {
-        if (planets.isNotEmpty()) solPlanets = planets
-        if (comets.isNotEmpty()) solComets = comets
-        if (asteroids.isNotEmpty()) solAsteroids = asteroids
-        if (hasValidLocation && solPlanets.isEmpty() && solComets.isEmpty() && solAsteroids.isEmpty()) {
-            withContext(Dispatchers.IO) {
-                solPlanets = viewModel.getPlanets()
-                solComets = viewModel.getComets()
-                solAsteroids = viewModel.getAsteroids()
+    // Solar system ephemeris: load asynchronously off the main thread and refresh on location/comet updates
+    var solPlanets by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
+    var solComets by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
+    var solAsteroids by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
+    LaunchedEffect(lat, lon, hasValidLocation, viewModel.cometsRefreshVersion) {
+        if (hasValidLocation) {
+            while (isActive) {
+                withContext(Dispatchers.IO) {
+                    solPlanets = viewModel.getPlanets()
+                    solComets = viewModel.getComets()
+                    solAsteroids = viewModel.getAsteroids()
+                }
+                delay(300_000)
             }
         }
     }
 
-    // Dismiss popups on Back button before closing sky map
+    // Dismiss popups on Back button
     var selectedObject by remember { mutableStateOf<CatalogObject?>(null) }
     var showFullStats by remember { mutableStateOf(false) }
     var showTelescopeControlInfo by remember { mutableStateOf(false) }
@@ -302,8 +297,29 @@ fun SkyMapView(
         stats.targetDec
     ) { mutableStateOf<CatalogObject?>(null) }
 
-    LaunchedEffect(stats.targetRa, stats.targetDec, solPlanets, solComets, solAsteroids) {
-        if (stats.targetRa != null && stats.targetDec != null) {
+    LaunchedEffect(viewModel.isLowPowerMode) {
+        if (viewModel.isLowPowerMode) {
+            selectedObject = null
+            showTargetPopup = false
+            showFullStats = false
+            showTelescopeControlInfo = false
+            showSyncDialog = false
+        }
+    }
+
+    LaunchedEffect(
+        viewModel.isEngineRunning,
+        stats.targetRa,
+        stats.targetDec,
+        solPlanets,
+        solComets,
+        solAsteroids
+    ) {
+        if (!viewModel.isEngineRunning) {
+            showFullStats = false
+            showTelescopeControlInfo = false
+        }
+        if (viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
             val targetRa = stats.targetRa
             val targetDec = stats.targetDec
 
@@ -345,7 +361,7 @@ fun SkyMapView(
         }
     }
 
-    BackHandler(enabled = isExpanded && (selectedObject != null || showTargetPopup || showFullStats || showTelescopeControlInfo || showSyncDialog)) {
+    BackHandler(enabled = selectedObject != null || showTargetPopup || showFullStats || showTelescopeControlInfo || showSyncDialog) {
         when {
             showSyncDialog -> showSyncDialog = false
             showTelescopeControlInfo -> showTelescopeControlInfo = false
@@ -464,58 +480,13 @@ fun SkyMapView(
         currentTypeFilters.isEmpty() || currentTypeFilters == DEFAULT_CATALOG_TYPE_FILTERS
 
     val currentLst by rememberUpdatedState(lst)
-    LaunchedEffect(currentTypeFilters, currentMagLimit, isAllTypes, lat) {
-        snapshotFlow { Triple(centerAz, centerAlt, fov) }
-            .debounce(200.milliseconds)
-            .collectLatest { (az, alt, currentFov) ->
-                if (currentFov < 60.0) {
-                    val (ra, dec) = AstrometryUtils.altAzToRaDec(az, alt, lat, currentLst)
-                    val searchRadius = (currentFov * 1.35).coerceIn(0.5, 45.0)
-                    val queryMagLimit = when {
-                        currentFov > 30.0 -> minOf(6.5, currentMagLimit ?: 6.5)
-                        currentFov > 15.0 -> minOf(8.0, currentMagLimit ?: 8.0)
-                        currentFov > 5.0 -> minOf(10.0, currentMagLimit ?: 10.0)
-                        else -> currentMagLimit ?: 12.0
-                    }
-                    val (dsoObjects, stars) = withContext(Dispatchers.IO) {
-                        val dso = viewModel.catalogDb.searchObjects(
-                            targetRa = ra,
-                            targetDec = dec,
-                            maxDistanceDegrees = searchRadius,
-                            magLimit = if (currentFov <= 15.0) null else queryMagLimit,
-                            typeFilters = if (isAllTypes) null else currentTypeFilters,
-                            starFilter = false,
-                            visibilityFilter = "Any",
-                            sortBy = "brightness",
-                            limit = 200
-                        )
-                        val st = viewModel.catalogDb.searchObjects(
-                            targetRa = ra,
-                            targetDec = dec,
-                            maxDistanceDegrees = searchRadius,
-                            magLimit = queryMagLimit,
-                            starFilter = true,
-                            visibilityFilter = "Any",
-                            sortBy = "brightness",
-                            limit = 500
-                        )
-                        Pair(dso, st)
-                    }
-                    dynamicCatalogObjects = dsoObjects
-                    dynamicStars = stars
-                } else {
-                    dynamicCatalogObjects = emptyList()
-                    dynamicStars = emptyList()
-                }
-            }
-    }
 
     val effectiveMagLimit = when {
         fov > 60.0 -> minOf(5.0, currentMagLimit ?: 5.0)
         fov > 30.0 -> minOf(6.5, currentMagLimit ?: 6.5)
         fov > 15.0 -> minOf(8.0, currentMagLimit ?: 8.0)
-        fov > 10.0 -> minOf(10.0, currentMagLimit ?: 10.0)
-        fov > 5.0 -> minOf(12.0, currentMagLimit ?: 12.0)
+        fov > 10.0 -> minOf(11.0, currentMagLimit ?: 11.0)
+        fov > 5.0 -> minOf(13.0, currentMagLimit ?: 13.0)
         else -> currentMagLimit ?: 99.9
     }
 
@@ -630,6 +601,83 @@ fun SkyMapView(
     ) {
         val widthPx = constraints.maxWidth.toFloat()
         val heightPx = constraints.maxHeight.toFloat()
+        val currentWidthPx by rememberUpdatedState(widthPx)
+        val currentHeightPx by rememberUpdatedState(heightPx)
+
+        LaunchedEffect(
+            currentTypeFilters,
+            currentMagLimit,
+            isAllTypes,
+            lat,
+            lon,
+            hasValidLocation
+        ) {
+            snapshotFlow {
+                val az = viewModel.skyMapCenterAz ?: initialAltAz.first
+                val alt = viewModel.skyMapCenterAlt ?: initialAltAz.second
+                val currentFov = viewModel.skyMapFov
+                val stepSize = maxOf(0.1, currentFov * 0.15)
+                val azGrid = kotlin.math.floor(az / stepSize).toInt()
+                val altGrid = kotlin.math.floor(alt / stepSize).toInt()
+                val fovGrid = kotlin.math.floor(
+                    kotlin.math.ln(currentFov.coerceAtLeast(0.5)) / kotlin.math.ln(1.15)
+                ).toInt()
+                Triple(azGrid, altGrid, fovGrid)
+            }
+                .debounce(30.milliseconds)
+                .collectLatest {
+                    val az = viewModel.skyMapCenterAz ?: initialAltAz.first
+                    val alt = viewModel.skyMapCenterAlt ?: initialAltAz.second
+                    val currentFov = viewModel.skyMapFov
+                    if (currentFov < 60.0) {
+                        val (ra, dec) = AstrometryUtils.altAzToRaDec(az, alt, lat, currentLst)
+                        val stepSize = maxOf(0.1, currentFov * 0.15)
+                        val cornerRadius = SkyMapProjection.cornerRadiusDeg(
+                            currentFov,
+                            currentWidthPx,
+                            currentHeightPx
+                        )
+                        val searchRadius = (cornerRadius + stepSize).coerceIn(0.5, 45.0)
+                        val queryMagLimit = when {
+                            currentFov > 30.0 -> minOf(6.5, currentMagLimit ?: 6.5)
+                            currentFov > 15.0 -> minOf(8.0, currentMagLimit ?: 8.0)
+                            currentFov > 10.0 -> minOf(11.0, currentMagLimit ?: 11.0)
+                            currentFov > 5.0 -> minOf(13.0, currentMagLimit ?: 13.0)
+                            else -> currentMagLimit ?: 99.9
+                        }
+                        val (dsoObjects, stars) = withContext(Dispatchers.IO) {
+                            val dso = viewModel.catalogDb.searchObjects(
+                                targetRa = ra,
+                                targetDec = dec,
+                                maxDistanceDegrees = searchRadius,
+                                magLimit = if (currentFov <= 5.0) currentMagLimit else queryMagLimit,
+                                includeNullMagnitude = currentFov <= 15.0 && currentMagLimit == null,
+                                typeFilters = if (isAllTypes) null else currentTypeFilters,
+                                starFilter = false,
+                                visibilityFilter = "Any",
+                                sortBy = if (currentFov <= 15.0) "priority" else "brightness",
+                                limit = 500
+                            )
+                            val st = viewModel.catalogDb.searchObjects(
+                                targetRa = ra,
+                                targetDec = dec,
+                                maxDistanceDegrees = searchRadius,
+                                magLimit = queryMagLimit,
+                                starFilter = true,
+                                visibilityFilter = "Any",
+                                sortBy = "brightness",
+                                limit = 500
+                            )
+                            Pair(dso, st)
+                        }
+                        dynamicCatalogObjects = dsoObjects
+                        dynamicStars = stars
+                    } else {
+                        dynamicCatalogObjects = emptyList()
+                        dynamicStars = emptyList()
+                    }
+                }
+        }
 
         val projection = remember(centerAz, centerAlt, fov, widthPx, heightPx) {
             SkyMapProjection(
@@ -915,7 +963,7 @@ fun SkyMapView(
             var camBoxRect: Rect? = null
             var alignPt: Offset? = null
 
-            if (camCenterRa != null && camCenterDec != null) {
+            if (viewModel.isEngineRunning && camCenterRa != null && camCenterDec != null) {
                 val corners = SkyMapProjection.computeCameraFovCorners(
                     camCenterRa,
                     camCenterDec,
@@ -1201,7 +1249,7 @@ fun SkyMapView(
                 )
             }
 
-            // 8. Telescope Alignment Point Reticle (same 4-corner bracket as EngineRunningScreen, scaled to catalog icons)
+            // 8. Telescope Alignment Point Reticle (4-corner bracket, scaled to catalog icons)
             if (alignPt != null) {
                 val s = iconSize / 2f
                 val arm = s * 0.6f
@@ -1276,7 +1324,7 @@ fun SkyMapView(
             // 9. Target Marker & Bearing Line
             val targetRa = stats.targetRa
             val targetDec = stats.targetDec
-            if (targetRa != null && targetDec != null) {
+            if (viewModel.isEngineRunning && targetRa != null && targetDec != null) {
                 val tPt = projection.toScreenRaDec(targetRa, targetDec, lat, lst)
                 if (tPt != null) {
                     val s = 14f
@@ -1364,28 +1412,35 @@ fun SkyMapView(
             }
         }
 
-        // Overlay Top-Left: Digital Clock (in cutout row / left ear)
+        val topControlsY = maxOf(safeTop, 36.dp)
+
+        // Overlay Top-Left: Digital Clock (in cutout row / left ear, rendered at bottom of unsafe cutout area)
         if (timeString.isNotEmpty()) {
-            Text(
-                text = timeString,
-                style = TextStyle(
-                    fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
-                    fontWeight = FontWeight.Bold
-                ),
-                color = colors.primary,
+            Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = safeStart + 2.dp, top = 8.dp)
-            )
+                    .padding(start = safeStart + 2.dp)
+                    .height(topControlsY),
+                contentAlignment = Alignment.BottomStart
+            ) {
+                Text(
+                    text = timeString,
+                    style = TextStyle(
+                        fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = colors.primary,
+                    modifier = Modifier.padding(bottom = 3.dp)
+                )
+            }
         }
 
         // Overlay Top Controls: In-line FOV Badge (Left) and Action Buttons (Right)
         val (centerRa, centerDec) = remember(centerAz, centerAlt, lat, lst) {
             AstrometryUtils.altAzToRaDec(centerAz, centerAlt, lat, lst)
         }
-        val topControlsY = maxOf(safeTop, 36.dp)
 
-        if (viewModel.showMapPosition || viewModel.showStats) {
+        if (viewModel.showMapPosition || (viewModel.showStats && viewModel.isEngineRunning)) {
             Column(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -1443,8 +1498,8 @@ fun SkyMapView(
                     }
                 }
 
-                // Stats Bubble (Tappable, primary border)
-                if (viewModel.showStats) {
+                // Stats Bubble (Tappable, primary border, shown when engine is running and showStats enabled)
+                if (viewModel.showStats && viewModel.isEngineRunning) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1552,14 +1607,15 @@ fun SkyMapView(
             }
         }
 
-        // Overlay Top-Right: Action buttons ("Center Scope", "Center Target", "Close")
+        // Overlay Top-Right: Action buttons ("Center Scope", "Center Target")
         Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = topControlsY, end = safeEnd),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (stats.targetRa != null && stats.targetDec != null) {
+            if (viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
+                val canCenterTarget = !isStarting && !isStopping
                 OutlinedIconButton(
                     onClick = {
                         viewModel.skyMapCameraLocked = false
@@ -1572,11 +1628,16 @@ fun SkyMapView(
                         viewModel.skyMapCenterAz = tAz
                         viewModel.skyMapCenterAlt = tAlt
                     },
-                    border = BorderStroke(1.dp, colors.primary),
+                    enabled = canCenterTarget,
+                    border = BorderStroke(
+                        1.dp,
+                        if (canCenterTarget) colors.primary else colors.outline.copy(alpha = 0.4f)
+                    ),
                     colors = IconButtonDefaults.outlinedIconButtonColors(
-                        containerColor = colors.surface.copy(
-                            alpha = 0.6f
-                        )
+                        containerColor = if (canCenterTarget) colors.surface.copy(alpha = 0.6f) else colors.surface.copy(
+                            alpha = 0.3f
+                        ),
+                        disabledContainerColor = colors.surface.copy(alpha = 0.3f)
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.size(36.dp)
@@ -1584,13 +1645,14 @@ fun SkyMapView(
                     Icon(
                         imageVector = Icons.Default.GpsFixed,
                         contentDescription = stringResource(Res.string.btn_center_target),
-                        tint = colors.primary,
+                        tint = if (canCenterTarget) colors.primary else colors.secondary.copy(alpha = 0.4f),
                         modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            val hasSolve = stats.ra != null && stats.dec != null
+            val hasSolve =
+                viewModel.isEngineRunning && !isStarting && !isStopping && stats.ra != null && stats.dec != null
             OutlinedIconButton(
                 onClick = {
                     viewModel.skyMapCameraLocked = true
@@ -1636,26 +1698,6 @@ fun SkyMapView(
                     modifier = Modifier.size(20.dp)
                 )
             }
-
-            // Visual Close/Exit button for iOS & Touch parity
-            OutlinedIconButton(
-                onClick = onToggleExpanded,
-                border = BorderStroke(1.dp, colors.primary),
-                colors = IconButtonDefaults.outlinedIconButtonColors(
-                    containerColor = colors.surface.copy(
-                        alpha = 0.6f
-                    )
-                ),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = stringResource(id = Res.string.cd_close),
-                    tint = colors.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
         }
 
         // Overlay Bottom-Right: Zoom +/- Controls
@@ -1694,7 +1736,7 @@ fun SkyMapView(
         }
 
         // Overlay Bottom-Left: Target Object Bubble & Mini Guidance Bubble (shown only when a GoTo is active)
-        if (stats.targetRa != null && stats.targetDec != null) {
+        if (viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
             val guidanceWidth = 88.dp * 16f / 9f
             val targetDisplayName = targetObjName ?: stats.targetRa?.let { r ->
                 stats.targetDec?.let { d ->
@@ -1846,23 +1888,28 @@ fun SkyMapView(
                         Spacer(Modifier.width(4.dp))
                         Text(formatDec(obj.dec), color = colors.primary)
                     }
-                    Spacer(Modifier.height(12.dp))
-                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        IconBarItem(
-                            icon = Icons.Default.GpsFixed,
-                            label = stringResource(Res.string.btn_goto),
-                            onClick = {
-                                viewModel.setGoToTarget(obj.ra, obj.dec)
-                                selectedObject = null
-                            }
-                        )
+                    if (viewModel.isEngineRunning) {
+                        Spacer(Modifier.height(12.dp))
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            IconBarItem(
+                                icon = Icons.Default.GpsFixed,
+                                label = stringResource(Res.string.btn_goto),
+                                onClick = {
+                                    viewModel.setGoToTarget(obj.ra, obj.dec)
+                                    selectedObject = null
+                                }
+                            )
+                        }
                     }
                 }
             }
         }
 
         // Target Object Info Popup (opened by tapping Target Object Bubble)
-        if (showTargetPopup && stats.targetRa != null && stats.targetDec != null) {
+        if (showTargetPopup && viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
             val targetDisplayName = targetObjName ?: stats.targetRa?.let { r ->
                 stats.targetDec?.let { d ->
                     stringResource(
@@ -2000,7 +2047,7 @@ fun SkyMapView(
         }
 
         // Align Confirmation Dialog
-        if (showSyncDialog) {
+        if (showSyncDialog && viewModel.isEngineRunning) {
             AlertDialog(
                 onDismissRequest = { showSyncDialog = false },
                 title = { Text(stringResource(Res.string.title_confirm_alignment)) },
@@ -2026,7 +2073,7 @@ fun SkyMapView(
         }
 
         // Engine Stats Full Popup
-        if (showFullStats) {
+        if (showFullStats && viewModel.isEngineRunning) {
             InfoPopup(
                 title = stringResource(Res.string.title_engine_info),
                 onDismiss = { showFullStats = false }

@@ -89,10 +89,20 @@ open class MainViewModel(
         }
 
     var skyMapCenterTarget by mutableStateOf<Pair<Double, Double>?>(null)
-    var skyMapFov by mutableDoubleStateOf(15.0)
+
+    private val _skyMapFov = mutableDoubleStateOf(settingsManager.skyMapFov)
+    var skyMapFov: Double
+        get() = _skyMapFov.doubleValue
+        set(value) {
+            _skyMapFov.doubleValue = value
+            settingsManager.skyMapFov = value
+        }
+
     var skyMapCenterAz by mutableStateOf<Double?>(null)
     var skyMapCenterAlt by mutableStateOf<Double?>(null)
     var skyMapCameraLocked by mutableStateOf(true)
+    var cometsRefreshVersion by mutableIntStateOf(0)
+        private set
 
     init {
         settingsManager.savedLocation?.let { (lat, lon) ->
@@ -413,10 +423,7 @@ open class MainViewModel(
             launch(Dispatchers.Main) {
                 isLowPowerMode = false
                 engineMode = EngineMode.NATIVE
-                skyMapFov = 15.0
                 skyMapCameraLocked = true
-                skyMapCenterAz = null
-                skyMapCenterAlt = null
 
                 val gainRange = engine.getNativeCameraGainRange()
                 val (minG, maxG, defaultG) = if (gainRange != null && gainRange.size >= 3) {
@@ -509,10 +516,7 @@ open class MainViewModel(
 
             launch(Dispatchers.Main) {
                 engineMode = EngineMode.UVC
-                skyMapFov = 15.0
                 skyMapCameraLocked = true
-                skyMapCenterAz = null
-                skyMapCenterAlt = null
 
                 uvcBrightnessMin = 0
                 uvcBrightnessMax = 100
@@ -831,6 +835,7 @@ open class MainViewModel(
             val success = catalogDb.refreshComets()
             launch(Dispatchers.Main) {
                 if (success) {
+                    cometsRefreshVersion++
                     onComplete()
                 } else {
                     onNetworkError()
@@ -845,11 +850,14 @@ open class MainViewModel(
         engineMode = EngineMode.STOPPED
         isLowPowerMode = false
         currentZoom = 1.0f
-        skyMapFov = 15.0
         skyMapCameraLocked = true
-        skyMapCenterAz = null
-        skyMapCenterAlt = null
         stopPolling()
+
+        engineStats = EngineStats()
+        latestFrame = null
+        isCameraStuck = false
+        lastFrameTimestamp = 0L
+        clearGoToTarget()
 
         uvcWrapper?.release()
         uvcWrapper = null

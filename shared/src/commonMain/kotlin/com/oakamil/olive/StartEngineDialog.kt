@@ -1,20 +1,19 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -23,8 +22,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsBackupRestore
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -53,7 +50,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
 @Composable
-fun StartScreen(
+fun StartEngineDialog(
     viewModel: MainViewModel,
     settingsManager: SettingsManager,
     isCameraConnected: Boolean,
@@ -62,12 +59,12 @@ fun StartScreen(
     isStarting: Boolean,
     onCameraSelectionChanged: (String) -> Unit,
     onToggleEngine: () -> Unit,
+    onDismiss: () -> Unit,
     onRefreshLocation: () -> Unit = {}
 ) {
     val capabilities = LocalPlatformCapabilities.current
     var cameraSelection by remember { mutableStateOf(activeCameraSelection) }
     var cameraSettingsMode by remember { mutableStateOf(settingsManager.cameraSettingsMode) }
-    var internalFps by remember { mutableIntStateOf(settingsManager.internalFps) }
     var uvcFps by remember { mutableIntStateOf(settingsManager.uvcFps) }
     var uvcWidth by remember { mutableIntStateOf(settingsManager.uvcWidth) }
     var uvcHeight by remember { mutableIntStateOf(settingsManager.uvcHeight) }
@@ -76,24 +73,13 @@ fun StartScreen(
     var sensorMode by remember { mutableStateOf(settingsManager.sensorMode) }
     var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
-    var guidanceMode by remember { mutableStateOf(settingsManager.guidanceMode) }
     var locationMode by remember { mutableStateOf(settingsManager.locationMode) }
-    var explicitMotionSensorMode by remember { mutableStateOf(if (settingsManager.hasExplicitMotionSensorMode) settingsManager.motionSensorMode else null) }
+    var explicitMotionSensorMode by remember {
+        mutableStateOf(if (settingsManager.hasExplicitMotionSensorMode) settingsManager.motionSensorMode else null)
+    }
     val motionSensorMode = explicitMotionSensorMode ?: if (cameraSelection == "internal") 3 else 0
 
-
-    var showCameraSelectionInfo by remember { mutableStateOf(false) }
-    var showCameraSettingsInfo by remember { mutableStateOf(false) }
-    var showCameraFormatInfo by remember { mutableStateOf(false) }
-    var showInternalCameraInfo by remember { mutableStateOf(false) }
-    var showSensorModeInfo by remember { mutableStateOf(false) }
-    var showDownsamplingInfo by remember { mutableStateOf(false) }
-    var showExtractorInfo by remember { mutableStateOf(false) }
-    var showGuidanceModeInfo by remember { mutableStateOf(false) }
-    var showMotionSensorInfo by remember { mutableStateOf(false) }
-    var showLocationInfo by remember { mutableStateOf(false) }
-
-
+    var activeInfoDialog by remember { mutableStateOf<String?>(null) }
     val supportsRawMap = remember { mutableMapOf<String, Boolean>() }
 
     val currentOnCameraSelectionChanged by rememberUpdatedState(onCameraSelectionChanged)
@@ -105,7 +91,6 @@ fun StartScreen(
     LaunchedEffect(
         cameraSelection,
         cameraSettingsMode,
-        internalFps,
         uvcFps,
         uvcWidth,
         uvcHeight,
@@ -113,12 +98,10 @@ fun StartScreen(
         extractor,
         sensorMode,
         downsampling,
-        internalCameraId,
-        guidanceMode
+        internalCameraId
     ) {
         settingsManager.cameraSelection = cameraSelection
         settingsManager.cameraSettingsMode = cameraSettingsMode
-        settingsManager.internalFps = internalFps
         settingsManager.uvcFps = uvcFps
         settingsManager.uvcWidth = uvcWidth
         settingsManager.uvcHeight = uvcHeight
@@ -127,7 +110,6 @@ fun StartScreen(
         settingsManager.sensorMode = sensorMode
         settingsManager.downsampling = downsampling
         settingsManager.internalCameraId = internalCameraId
-        settingsManager.guidanceMode = guidanceMode
     }
 
     LaunchedEffect(viewModel.availableUvcFormats) {
@@ -138,13 +120,13 @@ fun StartScreen(
     }
 
     LaunchedEffect(internalCameraId) {
-        settingsManager.internalCameraId = internalCameraId
         if (sensorMode == "Raw" && supportsRawMap.isNotEmpty()) {
             if (supportsRawMap[internalCameraId] != true) {
                 sensorMode = "Processed"
             }
         }
     }
+
     LaunchedEffect(locationMode) {
         settingsManager.locationMode = locationMode
     }
@@ -156,65 +138,36 @@ fun StartScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .safeDrawingPadding()
-            .padding(16.dp)
-            .verticalScrollWithScrollbar(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start
-        ) {
-            Text(
-                "Olive Finder",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconBarItem(
-                icon = Icons.Outlined.PlayCircle,
-                label = when {
-                    isStopping -> stringResource(id = Res.string.btn_stopping)
-                    isStarting -> stringResource(id = Res.string.btn_starting)
-                    else -> stringResource(id = Res.string.btn_start_engine)
+    InfoPopup(
+        title = stringResource(Res.string.btn_start_engine),
+        onDismiss = onDismiss,
+        bottomBar = {
+            Button(
+                onClick = {
+                    onDismiss()
+                    onToggleEngine()
                 },
                 enabled = !isStopping && !isStarting,
-                isLoading = isStarting || isStopping,
-                iconSize = 36.dp,
-                onClick = onToggleEngine,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-
-            Spacer(modifier = Modifier.width(24.dp))
-
-            val isDayVision = viewModel.currentTheme == "blue"
-            IconBarItem(
-                icon = if (isDayVision) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                label = if (isDayVision) stringResource(Res.string.theme_night_vision) else stringResource(
-                    Res.string.theme_day_vision
-                ),
-                iconSize = 36.dp,
-                onClick = {
-                    val newTheme = if (isDayVision) "red" else "blue"
-                    settingsManager.appTheme = newTheme
-                    viewModel.currentTheme = newTheme
-                },
-                modifier = Modifier.weight(1f, fill = false)
-            )
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.PlayCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    stringResource(Res.string.btn_start_engine),
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
         }
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Configuration mode
-        val cameraSelectionContent: @Composable () -> Unit = {
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Camera Selection
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(id = Res.string.label_camera_selection),
@@ -222,7 +175,7 @@ fun StartScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 IconButton(
-                    onClick = { showCameraSelectionInfo = true },
+                    onClick = { activeInfoDialog = "camera_selection" },
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
@@ -298,7 +251,6 @@ fun StartScreen(
                 }
             }
 
-
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -321,10 +273,9 @@ fun StartScreen(
                 )
             }
 
+            Spacer(modifier = Modifier.height(24.dp))
 
-        }
-
-        val otherSettingsContent: @Composable () -> Unit = {
+            // Camera Settings (Auto / Manual)
             if (cameraSelection == "internal" || cameraSelection == "external") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -333,7 +284,7 @@ fun StartScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     IconButton(
-                        onClick = { showCameraSettingsInfo = true },
+                        onClick = { activeInfoDialog = "camera_settings" },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -383,14 +334,11 @@ fun StartScreen(
                                 val profileKey =
                                     if (capabilities.isApple) "night_profile_Apple AVFoundation Camera" else "night_profile_Android_Cam_$internalCameraId"
                                 var hasCameraProfile by remember {
-                                    mutableStateOf(
-                                        settingsManager.getString(profileKey) != null
-                                    )
+                                    mutableStateOf(settingsManager.getString(profileKey) != null)
                                 }
 
                                 LaunchedEffect(internalCameraId) {
-                                    hasCameraProfile =
-                                        settingsManager.getString(profileKey) != null
+                                    hasCameraProfile = settingsManager.getString(profileKey) != null
                                 }
 
                                 if (showResetCameraCalibrationDialog) {
@@ -423,9 +371,7 @@ fun StartScreen(
                                 IconBarItem(
                                     icon = Icons.Default.SettingsBackupRestore,
                                     label = stringResource(id = Res.string.btn_reset),
-                                    onClick = {
-                                        showResetCameraCalibrationDialog = true
-                                    },
+                                    onClick = { showResetCameraCalibrationDialog = true },
                                     enabled = hasCameraProfile
                                 )
                             }
@@ -435,6 +381,7 @@ fun StartScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
+            // External Camera Format
             if (cameraSelection == "external") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -443,7 +390,7 @@ fun StartScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     IconButton(
-                        onClick = { showCameraFormatInfo = true },
+                        onClick = { activeInfoDialog = "camera_format" },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -461,9 +408,7 @@ fun StartScreen(
                         .padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
                 ) {
                     var expandedFormat by remember { mutableStateOf(false) }
-                    val currentFormatLabel = remember(uvcFps) {
-                        "$uvcFps fps"
-                    }
+                    val currentFormatLabel = remember(uvcFps) { "$uvcFps fps" }
                     Box(
                         modifier = Modifier.border(
                             1.dp,
@@ -510,6 +455,7 @@ fun StartScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
+            // Internal Camera Selector (Manual Mode)
             if (cameraSelection == "internal" && cameraSettingsMode == "Manual") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -518,7 +464,7 @@ fun StartScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     IconButton(
-                        onClick = { showInternalCameraInfo = true },
+                        onClick = { activeInfoDialog = "internal_camera" },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -616,6 +562,7 @@ fun StartScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
+            // Manual Mode: Sensor Mode, Downsampling, Extractor
             if (cameraSettingsMode == "Manual") {
                 if (cameraSelection == "internal" && !capabilities.isApple) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -625,7 +572,7 @@ fun StartScreen(
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         IconButton(
-                            onClick = { showSensorModeInfo = true },
+                            onClick = { activeInfoDialog = "sensor_mode" },
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
@@ -677,7 +624,7 @@ fun StartScreen(
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         IconButton(
-                            onClick = { showDownsamplingInfo = true },
+                            onClick = { activeInfoDialog = "downsampling" },
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
@@ -701,10 +648,7 @@ fun StartScreen(
                         ).forEach { (value, label) ->
                             RadioButton(
                                 selected = downsampling == value,
-                                onClick = {
-                                    downsampling = value
-                                    settingsManager.downsampling = value
-                                },
+                                onClick = { downsampling = value },
                                 colors = RadioButtonDefaults.colors(
                                     selectedColor = MaterialTheme.colorScheme.primary,
                                     unselectedColor = MaterialTheme.colorScheme.onBackground
@@ -727,7 +671,7 @@ fun StartScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     IconButton(
-                        onClick = { showExtractorInfo = true },
+                        onClick = { activeInfoDialog = "extractor" },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -766,52 +710,7 @@ fun StartScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(id = Res.string.label_guidance_mode),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                IconButton(
-                    onClick = { showGuidanceModeInfo = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = stringResource(id = Res.string.cd_info),
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            ) {
-                listOf(
-                    "alt_az" to stringResource(id = Res.string.value_alt_az_offset),
-                    "equatorial" to stringResource(id = Res.string.value_equatorial_ra_dec)
-                ).forEach { (value, label) ->
-                    RadioButton(
-                        selected = guidanceMode == value,
-                        onClick = { guidanceMode = value },
-                        colors = RadioButtonDefaults.colors(
-                            selectedColor = MaterialTheme.colorScheme.primary,
-                            unselectedColor = MaterialTheme.colorScheme.onBackground
-                        )
-                    )
-                    Text(
-                        label,
-                        modifier = Modifier.padding(start = 8.dp, end = 16.dp),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
+            // Location
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(id = Res.string.label_location),
@@ -819,7 +718,7 @@ fun StartScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 IconButton(
-                    onClick = { showLocationInfo = true },
+                    onClick = { activeInfoDialog = "location" },
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
@@ -945,9 +844,10 @@ fun StartScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
+            // Motion Sensor (if !demo)
             if (cameraSelection != "demo") {
+                Spacer(modifier = Modifier.height(24.dp))
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -957,13 +857,13 @@ fun StartScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     IconButton(
-                        onClick = { showMotionSensorInfo = true },
-                        modifier = Modifier.padding(start = 4.dp)
+                        onClick = { activeInfoDialog = "motion_sensor" },
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             Icons.Default.Info,
                             contentDescription = stringResource(id = Res.string.cd_info),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -1006,9 +906,7 @@ fun StartScreen(
                             if (value == 3 && motionSensorMode != 0) {
                                 var hasCalibration by remember {
                                     mutableStateOf(
-                                        settingsManager.getString(
-                                            "imu_calibration"
-                                        ) != null
+                                        settingsManager.getString("imu_calibration") != null
                                     )
                                 }
                                 var showResetCalibrationDialog by remember { mutableStateOf(false) }
@@ -1054,85 +952,71 @@ fun StartScreen(
                 }
             }
         }
+    }
 
-        Column(modifier = Modifier.fillMaxWidth()) {
-            cameraSelectionContent()
-
-            Spacer(modifier = Modifier.height(24.dp))
-            otherSettingsContent()
+    // Contextual Info Popups
+    when (activeInfoDialog) {
+        "camera_selection" -> InfoPopup(
+            title = stringResource(id = Res.string.label_camera_selection),
+            onDismiss = { activeInfoDialog = null }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_selection)))
         }
 
+        "camera_settings" -> InfoPopup(
+            title = stringResource(id = Res.string.label_camera_settings),
+            onDismiss = { activeInfoDialog = null }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_settings)))
+        }
 
+        "camera_format" -> InfoPopup(
+            title = stringResource(id = Res.string.label_camera_format),
+            onDismiss = { activeInfoDialog = null }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_format)))
+        }
 
-        if (showCameraSettingsInfo) {
-            InfoPopup(
-                title = stringResource(id = Res.string.label_camera_settings),
-                onDismiss = { showCameraSettingsInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_settings)))
-            }
+        "internal_camera" -> InfoPopup(
+            title = stringResource(id = Res.string.label_internal_camera_section),
+            onDismiss = { activeInfoDialog = null }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_internal_camera)))
         }
-        if (showCameraFormatInfo) {
-            InfoPopup(
-                title = stringResource(id = Res.string.label_camera_format),
-                onDismiss = { showCameraFormatInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_format)))
-            }
+
+        "sensor_mode" -> InfoPopup(
+            title = stringResource(id = Res.string.label_sensor_mode),
+            onDismiss = { activeInfoDialog = null }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_sensor_mode)))
         }
-        if (showInternalCameraInfo) {
-            InfoPopup(
-                title = stringResource(id = Res.string.label_internal_camera_section),
-                onDismiss = { showInternalCameraInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_internal_camera)))
-            }
+
+        "downsampling" -> InfoPopup(
+            title = stringResource(id = Res.string.label_downsampling),
+            onDismiss = { activeInfoDialog = null }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_downsampling)))
         }
-        if (showCameraSelectionInfo) {
-            InfoPopup(
-                title = stringResource(id = Res.string.label_camera_selection),
-                onDismiss = { showCameraSelectionInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_selection)))
-            }
+
+        "extractor" -> InfoPopup(
+            title = stringResource(id = Res.string.label_extractor),
+            onDismiss = { activeInfoDialog = null }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_extractor)))
         }
-        if (showSensorModeInfo) {
-            InfoPopup(
-                title = stringResource(id = Res.string.label_sensor_mode),
-                onDismiss = { showSensorModeInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_sensor_mode)))
-            }
+
+        "location" -> InfoPopup(
+            title = stringResource(id = Res.string.label_location),
+            onDismiss = { activeInfoDialog = null }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_location)))
         }
-        if (showDownsamplingInfo) {
-            InfoPopup(
-                title = stringResource(id = Res.string.label_downsampling),
-                onDismiss = { showDownsamplingInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_downsampling)))
-            }
-        }
-        if (showExtractorInfo) {
-            InfoPopup(
-                title = stringResource(id = Res.string.label_extractor),
-                onDismiss = { showExtractorInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_extractor)))
-            }
-        }
-        if (showGuidanceModeInfo) {
-            InfoPopup(
-                title = stringResource(id = Res.string.label_guidance_mode),
-                onDismiss = { showGuidanceModeInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_guidance_mode)))
-            }
-        }
-        if (showMotionSensorInfo) {
-            InfoPopup(
-                title = stringResource(id = Res.string.label_motion_sensor),
-                onDismiss = { showMotionSensorInfo = false }) {
-                Text(stringResource(id = Res.string.info_motion_sensor))
-            }
-        }
-        if (showLocationInfo) {
-            InfoPopup(
-                title = stringResource(id = Res.string.label_location),
-                onDismiss = { showLocationInfo = false }) {
-                Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_location)))
-            }
+
+        "motion_sensor" -> InfoPopup(
+            title = stringResource(id = Res.string.label_motion_sensor),
+            onDismiss = { activeInfoDialog = null }
+        ) {
+            Text(stringResource(id = Res.string.info_motion_sensor))
         }
     }
 }

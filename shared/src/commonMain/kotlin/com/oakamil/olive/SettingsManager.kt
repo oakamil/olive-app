@@ -192,6 +192,10 @@ SettingsManager(
         get() = storage.getBoolean("show_stats", true)
         set(value) = storage.putBoolean("show_stats", value)
 
+    var skyMapFov: Double
+        get() = storage.getFloat("sky_map_fov", 60.0f).toDouble().coerceIn(0.5, 180.0)
+        set(value) = storage.putFloat("sky_map_fov", value.toFloat())
+
     /* Native layer callbacks */
     @Keep
     fun getString(key: String): String? {

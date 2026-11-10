@@ -64,7 +64,6 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,6 +73,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -104,7 +104,7 @@ fun SkyCatalogDialog(
     viewModel: MainViewModel,
     onDismiss: () -> Unit,
     onGoTo: (Double, Double, Double) -> Unit,
-    onCenter: ((Double, Double) -> Unit)? = null
+    onCenter: (Double, Double) -> Unit
 ) {
     val colors = LocalOliveColors.current
     val focusManager = LocalFocusManager.current
@@ -133,7 +133,6 @@ fun SkyCatalogDialog(
     )
 
     var showSettingsMenu by remember { mutableStateOf(false) }
-    var cometsRefreshTrigger by remember { mutableIntStateOf(0) }
     var isRefreshingComets by remember { mutableStateOf(false) }
     var showCometsError by remember { mutableStateOf(false) }
 
@@ -165,19 +164,18 @@ fun SkyCatalogDialog(
         "Bright Stars" to "Str"
     )
 
-    val currentRaState = remember { mutableStateOf(viewModel.engineStats.ra) }
-    val currentDecState = remember { mutableStateOf(viewModel.engineStats.dec) }
+    val currentRaState =
+        remember { mutableStateOf(if (viewModel.isEngineRunning) viewModel.engineStats.ra else null) }
+    val currentDecState =
+        remember { mutableStateOf(if (viewModel.isEngineRunning) viewModel.engineStats.dec else null) }
     val currentTimeMsState =
         remember { mutableLongStateOf(Clock.System.now().toEpochMilliseconds()) }
 
     LaunchedEffect(Unit) {
         while (true) {
-            val newRa = viewModel.engineStats.ra
-            val newDec = viewModel.engineStats.dec
-            if (newRa != null && newDec != null) {
-                currentRaState.value = newRa
-                currentDecState.value = newDec
-            }
+            currentRaState.value = if (viewModel.isEngineRunning) viewModel.engineStats.ra else null
+            currentDecState.value =
+                if (viewModel.isEngineRunning) viewModel.engineStats.dec else null
             currentTimeMsState.longValue = Clock.System.now().toEpochMilliseconds()
             delay(5000)
         }
@@ -392,7 +390,7 @@ fun SkyCatalogDialog(
         magLimit,
         typeFilters,
         visibilityFilter,
-        cometsRefreshTrigger
+        viewModel.cometsRefreshVersion
     ) {
         isLoading = true
         searchResults = emptyList()
@@ -430,6 +428,8 @@ fun SkyCatalogDialog(
         }
     }
 
+    val onUserInteraction = LocalOnUserInteraction.current
+
     Dialog(
         onDismissRequest = {
             if (showKeyboard) {
@@ -442,7 +442,16 @@ fun SkyCatalogDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial)
+                            onUserInteraction()
+                        }
+                    }
+                },
             color = MaterialTheme.colorScheme.background
         ) {
             val drawerState =
@@ -777,13 +786,15 @@ fun SkyCatalogDialog(
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(8.dp))
+                        if (viewModel.isEngineRunning) {
+                            Spacer(modifier = Modifier.width(8.dp))
 
-                        IconBarItem(
-                            icon = Default.GpsFixed,
-                            label = stringResource(Res.string.label_ra_dec),
-                            onClick = { showGotoRaDecPopup = true }
-                        )
+                            IconBarItem(
+                                icon = Default.GpsFixed,
+                                label = stringResource(Res.string.label_ra_dec),
+                                onClick = { showGotoRaDecPopup = true }
+                            )
+                        }
                     }
 
                     val listContent: @Composable (Modifier) -> Unit = { modifier ->
@@ -816,7 +827,6 @@ fun SkyCatalogDialog(
                                                 viewModel.refreshComets(
                                                     onComplete = {
                                                         isRefreshingComets = false
-                                                        cometsRefreshTrigger++
                                                     },
                                                     onNetworkError = {
                                                         isRefreshingComets = false
@@ -921,26 +931,9 @@ fun SkyCatalogDialog(
                                                         .padding(4.dp)
                                                 )
                                             } else {
-                                                if (onCenter != null) {
-                                                    IconBarItem(
-                                                        icon = Default.CenterFocusStrong,
-                                                        label = stringResource(Res.string.crop_center),
-                                                        onClick = {
-                                                            onCenter(obj.ra, obj.dec)
-                                                        }
-                                                    )
-                                                    IconBarItem(
-                                                        icon = Default.GpsFixed,
-                                                        label = stringResource(Res.string.btn_goto),
-                                                        onClick = {
-                                                            onGoTo(
-                                                                obj.ra,
-                                                                obj.dec,
-                                                                2000.0
-                                                            )
-                                                        }
-                                                    )
-                                                } else if (telescopeAltAz != null && currentRa != null && currentDec != null && lat != null && lon != null) {
+                                                val hasSolve =
+                                                    viewModel.isEngineRunning && telescopeAltAz != null && currentRa != null && currentDec != null && lat != null && lon != null
+                                                if (hasSolve) {
                                                     val objAltAz =
                                                         raDecToAltAz(
                                                             obj.ra,
@@ -985,6 +978,17 @@ fun SkyCatalogDialog(
                                                             style = MaterialTheme.typography.labelSmall
                                                         )
                                                     }
+                                                }
+
+                                                IconBarItem(
+                                                    icon = Default.CenterFocusStrong,
+                                                    label = stringResource(Res.string.crop_center),
+                                                    onClick = {
+                                                        onCenter(obj.ra, obj.dec)
+                                                    }
+                                                )
+
+                                                if (viewModel.isEngineRunning) {
                                                     IconBarItem(
                                                         icon = Default.GpsFixed,
                                                         label = stringResource(Res.string.btn_goto),
@@ -996,23 +1000,6 @@ fun SkyCatalogDialog(
                                                             )
                                                         }
                                                     )
-                                                } else {
-                                                    Column(
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        modifier = Modifier
-                                                            .padding(end = 16.dp)
-                                                            .clickable { showRaDecForObj = obj }
-                                                            .padding(4.dp)
-                                                    ) {
-                                                        Text(
-                                                            formatRa(obj.ra),
-                                                            style = MaterialTheme.typography.labelSmall
-                                                        )
-                                                        Text(
-                                                            formatDec(obj.dec),
-                                                            style = MaterialTheme.typography.labelSmall
-                                                        )
-                                                    }
                                                 }
                                             }
                                         }
