@@ -349,6 +349,7 @@ class CatalogDatabaseHelper(private val context: Context) :
         catalogFilter: String?,
         sortBy: String,
         magLimit: Double?,
+        includeNullMagnitude: Boolean,
         typeFilters: Set<String>?,
         starFilter: Boolean?,
         visibilityFilter: String,
@@ -438,7 +439,11 @@ class CatalogDatabaseHelper(private val context: Context) :
         }
 
         if (magLimit != null) {
-            selection += " AND (magnitude IS NOT NULL AND magnitude <= ?)"
+            selection += if (includeNullMagnitude) {
+                " AND (magnitude IS NULL OR magnitude <= ?)"
+            } else {
+                " AND (magnitude IS NOT NULL AND magnitude <= ?)"
+            }
             args.add(magLimit.toString())
         }
 
@@ -508,6 +513,7 @@ class CatalogDatabaseHelper(private val context: Context) :
 
             "name" -> "(common_name IS NULL OR common_name = '') ASC, common_name ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
             "brightness" -> "magnitude IS NULL ASC, magnitude ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
+            "priority" -> "priority ASC, magnitude IS NULL ASC, magnitude ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
             "catalog ID" -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
             else -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
         }

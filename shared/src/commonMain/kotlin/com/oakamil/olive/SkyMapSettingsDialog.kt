@@ -31,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import org.jetbrains.compose.resources.stringResource
 import kotlin.math.round
 
 @Composable
@@ -40,7 +39,6 @@ fun SkyMapSettingsDialog(
     onDismiss: () -> Unit
 ) {
     val windowController = LocalPlatformWindowController.current
-    val capabilities = LocalPlatformCapabilities.current
     val settingsManager = viewModel.settingsManager
     val activeCameraSelection =
         if (viewModel.engineMode == MainViewModel.EngineMode.UVC) "uvc" else settingsManager.cameraSelection
@@ -96,11 +94,24 @@ fun SkyMapSettingsDialog(
             }
 
             // 2. Guidance Mode
-            Text(
-                text = stringResource(Res.string.label_guidance_mode),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(Res.string.label_guidance_mode),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { activeInfoDialog = "guidance_mode" },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(id = Res.string.cd_info),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -204,86 +215,87 @@ fun SkyMapSettingsDialog(
             }
 
             // 5. Sliders (Screen Brightness, Low Power Timeout, Zoom, Star Sensitivity, Exposure / Stacking)
-            if (activeCameraSelection != "cedar") {
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 4.dp),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 4.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+            )
+
+            // Screen Brightness
+            val initialBrightness = remember { windowController.getScreenBrightness() }
+            var screenBrightness by remember { mutableFloatStateOf(initialBrightness) }
+            var brightnessChanged by remember { mutableStateOf(false) }
+
+            LaunchedEffect(screenBrightness, brightnessChanged) {
+                if (brightnessChanged) {
+                    windowController.setScreenBrightness(screenBrightness)
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(
+                        Res.string.format_percent,
+                        stringResource(Res.string.label_screen_brightness),
+                        (screenBrightness * 100).toInt()
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
+            }
+            Slider(
+                value = screenBrightness,
+                onValueChange = {
+                    brightnessChanged = true
+                    screenBrightness = it
+                },
+                valueRange = 0f..1f,
+                modifier = Modifier.fillMaxWidth()
+            )
 
-                // Screen Brightness
-                val initialBrightness = remember { windowController.getScreenBrightness() }
-                var screenBrightness by remember { mutableFloatStateOf(initialBrightness) }
-                var brightnessChanged by remember { mutableStateOf(false) }
+            // Low Power Timeout
+            var lowPowerTimeoutSeconds by remember {
+                mutableIntStateOf(settingsManager.lowPowerTimeoutSeconds)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val formattedTime = when (lowPowerTimeoutSeconds) {
+                    0 -> stringResource(Res.string.value_off)
+                    in 1..59 -> stringResource(
+                        Res.string.format_time_sec,
+                        lowPowerTimeoutSeconds
+                    )
 
-                LaunchedEffect(screenBrightness, brightnessChanged) {
-                    if (brightnessChanged) {
-                        windowController.setScreenBrightness(screenBrightness)
+                    else -> {
+                        val mins = lowPowerTimeoutSeconds / 60.0
+                        val minStr =
+                            if (mins % 1.0 == 0.0) mins.toInt().toString() else mins.toString()
+                        stringResource(Res.string.format_time_min, minStr)
                     }
                 }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(
-                            Res.string.format_percent,
-                            stringResource(Res.string.label_screen_brightness),
-                            (screenBrightness * 100).toInt()
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                Slider(
-                    value = screenBrightness,
-                    onValueChange = {
-                        brightnessChanged = true
-                        screenBrightness = it
-                    },
-                    valueRange = 0f..1f,
-                    modifier = Modifier.fillMaxWidth()
+                val labelText = stringResource(
+                    Res.string.format_label_value_string,
+                    stringResource(Res.string.label_low_power_timeout),
+                    formattedTime
                 )
-
-                // Low Power Timeout
-                var lowPowerTimeoutSeconds by remember {
-                    mutableIntStateOf(settingsManager.lowPowerTimeoutSeconds)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val formattedTime = when (lowPowerTimeoutSeconds) {
-                        0 -> stringResource(Res.string.value_off)
-                        in 1..59 -> stringResource(
-                            Res.string.format_time_sec,
-                            lowPowerTimeoutSeconds
-                        )
-
-                        else -> {
-                            val mins = lowPowerTimeoutSeconds / 60.0
-                            val minStr =
-                                if (mins % 1.0 == 0.0) mins.toInt().toString() else mins.toString()
-                            stringResource(Res.string.format_time_min, minStr)
-                        }
-                    }
-                    val labelText = stringResource(
-                        Res.string.format_label_value_string,
-                        stringResource(Res.string.label_low_power_timeout),
-                        formattedTime
-                    )
-                    Text(
-                        labelText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                Slider(
-                    value = lowPowerTimeoutSeconds.toFloat(),
-                    onValueChange = {
-                        val newTimeout = it.toInt()
-                        lowPowerTimeoutSeconds = newTimeout
-                        settingsManager.lowPowerTimeoutSeconds = newTimeout
-                    },
-                    valueRange = 0f..300f,
-                    steps = 9,
-                    modifier = Modifier.fillMaxWidth()
+                Text(
+                    labelText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
+            }
+            Slider(
+                value = lowPowerTimeoutSeconds.toFloat(),
+                onValueChange = {
+                    val newTimeout = it.toInt()
+                    lowPowerTimeoutSeconds = newTimeout
+                    settingsManager.lowPowerTimeoutSeconds = newTimeout
+                },
+                valueRange = 0f..300f,
+                steps = 9,
+                modifier = Modifier.fillMaxWidth()
+            )
 
+            // Camera Adjustment Sliders (only available when engine is running)
+            if (viewModel.isEngineRunning) {
                 // Zoom Slider
                 val showZoom = activeCameraSelection == "internal" &&
                         settingsManager.cameraSettingsMode != "Auto"
@@ -291,11 +303,10 @@ fun SkyMapSettingsDialog(
                     val maxZoom = remember {
                         var mZ = 1f
                         try {
-                            if (settingsManager.cameraSettingsMode == "Auto" || settingsManager.sensorMode == "Processed") {
+                            if (settingsManager.sensorMode == "Processed") {
                                 val jsonArray =
                                     JSONArray(viewModel.getAvailableInternalCameras())
-                                val targetId =
-                                    if (settingsManager.cameraSettingsMode == "Auto" && !capabilities.isApple) "0" else settingsManager.internalCameraId
+                                val targetId = settingsManager.internalCameraId
                                 for (i in 0 until jsonArray.length()) {
                                     val obj = jsonArray.getJSONObject(i)
                                     if (obj.getString("id") == targetId) {
@@ -456,6 +467,13 @@ fun SkyMapSettingsDialog(
 
     // Contextual Info Popups
     when (activeInfoDialog) {
+        "guidance_mode" -> InfoPopup(
+            title = stringResource(id = Res.string.label_guidance_mode),
+            onDismiss = { activeInfoDialog = null }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_guidance_mode)))
+        }
+
         "zoom" -> InfoPopup(
             title = stringResource(id = Res.string.label_zoom),
             onDismiss = { activeInfoDialog = null }

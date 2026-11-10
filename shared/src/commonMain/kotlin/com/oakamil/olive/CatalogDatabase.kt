@@ -46,6 +46,7 @@ interface CatalogDatabase {
         catalogFilter: String? = null,
         sortBy: String = "catalog ID",
         magLimit: Double? = null,
+        includeNullMagnitude: Boolean = false,
         typeFilters: Set<String>? = null,
         starFilter: Boolean? = null,
         visibilityFilter: String = "Above Horizon",
