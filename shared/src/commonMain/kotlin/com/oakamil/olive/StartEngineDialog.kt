@@ -882,6 +882,7 @@ fun StartEngineDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clickable {
+                                    @Suppress("AssignedValueIsNeverRead")
                                     explicitMotionSensorMode = value
                                     settingsManager.motionSensorMode = value
                                 }
@@ -890,6 +891,7 @@ fun StartEngineDialog(
                             RadioButton(
                                 selected = motionSensorMode == value,
                                 onClick = {
+                                    @Suppress("AssignedValueIsNeverRead")
                                     explicitMotionSensorMode = value
                                     settingsManager.motionSensorMode = value
                                 },
@@ -958,63 +960,90 @@ fun StartEngineDialog(
     when (activeInfoDialog) {
         "camera_selection" -> InfoPopup(
             title = stringResource(id = Res.string.label_camera_selection),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_selection)))
         }
 
         "camera_settings" -> InfoPopup(
             title = stringResource(id = Res.string.label_camera_settings),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_settings)))
         }
 
         "camera_format" -> InfoPopup(
             title = stringResource(id = Res.string.label_camera_format),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_format)))
         }
 
         "internal_camera" -> InfoPopup(
             title = stringResource(id = Res.string.label_internal_camera_section),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_internal_camera)))
         }
 
         "sensor_mode" -> InfoPopup(
             title = stringResource(id = Res.string.label_sensor_mode),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_sensor_mode)))
         }
 
         "downsampling" -> InfoPopup(
             title = stringResource(id = Res.string.label_downsampling),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_downsampling)))
         }
 
         "extractor" -> InfoPopup(
             title = stringResource(id = Res.string.label_extractor),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_extractor)))
         }
 
         "location" -> InfoPopup(
             title = stringResource(id = Res.string.label_location),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_location)))
         }
 
         "motion_sensor" -> InfoPopup(
             title = stringResource(id = Res.string.label_motion_sensor),
-            onDismiss = { activeInfoDialog = null }
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
         ) {
             Text(stringResource(id = Res.string.info_motion_sensor))
         }

@@ -155,7 +155,10 @@ fun SkyMapView(
 
     val is24Hour = is24HourFormat()
     var currentTimeMs by remember { mutableStateOf(Clock.System.now().toEpochMilliseconds()) }
-    var timeString by remember { mutableStateOf("") }
+    var timeString by remember(is24Hour) {
+        val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+        mutableStateOf(formatSystemTime(now, is24Hour))
+    }
     LaunchedEffect(is24Hour) {
         while (isActive) {
             val nowInstant = Clock.System.now()
@@ -528,10 +531,11 @@ fun SkyMapView(
                     )
         })
 
-        // 2. DSOs (Tier 1 Baseline + Dynamic Local Field, deduplicated by ID)
+        // 2. DSOs: strictly non-star objects
         nonStars.addAll(
             (tier1Dso + dynamicCatalogObjects)
                 .filter { obj ->
+                    if (obj.objectType.contains("Star")) return@filter false
                     if (isCurrentTarget(obj)) return@filter true
                     val typeMatches =
                         isAllTypes || obj.objectType in currentTypeFilters || obj.broadCategory in currentTypeFilters
@@ -544,10 +548,19 @@ fun SkyMapView(
                 .distinctBy { it.id }
         )
 
-        // 3. Stars (Tier 1 + Dynamic, deduplicated by ID)
+        // 3. Stars & Multiple Stars: all star-types, including Messier multiple stars (M40)
         stars.addAll(
-            (tier1Stars + dynamicStars)
-                .filter { isCurrentTarget(it) || (it.magnitude ?: 99.0) <= effectiveMagLimit }
+            (tier1Stars + dynamicStars + tier1Dso.filter { it.objectType.contains("Star") })
+                .filter { obj ->
+                    if (isCurrentTarget(obj)) return@filter true
+                    val typeMatches =
+                        isAllTypes || obj.objectType in currentTypeFilters || obj.broadCategory in currentTypeFilters
+                    val magMatches = when {
+                        obj.magnitude != null -> obj.magnitude <= effectiveMagLimit
+                        else -> fov <= 15.0
+                    }
+                    typeMatches && magMatches
+                }
                 .distinctBy { it.id }
         )
 
@@ -663,6 +676,7 @@ fun SkyMapView(
                                 targetDec = dec,
                                 maxDistanceDegrees = searchRadius,
                                 magLimit = queryMagLimit,
+                                includeNullMagnitude = currentFov <= 15.0 && currentMagLimit == null,
                                 starFilter = true,
                                 visibilityFilter = "Any",
                                 sortBy = "brightness",
@@ -1100,7 +1114,7 @@ fun SkyMapView(
 
             // 7. Stars & Catalog Objects Rendering
             val starLabelMagLimit = when {
-                fov <= 10.0 -> 6.0
+                fov <= 15.0 -> effectiveMagLimit
                 fov <= 25.0 -> 5.0
                 fov <= 50.0 -> 4.0
                 else -> 3.0
@@ -1114,8 +1128,10 @@ fun SkyMapView(
             }
             for (i in 0 until visibleStarCandidates.size) {
                 val star = visibleStarCandidates[i]
-                val isEligible = (!star.commonName.isNullOrBlank() && !star.isFakeCommonName) ||
-                        (star.magnitude != null && star.magnitude <= starLabelMagLimit)
+                val isEligible = star.catalogLabel == "M" ||
+                        (!star.commonName.isNullOrBlank() && !star.isFakeCommonName) ||
+                        (star.magnitude != null && star.magnitude <= starLabelMagLimit) ||
+                        (star.magnitude == null && fov <= 15.0)
                 if (isEligible) {
                     val pt = projectWithDistortion(star.ra, star.dec)
                     if (pt != null) catalogCandidates.add(star to pt)
@@ -1154,8 +1170,10 @@ fun SkyMapView(
                     if (isAbove) themedColor else colors.secondary.copy(alpha = SkyMapTuning.BELOW_HORIZON_ALPHA)
                 val screenPt = Offset(item.screenX, item.screenY)
 
-                val isStar = item.obj.objectType == "Star" || item.obj.catalogLabel == "Str"
-                val painter = if (!isStar) catalogPainters[iconVector] else null
+                val isMultipleStar =
+                    item.obj.objectType == "Multiple Star" || item.obj.objectType == "Double Star"
+                val isStarDot = item.obj.objectType == "Star" || (isMultipleStar && fov > 15.0)
+                val painter = if (!isStarDot) catalogPainters[iconVector] else null
 
                 if (painter != null) {
                     translate(left = screenPt.x - iconSize / 2f, top = screenPt.y - iconSize / 2f) {
@@ -1205,6 +1223,8 @@ fun SkyMapView(
                     if (isAbove) colors.primary else colors.secondary.copy(alpha = SkyMapTuning.BELOW_HORIZON_ALPHA)
 
                 val isPlacedCatalogStar = obj.id in placedCatalogObjIds
+                val isMultipleStarIcon = obj.objectType != "Star" && fov <= 15.0
+                if (isPlacedCatalogStar && isMultipleStarIcon) continue
 
                 // Decrowding: skip star dot if an icon is already placed here or another star is within minStarDistPx
                 if (!isPlacedCatalogStar) {
@@ -1236,17 +1256,33 @@ fun SkyMapView(
 
                 placedStarXs.add(screenPt.x)
                 placedStarYs.add(screenPt.y)
-                if (!isPlacedCatalogStar) {
-                    drawnStars.add(obj)
-                }
+                drawnStars.add(obj)
 
-                val mag = obj.magnitude ?: 5.0
-                val radius = (maxMag - mag).coerceIn(0.8, 5.0).toFloat()
-                drawCircle(
-                    color = baseColor,
-                    radius = radius,
-                    center = screenPt
-                )
+                if (isMultipleStarIcon) {
+                    val (iconVector, _) = obj.getIconAndColor(colors.primary, colors.secondary)
+                    val painter = catalogPainters[iconVector]
+                    if (painter != null) {
+                        translate(
+                            left = screenPt.x - iconSize / 2f,
+                            top = screenPt.y - iconSize / 2f
+                        ) {
+                            with(painter) {
+                                draw(
+                                    size = Size(iconSize, iconSize),
+                                    colorFilter = ColorFilter.tint(baseColor)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    val mag = obj.magnitude ?: 5.0
+                    val radius = (maxMag - mag).coerceIn(0.8, 5.0).toFloat()
+                    drawCircle(
+                        color = baseColor,
+                        radius = radius,
+                        center = screenPt
+                    )
+                }
             }
 
             // 8. Telescope Alignment Point Reticle (4-corner bracket, scaled to catalog icons)
@@ -1738,15 +1774,11 @@ fun SkyMapView(
         // Overlay Bottom-Left: Target Object Bubble & Mini Guidance Bubble (shown only when a GoTo is active)
         if (viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
             val guidanceWidth = 88.dp * 16f / 9f
-            val targetDisplayName = targetObjName ?: stats.targetRa?.let { r ->
-                stats.targetDec?.let { d ->
-                    stringResource(
-                        Res.string.format_ra_dec,
-                        String.format("%.2f", r),
-                        String.format("%.2f", d)
-                    )
-                }
-            } ?: "Target"
+            val targetDisplayName = targetObjName ?: stringResource(
+                Res.string.format_ra_dec,
+                String.format("%.2f", stats.targetRa),
+                String.format("%.2f", stats.targetDec)
+            )
 
             Column(
                 modifier = Modifier
@@ -1910,15 +1942,11 @@ fun SkyMapView(
 
         // Target Object Info Popup (opened by tapping Target Object Bubble)
         if (showTargetPopup && viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
-            val targetDisplayName = targetObjName ?: stats.targetRa?.let { r ->
-                stats.targetDec?.let { d ->
-                    stringResource(
-                        Res.string.format_ra_dec,
-                        String.format("%.2f", r),
-                        String.format("%.2f", d)
-                    )
-                }
-            } ?: stringResource(Res.string.cd_target)
+            val targetDisplayName = targetObjName ?: stringResource(
+                Res.string.format_ra_dec,
+                String.format("%.2f", stats.targetRa),
+                String.format("%.2f", stats.targetDec)
+            )
             val target = targetObject
 
             InfoPopup(
