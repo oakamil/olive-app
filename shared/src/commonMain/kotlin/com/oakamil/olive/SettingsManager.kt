@@ -13,10 +13,6 @@ SettingsManager(
         get() = storage.getString("camera_settings_mode", "Auto") ?: "Auto"
         set(value) = storage.putString("camera_settings_mode", value)
 
-    var internalFps: Int
-        get() = storage.getInt("internal_fps", 2)
-        set(value) = storage.putInt("internal_fps", value)
-
     var guidanceMode: String
         get() = storage.getString("guidance_mode", "alt_az") ?: "alt_az"
         set(value) = storage.putString("guidance_mode", value)
@@ -192,6 +188,10 @@ SettingsManager(
         get() = storage.getBoolean("show_stats", true)
         set(value) = storage.putBoolean("show_stats", value)
 
+    var reverseLayout: Boolean
+        get() = storage.getBoolean("reverse_layout", false)
+        set(value) = storage.putBoolean("reverse_layout", value)
+
     var skyMapFov: Double
         get() = storage.getFloat("sky_map_fov", 60.0f).toDouble().coerceIn(0.5, 180.0)
         set(value) = storage.putFloat("sky_map_fov", value.toFloat())
@@ -206,6 +206,7 @@ SettingsManager(
     }
 
     @Keep
+    @Suppress("unused")
     fun setString(key: String, value: String) {
         if (key == "imu_calibration" && cameraSelection == "external") {
             return

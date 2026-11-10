@@ -214,7 +214,59 @@ fun SkyMapSettingsDialog(
                 )
             }
 
-            // 5. Sliders (Screen Brightness, Low Power Timeout, Zoom, Star Sensitivity, Exposure / Stacking)
+            // 5. Reverse Layout
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(Res.string.label_reverse_layout),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { activeInfoDialog = "reverse_layout" },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(id = Res.string.cd_info),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                RadioButton(
+                    selected = viewModel.reverseLayout,
+                    onClick = { viewModel.reverseLayout = true },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+                Text(
+                    text = stringResource(Res.string.value_on),
+                    modifier = Modifier.padding(start = 4.dp, end = 20.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                RadioButton(
+                    selected = !viewModel.reverseLayout,
+                    onClick = { viewModel.reverseLayout = false },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+                Text(
+                    text = stringResource(Res.string.value_off),
+                    modifier = Modifier.padding(start = 4.dp, end = 20.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+
+            // 6. Sliders (Screen Brightness, Low Power Timeout, Zoom, Star Sensitivity, Exposure / Stacking)
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 4.dp),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
@@ -475,6 +527,16 @@ fun SkyMapSettingsDialog(
             }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_guidance_mode)))
+        }
+
+        "reverse_layout" -> InfoPopup(
+            title = stringResource(id = Res.string.label_reverse_layout),
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_reverse_layout)))
         }
 
         "zoom" -> InfoPopup(
