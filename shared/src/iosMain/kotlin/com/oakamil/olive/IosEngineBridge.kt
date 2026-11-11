@@ -236,7 +236,7 @@ class IosEngineBridge : EngineBridge {
         return 0
     }
 
-    override fun getNativeCameraBrightnessRange(): IntArray? {
+    override fun getNativeCameraBrightnessRange(): IntArray {
         return intArrayOf(0, 100, 50)
     }
 
