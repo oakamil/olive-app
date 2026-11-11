@@ -578,16 +578,20 @@ fun SkyCatalogDialog(
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    val sortOptions =
-                                        listOf("catalog ID", "name", "brightness", "distance")
-                                    sortOptions.forEach { option ->
+                                    val sortOptions = listOf(
+                                        "catalog ID" to Res.string.sort_catalog_id,
+                                        "name" to Res.string.sort_name,
+                                        "brightness" to Res.string.sort_brightness,
+                                        "distance" to Res.string.sort_distance
+                                    )
+                                    sortOptions.forEach { (key, labelRes) ->
                                         DropdownMenuItem(
-                                            text = { Text(option.replaceFirstChar { it.uppercase() }) },
+                                            text = { Text(stringResource(labelRes)) },
                                             onClick = {
-                                                sortBy = option
+                                                sortBy = key
                                             },
                                             trailingIcon = {
-                                                if (sortBy == option) {
+                                                if (sortBy == key) {
                                                     Icon(
                                                         Default.RadioButtonChecked,
                                                         contentDescription = stringResource(Res.string.cd_selected),
@@ -604,16 +608,18 @@ fun SkyCatalogDialog(
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    val visibilityOptions =
-                                        listOf("Above Horizon", "All Objects")
-                                    visibilityOptions.forEach { option ->
+                                    val visibilityOptions = listOf(
+                                        "Above Horizon" to Res.string.filter_visibility_above_horizon,
+                                        "All Objects" to Res.string.cat_all_objects
+                                    )
+                                    visibilityOptions.forEach { (key, labelRes) ->
                                         DropdownMenuItem(
-                                            text = { Text(option) },
+                                            text = { Text(stringResource(labelRes)) },
                                             onClick = {
-                                                visibilityFilter = option
+                                                visibilityFilter = key
                                             },
                                             trailingIcon = {
-                                                if (visibilityFilter == option) {
+                                                if (visibilityFilter == key) {
                                                     Icon(
                                                         Default.RadioButtonChecked,
                                                         contentDescription = stringResource(Res.string.cd_selected),
@@ -631,15 +637,15 @@ fun SkyCatalogDialog(
                                         fontWeight = FontWeight.Bold
                                     )
                                     val magOptions = listOf(
-                                        "No Limit" to null,
-                                        "Naked Eye (< 6)" to 6.0,
-                                        "Binoculars (< 9)" to 9.0,
-                                        "Small Scope (< 12)" to 12.0,
-                                        "Large Scope (< 15)" to 15.0
+                                        Res.string.mag_no_limit to null,
+                                        Res.string.mag_naked_eye to 6.0,
+                                        Res.string.mag_binoculars to 9.0,
+                                        Res.string.mag_small_scope to 12.0,
+                                        Res.string.mag_large_scope to 15.0
                                     )
-                                    magOptions.forEach { (label, value) ->
+                                    magOptions.forEach { (labelRes, value) ->
                                         DropdownMenuItem(
-                                            text = { Text(label) },
+                                            text = { Text(stringResource(labelRes)) },
                                             onClick = {
                                                 magLimit = value
                                             },

@@ -305,4 +305,20 @@
     <string name="label_reverse_layout">Reverse Layout</string>
     <string name="cd_zoom_in">Zoom In</string>
     <string name="cd_zoom_out">Zoom Out</string>
+
+    <string name="btn_pip">Picture\nin Picture</string>
+    <string name="cd_focus_decrease">Decrease Focus</string>
+    <string name="cd_focus_increase">Increase Focus</string>
+    <string name="filter_visibility_above_horizon">Above Horizon</string>
+    <string name="sort_catalog_id">Catalog ID</string>
+    <string name="sort_name">Name</string>
+    <string name="sort_brightness">Brightness</string>
+    <string name="sort_distance">Distance</string>
+    <string name="mag_no_limit">No Limit</string>
+    <string name="mag_naked_eye">Naked Eye (&lt; 6)</string>
+    <string name="mag_binoculars">Binoculars (&lt; 9)</string>
+    <string name="mag_small_scope">Small Scope (&lt; 12)</string>
+    <string name="mag_large_scope">Large Scope (&lt; 15)</string>
+    <string name="format_fps">%1$d fps</string>
+    <string name="default_camera_label">Camera 0</string>
 </resources>

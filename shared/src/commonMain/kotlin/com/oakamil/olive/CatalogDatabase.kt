@@ -41,6 +41,29 @@ data class CatalogObject(
 interface CatalogDatabase {
     companion object {
         const val CONTENT_VERSION = 1
+
+        fun buildPriorityCaseSql(brightStarMagLimit: Double = BRIGHT_STAR_PRIORITY_MAG_LIMIT): String =
+            "CASE " +
+                    "WHEN catalog_label = 'Str' AND magnitude IS NOT NULL AND magnitude <= $brightStarMagLimit THEN 3 " +
+                    "WHEN catalog_label = 'M' THEN 4 " +
+                    "WHEN catalog_label = 'C' THEN 5 " +
+                    "WHEN catalog_label = 'Col' THEN 6 " +
+                    "WHEN catalog_label = 'NGC' THEN 7 " +
+                    "WHEN catalog_label = 'IC' THEN 8 " +
+                    "WHEN catalog_label = 'H' THEN 11 " +
+                    "WHEN catalog_label = 'B' THEN 12 " +
+                    "WHEN catalog_label = 'Sh2' THEN 13 " +
+                    "WHEN catalog_label = 'Abl' THEN 14 " +
+                    "WHEN catalog_label = 'Arp' THEN 15 " +
+                    "WHEN catalog_label = 'SaA' THEN 16 " +
+                    "WHEN catalog_label = 'SaM' THEN 17 " +
+                    "WHEN catalog_label = 'SaR' THEN 18 " +
+                    "WHEN catalog_label = 'Ta2' THEN 19 " +
+                    "WHEN catalog_label = 'Har' THEN 20 " +
+                    "WHEN catalog_label = 'RDS' THEN 21 " +
+                    "WHEN catalog_label = 'EGC' THEN 22 " +
+                    "WHEN catalog_label = 'Str' THEN 100 " +
+                    "ELSE 999 END"
     }
 
     fun getCatalogDescriptions(): Map<String, String>

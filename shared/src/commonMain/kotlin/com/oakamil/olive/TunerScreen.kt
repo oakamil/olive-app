@@ -846,7 +846,7 @@ fun TuningControls(
                     ) {
                         Icon(
                             Icons.Default.Remove,
-                            contentDescription = "Decrease Focus",
+                            contentDescription = stringResource(Res.string.cd_focus_decrease),
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -864,7 +864,7 @@ fun TuningControls(
                     ) {
                         Icon(
                             Icons.Default.Add,
-                            contentDescription = "Increase Focus",
+                            contentDescription = stringResource(Res.string.cd_focus_increase),
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
