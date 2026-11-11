@@ -408,7 +408,7 @@ fun StartEngineDialog(
                         .padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
                 ) {
                     var expandedFormat by remember { mutableStateOf(false) }
-                    val currentFormatLabel = remember(uvcFps) { "$uvcFps fps" }
+                    val currentFormatLabel = stringResource(Res.string.format_fps, uvcFps)
                     Box(
                         modifier = Modifier.border(
                             1.dp,
@@ -436,7 +436,7 @@ fun StartEngineDialog(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            "${fmt.fps} fps",
+                                            stringResource(Res.string.format_fps, fmt.fps),
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                     },
@@ -530,7 +530,8 @@ fun StartEngineDialog(
                         TextButton(onClick = { expanded = true }) {
                             val currentText =
                                 camerasList.find { it.first == internalCameraId }?.second
-                                    ?: camerasList.firstOrNull()?.second ?: "Camera 0"
+                                    ?: camerasList.firstOrNull()?.second
+                                    ?: stringResource(Res.string.default_camera_label)
                             Text(currentText, color = MaterialTheme.colorScheme.primary)
                         }
                         DropdownMenu(

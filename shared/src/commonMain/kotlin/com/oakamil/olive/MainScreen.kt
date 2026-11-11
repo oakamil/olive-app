@@ -218,7 +218,9 @@ fun MainScreen(
                 IconBarItem(
                     modifier = itemModifier,
                     icon = Icons.Default.PictureInPicture,
-                    label = if (isEnteringPip) stringResource(id = Res.string.btn_entering_pip) else "Picture\nin Picture",
+                    label = if (isEnteringPip) stringResource(id = Res.string.btn_entering_pip) else stringResource(
+                        id = Res.string.btn_pip
+                    ),
                     enabled = viewModel.isEngineRunning && !isStarting && !isStopping && !isEnteringPip,
                     onClick = {
                         @Suppress("AssignedValueIsNeverRead")
