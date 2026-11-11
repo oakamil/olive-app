@@ -30,6 +30,8 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Olive Finder needs camera access to detect stars and align the telescope.</string>
+	<key>NSCameraUseContinuityCameraDeviceType</key>
+	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Olive Finder provides telescope control and server networking for planetarium apps like SkySafari and Stellarium.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

@@ -39,6 +39,10 @@ data class CatalogObject(
 }
 
 interface CatalogDatabase {
+    companion object {
+        const val CONTENT_VERSION = 1
+    }
+
     fun getCatalogDescriptions(): Map<String, String>
 
     fun searchObjects(

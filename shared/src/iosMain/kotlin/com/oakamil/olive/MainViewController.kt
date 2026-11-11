@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.ComposeUIViewController
 import com.oakamil.olive.cinterop.olive_ios_get_local_ip
+import com.oakamil.olive.cinterop.olive_ios_has_connected_external_camera
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
 import kotlinx.coroutines.Dispatchers
@@ -32,9 +33,6 @@ import kotlinx.coroutines.withContext
 import platform.AVFoundation.AVAuthorizationStatusAuthorized
 import platform.AVFoundation.AVAuthorizationStatusNotDetermined
 import platform.AVFoundation.AVCaptureDevice
-import platform.AVFoundation.AVCaptureDeviceDiscoverySession
-import platform.AVFoundation.AVCaptureDevicePositionUnspecified
-import platform.AVFoundation.AVCaptureDeviceTypeExternal
 import platform.AVFoundation.AVCaptureDeviceWasConnectedNotification
 import platform.AVFoundation.AVCaptureDeviceWasDisconnectedNotification
 import platform.AVFoundation.AVMediaTypeVideo
@@ -51,14 +49,8 @@ import platform.UIKit.UIUserInterfaceIdiomPad
 import platform.UIKit.UIViewController
 
 @OptIn(ExperimentalForeignApi::class)
-private fun hasConnectedExternalCamera(): Boolean {
-    val discovery = AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes(
-        deviceTypes = listOf(AVCaptureDeviceTypeExternal),
-        mediaType = AVMediaTypeVideo,
-        position = AVCaptureDevicePositionUnspecified
-    )
-    return discovery.devices.isNotEmpty()
-}
+private fun hasConnectedExternalCamera(): Boolean =
+    runCatching { olive_ios_has_connected_external_camera() }.getOrDefault(false)
 
 @OptIn(ExperimentalForeignApi::class)
 private fun getIosDeviceNetworkEndpoint(): String {

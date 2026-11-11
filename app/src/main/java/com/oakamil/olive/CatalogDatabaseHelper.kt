@@ -11,11 +11,9 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.zip.GZIPInputStream
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -39,74 +37,56 @@ class CatalogDatabaseHelper(private val context: Context) :
     private fun initializeIfNeeded() {
         if (isInitialized) return
         val prefs = context.getSharedPreferences("olive_prefs", Context.MODE_PRIVATE)
-        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        val lastContentVersion = prefs.getInt("catalog_content_version", 0)
 
-        @Suppress("DEPRECATION")
-        val currentAppVersion = packageInfo.versionCode
-        val lastAppVersion = prefs.getInt("last_app_version", 0)
+        val forceUpdate = CatalogDatabase.CONTENT_VERSION > lastContentVersion
 
-        val forceUpdate = currentAppVersion > lastAppVersion
+        val dbSuccess = copyAssetSafely(DB_NAME, forceUpdate)
+        val bspSuccess = copyAssetSafely("de421.bsp", forceUpdate)
 
-        val dbCopied = copyAssetIfNeeded(DB_NAME, forceUpdate)
-        copyAssetIfNeeded("de421.bsp", forceUpdate)
-
-        if (dbCopied) {
-            buildIndexes(context.getDatabasePath(DB_NAME))
+        if (forceUpdate && dbSuccess && bspSuccess) {
+            prefs.edit { putInt("catalog_content_version", CatalogDatabase.CONTENT_VERSION) }
         }
-
-        if (forceUpdate) {
-            prefs.edit { putInt("last_app_version", currentAppVersion) }
-        }
-        isInitialized = true
-    }
-
-    private fun buildIndexes(dbFile: File) {
-        try {
-            val database = SQLiteDatabase.openDatabase(
-                dbFile.absolutePath,
-                null,
-                SQLiteDatabase.OPEN_READWRITE
-            )
-            Log.i(TAG, "Building indexes for $DB_NAME...")
-            database.execSQL("CREATE INDEX IF NOT EXISTS idx_mag ON catalog(magnitude)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS idx_label ON catalog(catalog_label)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS idx_broad_category ON catalog(broad_category)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS idx_type ON catalog(object_type)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS idx_constellation ON catalog(constellation)")
-            database.close()
-            Log.i(TAG, "Indexes built successfully.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to build indexes", e)
+        if (dbSuccess) {
+            isInitialized = true
         }
     }
 
-    private fun copyAssetIfNeeded(filename: String, forceUpdate: Boolean): Boolean {
+    private fun copyAssetSafely(filename: String, forceUpdate: Boolean): Boolean {
         val file = context.getDatabasePath(filename)
-        if (!file.exists() || forceUpdate) {
-            file.parentFile?.mkdirs()
+        if (file.exists() && !forceUpdate) {
+            return true
+        }
+
+        file.parentFile?.mkdirs()
+        val tempFile = File(file.parentFile, "$filename.tmp")
+        if (tempFile.exists()) {
+            tempFile.delete()
+        }
+
+        return try {
+            context.assets.open(filename).use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
             if (file.exists()) {
                 file.delete()
             }
-            try {
-                // Try .gz first
-                val inputStream: InputStream = try {
-                    GZIPInputStream(context.assets.open("$filename.gz"))
-                } catch (_: Exception) {
-                    context.assets.open(filename)
-                }
-
-                inputStream.use { input ->
-                    FileOutputStream(file).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                Log.i(TAG, "Successfully copied $filename from assets.")
-                return true
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to copy $filename", e)
+            val renamed = tempFile.renameTo(file)
+            if (renamed) {
+                Log.i(TAG, "Successfully staged and moved $filename into place.")
+                true
+            } else {
+                Log.e(TAG, "Failed to rename $tempFile to $file")
+                tempFile.delete()
+                false
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to copy asset $filename", e)
+            tempFile.delete()
+            false
         }
-        return false
     }
 
     override fun onCreate(db: SQLiteDatabase?) {

@@ -395,19 +395,28 @@ cursor_out.execute('''
 
 # Comet population has been moved to the client application
 
+# 7. Create Indexes on catalog before VACUUM
+cursor_out.execute("CREATE INDEX IF NOT EXISTS idx_mag ON catalog(magnitude)")
+cursor_out.execute("CREATE INDEX IF NOT EXISTS idx_label ON catalog(catalog_label)")
+cursor_out.execute("CREATE INDEX IF NOT EXISTS idx_broad_category ON catalog(broad_category)")
+cursor_out.execute("CREATE INDEX IF NOT EXISTS idx_type ON catalog(object_type)")
+cursor_out.execute("CREATE INDEX IF NOT EXISTS idx_constellation ON catalog(constellation)")
+
 conn_out.commit()
 cursor_out.execute("VACUUM")
 conn_out.close()
 
-# 7. Gzip and move to assets
-with open(output_db, 'rb') as f_in:
-    with gzip.open(output_gz, 'wb') as f_out:
-        shutil.copyfileobj(f_in, f_out)
-
+# 8. Move uncompressed database to assets
 assets_dir = "app/src/main/assets"
 os.makedirs(assets_dir, exist_ok=True)
-shutil.move(output_gz, os.path.join(assets_dir, output_gz))
+dest_db = os.path.join(assets_dir, output_db)
+if os.path.exists(dest_db):
+    os.remove(dest_db)
+shutil.move(output_db, dest_db)
 
-os.remove(output_db)
+# Clean up legacy compressed file if present
+legacy_gz = os.path.join(assets_dir, output_gz)
+if os.path.exists(legacy_gz):
+    os.remove(legacy_gz)
 
-print("Database generation complete and moved to assets!")
+print(f"Database generation complete! Output stored uncompressed at {dest_db}")

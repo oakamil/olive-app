@@ -112,12 +112,9 @@ class IosCatalogDatabase : CatalogDatabase {
             ).firstOrNull { fileManager.fileExistsAtPath(it) }
 
             val userDefaults = NSUserDefaults.standardUserDefaults
-            val currentVersion =
-                (bundle.infoDictionary?.get("CFBundleShortVersionString") as? String)
-                    ?: (bundle.infoDictionary?.get("CFBundleVersion") as? String) ?: "1.0"
-            val storedVersion = userDefaults.stringForKey("olive_catalog_bundle_version")
+            val storedContentVersion = userDefaults.integerForKey("olive_catalog_content_version")
 
-            if (bundleSource != null && (storedVersion != currentVersion || !fileManager.fileExistsAtPath(
+            if (bundleSource != null && (storedContentVersion < CatalogDatabase.CONTENT_VERSION || !fileManager.fileExistsAtPath(
                     writableDbPath
                 ))
             ) {
@@ -126,10 +123,13 @@ class IosCatalogDatabase : CatalogDatabase {
                         fileManager.removeItemAtPath(writableDbPath, null)
                     }
                     fileManager.copyItemAtPath(bundleSource, writableDbPath, null)
-                    userDefaults.setObject(currentVersion, forKey = "olive_catalog_bundle_version")
+                    userDefaults.setInteger(
+                        CatalogDatabase.CONTENT_VERSION.toLong(),
+                        forKey = "olive_catalog_content_version"
+                    )
                     Log.i(
                         TAG,
-                        "Copied fresh bundled database from $bundleSource to $writableDbPath (version $currentVersion)"
+                        "Copied fresh bundled database from $bundleSource to $writableDbPath (content version ${CatalogDatabase.CONTENT_VERSION})"
                     )
                     return writableDbPath
                 } catch (e: Throwable) {
@@ -167,16 +167,6 @@ class IosCatalogDatabase : CatalogDatabase {
             if (rc == SQLITE_OK) {
                 db = ppDb.value
                 Log.i(TAG, "Opened catalog database at $path (read-write)")
-                val indexes = listOf(
-                    "CREATE INDEX IF NOT EXISTS idx_mag ON catalog(magnitude);",
-                    "CREATE INDEX IF NOT EXISTS idx_label ON catalog(catalog_label);",
-                    "CREATE INDEX IF NOT EXISTS idx_broad_category ON catalog(broad_category);",
-                    "CREATE INDEX IF NOT EXISTS idx_type ON catalog(object_type);",
-                    "CREATE INDEX IF NOT EXISTS idx_constellation ON catalog(constellation);"
-                )
-                for (sql in indexes) {
-                    sqlite3_exec(db, sql, null, null, null)
-                }
             } else {
                 val roFlags = SQLITE_OPEN_READONLY or SQLITE_OPEN_FULLMUTEX
                 rc = sqlite3_open_v2(path, ppDb.ptr, roFlags, null)
