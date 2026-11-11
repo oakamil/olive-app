@@ -168,7 +168,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\nmkdir -p \"$DEST\"\ncp -f \"$SRCROOT/../app/src/main/assets/default_database.npz\" \"$DEST/\"\ncp -f \"$SRCROOT/../app/src/main/assets/de421.bsp\" \"$DEST/\"\nif [ ! -f \"$DEST/catalog.db\" ] || [ \"$SRCROOT/../app/src/main/assets/catalog.db.gz\" -nt \"$DEST/catalog.db\" ]; then\n    gzip -dc \"$SRCROOT/../app/src/main/assets/catalog.db.gz\" > \"$DEST/catalog.db\"\nfi\n";
+			shellScript = "set -e\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\nmkdir -p \"$DEST\"\ncp -f \"$SRCROOT/../app/src/main/assets/default_database.npz\" \"$DEST/\"\ncp -f \"$SRCROOT/../app/src/main/assets/de421.bsp\" \"$DEST/\"\ncp -f \"$SRCROOT/../app/src/main/assets/catalog.db\" \"$DEST/\"\n";
 		};
 		ED300B470E9546389864B9B5 /* Build Rust olive-ios Library */ = {
 			isa = PBXShellScriptBuildPhase;

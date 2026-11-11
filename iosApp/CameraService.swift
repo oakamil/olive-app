@@ -166,6 +166,9 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         ]
         if #available(iOS 17.0, *) {
             deviceTypes.append(.external)
+            if ProcessInfo.processInfo.isiOSAppOnMac {
+                deviceTypes.append(.continuityCamera)
+            }
         }
         let discovery = AVCaptureDevice.DiscoverySession(
             deviceTypes: deviceTypes,
@@ -176,7 +179,9 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         let isExternalRequest = (cameraId == "external")
         let device: AVCaptureDevice
         if isExternalRequest {
-            if #available(iOS 17.0, *), let ext = discovery.devices.first(where: { $0.deviceType == .external }) {
+            if #available(iOS 17.0, *), let ext = discovery.devices.first(where: {
+                $0.deviceType == .external || (ProcessInfo.processInfo.isiOSAppOnMac && $0.deviceType == .continuityCamera)
+            }) {
                 device = ext
             } else if let defaultCam = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
                 device = defaultCam
@@ -776,14 +781,36 @@ public func olive_ios_get_available_cameras() -> UnsafeMutablePointer<CChar>? {
     return strdup(jsonString)
 }
 
+@_cdecl("olive_ios_has_connected_external_camera")
+public func olive_ios_has_connected_external_camera() -> Bool {
+    guard #available(iOS 17.0, *) else { return false }
+
+    var deviceTypes: [AVCaptureDevice.DeviceType] = [.external]
+    if ProcessInfo.processInfo.isiOSAppOnMac {
+        deviceTypes.append(.continuityCamera)
+    }
+
+    let discovery = AVCaptureDevice.DiscoverySession(
+        deviceTypes: deviceTypes,
+        mediaType: .video,
+        position: .unspecified
+    )
+    return !discovery.devices.isEmpty
+}
+
 @_cdecl("olive_ios_get_external_camera_formats")
 public func olive_ios_get_external_camera_formats() -> UnsafeMutablePointer<CChar>? {
     guard #available(iOS 17.0, *) else {
         return strdup("[]")
     }
 
+    var deviceTypes: [AVCaptureDevice.DeviceType] = [.external]
+    if ProcessInfo.processInfo.isiOSAppOnMac {
+        deviceTypes.append(.continuityCamera)
+    }
+
     let discovery = AVCaptureDevice.DiscoverySession(
-        deviceTypes: [.external],
+        deviceTypes: deviceTypes,
         mediaType: .video,
         position: .unspecified
     )
