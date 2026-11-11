@@ -115,23 +115,6 @@ object AstrometryUtils {
         return lst
     }
 
-    fun calculateParallacticAngle(
-        ra: Double,
-        dec: Double,
-        lat: Double,
-        lst: Double
-    ): Double {
-        val haRad = Math.toRadians(lst - ra)
-        val decRad = Math.toRadians(dec)
-        val latRad = Math.toRadians(lat)
-
-        val y = sin(haRad)
-        val x = cos(decRad) * tan(latRad) - sin(decRad) * cos(haRad)
-
-        val qRad = atan2(y, x)
-        return Math.toDegrees(qRad)
-    }
-
     /**
      * Converts celestial coordinates (RA, Dec in degrees J2000) to horizontal coordinates (Azimuth, Altitude in degrees).
      * Azimuth: North = 0°, East = 90°, South = 180°, West = 270°.
