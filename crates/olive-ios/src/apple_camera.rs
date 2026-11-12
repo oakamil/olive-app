@@ -23,9 +23,17 @@ static ACTIVE_APPLE_CAMERA: Mutex<Option<Arc<AppleCamera>>> = Mutex::new(None);
 pub extern "C" fn olive_ios_register_camera_control_callback(cb: AppleCameraControlCallback) {
     *CAMERA_CONTROL_CB.lock().unwrap() = Some(cb);
     if let Some(cam) = get_active_apple_camera() {
-        let z = cam.get_zoom().unwrap_or(1.0);
-        if (z - 1.0).abs() > 0.01 {
-            cb(-1, -1.0, -1.0, z);
+        if !cam.is_ae.load(Ordering::Relaxed) {
+            let exp = cam.get_exposure();
+            let gain = cam.get_gain();
+            let focus = cam.get_focus().unwrap_or(OPTICAL_INFINITY_FOCUS);
+            let zoom = cam.get_zoom().unwrap_or(1.0);
+            cb(exp, gain, focus, zoom);
+        } else {
+            let z = cam.get_zoom().unwrap_or(1.0);
+            if (z - 1.0).abs() > 0.01 {
+                cb(-1, -1.0, -1.0, z);
+            }
         }
     }
 }
@@ -257,8 +265,10 @@ impl AppleCamera {
             measured_us as i32
         };
 
-        self.exposure_us
-            .store(effective_exposure_us, Ordering::Relaxed);
+        if self.is_ae.load(Ordering::Relaxed) {
+            self.exposure_us
+                .store(effective_exposure_us, Ordering::Relaxed);
+        }
 
         let auto_delta = self.pedestal_delta.load(Ordering::Relaxed);
         let user_offset = self.user_brightness.load(Ordering::Relaxed) - 50;
@@ -375,7 +385,7 @@ impl CameraTrait for AppleCamera {
         self.gain.store(gain as i32, Ordering::SeqCst);
         let cb = { *CAMERA_CONTROL_CB.lock().unwrap() };
         if let Some(cb) = cb {
-            cb(-1, gain, -1.0, -1.0);
+            cb(self.get_exposure(), gain, -1.0, -1.0);
         }
     }
 
@@ -387,7 +397,7 @@ impl CameraTrait for AppleCamera {
         self.exposure_us.store(exposure_us, Ordering::SeqCst);
         let cb = { *CAMERA_CONTROL_CB.lock().unwrap() };
         if let Some(cb) = cb {
-            cb(exposure_us, -1.0, -1.0, -1.0);
+            cb(exposure_us, self.get_gain(), -1.0, -1.0);
         }
     }
 
@@ -515,6 +525,10 @@ pub extern "C" fn olive_ios_push_camera_frame(
         return;
     }
 
+    let Some(camera) = get_active_apple_camera() else {
+        return;
+    };
+
     let receive_time = std::time::Instant::now();
 
     let total_pixels = (width * height) as usize;
@@ -538,19 +552,17 @@ pub extern "C" fn olive_ios_push_camera_frame(
         .checked_sub(Duration::from_micros(midpoint_offset_us))
         .unwrap_or_else(SystemTime::now);
 
-    if let Some(camera) = get_active_apple_camera() {
-        camera.push_raw_luminance(
-            data,
-            width,
-            height,
-            frame_timestamp,
-            timestamp_ns,
-            applied_exposure_us,
-            applied_iso,
-            receive_time,
-            zoom,
-        );
-    }
+    camera.push_raw_luminance(
+        data,
+        width,
+        height,
+        frame_timestamp,
+        timestamp_ns,
+        applied_exposure_us,
+        applied_iso,
+        receive_time,
+        zoom,
+    );
 }
 
 #[unsafe(no_mangle)]

@@ -116,18 +116,8 @@ class IosEngineBridge : EngineBridge {
         } catch (_: Exception) {
         }
 
-        val effectiveZoom = if (isDemo) 1.0f else initialZoom.coerceIn(1.0f, maxOf(1.0f, selectedMaxZoom))
-
-        if (!isDemo) {
-            olive_ios_start_hardware_capture(
-                internalCameraId,
-                selectedWidth.toInt(),
-                selectedHeight.toInt(),
-                30,
-                null,
-                effectiveZoom
-            )
-        }
+        val effectiveZoom =
+            if (isDemo) 1.0f else initialZoom.coerceIn(1.0f, maxOf(1.0f, selectedMaxZoom))
 
         val started = olive_ios_start_engine(
             selectedWidth,
@@ -143,6 +133,17 @@ class IosEngineBridge : EngineBridge {
             effectiveZoom
         )
         check(started) { "Failed to initialize Olive iOS engine (check database path and permissions)" }
+
+        if (!isDemo) {
+            olive_ios_start_hardware_capture(
+                internalCameraId,
+                selectedWidth.toInt(),
+                selectedHeight.toInt(),
+                30,
+                null,
+                effectiveZoom
+            )
+        }
     }
 
     override fun startExternalCameraEngine(
@@ -166,14 +167,6 @@ class IosEngineBridge : EngineBridge {
         val requiredBytes = reqWidth * reqHeight * 4 + 8
         ensureFrameCapacity(requiredBytes)
 
-        olive_ios_start_hardware_capture(
-            "external",
-            reqWidth,
-            reqHeight,
-            reqFps,
-            reqFormat,
-            1.0f
-        )
         val w = if (reqWidth > 0) reqWidth.toUInt() else 1920u
         val h = if (reqHeight > 0) reqHeight.toUInt() else 1080u
         val started = olive_ios_start_engine(
@@ -190,6 +183,15 @@ class IosEngineBridge : EngineBridge {
             1.0f
         )
         check(started) { "Failed to initialize Olive iOS external UVC engine" }
+
+        olive_ios_start_hardware_capture(
+            "external",
+            reqWidth,
+            reqHeight,
+            reqFps,
+            reqFormat,
+            1.0f
+        )
     }
 
     override fun stopEngine() {
