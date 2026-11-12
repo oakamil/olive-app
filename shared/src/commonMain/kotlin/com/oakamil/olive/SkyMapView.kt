@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.FilterCenterFocus
 import androidx.compose.material.icons.filled.GpsFixed
@@ -413,39 +414,9 @@ fun SkyMapView(
         )
     }
     val cardinalLayouts = remember(textMeasurer, colors) {
-        mapOf(
-            "N" to textMeasurer.measure(
-                "N",
-                style = TextStyle(
-                    color = colors.primary,
-                    fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
-                    fontWeight = FontWeight.Bold,
-                    shadow = Shadow.None,
-                    textDecoration = TextDecoration.None
-                )
-            ),
-            "E" to textMeasurer.measure(
-                "E",
-                style = TextStyle(
-                    color = colors.primary,
-                    fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
-                    fontWeight = FontWeight.Bold,
-                    shadow = Shadow.None,
-                    textDecoration = TextDecoration.None
-                )
-            ),
-            "S" to textMeasurer.measure(
-                "S",
-                style = TextStyle(
-                    color = colors.primary,
-                    fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
-                    fontWeight = FontWeight.Bold,
-                    shadow = Shadow.None,
-                    textDecoration = TextDecoration.None
-                )
-            ),
-            "W" to textMeasurer.measure(
-                "W",
+        listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW").associateWith { dir ->
+            textMeasurer.measure(
+                dir,
                 style = TextStyle(
                     color = colors.primary,
                     fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
@@ -454,7 +425,7 @@ fun SkyMapView(
                     textDecoration = TextDecoration.None
                 )
             )
-        )
+        }
     }
     val constellationLayouts = remember(textMeasurer, colors) {
         ConstellationData.CONSTELLATIONS.associate { c ->
@@ -545,6 +516,12 @@ fun SkyMapView(
         }
 
         // 1. Solar System
+        if (hasValidLocation) {
+            val sunObj = AstrometryUtils.getSun(Clock.System.now().toEpochMilliseconds())
+            if (isAllTypes || "Planet" in currentTypeFilters || "Sun" in currentTypeFilters) {
+                nonStars.add(sunObj)
+            }
+        }
         nonStars.addAll(solPlanets.filter { p ->
             isCurrentTarget(p) || (
                     (isAllTypes || "Planet" in currentTypeFilters || p.objectType in currentTypeFilters) &&
@@ -1426,7 +1403,9 @@ fun SkyMapView(
                 val isMultipleStar =
                     item.obj.objectType == "Multiple Star" || item.obj.objectType == "Double Star"
                 val isStarDot = item.obj.objectType == "Star" || (isMultipleStar && fov > 15.0)
-                val painter = if (!isStarDot) catalogPainters[iconVector] else null
+                val isMoon = item.obj.displayName == "Moon" || item.obj.catalogEntry == "Moon"
+                val effectiveIcon = if (isMoon) Icons.Filled.Bedtime else iconVector
+                val painter = if (!isStarDot) catalogPainters[effectiveIcon] else null
 
                 if (painter != null) {
                     translate(

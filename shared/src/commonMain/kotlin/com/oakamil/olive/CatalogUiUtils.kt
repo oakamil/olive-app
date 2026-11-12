@@ -2,6 +2,7 @@ package com.oakamil.olive
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Air
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.BlurCircular
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Cookie
@@ -9,6 +10,7 @@ import androidx.compose.material.icons.filled.LensBlur
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.ScatterPlot
 import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Storm
@@ -37,6 +39,7 @@ fun getIconAndColorForType(
     secondaryColor: Color = DarkRed
 ): Pair<ImageVector, Color> {
     return when (objectType) {
+        "Sun" -> Icons.Filled.WbSunny to primaryColor
         "Asterism" -> Icons.Filled.Timeline to primaryColor
         "Cluster + Nebula" -> Icons.Filled.BlurCircular to primaryColor
         "Nebula" -> Icons.Filled.Air to primaryColor
@@ -77,7 +80,9 @@ fun rememberCatalogPainters(): Map<ImageVector, Painter> {
         Icons.Outlined.StarOutline to rememberVectorPainter(Icons.Outlined.StarOutline),
         CustomIcons.CircleCircle to rememberVectorPainter(CustomIcons.CircleCircle),
         CustomIcons.Checklist to rememberVectorPainter(CustomIcons.Checklist),
-        Icons.Filled.LocationSearching to rememberVectorPainter(Icons.Filled.LocationSearching)
+        Icons.Filled.LocationSearching to rememberVectorPainter(Icons.Filled.LocationSearching),
+        Icons.Filled.Bedtime to rememberVectorPainter(Icons.Filled.Bedtime),
+        Icons.Filled.WbSunny to rememberVectorPainter(Icons.Filled.WbSunny)
     )
 }
 
@@ -166,6 +171,7 @@ val catalogCategories = listOf(
 const val BRIGHT_STAR_PRIORITY_MAG_LIMIT = 4.0
 
 fun getCatalogPriority(obj: CatalogObject): Int {
+    if (obj.objectType == "Sun" || obj.catalogEntry == "Sun") return 1
     return when (obj.catalogLabel) {
         "Planet", "Moon", "Solar System" -> 2
         "Str" -> {
@@ -417,6 +423,7 @@ fun findTappedCatalogItem(
 ): CatalogObject? {
     // 1. Direct hit on inflated label text
     for (item in items) {
+        if (item.obj.objectType == "Sun" || item.obj.displayName == "Sun" || item.obj.catalogEntry == "Sun") continue
         if (item.labelRect?.inflate(labelInflatePx)?.contains(tapOffset) == true) {
             return item.obj
         }
@@ -426,6 +433,7 @@ fun findTappedCatalogItem(
     var closest: CatalogObject? = null
     var minDist = maxHitRadiusPx
     for (item in items) {
+        if (item.obj.objectType == "Sun" || item.obj.displayName == "Sun" || item.obj.catalogEntry == "Sun") continue
         val dist = hypot(item.screenX - tapOffset.x, item.screenY - tapOffset.y)
         if (dist < minDist) {
             minDist = dist
