@@ -150,7 +150,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nif [ -z \"$JAVA_HOME\" ] || [ ! -d \"$JAVA_HOME\" ]; then\n    if [ -d \"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ]; then\n        export JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\"\n    elif [ -d \"/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home\"\n    elif /usr/libexec/java_home >/dev/null 2>&1; then\n        export JAVA_HOME=\"$(/usr/libexec/java_home)\"\n    fi\nfi\ncd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode -Dorg.gradle.java.home=\"$JAVA_HOME\"\n";
+			shellScript = "set -e\nexport CONFIGURATION=\"Release\"\nif [ -z \"$JAVA_HOME\" ] || [ ! -d \"$JAVA_HOME\" ]; then\n    if [ -d \"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ]; then\n        export JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\"\n    elif [ -d \"/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home\"\n    elif /usr/libexec/java_home >/dev/null 2>&1; then\n        export JAVA_HOME=\"$(/usr/libexec/java_home)\"\n    fi\nfi\ncd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode -Dorg.gradle.java.home=\"$JAVA_HOME\"\n";
 		};
 		B2C3D4E5F60718293A4B5C6D /* Copy Olive Assets to App Bundle */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -286,12 +286,10 @@
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios/release",
-					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios/debug",
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = (
 					"$(inherited)",
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/release",
-					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/debug",
 				);
 				MARKETING_VERSION = 0.9.0;
 				ONLY_ACTIVE_ARCH = YES;
@@ -332,12 +330,12 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
-					"$(SRCROOT)/../shared/build/bin/iosArm64/debugFramework",
+					"$(SRCROOT)/../shared/build/bin/iosArm64/releaseFramework",
 					"$(BUILT_PRODUCTS_DIR)",
 				);
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]" = (
 					"$(inherited)",
-					"$(SRCROOT)/../shared/build/bin/iosSimulatorArm64/debugFramework",
+					"$(SRCROOT)/../shared/build/bin/iosSimulatorArm64/releaseFramework",
 					"$(BUILT_PRODUCTS_DIR)",
 				);
 				GENERATE_INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -350,12 +348,10 @@
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios/release",
-					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios/debug",
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = (
 					"$(inherited)",
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/release",
-					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/debug",
 				);
 				MARKETING_VERSION = 0.9.0;
 				ONLY_ACTIVE_ARCH = YES;

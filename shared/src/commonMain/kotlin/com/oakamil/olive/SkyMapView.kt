@@ -179,7 +179,7 @@ fun SkyMapView(
         val cameraFrame = viewModel.latestFrame
         val camCenterRa = stats.centerRa ?: stats.ra
         val camCenterDec = stats.centerDec ?: stats.dec
-        if (cameraFrame != null && stats.targetPixelX != null && stats.targetPixelY != null &&
+        if (!stats.isImuEstimate && cameraFrame != null && stats.targetPixelX != null && stats.targetPixelY != null &&
             camCenterRa != null && camCenterDec != null
         ) {
             val baseFovRad = Math.toRadians(stats.fov ?: 8.0)
@@ -231,6 +231,7 @@ fun SkyMapView(
         stats.roll,
         stats.targetPixelX,
         stats.targetPixelY,
+        stats.isImuEstimate,
         viewModel.skyMapCameraLocked,
         lat,
         lst
@@ -1044,8 +1045,6 @@ fun SkyMapView(
             // 6. Camera FOV Box & Live Video Preview (rendered before stars/labels so overlays remain visible)
             val camRa = stats.ra
             val camDec = stats.dec
-            val camCenterRa = stats.centerRa ?: camRa
-            val camCenterDec = stats.centerDec ?: camDec
             val cameraFrame = viewModel.latestFrame
 
             val isMirrored = stats.isMirrored == true
@@ -1063,6 +1062,30 @@ fun SkyMapView(
             }
             val camFov = Math.toDegrees(effectiveFovRad)
             val camRoll = stats.roll ?: 0.0
+
+            val (camCenterRa, camCenterDec) = run {
+                if (stats.isImuEstimate) {
+                    if (stats.targetPixelX != null && stats.targetPixelY != null &&
+                        camRa != null && camDec != null && cameraFrame != null
+                    ) {
+                        SkyMapProjection.unprojectCameraPixel(
+                            pixelX = cameraFrame.width.toDouble() - stats.targetPixelX,
+                            pixelY = cameraFrame.height.toDouble() - stats.targetPixelY,
+                            imageWidth = cameraFrame.width.toDouble(),
+                            imageHeight = cameraFrame.height.toDouble(),
+                            centerRa = camRa,
+                            centerDec = camDec,
+                            fovDeg = camFov,
+                            rollDeg = camRoll,
+                            imageAspect = aspect
+                        )
+                    } else {
+                        Pair(camRa, camDec)
+                    }
+                } else {
+                    Pair(stats.centerRa ?: camRa, stats.centerDec ?: camDec)
+                }
+            }
 
             val dsoScale = when {
                 fov < 10.0 -> SkyMapTuning.DSO_SCALE_DEEP

@@ -22,7 +22,7 @@ kotlin {
                 includeDirs(project.file("src/nativeInterop/cinterop/include"))
             }
         }
-        iosTarget.binaries.framework {
+        iosTarget.binaries.framework(listOf(org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType.RELEASE)) {
             baseName = "Shared"
             isStatic = true
         }
@@ -63,6 +63,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    variantFilter {
+        if (buildType.name == "debug") {
+            ignore = true
+        }
     }
 }
 

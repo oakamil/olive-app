@@ -78,6 +78,9 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
             self.captureSession.stopRunning()
             self.isRunning = false
             self.currentCameraDevice = nil
+            self.appliedExposureUs = -1
+            self.appliedIso = -1.0
+            self.appliedFocus = -1.0
         }
     }
 
@@ -146,6 +149,10 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         targetFormat: String? = nil,
         initialZoom: Float = 1.0
     ) throws {
+        self.appliedExposureUs = -1
+        self.appliedIso = -1.0
+        self.appliedFocus = -1.0
+
         captureSession.beginConfiguration()
         defer { captureSession.commitConfiguration() }
 
@@ -548,8 +555,8 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
 
                 // 2. Clamped Exposure & ISO
                 if (exposureUs > 0 || gain > 0) && device.isExposureModeSupported(.custom) {
-                    let newExp = exposureUs > 0 ? exposureUs : self.appliedExposureUs
-                    let newIso = gain > 0 ? gain : self.appliedIso
+                    let newExp = exposureUs > 0 ? exposureUs : (self.appliedExposureUs > 0 ? self.appliedExposureUs : 250_000)
+                    let newIso = gain > 0 ? gain : (self.appliedIso > 0.0 ? self.appliedIso : 100.0)
 
                     let expDiff = abs(newExp - self.appliedExposureUs)
                     let isoDiff = abs(newIso - self.appliedIso)
@@ -629,22 +636,23 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         let timestampNs = Int64(CMTimeGetSeconds(timestamp) * 1_000_000_000.0)
 
+        var exposure = self.appliedExposureUs > 0 ? self.appliedExposureUs : 250_000
+        var iso = self.appliedIso > 0.0 ? self.appliedIso : 100.0
+
         if let dev = currentCameraDevice {
             let rawExp = dev.exposureDuration
             if rawExp.isValid && rawExp.seconds > 0.0 {
                 let measuredUs = Int32(round(CMTimeGetSeconds(rawExp) * 1_000_000.0))
                 if measuredUs > 0 {
-                    self.appliedExposureUs = measuredUs
+                    exposure = measuredUs
                 }
             }
             let rawIso = dev.iso
             if rawIso > 0.0 {
-                self.appliedIso = rawIso
+                iso = rawIso
             }
         }
 
-        let exposure = self.appliedExposureUs
-        let iso = self.appliedIso
         let zoom = Float(self.currentCameraDevice?.videoZoomFactor ?? 1.0)
 
         olive_ios_push_camera_frame(

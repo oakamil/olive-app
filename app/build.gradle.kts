@@ -52,6 +52,12 @@ android {
             }
         }
     }
+
+    variantFilter {
+        if (buildType.name == "debug") {
+            ignore = true
+        }
+    }
 }
 
 dependencies {
