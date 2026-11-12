@@ -3,6 +3,8 @@
 
 package com.oakamil.olive
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Matrix
 import kotlin.math.asin
 import kotlin.math.atan
@@ -23,39 +25,68 @@ class SkyMapProjection(
     var fov: Double,
     var viewportWidth: Float,
     var viewportHeight: Float,
-    var rotationRad: Double = 0.0
+    rotationRad: Double = 0.0
 ) {
     val scale: Double =
         minOf(viewportWidth, viewportHeight) / (4.0 * tan(Math.toRadians(fov) / 4.0))
+
+    private var alt0Rad = Math.toRadians(centerAlt)
+    private var sinAlt0 = sin(alt0Rad)
+    private var cosAlt0 = cos(alt0Rad)
+    private val hasRotation = rotationRad != 0.0
+    private val cosRot = if (hasRotation) cos(rotationRad) else 1.0
+    private val sinRot = if (hasRotation) sin(rotationRad) else 0.0
+    private val halfWidth = viewportWidth / 2f
+    private val halfHeight = viewportHeight / 2f
+
+    /**
+     * Allocation-free projection of horizontal coordinates (Azimuth, Altitude in degrees)
+     * to viewport (x, y) pixels as a packed [Offset].
+     * Returns [Offset.Unspecified] when antipode-culled (1 + cos(c) < 0.05).
+     */
+    fun toScreenOffset(az: Double, alt: Double): Offset {
+        val altRad = Math.toRadians(alt)
+        val sinAlt = sin(altRad)
+        val cosAlt = cos(altRad)
+
+        val dAz = Math.toRadians(((az - centerAz) % 360.0 + 540.0) % 360.0 - 180.0)
+        val sinDAz = sin(dAz)
+        val cosDAz = cos(dAz)
+        val cosC = sinAlt0 * sinAlt + cosAlt0 * cosAlt * cosDAz
+
+        // Strict antipode culling to prevent distortion & division by zero
+        if (1.0 + cosC < 0.05) return Offset.Unspecified
+
+        val k = 2.0 / (1.0 + cosC)
+        // Facing centerAz: increasing Azimuth is to the right (East/South/West clockwise)
+        val xProj = k * cosAlt * sinDAz
+        val yProj = -k * (cosAlt0 * sinAlt - sinAlt0 * cosAlt * cosDAz)
+
+        val xRot = if (hasRotation) xProj * cosRot - yProj * sinRot else xProj
+        val yRot = if (hasRotation) xProj * sinRot + yProj * cosRot else yProj
+
+        val screenX = halfWidth + (xRot * scale).toFloat()
+        val screenY = halfHeight + (yRot * scale).toFloat()
+
+        return Offset(screenX, screenY)
+    }
 
     /**
      * Projects horizontal coordinates (Azimuth, Altitude in degrees) to viewport (x, y) pixels.
      * Applies antipode culling (1 + cos(c) >= 0.05) to prevent division by zero near the rear hemisphere.
      */
     fun toScreen(az: Double, alt: Double): Pair<Float, Float>? {
-        val altRad = Math.toRadians(alt)
-        val alt0Rad = Math.toRadians(centerAlt)
+        val pt = toScreenOffset(az, alt)
+        return if (pt.isSpecified) Pair(pt.x, pt.y) else null
+    }
 
-        val dAz = Math.toRadians(((az - centerAz) % 360.0 + 540.0) % 360.0 - 180.0)
-        val cosC = sin(alt0Rad) * sin(altRad) + cos(alt0Rad) * cos(altRad) * cos(dAz)
-
-        // Strict antipode culling to prevent distortion & division by zero
-        if (1.0 + cosC < 0.05) return null
-
-        val k = 2.0 / (1.0 + cosC)
-        // Facing centerAz: increasing Azimuth is to the right (East/South/West clockwise)
-        val xProj = k * cos(altRad) * sin(dAz)
-        val yProj = -k * (cos(alt0Rad) * sin(altRad) - sin(alt0Rad) * cos(altRad) * cos(dAz))
-
-        val xRot =
-            if (rotationRad != 0.0) xProj * cos(rotationRad) - yProj * sin(rotationRad) else xProj
-        val yRot =
-            if (rotationRad != 0.0) xProj * sin(rotationRad) + yProj * cos(rotationRad) else yProj
-
-        val screenX = (viewportWidth / 2f) + (xRot * scale).toFloat()
-        val screenY = (viewportHeight / 2f) + (yRot * scale).toFloat()
-
-        return Pair(screenX, screenY)
+    /**
+     * Allocation-free projection of celestial coordinates (RA, Dec in degrees J2000) to viewport (x, y) pixels
+     * using the observer's latitude and Local Sidereal Time.
+     */
+    fun toScreenRaDecOffset(ra: Double, dec: Double, lat: Double, lst: Double): Offset {
+        val (az, alt) = AstrometryUtils.raDecToAltAz(ra, dec, lat, lst)
+        return toScreenOffset(az, alt)
     }
 
     /**
@@ -86,6 +117,9 @@ class SkyMapProjection(
 
         centerAlt = (centerAlt + dAlt).coerceIn(-90.0, 90.0)
         centerAz = ((centerAz + dAz) % 360.0 + 360.0) % 360.0
+        alt0Rad = Math.toRadians(centerAlt)
+        sinAlt0 = sin(alt0Rad)
+        cosAlt0 = cos(alt0Rad)
     }
 
     companion object {
