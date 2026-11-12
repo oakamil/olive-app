@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.hypot
@@ -248,7 +250,9 @@ fun layoutCatalogItems(
     uiScale: Float = 1.0f,
     fontSizeSp: Float = 12f,
     placedReticles: MutableList<Rect> = mutableListOf(),
-    placedLabels: MutableList<Rect> = mutableListOf()
+    placedLabels: MutableList<Rect> = mutableListOf(),
+    primaryColor: Color = PureRed,
+    secondaryColor: Color = DarkRed
 ): List<PlacedCatalogItem> {
     if (candidates.isEmpty()) return emptyList()
 
@@ -304,11 +308,15 @@ fun layoutCatalogItems(
         var textH = 0f
 
         if (labelsPlaced < maxLabels || isTarget) {
+            val (_, themedColor) = obj.getIconAndColor(primaryColor, secondaryColor)
             val textLayout = textMeasurer.measure(
                 text = obj.displayName,
                 style = TextStyle(
+                    color = themedColor,
                     fontSize = (fontSizeSp * uiScale).sp,
-                    fontWeight = if (isTarget) FontWeight.Bold else FontWeight.Normal
+                    fontWeight = if (isTarget) FontWeight.Bold else FontWeight.Normal,
+                    shadow = Shadow.None,
+                    textDecoration = TextDecoration.None
                 )
             )
             textW = textLayout.size.width.toFloat()

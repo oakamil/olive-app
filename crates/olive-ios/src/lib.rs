@@ -42,10 +42,15 @@ pub extern "C" fn olive_ios_register_storage_callbacks(
     *STORAGE_REMOVE_CB.lock().unwrap() = Some(remove_cb);
 }
 
-pub struct IosStorage;
+pub struct IosStorage {
+    pub is_external: bool,
+}
 
 impl olive_imu::PersistentStorage for IosStorage {
     fn get(&self, key: &str) -> Option<String> {
+        if key == "imu_calibration" && self.is_external {
+            return None;
+        }
         let cb = (*STORAGE_GET_CB.lock().unwrap())?;
         let c_key = CString::new(key).ok()?;
         let res_ptr = cb(c_key.as_ptr());
@@ -62,6 +67,9 @@ impl olive_imu::PersistentStorage for IosStorage {
     }
 
     fn set(&self, key: &str, value: &str) {
+        if key == "imu_calibration" && self.is_external {
+            return;
+        }
         if let Some(cb) = *STORAGE_SET_CB.lock().unwrap() {
             if let (Ok(c_key), Ok(c_val)) = (CString::new(key), CString::new(value)) {
                 cb(c_key.as_ptr(), c_val.as_ptr());
@@ -70,6 +78,9 @@ impl olive_imu::PersistentStorage for IosStorage {
     }
 
     fn remove(&self, key: &str) {
+        if key == "imu_calibration" && self.is_external {
+            return;
+        }
         if let Some(cb) = *STORAGE_REMOVE_CB.lock().unwrap() {
             if let Ok(c_key) = CString::new(key) {
                 cb(c_key.as_ptr());
@@ -255,7 +266,7 @@ pub extern "C" fn olive_ios_start_engine(
     }
     let telescope_rt = telescope_runtime_lock.as_ref().unwrap();
 
-    let storage: Option<Arc<dyn PersistentStorage>> = Some(Arc::new(IosStorage));
+    let storage: Option<Arc<dyn PersistentStorage>> = Some(Arc::new(IosStorage { is_external }));
 
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     *ENGINE_STOP_TX.lock().unwrap() = Some(tx);

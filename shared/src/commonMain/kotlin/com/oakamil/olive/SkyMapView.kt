@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -84,6 +85,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -392,7 +394,9 @@ fun SkyMapView(
             style = TextStyle(
                 color = colors.secondary,
                 fontSize = SkyMapTuning.ZENITH_NADIR_FONT_SIZE_SP.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                shadow = Shadow.None,
+                textDecoration = TextDecoration.None
             )
         )
     }
@@ -402,7 +406,9 @@ fun SkyMapView(
             style = TextStyle(
                 color = colors.secondary,
                 fontSize = SkyMapTuning.ZENITH_NADIR_FONT_SIZE_SP.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                shadow = Shadow.None,
+                textDecoration = TextDecoration.None
             )
         )
     }
@@ -413,7 +419,9 @@ fun SkyMapView(
                 style = TextStyle(
                     color = colors.primary,
                     fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    shadow = Shadow.None,
+                    textDecoration = TextDecoration.None
                 )
             ),
             "E" to textMeasurer.measure(
@@ -421,7 +429,9 @@ fun SkyMapView(
                 style = TextStyle(
                     color = colors.primary,
                     fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    shadow = Shadow.None,
+                    textDecoration = TextDecoration.None
                 )
             ),
             "S" to textMeasurer.measure(
@@ -429,7 +439,9 @@ fun SkyMapView(
                 style = TextStyle(
                     color = colors.primary,
                     fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    shadow = Shadow.None,
+                    textDecoration = TextDecoration.None
                 )
             ),
             "W" to textMeasurer.measure(
@@ -437,7 +449,9 @@ fun SkyMapView(
                 style = TextStyle(
                     color = colors.primary,
                     fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    shadow = Shadow.None,
+                    textDecoration = TextDecoration.None
                 )
             )
         )
@@ -449,7 +463,9 @@ fun SkyMapView(
                 style = TextStyle(
                     color = colors.secondary.copy(alpha = 0.85f),
                     fontSize = SkyMapTuning.CONSTELLATION_FONT_SIZE_SP.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    shadow = Shadow.None,
+                    textDecoration = TextDecoration.None
                 )
             )
         }
@@ -1326,7 +1342,9 @@ fun SkyMapView(
                     uiScale = dsoScale,
                     fontSizeSp = baseFontSize,
                     placedReticles = placedReticleRects,
-                    placedLabels = placedLabelRects
+                    placedLabels = placedLabelRects,
+                    primaryColor = colors.primary,
+                    secondaryColor = colors.secondary
                 )
                 placedCatalogItems.addAll(computedCatalogItems)
                 for (i in 0 until placedCatalogItems.size) {
