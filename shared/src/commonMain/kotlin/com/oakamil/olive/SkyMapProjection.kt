@@ -155,14 +155,18 @@ class SkyMapProjection(
         }
 
         /**
-         * Computes the 4 Cardinal direction points (N, E, S, W) on the horizon in horizontal coordinates.
+         * Computes the 8 Cardinal and Ordinal direction points on the horizon in horizontal coordinates.
          */
         fun computeCardinalPoints(): List<Pair<String, Pair<Double, Double>>> {
             return listOf(
                 Pair("N", Pair(0.0, 0.0)),
+                Pair("NE", Pair(45.0, 0.0)),
                 Pair("E", Pair(90.0, 0.0)),
+                Pair("SE", Pair(135.0, 0.0)),
                 Pair("S", Pair(180.0, 0.0)),
-                Pair("W", Pair(270.0, 0.0))
+                Pair("SW", Pair(225.0, 0.0)),
+                Pair("W", Pair(270.0, 0.0)),
+                Pair("NW", Pair(315.0, 0.0))
             )
         }
 

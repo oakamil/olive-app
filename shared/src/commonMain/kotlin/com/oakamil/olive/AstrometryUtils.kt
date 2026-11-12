@@ -156,4 +156,50 @@ object AstrometryUtils {
         val decDeg = Math.toDegrees(decRad).coerceIn(-90.0, 90.0)
         return Pair(raDeg, decDeg)
     }
+
+    /**
+     * Computes the Sun's geocentric equatorial coordinates (RA, Dec in degrees)
+     * using the standard Astronomical Almanac low-precision algorithm (~0.01° accuracy).
+     */
+    fun getSunCoordinates(epochMs: Long): Pair<Double, Double> {
+        val jd = 2440587.5 + epochMs / 86400000.0
+        val n = jd - 2451545.0
+        val l = (280.460 + 0.9856474 * n) % 360.0
+        val gRad = Math.toRadians((357.528 + 0.9856003 * n) % 360.0)
+        val lambdaRad = Math.toRadians((l + 1.915 * sin(gRad) + 0.020 * sin(2 * gRad)) % 360.0)
+        val epsRad = Math.toRadians(23.439 - 0.0000004 * n)
+
+        val sinDec = sin(epsRad) * sin(lambdaRad)
+        val decRad = asin(sinDec.coerceIn(-1.0, 1.0))
+
+        val y = cos(epsRad) * sin(lambdaRad)
+        val x = cos(lambdaRad)
+        val raRad = atan2(y, x)
+        val raDeg = (Math.toDegrees(raRad) % 360.0 + 360.0) % 360.0
+        val decDeg = Math.toDegrees(decRad)
+        return Pair(raDeg, decDeg)
+    }
+
+    /**
+     * Creates a CatalogObject representing the Sun at the given epoch timestamp.
+     */
+    fun getSun(epochMs: Long): CatalogObject {
+        val (ra, dec) = getSunCoordinates(epochMs)
+        return CatalogObject(
+            id = -10,
+            catalogLabel = "Solar System",
+            catalogEntry = "Sun",
+            ra = ra,
+            dec = dec,
+            constellation = null,
+            objectType = "Sun",
+            broadCategory = "Sun",
+            magnitude = -26.74,
+            surfaceBrightness = null,
+            angularSize = "32'",
+            commonName = "Sun",
+            description = "The Sun",
+            copyright = null
+        )
+    }
 }
