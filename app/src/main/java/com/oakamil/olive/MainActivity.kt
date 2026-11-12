@@ -26,10 +26,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
@@ -488,48 +485,30 @@ class MainActivity : ComponentActivity() {
 
 
                         if (viewModel.isCameraStuck && viewModel.isEngineRunning && !isStopping) {
-                            AlertDialog(
-                                onDismissRequest = { /* Force user choice */ },
-                                title = {
-                                    Text(
-                                        stringResource(Res.string.title_camera_stuck),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                },
-                                text = {
-                                    Text(
-                                        stringResource(Res.string.body_camera_stuck),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                confirmButton = {
-                                    Button(
-                                        onClick = {
-                                            val intent =
-                                                baseContext.packageManager.getLaunchIntentForPackage(
-                                                    baseContext.packageName
-                                                )
-                                            val componentName = intent?.component
-                                            if (componentName != null) {
-                                                val restartIntent =
-                                                    Intent.makeRestartActivityTask(componentName)
-                                                restartIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                baseContext.startActivity(restartIntent)
-                                                finishAffinity()
-                                            } else {
-                                                Runtime.getRuntime().exit(0)
-                                            }
-                                        }
-                                    ) {
-                                        Text(stringResource(Res.string.btn_restart))
+                            OliveAlertDialog(
+                                title = stringResource(Res.string.title_camera_stuck),
+                                text = stringResource(Res.string.body_camera_stuck),
+                                confirmButtonText = stringResource(Res.string.btn_restart),
+                                onConfirm = {
+                                    val intent =
+                                        baseContext.packageManager.getLaunchIntentForPackage(
+                                            baseContext.packageName
+                                        )
+                                    val componentName = intent?.component
+                                    if (componentName != null) {
+                                        val restartIntent =
+                                            Intent.makeRestartActivityTask(componentName)
+                                        restartIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        baseContext.startActivity(restartIntent)
+                                        finishAffinity()
+                                    } else {
+                                        Runtime.getRuntime().exit(0)
                                     }
                                 },
-                                dismissButton = {
-                                    OutlinedButton(onClick = { viewModel.dismissCameraStuckDialog() }) {
-                                        Text(stringResource(Res.string.btn_cancel))
-                                    }
-                                },
-                                containerColor = MaterialTheme.colorScheme.surface
+                                dismissButtonText = stringResource(Res.string.btn_cancel),
+                                onDismiss = { viewModel.dismissCameraStuckDialog() },
+                                showCloseButton = false,
+                                dismissOnClickOutside = false
                             )
                         }
                     }

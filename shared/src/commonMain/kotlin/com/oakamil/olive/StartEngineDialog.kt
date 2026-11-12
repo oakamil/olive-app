@@ -23,14 +23,12 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.PlayCircle
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
@@ -342,27 +340,18 @@ fun StartEngineDialog(
                                 }
 
                                 if (showResetCameraCalibrationDialog) {
-                                    AlertDialog(
-                                        onDismissRequest = {
+                                    OliveAlertDialog(
+                                        title = stringResource(Res.string.title_reset_calibration),
+                                        text = stringResource(Res.string.inst_reset_camera_calibration),
+                                        confirmButtonText = stringResource(Res.string.btn_confirm),
+                                        onConfirm = {
                                             showResetCameraCalibrationDialog = false
+                                            settingsManager.removeString(profileKey)
+                                            hasCameraProfile = false
                                         },
-                                        title = { Text(stringResource(Res.string.title_reset_calibration)) },
-                                        text = { Text(stringResource(Res.string.inst_reset_camera_calibration)) },
-                                        confirmButton = {
-                                            Button(onClick = {
-                                                showResetCameraCalibrationDialog = false
-                                                settingsManager.removeString(profileKey)
-                                                hasCameraProfile = false
-                                            }) {
-                                                Text(stringResource(Res.string.btn_confirm))
-                                            }
-                                        },
-                                        dismissButton = {
-                                            OutlinedButton(onClick = {
-                                                showResetCameraCalibrationDialog = false
-                                            }) {
-                                                Text(stringResource(id = Res.string.btn_cancel))
-                                            }
+                                        dismissButtonText = stringResource(id = Res.string.btn_cancel),
+                                        onDismiss = {
+                                            showResetCameraCalibrationDialog = false
                                         }
                                     )
                                 }
@@ -915,25 +904,18 @@ fun StartEngineDialog(
                                 var showResetCalibrationDialog by remember { mutableStateOf(false) }
 
                                 if (showResetCalibrationDialog) {
-                                    AlertDialog(
-                                        onDismissRequest = { showResetCalibrationDialog = false },
-                                        title = { Text(stringResource(Res.string.title_reset_calibration)) },
-                                        text = { Text(stringResource(Res.string.inst_reset_calibration)) },
-                                        confirmButton = {
-                                            Button(onClick = {
-                                                showResetCalibrationDialog = false
-                                                settingsManager.removeString("imu_calibration")
-                                                hasCalibration = false
-                                            }) {
-                                                Text(stringResource(Res.string.btn_confirm))
-                                            }
+                                    OliveAlertDialog(
+                                        title = stringResource(Res.string.title_reset_calibration),
+                                        text = stringResource(Res.string.inst_reset_calibration),
+                                        confirmButtonText = stringResource(Res.string.btn_confirm),
+                                        onConfirm = {
+                                            showResetCalibrationDialog = false
+                                            settingsManager.removeString("imu_calibration")
+                                            hasCalibration = false
                                         },
-                                        dismissButton = {
-                                            OutlinedButton(onClick = {
-                                                showResetCalibrationDialog = false
-                                            }) {
-                                                Text(stringResource(id = Res.string.btn_cancel))
-                                            }
+                                        dismissButtonText = stringResource(id = Res.string.btn_cancel),
+                                        onDismiss = {
+                                            showResetCalibrationDialog = false
                                         }
                                     )
                                 }

@@ -35,7 +35,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -84,8 +83,8 @@ fun MainScreen(
 
     val isLowPowerMode = viewModel.isLowPowerMode
     val lowPowerTimeoutSeconds = settingsManager.lowPowerTimeoutSeconds
-    var lastInteractionTime by remember {
-        mutableLongStateOf(Clock.System.now().toEpochMilliseconds())
+    val lastInteractionTimeMs = remember {
+        LongArray(1) { Clock.System.now().toEpochMilliseconds() }
     }
 
     @Suppress("DEPRECATION")
@@ -95,7 +94,7 @@ fun MainScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 isAppInForeground = true
-                lastInteractionTime = Clock.System.now().toEpochMilliseconds()
+                lastInteractionTimeMs[0] = Clock.System.now().toEpochMilliseconds()
                 viewModel.isLowPowerMode = false
             } else if (event == Lifecycle.Event.ON_PAUSE) {
                 isAppInForeground = false
@@ -106,20 +105,32 @@ fun MainScreen(
     }
 
     LaunchedEffect(
-        lastInteractionTime,
         isAppInForeground,
         viewModel.isEngineRunning,
         lowPowerTimeoutSeconds,
-        viewModel.isCameraStuck
+        viewModel.isCameraStuck,
+        viewModel.isLowPowerMode
     ) {
         if (!viewModel.isEngineRunning) {
             viewModel.isLowPowerMode = false
-        } else if (isAppInForeground && !viewModel.isCameraStuck && lowPowerTimeoutSeconds > 0) {
-            delay(lowPowerTimeoutSeconds * 1000L)
-            viewModel.showCatalog = false
-            showSkyMapSettings = false
-            showStartEngineDialog = false
-            viewModel.isLowPowerMode = true
+        } else if (isAppInForeground && !viewModel.isCameraStuck && !viewModel.isLowPowerMode && lowPowerTimeoutSeconds > 0) {
+            val timeoutMs = lowPowerTimeoutSeconds * 1000L
+            val startNow = Clock.System.now().toEpochMilliseconds()
+            if (lastInteractionTimeMs[0] < startNow) {
+                lastInteractionTimeMs[0] = startNow
+            }
+            while (isActive) {
+                val now = Clock.System.now().toEpochMilliseconds()
+                val remaining = timeoutMs - (now - lastInteractionTimeMs[0])
+                if (remaining <= 0L) {
+                    viewModel.showCatalog = false
+                    showSkyMapSettings = false
+                    showStartEngineDialog = false
+                    viewModel.isLowPowerMode = true
+                    break
+                }
+                delay(remaining)
+            }
         }
     }
 
@@ -292,8 +303,7 @@ fun MainScreen(
 
     CompositionLocalProvider(
         LocalOnUserInteraction provides {
-            @Suppress("AssignedValueIsNeverRead")
-            lastInteractionTime = Clock.System.now().toEpochMilliseconds()
+            lastInteractionTimeMs[0] = Clock.System.now().toEpochMilliseconds()
         }
     ) {
         BoxWithConstraints(
@@ -303,8 +313,7 @@ fun MainScreen(
                     awaitPointerEventScope {
                         while (true) {
                             val ev = awaitPointerEvent(PointerEventPass.Initial)
-                            @Suppress("AssignedValueIsNeverRead")
-                            lastInteractionTime = Clock.System.now().toEpochMilliseconds()
+                            lastInteractionTimeMs[0] = Clock.System.now().toEpochMilliseconds()
                             if (viewModel.isLowPowerMode) {
                                 viewModel.isLowPowerMode = false
                                 ev.changes.forEach { it.consume() }

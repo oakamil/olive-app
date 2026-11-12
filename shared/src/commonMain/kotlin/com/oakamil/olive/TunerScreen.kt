@@ -27,12 +27,9 @@ import androidx.compose.material.icons.filled.FilterCenterFocus
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.SettingsBackupRestore
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -499,68 +496,48 @@ fun TunerScreen(
     }
 
     if (showAlignDialog) {
-        AlertDialog(
-            onDismissRequest = {
+        OliveAlertDialog(
+            title = stringResource(Res.string.title_confirm_alignment),
+            text = stringResource(Res.string.inst_confirm_alignment),
+            confirmButtonText = stringResource(Res.string.btn_confirm),
+            onConfirm = {
                 @Suppress("AssignedValueIsNeverRead")
                 showAlignDialog = false
-            },
-            title = { Text(stringResource(Res.string.title_confirm_alignment)) },
-            text = { Text(stringResource(Res.string.inst_confirm_alignment)) },
-            confirmButton = {
-                Button(onClick = {
-                    @Suppress("AssignedValueIsNeverRead")
-                    showAlignDialog = false
-                    val targetX = alignTargetX
-                    val targetY = alignTargetY
-                    if (targetX != null && targetY != null) {
-                        viewModel.setAlignTargetPixel(
-                            targetX.toDouble(),
-                            targetY.toDouble()
-                        )
-                    }
-                    alignTargetX = null
-                    alignTargetY = null
-                }) {
-                    Text(stringResource(Res.string.btn_confirm))
+                val targetX = alignTargetX
+                val targetY = alignTargetY
+                if (targetX != null && targetY != null) {
+                    viewModel.setAlignTargetPixel(
+                        targetX.toDouble(),
+                        targetY.toDouble()
+                    )
                 }
+                alignTargetX = null
+                alignTargetY = null
             },
-            dismissButton = {
-                OutlinedButton(onClick = {
-                    @Suppress("AssignedValueIsNeverRead")
-                    showAlignDialog = false
-                }) {
-                    Text(stringResource(id = Res.string.btn_cancel))
-                }
+            dismissButtonText = stringResource(id = Res.string.btn_cancel),
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showAlignDialog = false
             }
         )
     }
 
     if (showResetAlignDialog) {
-        AlertDialog(
-            onDismissRequest = {
+        OliveAlertDialog(
+            title = stringResource(Res.string.title_reset_alignment),
+            text = stringResource(Res.string.inst_reset_alignment),
+            confirmButtonText = stringResource(Res.string.btn_confirm),
+            onConfirm = {
                 @Suppress("AssignedValueIsNeverRead")
                 showResetAlignDialog = false
+                viewModel.clearAlignTargetPixel()
+                alignTargetX = null
+                alignTargetY = null
             },
-            title = { Text(stringResource(Res.string.title_reset_alignment)) },
-            text = { Text(stringResource(Res.string.inst_reset_alignment)) },
-            confirmButton = {
-                Button(onClick = {
-                    @Suppress("AssignedValueIsNeverRead")
-                    showResetAlignDialog = false
-                    viewModel.clearAlignTargetPixel()
-                    alignTargetX = null
-                    alignTargetY = null
-                }) {
-                    Text(stringResource(Res.string.btn_confirm))
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = {
-                    @Suppress("AssignedValueIsNeverRead")
-                    showResetAlignDialog = false
-                }) {
-                    Text(stringResource(id = Res.string.btn_cancel))
-                }
+            dismissButtonText = stringResource(id = Res.string.btn_cancel),
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showResetAlignDialog = false
             }
         )
     }

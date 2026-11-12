@@ -44,8 +44,6 @@ import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -53,9 +51,9 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,6 +65,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.geometry.isUnspecified
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
@@ -100,7 +100,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.math.hypot
 import kotlin.math.round
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -163,7 +162,10 @@ fun SkyMapView(
     LaunchedEffect(is24Hour) {
         while (isActive) {
             val nowInstant = Clock.System.now()
-            currentTimeMs = nowInstant.toEpochMilliseconds()
+            val nowMs = nowInstant.toEpochMilliseconds()
+            if (nowMs - currentTimeMs >= 10_000L) {
+                currentTimeMs = nowMs
+            }
             val now = nowInstant.toLocalDateTime(TimeZone.currentSystemDefault())
             timeString = formatSystemTime(now, is24Hour)
             delay(1000)
@@ -211,9 +213,6 @@ fun SkyMapView(
         }
     }
 
-    val centerAz = viewModel.skyMapCenterAz ?: initialAltAz.first
-    val centerAlt = viewModel.skyMapCenterAlt ?: initialAltAz.second
-    val fov = viewModel.skyMapFov
     val isCameraLocked = viewModel.skyMapCameraLocked
     val isReversed = viewModel.reverseLayout
 
@@ -245,8 +244,15 @@ fun SkyMapView(
                     lat,
                     lst
                 )
-                viewModel.skyMapCenterAz = az
-                viewModel.skyMapCenterAlt = alt
+                val curAz = viewModel.skyMapCenterAz
+                val curAlt = viewModel.skyMapCenterAlt
+                val dAz =
+                    if (curAz != null) kotlin.math.abs(((az - curAz) % 360.0 + 540.0) % 360.0 - 180.0) else 999.0
+                val dAlt = if (curAlt != null) kotlin.math.abs(alt - curAlt) else 999.0
+                if (dAz >= 0.005 || dAlt >= 0.005) {
+                    viewModel.skyMapCenterAz = az
+                    viewModel.skyMapCenterAlt = alt
+                }
             }
         }
     }
@@ -486,23 +492,31 @@ fun SkyMapView(
 
     val currentLst by rememberUpdatedState(lst)
 
-    val effectiveMagLimit = when {
-        fov > 60.0 -> minOf(5.0, currentMagLimit ?: 5.0)
-        fov > 30.0 -> minOf(6.5, currentMagLimit ?: 6.5)
-        fov > 15.0 -> minOf(8.0, currentMagLimit ?: 8.0)
-        fov > 10.0 -> minOf(11.0, currentMagLimit ?: 11.0)
-        fov > 5.0 -> minOf(13.0, currentMagLimit ?: 13.0)
-        else -> currentMagLimit ?: 99.9
+    val effectiveMagLimit by remember(currentMagLimit) {
+        derivedStateOf {
+            val currentFov = viewModel.skyMapFov
+            when {
+                currentFov > 60.0 -> minOf(5.0, currentMagLimit ?: 5.0)
+                currentFov > 30.0 -> minOf(6.5, currentMagLimit ?: 6.5)
+                currentFov > 15.0 -> minOf(8.0, currentMagLimit ?: 8.0)
+                currentFov > 10.0 -> minOf(11.0, currentMagLimit ?: 11.0)
+                currentFov > 5.0 -> minOf(13.0, currentMagLimit ?: 13.0)
+                else -> currentMagLimit ?: 99.9
+            }
+        }
+    }
+    val isDeepFov by remember {
+        derivedStateOf { viewModel.skyMapFov <= 15.0 }
     }
 
-    val targetRa = stats.targetRa ?: stats.ra
-    val targetDec = stats.targetDec ?: stats.dec
+    val targetRa = stats.targetRa
+    val targetDec = stats.targetDec
 
-    // Pre-filter and partition candidates outside the Canvas draw loop to avoid allocations at 60fps
+    // Pre-filter, sort, and partition candidates outside the Canvas draw loop to avoid allocations at 60fps
     val (visibleNonStarCandidates, visibleStarCandidates) = remember(
         solPlanets, solComets, solAsteroids,
         tier1Dso, tier1Stars, dynamicCatalogObjects, dynamicStars,
-        currentTypeFilters, currentMagLimit, isAllTypes, effectiveMagLimit, fov,
+        currentTypeFilters, currentMagLimit, isAllTypes, effectiveMagLimit, isDeepFov,
         targetRa, targetDec
     ) {
         val nonStars = mutableListOf<CatalogObject>()
@@ -543,7 +557,7 @@ fun SkyMapView(
                         isAllTypes || obj.objectType in currentTypeFilters || obj.broadCategory in currentTypeFilters
                     val magMatches = when {
                         obj.magnitude != null -> obj.magnitude <= effectiveMagLimit
-                        else -> fov <= 15.0
+                        else -> isDeepFov
                     }
                     typeMatches && magMatches
                 }
@@ -559,31 +573,90 @@ fun SkyMapView(
                         isAllTypes || obj.objectType in currentTypeFilters || obj.broadCategory in currentTypeFilters
                     val magMatches = when {
                         obj.magnitude != null -> obj.magnitude <= effectiveMagLimit
-                        else -> fov <= 15.0
+                        else -> isDeepFov
                     }
                     typeMatches && magMatches
                 }
                 .distinctBy { it.id }
         )
 
+        val candidateComparator = compareBy<CatalogObject> { getCatalogPriority(it) }
+            .thenBy { it.magnitude ?: 99.0 }
+        nonStars.sortWith(candidateComparator)
+        stars.sortWith(candidateComparator)
+
         Pair(nonStars, stars)
     }
 
+    val nonStarAltAz = remember(visibleNonStarCandidates, lat, lst) {
+        val arr = DoubleArray(visibleNonStarCandidates.size * 2)
+        for (i in visibleNonStarCandidates.indices) {
+            val obj = visibleNonStarCandidates[i]
+            val (az, alt) = AstrometryUtils.raDecToAltAz(obj.ra, obj.dec, lat, lst)
+            arr[i * 2] = az
+            arr[i * 2 + 1] = alt
+        }
+        arr
+    }
+
+    val starAltAz = remember(visibleStarCandidates, lat, lst) {
+        val arr = DoubleArray(visibleStarCandidates.size * 2)
+        for (i in visibleStarCandidates.indices) {
+            val obj = visibleStarCandidates[i]
+            val (az, alt) = AstrometryUtils.raDecToAltAz(obj.ra, obj.dec, lat, lst)
+            arr[i * 2] = az
+            arr[i * 2 + 1] = alt
+        }
+        arr
+    }
+
+    val constellationLineAltAz = remember(lat, lst) {
+        val lines = ConstellationData.LINES
+        val arr = DoubleArray(lines.size * 4)
+        for (i in lines.indices) {
+            val line = lines[i]
+            val (az1, alt1) = AstrometryUtils.raDecToAltAz(line.ra1, line.dec1, lat, lst)
+            val (az2, alt2) = AstrometryUtils.raDecToAltAz(line.ra2, line.dec2, lat, lst)
+            val base = i * 4
+            arr[base] = az1
+            arr[base + 1] = alt1
+            arr[base + 2] = az2
+            arr[base + 3] = alt2
+        }
+        arr
+    }
+
+    val constellationCenterAltAz = remember(lat, lst) {
+        val constells = ConstellationData.CONSTELLATIONS
+        val arr = DoubleArray(constells.size * 2)
+        for (i in constells.indices) {
+            val c = constells[i]
+            val (az, alt) = AstrometryUtils.raDecToAltAz(c.centerRa, c.centerDec, lat, lst)
+            arr[i * 2] = az
+            arr[i * 2 + 1] = alt
+        }
+        arr
+    }
+
     val placedCatalogItems = remember { mutableListOf<PlacedCatalogItem>() }
+    val placedCatalogIsAbove = remember { mutableListOf<Boolean>() }
     val drawnStars = remember { mutableListOf<CatalogObject>() }
+    val drawnStarIsAbove = remember { mutableListOf<Boolean>() }
     val placedLabelRects = remember { mutableListOf<Rect>() }
     val placedReticleRects = remember { mutableListOf<Rect>() }
     val placedStarXs = remember { mutableListOf<Float>() }
     val placedStarYs = remember { mutableListOf<Float>() }
     val placedCatalogObjIds = remember { hashSetOf<Int>() }
     val catalogCandidates = remember { mutableListOf<Pair<CatalogObject, Offset>>() }
+    val lastCatalogLayoutKey = remember { arrayOfNulls<Any>(1) }
 
     // Reusable Path and Array buffers to eliminate per-frame 60 FPS draw allocations
     val horizonPath = remember { Path() }
     val constellationPath = remember { Path() }
     val camBoxPath = remember { Path() }
-    val horizonScreenPoints =
-        remember { Array<Pair<Float, Float>?>(SkyMapProjection.HORIZON_POINTS.size) { null } }
+    val horizonScreenXs = remember { FloatArray(SkyMapProjection.HORIZON_POINTS.size) }
+    val horizonScreenYs = remember { FloatArray(SkyMapProjection.HORIZON_POINTS.size) }
+    val horizonScreenValid = remember { BooleanArray(SkyMapProjection.HORIZON_POINTS.size) }
 
     // PathEffects pre-allocated
     val horizonDashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f) }
@@ -695,17 +768,6 @@ fun SkyMapView(
                 }
         }
 
-        val projection = remember(centerAz, centerAlt, fov, widthPx, heightPx) {
-            SkyMapProjection(
-                centerAz = centerAz,
-                centerAlt = centerAlt,
-                fov = fov,
-                viewportWidth = widthPx,
-                viewportHeight = heightPx
-            )
-        }
-        val currentProjection by rememberUpdatedState(projection)
-
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -720,7 +782,15 @@ fun SkyMapView(
                                 // Pinch-zoom touch noise shouldn't disengage camera lock
                             } else {
                                 viewModel.skyMapCameraLocked = false
-                                val proj = currentProjection
+                                val curAz = viewModel.skyMapCenterAz ?: initialAltAz.first
+                                val curAlt = viewModel.skyMapCenterAlt ?: initialAltAz.second
+                                val proj = SkyMapProjection(
+                                    centerAz = curAz,
+                                    centerAlt = curAlt,
+                                    fov = viewModel.skyMapFov,
+                                    viewportWidth = currentWidthPx,
+                                    viewportHeight = currentHeightPx
+                                )
                                 proj.panBy(pan.x, pan.y)
                                 viewModel.skyMapCenterAz = proj.centerAz
                                 viewModel.skyMapCenterAlt = proj.centerAlt
@@ -746,14 +816,19 @@ fun SkyMapView(
                     }
                 }
         ) {
-            placedCatalogItems.clear()
-            drawnStars.clear()
+            val centerAz = viewModel.skyMapCenterAz ?: initialAltAz.first
+            val centerAlt = viewModel.skyMapCenterAlt ?: initialAltAz.second
+            val fov = viewModel.skyMapFov
+            val projection = SkyMapProjection(
+                centerAz = centerAz,
+                centerAlt = centerAlt,
+                fov = fov,
+                viewportWidth = size.width,
+                viewportHeight = size.height
+            )
+
             placedLabelRects.clear()
             placedReticleRects.clear()
-            placedStarXs.clear()
-            placedStarYs.clear()
-            placedCatalogObjIds.clear()
-            catalogCandidates.clear()
 
             // 1. Local Horizon Circle & Below-Horizon Shading (only if observer location is known)
             if (hasValidLocation) {
@@ -762,22 +837,27 @@ fun SkyMapView(
                 var firstNullIndex = -1
                 for (i in 0 until n) {
                     val hp = horizonPoints[i]
-                    val pt = projection.toScreen(hp.first, hp.second)
-                    horizonScreenPoints[i] = pt
-                    if (pt == null && firstNullIndex == -1) {
-                        firstNullIndex = i
+                    val pt = projection.toScreenOffset(hp.first, hp.second)
+                    if (pt.isSpecified) {
+                        horizonScreenXs[i] = pt.x
+                        horizonScreenYs[i] = pt.y
+                        horizonScreenValid[i] = true
+                    } else {
+                        horizonScreenValid[i] = false
+                        if (firstNullIndex == -1) {
+                            firstNullIndex = i
+                        }
                     }
                 }
                 horizonPath.reset()
 
                 if (firstNullIndex == -1) {
                     // Full horizon circle on forward hemisphere -> single closed loop
-                    val first = horizonScreenPoints[0]
-                    if (first != null) {
-                        horizonPath.moveTo(first.first, first.second)
+                    if (horizonScreenValid[0]) {
+                        horizonPath.moveTo(horizonScreenXs[0], horizonScreenYs[0])
                         for (i in 1 until n) {
-                            val pt = horizonScreenPoints[i] ?: continue
-                            horizonPath.lineTo(pt.first, pt.second)
+                            if (!horizonScreenValid[i]) continue
+                            horizonPath.lineTo(horizonScreenXs[i], horizonScreenYs[i])
                         }
                         horizonPath.close()
                     }
@@ -787,13 +867,13 @@ fun SkyMapView(
                     // Never call close() on an open arc to prevent chords across screen.
                     var inSegment = false
                     for (i in 0 until n) {
-                        val pt = horizonScreenPoints[(firstNullIndex + 1 + i) % n]
-                        if (pt != null) {
+                        val idx = (firstNullIndex + 1 + i) % n
+                        if (horizonScreenValid[idx]) {
                             if (!inSegment) {
-                                horizonPath.moveTo(pt.first, pt.second)
+                                horizonPath.moveTo(horizonScreenXs[idx], horizonScreenYs[idx])
                                 inSegment = true
                             } else {
-                                horizonPath.lineTo(pt.first, pt.second)
+                                horizonPath.lineTo(horizonScreenXs[idx], horizonScreenYs[idx])
                             }
                         } else {
                             inSegment = false
@@ -810,12 +890,12 @@ fun SkyMapView(
                 // 2. Cardinal Points (N, E, S, W)
                 val cardinals = SkyMapProjection.CARDINAL_POINTS
                 for ((cardinal, coords) in cardinals) {
-                    val pt = projection.toScreen(coords.first, coords.second)
-                    if (pt != null && pt.first in 0f..size.width && pt.second in 0f..size.height) {
+                    val pt = projection.toScreenOffset(coords.first, coords.second)
+                    if (pt.isSpecified && pt.x in 0f..size.width && pt.y in 0f..size.height) {
                         val textLayout = cardinalLayouts[cardinal]
                         if (textLayout != null) {
-                            val cLeft = pt.first - textLayout.size.width / 2f
-                            val cTop = pt.second - textLayout.size.height / 2f
+                            val cLeft = pt.x - textLayout.size.width / 2f
+                            val cTop = pt.y - textLayout.size.height / 2f
                             placedLabelRects.add(
                                 Rect(
                                     cLeft - 4f,
@@ -835,11 +915,11 @@ fun SkyMapView(
 
                 // 3. Zenith & Nadir (Simple crosshair + title-case label in secondary color)
                 val (zenithAz, zenithAlt) = SkyMapProjection.getZenith()
-                val zenithPt = projection.toScreen(zenithAz, zenithAlt)
-                if (zenithPt != null && zenithPt.first in -50f..size.width + 50f && zenithPt.second in -50f..size.height + 50f) {
+                val zenithPt = projection.toScreenOffset(zenithAz, zenithAlt)
+                if (zenithPt.isSpecified && zenithPt.x in -50f..size.width + 50f && zenithPt.y in -50f..size.height + 50f) {
                     val zArm = 10.dp.toPx()
-                    val zX = zenithPt.first
-                    val zY = zenithPt.second
+                    val zX = zenithPt.x
+                    val zY = zenithPt.y
                     val stroke = 1.5.dp.toPx()
                     drawCircle(
                         colors.secondary,
@@ -869,11 +949,11 @@ fun SkyMapView(
                 }
 
                 val (nadirAz, nadirAlt) = SkyMapProjection.getNadir()
-                val nadirPt = projection.toScreen(nadirAz, nadirAlt)
-                if (nadirPt != null && nadirPt.first in -50f..size.width + 50f && nadirPt.second in -50f..size.height + 50f) {
+                val nadirPt = projection.toScreenOffset(nadirAz, nadirAlt)
+                if (nadirPt.isSpecified && nadirPt.x in -50f..size.width + 50f && nadirPt.y in -50f..size.height + 50f) {
                     val nArm = 8.dp.toPx()
-                    val nX = nadirPt.first
-                    val nY = nadirPt.second
+                    val nX = nadirPt.x
+                    val nY = nadirPt.y
                     val stroke = 1.5.dp.toPx()
                     drawLine(
                         colors.secondary,
@@ -899,14 +979,28 @@ fun SkyMapView(
 
             // 4. Batched Constellation Stick Figures (Single Path in DarkRed)
             constellationPath.reset()
-            for (line in ConstellationData.LINES) {
-                val p1 = projection.toScreenRaDec(line.ra1, line.dec1, lat, lst) ?: continue
-                val p2 = projection.toScreenRaDec(line.ra2, line.dec2, lat, lst) ?: continue
+            val maxLineLen = widthPx * 0.8f
+            val maxLineLenSq = maxLineLen * maxLineLen
+            val lineCount = ConstellationData.LINES.size
+            for (i in 0 until lineCount) {
+                val base = i * 4
+                val p1 = projection.toScreenOffset(
+                    constellationLineAltAz[base],
+                    constellationLineAltAz[base + 1]
+                )
+                if (p1.isUnspecified) continue
+                val p2 = projection.toScreenOffset(
+                    constellationLineAltAz[base + 2],
+                    constellationLineAltAz[base + 3]
+                )
+                if (p2.isUnspecified) continue
 
                 // Check distance to avoid cross-screen lines if wrap occurs
-                if (hypot(p1.first - p2.first, p1.second - p2.second) < widthPx * 0.8f) {
-                    constellationPath.moveTo(p1.first, p1.second)
-                    constellationPath.lineTo(p2.first, p2.second)
+                val dx = p1.x - p2.x
+                val dy = p1.y - p2.y
+                if (dx * dx + dy * dy < maxLineLenSq) {
+                    constellationPath.moveTo(p1.x, p1.y)
+                    constellationPath.lineTo(p2.x, p2.y)
                 }
             }
             drawPath(
@@ -917,14 +1011,18 @@ fun SkyMapView(
 
             // 5. Constellation Names
             if (fov in 20.0..130.0) {
-                for (constell in ConstellationData.CONSTELLATIONS) {
-                    val pt =
-                        projection.toScreenRaDec(constell.centerRa, constell.centerDec, lat, lst)
-                    if (pt != null && pt.first in 0f..size.width && pt.second in 0f..size.height) {
+                val constells = ConstellationData.CONSTELLATIONS
+                for (i in constells.indices) {
+                    val constell = constells[i]
+                    val pt = projection.toScreenOffset(
+                        constellationCenterAltAz[i * 2],
+                        constellationCenterAltAz[i * 2 + 1]
+                    )
+                    if (pt.isSpecified && pt.x in 0f..size.width && pt.y in 0f..size.height) {
                         val textLayout = constellationLayouts[constell.name]
                         if (textLayout != null) {
-                            val cLeft = pt.first - textLayout.size.width / 2f
-                            val cTop = pt.second - textLayout.size.height / 2f
+                            val cLeft = pt.x - textLayout.size.width / 2f
+                            val cTop = pt.y - textLayout.size.height / 2f
                             placedLabelRects.add(
                                 Rect(
                                     cLeft - 2f,
@@ -1059,8 +1157,8 @@ fun SkyMapView(
                     val rawTargetPxY = (stats.targetPixelY ?: (cameraFrame.height / 2.0)).toFloat()
                     matrix.map(Offset(rawTargetPxX, rawTargetPxY))
                 } else if (camRa != null && camDec != null) {
-                    projection.toScreenRaDec(camRa, camDec, lat, lst)
-                        ?.let { (x, y) -> Offset(x, y) }
+                    val pt = projection.toScreenRaDecOffset(camRa, camDec, lat, lst)
+                    if (pt.isSpecified) pt else null
                 } else null
 
                 if (alignPt != null) {
@@ -1076,14 +1174,56 @@ fun SkyMapView(
                 }
             }
 
-            // Coordinate mapper for catalog objects (applying optical distortion correction inside camera box)
-            val projectWithDistortion: (Double, Double) -> Offset? = { objRa, objDec ->
-                val stdPt = projection.toScreenRaDec(objRa, objDec, lat, lst)
-                if (stdPt == null) {
-                    null
-                } else {
-                    val stdOffset = Offset(stdPt.first, stdPt.second)
-                    var screenOffset: Offset? = null
+            // 7. Stars & Catalog Objects Rendering (gated so stationary redraws reuse screen layout)
+            val maxMag = (effectiveMagLimit + 0.5).coerceAtLeast(6.0)
+            val camBoxActive =
+                camBoxRect != null && matrix != null && cameraFrame != null && camCenterRa != null && camCenterDec != null
+            val layoutKey = listOf(
+                centerAz,
+                centerAlt,
+                fov,
+                size.width,
+                size.height,
+                hasValidLocation,
+                lat,
+                lst,
+                visibleNonStarCandidates,
+                visibleStarCandidates,
+                targetRa,
+                targetDec,
+                alignPt,
+                camBoxActive,
+                if (camBoxActive) camCenterRa else null,
+                if (camBoxActive) camCenterDec else null,
+                if (camBoxActive) camFov else null,
+                if (camBoxActive) camRoll else null,
+                if (camBoxActive) stats.distortion else null,
+                if (camBoxActive) mirrorScaleX else null,
+                if (camBoxActive) mirrorScaleY else null,
+                if (camBoxActive) cameraFrame.width else null,
+                if (camBoxActive) cameraFrame.height else null
+            )
+
+            if (layoutKey != lastCatalogLayoutKey[0]) {
+                lastCatalogLayoutKey[0] = layoutKey
+                placedCatalogItems.clear()
+                placedCatalogIsAbove.clear()
+                drawnStars.clear()
+                drawnStarIsAbove.clear()
+                placedStarXs.clear()
+                placedStarYs.clear()
+                placedCatalogObjIds.clear()
+                catalogCandidates.clear()
+
+                // Coordinate mapper for catalog objects (applying optical distortion correction inside camera box)
+                fun projectCandidate(
+                    az: Double,
+                    alt: Double,
+                    objRa: Double,
+                    objDec: Double
+                ): Offset {
+                    val stdOffset = projection.toScreenOffset(az, alt)
+                    if (stdOffset.isUnspecified) return Offset.Unspecified
                     if (camBoxRect != null && camBoxRect.contains(stdOffset) &&
                         matrix != null && cameraFrame != null && camCenterRa != null && camCenterDec != null
                     ) {
@@ -1107,70 +1247,140 @@ fun SkyMapView(
                                 if (mirrorScaleX < 0f) cameraFrame.width.toFloat() - camPix.first else camPix.first
                             val py =
                                 if (mirrorScaleY < 0f) cameraFrame.height.toFloat() - camPix.second else camPix.second
-                            screenOffset = matrix.map(Offset(px, py))
+                            return matrix.map(Offset(px, py))
                         }
                     }
-                    screenOffset ?: stdOffset
+                    return stdOffset
+                }
+
+                val starLabelMagLimit = when {
+                    fov <= 15.0 -> effectiveMagLimit
+                    fov <= 25.0 -> 5.0
+                    fov <= 50.0 -> 4.0
+                    else -> 3.0
+                }
+
+                // Pass 1: Catalog Objects with labels (DSOs, Planets, Comets, Asteroids + Eligible Stars)
+                for (i in 0 until visibleNonStarCandidates.size) {
+                    val obj = visibleNonStarCandidates[i]
+                    val pt = projectCandidate(
+                        nonStarAltAz[i * 2],
+                        nonStarAltAz[i * 2 + 1],
+                        obj.ra,
+                        obj.dec
+                    )
+                    if (pt.isSpecified && pt.x in -20f..(size.width + 20f) && pt.y in -20f..(size.height + 20f)) {
+                        catalogCandidates.add(obj to pt)
+                    }
+                }
+                for (i in 0 until visibleStarCandidates.size) {
+                    val star = visibleStarCandidates[i]
+                    val isEligible = star.catalogLabel == "M" ||
+                            (!star.commonName.isNullOrBlank() && !star.isFakeCommonName) ||
+                            (star.magnitude != null && star.magnitude <= starLabelMagLimit) ||
+                            (star.magnitude == null && fov <= 15.0)
+                    if (isEligible) {
+                        val pt = projectCandidate(
+                            starAltAz[i * 2],
+                            starAltAz[i * 2 + 1],
+                            star.ra,
+                            star.dec
+                        )
+                        if (pt.isSpecified && pt.x in -20f..(size.width + 20f) && pt.y in -20f..(size.height + 20f)) {
+                            catalogCandidates.add(star to pt)
+                        }
+                    }
+                }
+
+                val computedCatalogItems = layoutCatalogItems(
+                    candidates = catalogCandidates,
+                    textMeasurer = textMeasurer,
+                    viewportWidth = size.width,
+                    viewportHeight = size.height,
+                    targetRa = targetRa,
+                    targetDec = targetDec,
+                    maxLabels = if (fov < 80.0) SkyMapTuning.MAX_DSO_LABELS else 0,
+                    uiScale = dsoScale,
+                    fontSizeSp = baseFontSize,
+                    placedReticles = placedReticleRects,
+                    placedLabels = placedLabelRects
+                )
+                placedCatalogItems.addAll(computedCatalogItems)
+                for (i in 0 until placedCatalogItems.size) {
+                    val item = placedCatalogItems[i]
+                    placedCatalogObjIds.add(item.obj.id)
+                    val isAbove = !hasValidLocation || AstrometryUtils.raDecToAltAz(
+                        item.obj.ra,
+                        item.obj.dec,
+                        lat,
+                        lst
+                    ).second >= 0.0
+                    placedCatalogIsAbove.add(isAbove)
+                }
+
+                // Pass 2: Starfield Dots decrowding
+                val minStarDistPx = if (fov < 5.0) 1.2f else 3.0f
+                val minStarDistSq = minStarDistPx * minStarDistPx
+
+                for (i in 0 until visibleStarCandidates.size) {
+                    val obj = visibleStarCandidates[i]
+                    val az = starAltAz[i * 2]
+                    val alt = starAltAz[i * 2 + 1]
+                    val screenPt = projectCandidate(az, alt, obj.ra, obj.dec)
+                    if (screenPt.isUnspecified ||
+                        screenPt.x < -20f || screenPt.x > size.width + 20f ||
+                        screenPt.y < -20f || screenPt.y > size.height + 20f
+                    ) continue
+
+                    val isPlacedCatalogStar = obj.id in placedCatalogObjIds
+                    val isMultipleStarIcon = obj.objectType != "Star" && fov <= 15.0
+                    if (isPlacedCatalogStar && isMultipleStarIcon) continue
+
+                    // Decrowding: skip star dot if an icon is already placed here or another star is within minStarDistPx
+                    if (!isPlacedCatalogStar) {
+                        var inReticle = false
+                        for (rIdx in 0 until placedReticleRects.size) {
+                            if (placedReticleRects[rIdx].contains(screenPt)) {
+                                inReticle = true
+                                break
+                            }
+                        }
+                        if (inReticle) continue
+
+                        var tooClose = false
+                        val numPoints = placedStarXs.size
+                        for (pIdx in 0 until numPoints) {
+                            val px = placedStarXs[pIdx]
+                            val dx = kotlin.math.abs(px - screenPt.x)
+                            if (dx >= minStarDistPx) continue
+                            val py = placedStarYs[pIdx]
+                            val dy = kotlin.math.abs(py - screenPt.y)
+                            if (dy >= minStarDistPx) continue
+                            if (dx * dx + dy * dy < minStarDistSq) {
+                                tooClose = true
+                                break
+                            }
+                        }
+                        if (tooClose) continue
+                    }
+
+                    placedStarXs.add(screenPt.x)
+                    placedStarYs.add(screenPt.y)
+                    drawnStars.add(obj)
+                    drawnStarIsAbove.add(!hasValidLocation || alt >= 0.0)
                 }
             }
 
-            // 7. Stars & Catalog Objects Rendering
-            val starLabelMagLimit = when {
-                fov <= 15.0 -> effectiveMagLimit
-                fov <= 25.0 -> 5.0
-                fov <= 50.0 -> 4.0
-                else -> 3.0
-            }
-
-            // Pass 1: Catalog Objects with labels (DSOs, Planets, Comets, Asteroids + Eligible Stars)
-            for (i in 0 until visibleNonStarCandidates.size) {
-                val obj = visibleNonStarCandidates[i]
-                val pt = projectWithDistortion(obj.ra, obj.dec)
-                if (pt != null) catalogCandidates.add(obj to pt)
-            }
-            for (i in 0 until visibleStarCandidates.size) {
-                val star = visibleStarCandidates[i]
-                val isEligible = star.catalogLabel == "M" ||
-                        (!star.commonName.isNullOrBlank() && !star.isFakeCommonName) ||
-                        (star.magnitude != null && star.magnitude <= starLabelMagLimit) ||
-                        (star.magnitude == null && fov <= 15.0)
-                if (isEligible) {
-                    val pt = projectWithDistortion(star.ra, star.dec)
-                    if (pt != null) catalogCandidates.add(star to pt)
-                }
-            }
-
-            val computedCatalogItems = layoutCatalogItems(
-                candidates = catalogCandidates,
-                textMeasurer = textMeasurer,
-                viewportWidth = size.width,
-                viewportHeight = size.height,
-                targetRa = targetRa,
-                targetDec = targetDec,
-                maxLabels = if (fov < 80.0) SkyMapTuning.MAX_DSO_LABELS else 0,
-                uiScale = dsoScale,
-                fontSizeSp = baseFontSize,
-                placedReticles = placedReticleRects,
-                placedLabels = placedLabelRects
-            )
-            placedCatalogItems.addAll(computedCatalogItems)
-
+            // Draw Pass 1: Placed Catalog Items & Labels
             for (i in 0 until placedCatalogItems.size) {
                 val item = placedCatalogItems[i]
-                placedCatalogObjIds.add(item.obj.id)
-                val isAbove = !hasValidLocation || AstrometryUtils.raDecToAltAz(
-                    item.obj.ra,
-                    item.obj.dec,
-                    lat,
-                    lst
-                ).second >= 0.0
+                val isAbove = placedCatalogIsAbove[i]
                 val (iconVector, themedColor) = item.obj.getIconAndColor(
                     colors.primary,
                     colors.secondary
                 )
                 val baseColor =
                     if (isAbove) themedColor else colors.secondary.copy(alpha = SkyMapTuning.BELOW_HORIZON_ALPHA)
-                val screenPt = Offset(item.screenX, item.screenY)
 
                 val isMultipleStar =
                     item.obj.objectType == "Multiple Star" || item.obj.objectType == "Double Star"
@@ -1178,7 +1388,10 @@ fun SkyMapView(
                 val painter = if (!isStarDot) catalogPainters[iconVector] else null
 
                 if (painter != null) {
-                    translate(left = screenPt.x - iconSize / 2f, top = screenPt.y - iconSize / 2f) {
+                    translate(
+                        left = item.screenX - iconSize / 2f,
+                        top = item.screenY - iconSize / 2f
+                    ) {
                         with(painter) {
                             draw(
                                 size = Size(iconSize, iconSize),
@@ -1188,85 +1401,34 @@ fun SkyMapView(
                     }
                 }
 
-                if (item.labelRect != null) {
-                    val textLayout = textMeasurer.measure(
-                        text = item.obj.displayName,
-                        style = TextStyle(
-                            color = baseColor,
-                            fontSize = (baseFontSize * dsoScale).sp,
-                            fontWeight = if (item.isTarget) FontWeight.Bold else FontWeight.Normal
-                        )
-                    )
+                val labelRect = item.labelRect
+                val textLayout = item.textLayout
+                if (labelRect != null && textLayout != null) {
                     drawText(
                         textLayout,
                         color = baseColor,
-                        topLeft = Offset(item.labelRect.left, item.labelRect.top)
+                        topLeft = Offset(labelRect.left, labelRect.top)
                     )
                 }
             }
 
-            // Pass 2: Starfield Dots (rendered under icons, avoiding clumping on top of placed icons or stars)
-            val maxMag = (effectiveMagLimit + 0.5).coerceAtLeast(6.0)
-            val minStarDistPx = if (fov < 5.0) 1.2f else 3.0f
-            val minStarDistSq = minStarDistPx * minStarDistPx
-
-            for (i in 0 until visibleStarCandidates.size) {
-                val obj = visibleStarCandidates[i]
-                val screenPt = projectWithDistortion(obj.ra, obj.dec) ?: continue
-                if (screenPt.x < -20f || screenPt.x > size.width + 20f || screenPt.y < -20f || screenPt.y > size.height + 20f) continue
-
-                val isAbove = !hasValidLocation || (AstrometryUtils.raDecToAltAz(
-                    obj.ra,
-                    obj.dec,
-                    lat,
-                    lst
-                ).second >= 0.0)
+            // Draw Pass 2: Decrowded Starfield Dots & Multiple Star Icons
+            for (i in 0 until drawnStars.size) {
+                val obj = drawnStars[i]
+                val sx = placedStarXs[i]
+                val sy = placedStarYs[i]
+                val isAbove = drawnStarIsAbove[i]
                 val baseColor =
                     if (isAbove) colors.primary else colors.secondary.copy(alpha = SkyMapTuning.BELOW_HORIZON_ALPHA)
-
-                val isPlacedCatalogStar = obj.id in placedCatalogObjIds
                 val isMultipleStarIcon = obj.objectType != "Star" && fov <= 15.0
-                if (isPlacedCatalogStar && isMultipleStarIcon) continue
-
-                // Decrowding: skip star dot if an icon is already placed here or another star is within minStarDistPx
-                if (!isPlacedCatalogStar) {
-                    var inReticle = false
-                    for (rIdx in 0 until placedReticleRects.size) {
-                        if (placedReticleRects[rIdx].contains(screenPt)) {
-                            inReticle = true
-                            break
-                        }
-                    }
-                    if (inReticle) continue
-
-                    var tooClose = false
-                    val numPoints = placedStarXs.size
-                    for (pIdx in 0 until numPoints) {
-                        val px = placedStarXs[pIdx]
-                        val dx = kotlin.math.abs(px - screenPt.x)
-                        if (dx >= minStarDistPx) continue
-                        val py = placedStarYs[pIdx]
-                        val dy = kotlin.math.abs(py - screenPt.y)
-                        if (dy >= minStarDistPx) continue
-                        if (dx * dx + dy * dy < minStarDistSq) {
-                            tooClose = true
-                            break
-                        }
-                    }
-                    if (tooClose) continue
-                }
-
-                placedStarXs.add(screenPt.x)
-                placedStarYs.add(screenPt.y)
-                drawnStars.add(obj)
 
                 if (isMultipleStarIcon) {
                     val (iconVector, _) = obj.getIconAndColor(colors.primary, colors.secondary)
                     val painter = catalogPainters[iconVector]
                     if (painter != null) {
                         translate(
-                            left = screenPt.x - iconSize / 2f,
-                            top = screenPt.y - iconSize / 2f
+                            left = sx - iconSize / 2f,
+                            top = sy - iconSize / 2f
                         ) {
                             with(painter) {
                                 draw(
@@ -1282,7 +1444,7 @@ fun SkyMapView(
                     drawCircle(
                         color = baseColor,
                         radius = radius,
-                        center = screenPt
+                        center = Offset(sx, sy)
                     )
                 }
             }
@@ -1363,71 +1525,71 @@ fun SkyMapView(
             val targetRa = stats.targetRa
             val targetDec = stats.targetDec
             if (viewModel.isEngineRunning && targetRa != null && targetDec != null) {
-                val tPt = projection.toScreenRaDec(targetRa, targetDec, lat, lst)
-                if (tPt != null) {
+                val tPt = projection.toScreenRaDecOffset(targetRa, targetDec, lat, lst)
+                if (tPt.isSpecified) {
                     val s = 14f
                     val stroke = 2.dp.toPx()
                     // Corner brackets
                     drawLine(
                         colors.primary,
-                        Offset(tPt.first - s, tPt.second - s),
-                        Offset(tPt.first - s + 8f, tPt.second - s),
+                        Offset(tPt.x - s, tPt.y - s),
+                        Offset(tPt.x - s + 8f, tPt.y - s),
                         strokeWidth = stroke
                     )
                     drawLine(
                         colors.primary,
-                        Offset(tPt.first - s, tPt.second - s),
-                        Offset(tPt.first - s, tPt.second - s + 8f),
+                        Offset(tPt.x - s, tPt.y - s),
+                        Offset(tPt.x - s, tPt.y - s + 8f),
                         strokeWidth = stroke
                     )
                     drawLine(
                         colors.primary,
-                        Offset(tPt.first + s, tPt.second - s),
-                        Offset(tPt.first + s - 8f, tPt.second - s),
+                        Offset(tPt.x + s, tPt.y - s),
+                        Offset(tPt.x + s - 8f, tPt.y - s),
                         strokeWidth = stroke
                     )
                     drawLine(
                         colors.primary,
-                        Offset(tPt.first + s, tPt.second - s),
-                        Offset(tPt.first + s, tPt.second - s + 8f),
+                        Offset(tPt.x + s, tPt.y - s),
+                        Offset(tPt.x + s, tPt.y - s + 8f),
                         strokeWidth = stroke
                     )
                     drawLine(
                         colors.primary,
-                        Offset(tPt.first - s, tPt.second + s),
-                        Offset(tPt.first - s + 8f, tPt.second + s),
+                        Offset(tPt.x - s, tPt.y + s),
+                        Offset(tPt.x - s + 8f, tPt.y + s),
                         strokeWidth = stroke
                     )
                     drawLine(
                         colors.primary,
-                        Offset(tPt.first - s, tPt.second + s),
-                        Offset(tPt.first - s, tPt.second + s - 8f),
+                        Offset(tPt.x - s, tPt.y + s),
+                        Offset(tPt.x - s, tPt.y + s - 8f),
                         strokeWidth = stroke
                     )
                     drawLine(
                         colors.primary,
-                        Offset(tPt.first + s, tPt.second + s),
-                        Offset(tPt.first + s - 8f, tPt.second + s),
+                        Offset(tPt.x + s, tPt.y + s),
+                        Offset(tPt.x + s - 8f, tPt.y + s),
                         strokeWidth = stroke
                     )
                     drawLine(
                         colors.primary,
-                        Offset(tPt.first + s, tPt.second + s),
-                        Offset(tPt.first + s, tPt.second + s - 8f),
+                        Offset(tPt.x + s, tPt.y + s),
+                        Offset(tPt.x + s, tPt.y + s - 8f),
                         strokeWidth = stroke
                     )
 
                     // Guide line from camera boresight/alignment reticle to target
                     val guideStart = alignPt ?: if (camRa != null && camDec != null) {
-                        projection.toScreenRaDec(camRa, camDec, lat, lst)
-                            ?.let { Offset(it.first, it.second) }
+                        val pt = projection.toScreenRaDecOffset(camRa, camDec, lat, lst)
+                        if (pt.isSpecified) pt else null
                     } else null
 
                     if (guideStart != null) {
                         drawLine(
                             color = colors.primary.copy(alpha = 0.5f),
                             start = guideStart,
-                            end = Offset(tPt.first, tPt.second),
+                            end = tPt,
                             strokeWidth = 1.5.dp.toPx(),
                             pathEffect = targetDottedEffect
                         )
@@ -1438,12 +1600,12 @@ fun SkyMapView(
             // 9. Selected Object Highlight Ring
             val selObj = selectedObject
             if (selObj != null) {
-                val sPt = projection.toScreenRaDec(selObj.ra, selObj.dec, lat, lst)
-                if (sPt != null) {
+                val sPt = projection.toScreenRaDecOffset(selObj.ra, selObj.dec, lat, lst)
+                if (sPt.isSpecified) {
                     drawCircle(
                         color = colors.primary,
                         radius = 22f,
-                        center = Offset(sPt.first, sPt.second),
+                        center = sPt,
                         style = strokeSelectionCircle
                     )
                 }
@@ -1477,10 +1639,6 @@ fun SkyMapView(
         }
 
         // Overlay Top Controls: In-line FOV Badge (Left/Right) and Action Buttons (Right/Left)
-        val (centerRa, centerDec) = remember(centerAz, centerAlt, lat, lst) {
-            AstrometryUtils.altAzToRaDec(centerAz, centerAlt, lat, lst)
-        }
-
         if (viewModel.showMapPosition || (viewModel.showStats && viewModel.isEngineRunning)) {
             Column(
                 modifier = Modifier
@@ -1501,6 +1659,12 @@ fun SkyMapView(
                         border = BorderStroke(1.dp, colors.outline),
                         shape = RoundedCornerShape(8.dp)
                     ) {
+                        val badgeAz = viewModel.skyMapCenterAz ?: initialAltAz.first
+                        val badgeAlt = viewModel.skyMapCenterAlt ?: initialAltAz.second
+                        val badgeFov = viewModel.skyMapFov
+                        val (centerRa, centerDec) = remember(badgeAz, badgeAlt, lat, lst) {
+                            AstrometryUtils.altAzToRaDec(badgeAz, badgeAlt, lat, lst)
+                        }
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -1525,12 +1689,12 @@ fun SkyMapView(
                                     maxLines = 1
                                 )
                                 Text(
-                                    text = "Az ${String.format("%.0f", centerAz)}° Alt ${
+                                    text = "Az ${String.format("%.0f", badgeAz)}° Alt ${
                                         String.format(
                                             "%.0f",
-                                            centerAlt
+                                            badgeAlt
                                         )
-                                    }°  FOV ${String.format("%.1f", fov)}°",
+                                    }°  FOV ${String.format("%.1f", badgeFov)}°",
                                     style = TextStyle(
                                         fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
                                         fontWeight = FontWeight.Normal
@@ -1761,7 +1925,9 @@ fun SkyMapView(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OutlinedIconButton(
-                onClick = { viewModel.skyMapFov = (fov / 1.4).coerceIn(0.5, 180.0) },
+                onClick = {
+                    viewModel.skyMapFov = (viewModel.skyMapFov / 1.4).coerceIn(0.5, 180.0)
+                },
                 border = BorderStroke(1.dp, colors.outline),
                 colors = IconButtonDefaults.outlinedIconButtonColors(
                     containerColor = colors.surface.copy(
@@ -1778,7 +1944,9 @@ fun SkyMapView(
                 )
             }
             OutlinedIconButton(
-                onClick = { viewModel.skyMapFov = (fov * 1.4).coerceIn(0.5, 180.0) },
+                onClick = {
+                    viewModel.skyMapFov = (viewModel.skyMapFov * 1.4).coerceIn(0.5, 180.0)
+                },
                 border = BorderStroke(1.dp, colors.outline),
                 colors = IconButtonDefaults.outlinedIconButtonColors(
                     containerColor = colors.surface.copy(
@@ -2123,27 +2291,20 @@ fun SkyMapView(
 
         // Align Confirmation Dialog
         if (showSyncDialog && viewModel.isEngineRunning) {
-            AlertDialog(
-                onDismissRequest = { showSyncDialog = false },
-                title = { Text(stringResource(Res.string.title_confirm_alignment)) },
-                text = { Text(stringResource(Res.string.msg_confirm_alignment)) },
-                confirmButton = {
-                    Button(onClick = {
-                        showSyncDialog = false
-                        showTargetPopup = false
-                        viewModel.syncTelescope(
-                            viewModel.engineStats.targetRa,
-                            viewModel.engineStats.targetDec
-                        )
-                    }) {
-                        Text(stringResource(Res.string.btn_confirm))
-                    }
+            OliveAlertDialog(
+                title = stringResource(Res.string.title_confirm_alignment),
+                text = stringResource(Res.string.msg_confirm_alignment),
+                confirmButtonText = stringResource(Res.string.btn_confirm),
+                onConfirm = {
+                    showSyncDialog = false
+                    showTargetPopup = false
+                    viewModel.syncTelescope(
+                        viewModel.engineStats.targetRa,
+                        viewModel.engineStats.targetDec
+                    )
                 },
-                dismissButton = {
-                    TextButton(onClick = { showSyncDialog = false }) {
-                        Text(stringResource(Res.string.btn_cancel))
-                    }
-                }
+                dismissButtonText = stringResource(Res.string.btn_cancel),
+                onDismiss = { showSyncDialog = false }
             )
         }
 

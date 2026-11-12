@@ -100,12 +100,17 @@ open class MainViewModel(
 
     var skyMapCenterTarget by mutableStateOf<Pair<Double, Double>?>(null)
 
+    private var fovSaveJob: Job? = null
     private val _skyMapFov = mutableDoubleStateOf(settingsManager.skyMapFov)
     var skyMapFov: Double
         get() = _skyMapFov.doubleValue
         set(value) {
             _skyMapFov.doubleValue = value
-            settingsManager.skyMapFov = value
+            fovSaveJob?.cancel()
+            fovSaveJob = viewModelScope.launch(Dispatchers.IO) {
+                delay(500L)
+                settingsManager.skyMapFov = value
+            }
         }
 
     var skyMapCenterAz by mutableStateOf<Double?>(null)
@@ -874,6 +879,8 @@ open class MainViewModel(
     }
 
     override fun onCleared() {
+        fovSaveJob?.cancel()
+        settingsManager.skyMapFov = _skyMapFov.doubleValue
         super.onCleared()
         catalogDb.closeDatabase()
     }

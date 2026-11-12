@@ -13,10 +13,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
@@ -109,34 +112,56 @@ fun IconBarItem(
 }
 
 @Composable
-fun NightVisionDialog(
+fun OliveAlertDialog(
     title: String,
     text: String,
-    confirmButtonText: String,
+    confirmButtonText: String = stringResource(Res.string.btn_confirm),
     onConfirm: () -> Unit,
-    dismissButtonText: String? = null,
-    onDismiss: () -> Unit
+    dismissButtonText: String? = stringResource(Res.string.btn_cancel),
+    onDismiss: () -> Unit,
+    showCloseButton: Boolean = true,
+    dismissOnClickOutside: Boolean = true,
+    dismissOnBackPress: Boolean = true
 ) {
+    val onUserInteraction = LocalOnUserInteraction.current
     Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        onDismissRequest = {
+            if (dismissOnClickOutside) {
+                onDismiss()
+            }
+        },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = dismissOnClickOutside,
+            dismissOnBackPress = dismissOnBackPress
+        )
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
             modifier = Modifier
                 .padding(24.dp)
+                .widthIn(max = 440.dp)
                 .fillMaxWidth()
                 .border(
                     1.dp,
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     RoundedCornerShape(16.dp)
                 )
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial)
+                            onUserInteraction()
+                        }
+                    }
+                }
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -144,23 +169,26 @@ fun NightVisionDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        title,
+                        text = title,
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = stringResource(id = Res.string.cd_close),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                    if (showCloseButton) {
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = stringResource(id = Res.string.cd_close),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text,
+                    text = text,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -172,7 +200,10 @@ fun NightVisionDialog(
                 ) {
                     if (dismissButtonText != null) {
                         TextButton(onClick = onDismiss) {
-                            Text(dismissButtonText, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                text = dismissButtonText,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                     }
@@ -190,6 +221,23 @@ fun NightVisionDialog(
         }
     }
 }
+
+@Composable
+fun NightVisionDialog(
+    title: String,
+    text: String,
+    confirmButtonText: String,
+    onConfirm: () -> Unit,
+    dismissButtonText: String? = null,
+    onDismiss: () -> Unit
+) = OliveAlertDialog(
+    title = title,
+    text = text,
+    confirmButtonText = confirmButtonText,
+    onConfirm = onConfirm,
+    dismissButtonText = dismissButtonText,
+    onDismiss = onDismiss
+)
 
 @Composable
 fun InfoPopup(
@@ -250,7 +298,7 @@ fun InfoPopup(
                         .fillMaxWidth()
                         .weight(1f, fill = false)
                         .padding(16.dp)
-                        .verticalScrollWithScrollbar(androidx.compose.foundation.rememberScrollState())
+                        .verticalScrollWithScrollbar(rememberScrollState())
                 ) {
                     content()
                 }

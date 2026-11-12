@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -232,7 +233,8 @@ data class PlacedCatalogItem(
     val labelOffset: Offset? = null,
     val labelWidth: Float = 0f,
     val labelHeight: Float = 0f,
-    val labelRect: Rect? = null
+    val labelRect: Rect? = null,
+    val textLayout: TextLayoutResult? = null
 )
 
 fun layoutCatalogItems(
@@ -250,11 +252,15 @@ fun layoutCatalogItems(
 ): List<PlacedCatalogItem> {
     if (candidates.isEmpty()) return emptyList()
 
+    fun isTargetObj(obj: CatalogObject): Boolean =
+        targetRa != null && targetDec != null &&
+                kotlin.math.abs(obj.dec - targetDec) < 0.05 &&
+                AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+
     // 1. Sort: Target first, then catalog priority (M > C > NGC), then brightness
     val sorted = candidates.sortedWith(
         compareByDescending<Pair<CatalogObject, Offset>> { (obj, _) ->
-            targetRa != null && targetDec != null &&
-                    AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+            isTargetObj(obj)
         }.thenBy { (obj, _) ->
             getCatalogPriority(obj)
         }.thenBy { (obj, _) ->
@@ -267,8 +273,7 @@ fun layoutCatalogItems(
     for ((obj, pt) in sorted) {
         if (pt.x < -20f || pt.x > viewportWidth + 20f || pt.y < -20f || pt.y > viewportHeight + 20f) continue
 
-        val isTarget = targetRa != null && targetDec != null &&
-                AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+        val isTarget = isTargetObj(obj)
 
         val radius = if (isTarget) 20f * uiScale else 12f * uiScale
         val reticleBox = Rect(pt.x - radius, pt.y - radius, pt.x + radius, pt.y + radius)
@@ -290,11 +295,11 @@ fun layoutCatalogItems(
     val pad = 4f * uiScale
 
     for ((obj, pt) in validCandidates) {
-        val isTarget = targetRa != null && targetDec != null &&
-                AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
+        val isTarget = isTargetObj(obj)
 
         var acceptedOffset: Offset? = null
         var acceptedRect: Rect? = null
+        var acceptedLayout: TextLayoutResult? = null
         var textW = 0f
         var textH = 0f
 
@@ -372,6 +377,7 @@ fun layoutCatalogItems(
 
             if (acceptedRect != null) {
                 acceptedOffset = Offset(acceptedRect.left - pt.x, acceptedRect.top - pt.y)
+                acceptedLayout = textLayout
                 placedLabels.add(acceptedRect)
                 labelsPlaced++
             }
@@ -386,7 +392,8 @@ fun layoutCatalogItems(
                 labelOffset = acceptedOffset,
                 labelWidth = textW,
                 labelHeight = textH,
-                labelRect = acceptedRect
+                labelRect = acceptedRect,
+                textLayout = acceptedLayout
             )
         )
     }

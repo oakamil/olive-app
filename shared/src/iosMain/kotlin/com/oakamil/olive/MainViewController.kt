@@ -4,10 +4,7 @@
 package com.oakamil.olive
 
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
@@ -440,41 +437,24 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                 }
 
                 if (viewModel.isCameraStuck && viewModel.isEngineRunning && !isStopping) {
-                    AlertDialog(
-                        onDismissRequest = { /* Force user choice */ },
-                        title = {
-                            Text(
-                                stringResource(Res.string.title_camera_stuck),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        },
-                        text = {
-                            Text(
-                                stringResource(Res.string.body_camera_stuck),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        isStopping = true
-                                        withContext(Dispatchers.IO) {
-                                            viewModel.stopEngineSync()
-                                        }
-                                        isStopping = false
-                                        startEngineAction()
-                                    }
+                    OliveAlertDialog(
+                        title = stringResource(Res.string.title_camera_stuck),
+                        text = stringResource(Res.string.body_camera_stuck),
+                        confirmButtonText = stringResource(Res.string.btn_restart),
+                        onConfirm = {
+                            coroutineScope.launch {
+                                isStopping = true
+                                withContext(Dispatchers.IO) {
+                                    viewModel.stopEngineSync()
                                 }
-                            ) {
-                                Text(stringResource(Res.string.btn_restart))
+                                isStopping = false
+                                startEngineAction()
                             }
                         },
-                        dismissButton = {
-                            OutlinedButton(onClick = { viewModel.dismissCameraStuckDialog() }) {
-                                Text(stringResource(Res.string.btn_cancel))
-                            }
-                        }
+                        dismissButtonText = stringResource(Res.string.btn_cancel),
+                        onDismiss = { viewModel.dismissCameraStuckDialog() },
+                        showCloseButton = false,
+                        dismissOnClickOutside = false
                     )
                 }
             }
