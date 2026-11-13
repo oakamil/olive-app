@@ -209,7 +209,10 @@ fun MainScreen(
                         }
                         viewModel.currentExposure =
                             viewModel.engine.getNativeCameraExposure().toFloat()
-                                .coerceIn(16667f, 5000000f)
+                                .coerceIn(
+                                    capabilities.exposureRange.start,
+                                    capabilities.exposureRange.endInclusive
+                                )
                         val bRange = viewModel.engine.getNativeCameraBrightnessRange()
                         if (bRange != null && bRange.size >= 3) {
                             viewModel.uvcBrightnessMin = bRange[0]

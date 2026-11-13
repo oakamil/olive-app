@@ -20,7 +20,8 @@ import platform.darwin.NSObject
 @OptIn(ExperimentalForeignApi::class)
 class IosLocationProvider(
     private val onLocationUpdated: (Double, Double) -> Unit,
-    private val onError: (String) -> Unit
+    private val onError: (String) -> Unit,
+    private val onPermissionDenied: () -> Unit = {}
 ) : NSObject(), CLLocationManagerDelegateProtocol {
 
     private val locationManager = CLLocationManager()
@@ -44,6 +45,7 @@ class IosLocationProvider(
 
             kCLAuthorizationStatusDenied,
             kCLAuthorizationStatusRestricted -> {
+                onPermissionDenied()
                 onError("Location permission denied")
             }
 
@@ -55,10 +57,19 @@ class IosLocationProvider(
 
     override fun locationManagerDidChangeAuthorization(manager: CLLocationManager) {
         val status = manager.authorizationStatus
-        if (status == kCLAuthorizationStatusAuthorizedWhenInUse ||
-            status == kCLAuthorizationStatusAuthorizedAlways
-        ) {
-            manager.requestLocation()
+        when (status) {
+            kCLAuthorizationStatusAuthorizedWhenInUse,
+            kCLAuthorizationStatusAuthorizedAlways -> {
+                manager.requestLocation()
+            }
+
+            kCLAuthorizationStatusDenied,
+            kCLAuthorizationStatusRestricted -> {
+                onPermissionDenied()
+                onError("Location permission denied")
+            }
+
+            else -> Unit
         }
     }
 

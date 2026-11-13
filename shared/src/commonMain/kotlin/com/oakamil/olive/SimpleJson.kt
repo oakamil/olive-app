@@ -189,7 +189,14 @@ internal class SimpleJsonParser(private val src: String) {
                         if (pos + 4 <= src.length) {
                             val hex = src.substring(pos, pos + 4)
                             pos += 4
-                            sb.append(hex.toInt(16).toChar())
+                            val codeUnit = hex.toIntOrNull(16)
+                            if (codeUnit != null) {
+                                sb.append(codeUnit.toChar())
+                            } else {
+                                sb.append("\\u").append(hex)
+                            }
+                        } else {
+                            sb.append('u')
                         }
                     }
 
@@ -206,9 +213,19 @@ internal class SimpleJsonParser(private val src: String) {
         val start = pos
         if (pos < src.length && (src[pos] == '-' || src[pos] == '+')) pos++
         var isFloating = false
-        while (pos < src.length && (src[pos] in '0'..'9' || src[pos] == '.' || src[pos] == 'e' || src[pos] == 'E' || src[pos] == '+' || src[pos] == '-')) {
-            if (src[pos] == '.' || src[pos] == 'e' || src[pos] == 'E') isFloating = true
-            pos++
+        while (pos < src.length) {
+            val c = src[pos]
+            if (c in '0'..'9') {
+                pos++
+            } else if (c == '.' || c == 'e' || c == 'E') {
+                isFloating = true
+                pos++
+                if ((c == 'e' || c == 'E') && pos < src.length && (src[pos] == '+' || src[pos] == '-')) {
+                    pos++
+                }
+            } else {
+                break
+            }
         }
         val raw = src.substring(start, pos)
         return if (isFloating) {

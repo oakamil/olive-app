@@ -3,7 +3,10 @@ package com.oakamil.olive
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.PictureInPictureParams
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.hardware.usb.UsbDevice
@@ -39,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.location.LocationManagerCompat
 import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
@@ -60,6 +64,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Collections
 import kotlin.coroutines.resume
 import kotlin.math.round
@@ -116,8 +122,38 @@ class MainActivity : ComponentActivity() {
         System.loadLibrary("olive_jni")
     }
 
+    private val engineTimeoutReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == OliveService.ACTION_ENGINE_TIMED_OUT) {
+                Log.w("OliveUI", "Received FGS timeout broadcast; syncing engine shutdown.")
+                handleExternalEngineStop()
+            }
+        }
+    }
+
+    private val requestNotificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
+
+    private fun maybeRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        val prefs = getPreferences(MODE_PRIVATE)
+        if (!prefs.getBoolean("has_prompted_post_notifications", false)) {
+            prefs.edit { putBoolean("has_prompted_post_notifications", true) }
+            requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     private fun getRequiredEnginePermissions(): List<String> {
-        return mutableListOf(Manifest.permission.CAMERA)
+        return if (activeCameraSelection == "demo") {
+            emptyList()
+        } else {
+            listOf(Manifest.permission.CAMERA)
+        }
     }
 
     private val requestCameraLauncher =
@@ -163,21 +199,40 @@ class MainActivity : ComponentActivity() {
     private fun copyAssetDatabase() {
         val assetName = "default_database.npz"
         val outFile = File(filesDir, assetName)
-        if (!outFile.exists()) {
-            try {
-                assets.open(assetName).use { inputStream ->
-                    FileOutputStream(outFile).use { outputStream ->
-                        val buffer = ByteArray(1024 * 4)
-                        var read: Int
-                        while (inputStream.read(buffer).also { read = it } != -1) {
-                            outputStream.write(buffer, 0, read)
-                        }
-                        outputStream.flush()
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
+        val tmpFile = File(filesDir, "$assetName.tmp")
+        val prefs = getPreferences(MODE_PRIVATE)
+        val currentVersionCode = try {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            PackageInfoCompat.getLongVersionCode(info)
+        } catch (_: Exception) {
+            -1L
+        }
+        val copiedVersionCode = prefs.getLong("copied_asset_db_version", -1L)
+        if (outFile.exists() && currentVersionCode > 0L && copiedVersionCode == currentVersionCode) {
+            return
+        }
+
+        try {
+            if (tmpFile.exists()) {
+                tmpFile.delete()
             }
+            assets.open(assetName).use { inputStream ->
+                FileOutputStream(tmpFile).use { outputStream ->
+                    val buffer = ByteArray(1024 * 4)
+                    var read: Int
+                    while (inputStream.read(buffer).also { read = it } != -1) {
+                        outputStream.write(buffer, 0, read)
+                    }
+                    outputStream.flush()
+                }
+            }
+            Files.move(tmpFile.toPath(), outFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            if (currentVersionCode > 0L) {
+                prefs.edit { putLong("copied_asset_db_version", currentVersionCode) }
+            }
+        } catch (e: Exception) {
+            tmpFile.delete()
+            Log.e("OliveUI", "Failed to copy $assetName", e)
         }
     }
 
@@ -249,6 +304,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ContextCompat.registerReceiver(
+            this,
+            engineTimeoutReceiver,
+            IntentFilter(OliveService.ACTION_ENGINE_TIMED_OUT),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         window.attributes.layoutInDisplayCutoutMode =
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         hideSystemUI()
@@ -412,7 +473,7 @@ class MainActivity : ComponentActivity() {
                                             true
                                         )
                                     }
-                                    executeStartEngine() // Skip settings and just start anyway
+                                    toggleEngine() // Skip settings and continue start flow
                                 }
                             )
                         }
@@ -489,19 +550,29 @@ class MainActivity : ComponentActivity() {
                                 text = stringResource(Res.string.body_camera_stuck),
                                 confirmButtonText = stringResource(Res.string.btn_restart),
                                 onConfirm = {
-                                    val intent =
-                                        baseContext.packageManager.getLaunchIntentForPackage(
-                                            baseContext.packageName
-                                        )
-                                    val componentName = intent?.component
-                                    if (componentName != null) {
-                                        val restartIntent =
-                                            Intent.makeRestartActivityTask(componentName)
-                                        restartIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        baseContext.startActivity(restartIntent)
-                                        finishAffinity()
-                                    } else {
-                                        Runtime.getRuntime().exit(0)
+                                    if (!isStopping) {
+                                        isStopping = true
+                                        lifecycleScope.launch {
+                                            try {
+                                                stopEngineAndService()
+                                            } finally {
+                                                isStopping = false
+                                            }
+                                            val launchIntent =
+                                                baseContext.packageManager.getLaunchIntentForPackage(
+                                                    baseContext.packageName
+                                                )
+                                            val componentName = launchIntent?.component
+                                            if (componentName != null) {
+                                                val restartIntent =
+                                                    Intent.makeRestartActivityTask(componentName)
+                                                restartIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                baseContext.startActivity(restartIntent)
+                                                finishAffinity()
+                                            } else {
+                                                Runtime.getRuntime().exit(0)
+                                            }
+                                        }
                                     }
                                 },
                                 dismissButtonText = stringResource(Res.string.btn_cancel),
@@ -598,17 +669,19 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        try {
+            unregisterReceiver(engineTimeoutReceiver)
+        } catch (_: Exception) {
+        }
         windowController.restoreScreenBrightness()
-        viewModel.uvcWrapper?.release()
-        viewModel.uvcWrapper = null
-
         if (viewModel.isEngineRunning) {
             kotlinx.coroutines.runBlocking(Dispatchers.IO) {
                 viewModel.stopEngineSync()
             }
-            stopBackgroundService()
         }
+        viewModel.uvcWrapper?.release()
+        viewModel.uvcWrapper = null
+        stopBackgroundService()
 
         try {
             usbMonitor?.unregister()
@@ -618,6 +691,7 @@ class MainActivity : ComponentActivity() {
         } finally {
             usbMonitor = null
         }
+        super.onDestroy()
     }
 
     private fun updateCameraSelection(selection: String) {
@@ -762,10 +836,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startBackgroundService(mode: String) {
+        val hasCameraPermission = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        val promoteForeground = hasCameraPermission && mode != "DEMO"
         val serviceIntent = Intent(this, OliveService::class.java).apply {
-            putExtra("ENGINE_MODE", mode)
+            putExtra(OliveService.EXTRA_ENGINE_MODE, mode)
+            putExtra(OliveService.EXTRA_PROMOTE_FOREGROUND, promoteForeground)
         }
-        startService(serviceIntent)
+        if (promoteForeground) {
+            ContextCompat.startForegroundService(this, serviceIntent)
+            maybeRequestNotificationPermission()
+        } else {
+            startService(serviceIntent)
+        }
     }
 
     private fun stopBackgroundService() {
@@ -773,25 +858,70 @@ class MainActivity : ComponentActivity() {
         stopService(serviceIntent)
     }
 
+    private suspend fun stopEngineAndService() {
+        startupTimeoutJob?.cancel()
+        startupTimeoutJob = null
+        withContext(Dispatchers.IO) {
+            viewModel.stopEngineSync()
+        }
+        viewModel.uvcWrapper?.release()
+        viewModel.uvcWrapper = null
+        stopBackgroundService()
+    }
+
+    private fun handleExternalEngineStop() {
+        startupTimeoutJob?.cancel()
+        startupTimeoutJob = null
+        isStarting = false
+        if (!viewModel.isEngineRunning || isStopping) return
+        isStopping = true
+        currentScreen = "main"
+        lifecycleScope.launch {
+            try {
+                stopEngineAndService()
+            } finally {
+                isStopping = false
+            }
+        }
+    }
+
+    private fun handleStartupFailure() {
+        startupTimeoutJob?.cancel()
+        startupTimeoutJob = null
+        isStarting = false
+        viewModel.uvcWrapper?.release()
+        viewModel.uvcWrapper = null
+        stopBackgroundService()
+    }
+
+    private fun armStartupTimeout() {
+        startupTimeoutJob?.cancel()
+        startupTimeoutJob = lifecycleScope.launch {
+            delay(5000L)
+            if (isStarting && !viewModel.isEngineRunning) {
+                Log.w("OliveUI", "Engine startup timed out! Cleaning up.")
+                isStarting = false
+                stopEngineAndService()
+            }
+        }
+    }
+
     private fun toggleEngine() {
         if (isStopping) return // Ignore if already stopping
 
         if (viewModel.isEngineRunning) {
-            startupTimeoutJob?.cancel()
-            startupTimeoutJob = null
             isStopping = true
             currentScreen = "main"
             lifecycleScope.launch {
-                withContext(Dispatchers.IO) {
-                    viewModel.stopEngineSync()
+                try {
+                    stopEngineAndService()
+                } finally {
+                    isStopping = false
                 }
-                viewModel.uvcWrapper?.release()
-                viewModel.uvcWrapper = null
-                stopBackgroundService()
-                isStopping = false
             }
         } else {
-            if (!viewModel.hasValidLocation) {
+            val isDemoMode = activeCameraSelection == "demo"
+            if (!isDemoMode && !viewModel.hasValidLocation) {
                 showLocationRequiredDialog = true
                 return
             }
@@ -861,55 +991,52 @@ class MainActivity : ComponentActivity() {
         }
 
         lifecycleScope.launch {
-            val lat = viewModel.currentLat ?: 0.0
-            val lon = viewModel.currentLon ?: 0.0
-            if (!viewModel.hasValidLocation) {
+            val selection = activeCameraSelection
+            val isDemoMode = selection == "demo"
+            val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
+            val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
+            if (!isDemoMode && !viewModel.hasValidLocation) {
                 isStarting = false
                 showLocationRequiredDialog = true
                 return@launch
             }
+            if (!isDemoMode && ContextCompat.checkSelfPermission(
+                    this@MainActivity,
+                    Manifest.permission.CAMERA
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                isStarting = false
+                showPermissionDialog = true
+                return@launch
+            }
             var engineStarted = false
 
-            startupTimeoutJob?.cancel()
-            startupTimeoutJob = lifecycleScope.launch {
-                delay(5000L) // Wait for USB permission & engine startup
-                if (isStarting) {
-                    Log.w("OliveUI", "Engine startup timed out! Cleaning up.")
-                    isStarting = false
-                    withContext(Dispatchers.IO) {
-                        viewModel.stopEngineSync()
-                    }
-                }
-            }
-
-            if (activeCameraSelection == "external") {
+            if (selection == "external") {
                 checkForCameras() // Ensure connectedDevice is up to date
                 val device = connectedDevice
                 if (device != null) {
                     if (usbMonitor == null || usbMonitor?.isRegistered != true) {
                         initUsbMonitor()
                     }
-                    // USBMonitor handles both requesting permission AND initiating connection if already granted
+                    // USBMonitor handles both requesting permission AND initiating connection if already granted.
+                    // Defer startup timeout until onConnect so slow user confirmation does not race startup.
                     usbMonitor?.requestPermission(device)
                     engineStarted = true // Pending permission or connection, keep isStarting true
                 } else {
                     Log.e("OliveUI", "UVC camera selected but none connected!")
                     viewModel.stopEngineSync()
                 }
-            } else if (ContextCompat.checkSelfPermission(
-                    this@MainActivity,
-                    Manifest.permission.CAMERA
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                if (activeCameraSelection == "demo") {
-                    viewModel.updateStarSensitivity(100f)
-                } else {
-                    viewModel.updateStarSensitivity(50f)
-                }
-                val camId =
-                    if (activeCameraSelection == "demo") "demo" else settingsManager.internalCameraId
-                viewModel.executeStartEngine(camId, lat, lon)
-                startBackgroundService("NATIVE")
+            } else {
+                val camId = if (isDemoMode) "demo" else settingsManager.internalCameraId
+                val serviceMode = if (isDemoMode) "DEMO" else "NATIVE"
+                armStartupTimeout()
+                viewModel.executeStartEngine(
+                    cameraId = camId,
+                    lat = lat,
+                    lon = lon,
+                    onFailed = { handleStartupFailure() }
+                )
+                startBackgroundService(serviceMode)
                 engineStarted = true
             }
 
@@ -986,11 +1113,13 @@ class MainActivity : ComponentActivity() {
 
                     if (isStarting) {
                         lifecycleScope.launch {
-                            val lat = viewModel.currentLat ?: 0.0
-                            val lon = viewModel.currentLon ?: 0.0
+                            val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
+                            val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
+                            armStartupTimeout()
                             viewModel.startUvcEngine(
-                                lat,
-                                lon
+                                lat = lat,
+                                lon = lon,
+                                onFailed = { handleStartupFailure() }
                             )
                             startBackgroundService("UVC")
                         }
@@ -1010,6 +1139,8 @@ class MainActivity : ComponentActivity() {
 
             override fun onCancel(device: UsbDevice?) {
                 runOnUiThread {
+                    startupTimeoutJob?.cancel()
+                    startupTimeoutJob = null
                     isStarting = false
                 }
             }

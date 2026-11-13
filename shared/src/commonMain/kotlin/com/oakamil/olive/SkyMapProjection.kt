@@ -22,13 +22,18 @@ import kotlin.math.tan
 class SkyMapProjection(
     var centerAz: Double,
     var centerAlt: Double,
-    var fov: Double,
+    fov: Double,
     var viewportWidth: Float,
     var viewportHeight: Float,
     rotationRad: Double = 0.0
 ) {
-    val scale: Double =
-        minOf(viewportWidth, viewportHeight) / (4.0 * tan(Math.toRadians(fov) / 4.0))
+    var fov: Double = if (fov.isFinite()) fov.coerceIn(0.1, 359.0) else 60.0
+
+    val scale: Double = run {
+        val minDim = minOf(viewportWidth, viewportHeight).toDouble()
+        val tanQuarter = tan(Math.toRadians(this.fov) / 4.0).coerceAtLeast(1e-9)
+        if (minDim > 0.0 && minDim.isFinite()) minDim / (4.0 * tanQuarter) else 0.0
+    }
 
     private var alt0Rad = Math.toRadians(centerAlt)
     private var sinAlt0 = sin(alt0Rad)

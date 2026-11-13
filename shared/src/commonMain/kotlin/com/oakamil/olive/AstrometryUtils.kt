@@ -29,6 +29,14 @@ object AstrometryUtils {
         centerPixelY: Float = screenHeight / 2f,
         distortion: Double? = null
     ): Pair<Float, Float>? {
+        if (
+            imageWidth <= 0 || imageHeight <= 0 ||
+            screenWidth <= 0f || screenHeight <= 0f ||
+            !fov.isFinite() || fov <= 0.0 || fov >= 180.0
+        ) {
+            return null
+        }
+
         val raRad = Math.toRadians(ra)
         val decRad = Math.toRadians(dec)
         val ra0 = Math.toRadians(centerRa)
@@ -44,6 +52,9 @@ object AstrometryUtils {
 
         // Calculate scale factor (pixels per radian) based on FOV.
         val fovRad = Math.toRadians(fov)
+        val tanHalfFov = tan(fovRad / 2.0)
+        if (!tanHalfFov.isFinite() || tanHalfFov <= 1e-9) return null
+
         val imageAspect = imageWidth.toDouble() / imageHeight.toDouble()
 
         val effectiveImageWidth = if (imageAspect > 1.0) {
@@ -53,9 +64,9 @@ object AstrometryUtils {
         }
 
         val scale = if (imageAspect > 1.0) {
-            (screenHeight / 2.0) / tan(fovRad / 2.0)
+            (screenHeight / 2.0) / tanHalfFov
         } else {
-            (screenWidth / 2.0) / tan(fovRad / 2.0)
+            (screenWidth / 2.0) / tanHalfFov
         }
 
         // Apply scale
@@ -71,7 +82,7 @@ object AstrometryUtils {
         var finalX = centerPixelX + xRot.toFloat()
         var finalY = centerPixelY + yRot.toFloat()
 
-        if (distortion != null && distortion != 0.0) {
+        if (distortion != null && distortion != 0.0 && abs(1.0 - distortion) > 1e-9) {
             val cx = screenWidth / 2f
             val cy = screenHeight / 2f
             val dx = finalX - cx
@@ -81,17 +92,30 @@ object AstrometryUtils {
                 val kp = distortion * (2.0 / effectiveImageWidth).pow(2)
                 val inv1K = 1.0 / (1.0 - distortion)
                 var rDist = rRundist.toDouble()
+                var converged = true
                 @Suppress("unused")
                 for (i in 0 until 10) {
                     val rRundistEst = rDist * (1.0 - kp * rDist.pow(2)) * inv1K
                     val druDrd = (1.0 - 3.0 * kp * rDist.pow(2)) * inv1K
+                    if (!druDrd.isFinite() || abs(druDrd) <= 1e-12) {
+                        converged = false
+                        break
+                    }
                     val error = rRundist - rRundistEst
                     rDist += error / druDrd
+                    if (!rDist.isFinite()) {
+                        converged = false
+                        break
+                    }
                     if (abs(error) < 1e-4) break
                 }
-                val distScale = (rDist / rRundist).toFloat()
-                finalX = cx + dx * distScale
-                finalY = cy + dy * distScale
+                if (converged) {
+                    val distScale = (rDist / rRundist).toFloat()
+                    if (distScale.isFinite()) {
+                        finalX = cx + dx * distScale
+                        finalY = cy + dy * distScale
+                    }
+                }
             }
         }
 

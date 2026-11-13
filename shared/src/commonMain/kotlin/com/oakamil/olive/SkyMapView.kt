@@ -499,12 +499,14 @@ fun SkyMapView(
     val targetRa = stats.targetRa
     val targetDec = stats.targetDec
 
+    val sunEpochBucket = currentTimeMs / 60_000L
+
     // Pre-filter, sort, and partition candidates outside the Canvas draw loop to avoid allocations at 60fps
     val (visibleNonStarCandidates, visibleStarCandidates) = remember(
         solPlanets, solComets, solAsteroids,
         tier1Dso, tier1Stars, dynamicCatalogObjects, dynamicStars,
         currentTypeFilters, currentMagLimit, isAllTypes, effectiveMagLimit, isDeepFov,
-        targetRa, targetDec
+        targetRa, targetDec, hasValidLocation, sunEpochBucket
     ) {
         val nonStars = mutableListOf<CatalogObject>()
         val stars = mutableListOf<CatalogObject>()
@@ -516,8 +518,8 @@ fun SkyMapView(
 
         // 1. Solar System
         if (hasValidLocation) {
-            val sunObj = AstrometryUtils.getSun(Clock.System.now().toEpochMilliseconds())
-            if (isAllTypes || "Planet" in currentTypeFilters || "Sun" in currentTypeFilters) {
+            val sunObj = AstrometryUtils.getSun(sunEpochBucket * 60_000L)
+            if (isAllTypes || "Planet" in currentTypeFilters) {
                 nonStars.add(sunObj)
             }
         }

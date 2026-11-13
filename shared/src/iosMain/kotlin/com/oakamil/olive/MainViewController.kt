@@ -19,7 +19,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.ComposeUIViewController
 import com.oakamil.olive.cinterop.olive_ios_get_local_ip
 import com.oakamil.olive.cinterop.olive_ios_has_connected_external_camera
+import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toKString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -51,7 +54,11 @@ private fun hasConnectedExternalCamera(): Boolean =
 
 @OptIn(ExperimentalForeignApi::class)
 private fun getIosDeviceNetworkEndpoint(): String {
-    val ip = olive_ios_get_local_ip()?.toKString() ?: "127.0.0.1"
+    val ip = memScoped {
+        val buf = allocArray<ByteVar>(64)
+        olive_ios_get_local_ip(buf, 64u)
+        buf.toKString().ifEmpty { "127.0.0.1" }
+    }
     val rawHost = NSProcessInfo.processInfo.hostName
     val host = if (rawHost.endsWith(".local")) rawHost else "$rawHost.local"
     return "$host ($ip)"
@@ -119,7 +126,16 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     var detectedIpAddress by remember { mutableStateOf(getIosDeviceNetworkEndpoint()) }
     var showLocationRequiredDialog by remember { mutableStateOf(false) }
     var showCameraPermissionDialog by remember { mutableStateOf(false) }
+    var showLocationPermissionDialog by remember { mutableStateOf(false) }
+    var pendingLocationRefresh by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+
+    fun openAppSettings() {
+        val url = NSURL.URLWithString(UIApplicationOpenSettingsURLString)
+        if (url != null) {
+            UIApplication.sharedApplication.openURL(url)
+        }
+    }
 
     DisposableEffect(isPad) {
         if (!isPad) return@DisposableEffect onDispose { }
@@ -180,6 +196,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     val locationProvider = remember {
         IosLocationProvider(
             onLocationUpdated = { rawLat, rawLon ->
+                pendingLocationRefresh = false
                 val rLat = kotlin.math.round(rawLat * 100.0) / 100.0
                 val rLon = kotlin.math.round(rawLon * 100.0) / 100.0
                 viewModel.currentLat = rLat
@@ -192,11 +209,19 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                 }
             },
             onError = { err ->
+                pendingLocationRefresh = false
                 println("Location error: $err")
                 viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.FAILURE
                 coroutineScope.launch {
                     delay(1500L)
                     viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.IDLE
+                }
+            },
+            onPermissionDenied = {
+                if (pendingLocationRefresh) {
+                    pendingLocationRefresh = false
+                    viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.IDLE
+                    showLocationPermissionDialog = true
                 }
             }
         )
@@ -223,15 +248,15 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             startupTimeoutJob?.cancel()
             startupTimeoutJob = coroutineScope.launch {
                 delay(10000L)
-                if (isStarting) {
+                if (isStarting && !viewModel.isEngineRunning) {
                     isStarting = false
                     withContext(Dispatchers.IO) {
                         viewModel.stopEngineSync()
                     }
                 }
             }
-            val lat = viewModel.currentLat ?: 0.0
-            val lon = viewModel.currentLon ?: 0.0
+            val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
+            val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
             if (activeCameraSelection == "external") {
                 viewModel.startUvcEngine(
                     lat = lat,
@@ -368,6 +393,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         },
                         onRefreshLocation = {
                             if (viewModel.locationRefreshStatus == MainViewModel.LocationRefreshStatus.IDLE) {
+                                pendingLocationRefresh = true
                                 viewModel.locationRefreshStatus =
                                     MainViewModel.LocationRefreshStatus.REFRESHING
                                 locationProvider.requestLocation()
@@ -409,15 +435,30 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         onConfirm = {
                             @Suppress("AssignedValueIsNeverRead")
                             showCameraPermissionDialog = false
-                            val url = NSURL.URLWithString(UIApplicationOpenSettingsURLString)
-                            if (url != null) {
-                                UIApplication.sharedApplication.openURL(url)
-                            }
+                            openAppSettings()
                         },
                         dismissButtonText = stringResource(Res.string.btn_cancel),
                         onDismiss = {
                             @Suppress("AssignedValueIsNeverRead")
                             showCameraPermissionDialog = false
+                        }
+                    )
+                }
+
+                if (showLocationPermissionDialog) {
+                    NightVisionDialog(
+                        title = stringResource(Res.string.title_location_permission_required),
+                        text = stringResource(Res.string.desc_location_permission_required),
+                        confirmButtonText = stringResource(Res.string.btn_open_settings),
+                        onConfirm = {
+                            @Suppress("AssignedValueIsNeverRead")
+                            showLocationPermissionDialog = false
+                            openAppSettings()
+                        },
+                        dismissButtonText = stringResource(Res.string.btn_cancel),
+                        onDismiss = {
+                            @Suppress("AssignedValueIsNeverRead")
+                            showLocationPermissionDialog = false
                         }
                     )
                 }

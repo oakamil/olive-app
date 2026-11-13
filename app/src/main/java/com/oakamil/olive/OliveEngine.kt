@@ -97,6 +97,7 @@ object OliveEngine : EngineBridge {
     external fun processTelescopeData(data: ByteArray): ByteArray?
     external fun resetTelescopeServer()
     external fun handleAlpacaConnection(fd: Int)
+    external fun handleAlpacaConnectionV6(fd: Int)
     external override fun getPlanets(
         bspPath: String,
         timeMs: Long,

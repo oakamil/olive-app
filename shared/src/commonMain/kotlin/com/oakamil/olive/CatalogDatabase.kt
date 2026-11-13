@@ -1,5 +1,11 @@
 package com.oakamil.olive
 
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.sin
+
 data class CatalogObject(
     val id: Int,
     val catalogLabel: String,
@@ -64,6 +70,57 @@ interface CatalogDatabase {
                     "WHEN catalog_label = 'EGC' THEN 22 " +
                     "WHEN catalog_label = 'Str' THEN 100 " +
                     "ELSE 999 END"
+
+        private const val DEG_TO_RAD = PI / 180.0
+
+        private fun sphericalCosDistanceSql(targetRa: Double, targetDec: Double): String {
+            val targetRaRad = targetRa * DEG_TO_RAD
+            val targetDecRad = targetDec * DEG_TO_RAD
+            val sinTargetDec = sin(targetDecRad)
+            val cosTargetDec = cos(targetDecRad)
+            return "(SIN(dec * $DEG_TO_RAD) * $sinTargetDec + COS(dec * $DEG_TO_RAD) * $cosTargetDec * COS(ra * $DEG_TO_RAD - $targetRaRad))"
+        }
+
+        fun buildSphericalProximityClauseSql(
+            targetRa: Double,
+            targetDec: Double,
+            radiusDegrees: Double
+        ): String {
+            val radius = radiusDegrees.coerceIn(0.0, 180.0)
+            if (radius >= 180.0) return ""
+
+            val decMin = (targetDec - radius).coerceAtLeast(-90.0)
+            val decMax = (targetDec + radius).coerceAtMost(90.0)
+            val clauses = mutableListOf("(dec BETWEEN $decMin AND $decMax)")
+
+            // Only prune by RA when the search cap does not enclose or touch a celestial pole.
+            if (abs(targetDec) + radius < 90.0) {
+                val cosDec = cos(targetDec * DEG_TO_RAD)
+                if (cosDec > 1e-9) {
+                    val sinHalfAngle = (sin(radius * DEG_TO_RAD) / cosDec).coerceIn(-1.0, 1.0)
+                    val deltaRa = asin(sinHalfAngle) / DEG_TO_RAD
+                    if (deltaRa < 180.0) {
+                        val normRa = ((targetRa % 360.0) + 360.0) % 360.0
+                        val rawMin = normRa - deltaRa
+                        val rawMax = normRa + deltaRa
+                        if (rawMin >= 0.0 && rawMax <= 360.0) {
+                            clauses += "(ra BETWEEN $rawMin AND $rawMax)"
+                        } else {
+                            val raMin = ((rawMin % 360.0) + 360.0) % 360.0
+                            val raMax = rawMax % 360.0
+                            clauses += "(ra >= $raMin OR ra <= $raMax)"
+                        }
+                    }
+                }
+            }
+
+            val minCos = cos(radius * DEG_TO_RAD) - 1e-12
+            clauses += "(${sphericalCosDistanceSql(targetRa, targetDec)} >= $minCos)"
+            return clauses.joinToString(" AND ")
+        }
+
+        fun buildSphericalDistanceOrderSql(targetRa: Double, targetDec: Double): String =
+            "(1.0 - ${sphericalCosDistanceSql(targetRa, targetDec)}) ASC"
     }
 
     fun getCatalogDescriptions(): Map<String, String>

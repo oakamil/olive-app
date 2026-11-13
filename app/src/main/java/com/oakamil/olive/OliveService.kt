@@ -1,11 +1,13 @@
 package com.oakamil.olive
 
+import android.Manifest
 import android.R.drawable
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -16,12 +18,19 @@ import android.system.Os
 import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import java.io.Closeable
 import java.io.FileDescriptor
-import java.io.FileOutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 
 class OliveService : Service() {
+
+    companion object {
+        const val EXTRA_ENGINE_MODE = "ENGINE_MODE"
+        const val EXTRA_PROMOTE_FOREGROUND = "PROMOTE_FOREGROUND"
+        const val ACTION_ENGINE_TIMED_OUT = "com.oakamil.olive.ACTION_ENGINE_TIMED_OUT"
+    }
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var multicastLock: WifiManager.MulticastLock? = null
@@ -40,23 +49,43 @@ class OliveService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val mode = intent?.getStringExtra("ENGINE_MODE") ?: "NATIVE"
+        val mode = intent?.getStringExtra(EXTRA_ENGINE_MODE) ?: "NATIVE"
+        val promoteForeground =
+            intent?.getBooleanExtra(EXTRA_PROMOTE_FOREGROUND, mode != "DEMO") ?: (mode != "DEMO")
+        val hasCameraPermission = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
 
-        val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle(getString(R.string.notif_engine_title))
-            .setContentText(getString(R.string.notif_engine_text, mode))
-            .setSmallIcon(drawable.ic_menu_camera)
-            .build()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val type = if (mode == "UVC") {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            } else {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if (promoteForeground) {
+            if (!hasCameraPermission) {
+                Log.w(
+                    "OliveService",
+                    "Missing CAMERA permission for foreground service promotion (mode=$mode); stopping service."
+                )
+                stopSelf(startId)
+                return START_NOT_STICKY
             }
-            startForeground(1, notification, type)
+
+            val notification: Notification = NotificationCompat.Builder(this, channelId)
+                .setContentTitle(getString(R.string.notif_engine_title))
+                .setContentText(getString(R.string.notif_engine_text))
+                .setSmallIcon(drawable.ic_menu_camera)
+                .build()
+
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
+                } else {
+                    startForeground(1, notification)
+                }
+            } catch (e: Exception) {
+                Log.e("OliveService", "Failed to start foreground service (mode=$mode)", e)
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
         } else {
-            startForeground(1, notification)
+            stopForeground(STOP_FOREGROUND_REMOVE)
         }
 
         acquireWakeLock()
@@ -68,8 +97,17 @@ class OliveService : Service() {
         super.onTimeout(startId, fgsType)
         Log.w(
             "OliveService",
-            "Foreground service onTimeout received (fgsType=$fgsType, startId=$startId). Stopping service gracefully to prevent crash."
+            "Foreground service onTimeout received (fgsType=$fgsType, startId=$startId). Stopping engine and service gracefully."
         )
+        sendBroadcast(Intent(ACTION_ENGINE_TIMED_OUT).setPackage(packageName))
+        Thread {
+            try {
+                OliveEngine.stopEngine()
+            } catch (e: Exception) {
+                Log.w("OliveService", "Error stopping native engine on FGS timeout", e)
+            }
+        }.start()
+        releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf(startId)
     }
@@ -144,11 +182,25 @@ class OliveService : Service() {
                             OliveEngine.resetTelescopeServer()
                         }
                         var inputStream: ParcelFileDescriptor.AutoCloseInputStream? = null
-                        var outputStream: FileOutputStream? = null
+                        var outputStream: ParcelFileDescriptor.AutoCloseOutputStream? = null
+                        var readPfd: ParcelFileDescriptor? = null
+                        var writePfd: ParcelFileDescriptor? = null
+                        var ownsClientFd = true
                         try {
-                            val pfd = ParcelFileDescriptor.dup(clientFd)
-                            inputStream = ParcelFileDescriptor.AutoCloseInputStream(pfd)
-                            outputStream = FileOutputStream(clientFd)
+                            readPfd = ParcelFileDescriptor.dup(clientFd)
+                            inputStream = ParcelFileDescriptor.AutoCloseInputStream(readPfd)
+                            readPfd = null
+
+                            writePfd = ParcelFileDescriptor.dup(clientFd)
+                            outputStream = ParcelFileDescriptor.AutoCloseOutputStream(writePfd)
+                            writePfd = null
+
+                            try {
+                                Os.close(clientFd)
+                            } finally {
+                                ownsClientFd = false
+                            }
+
                             val buffer = ByteArray(1024)
                             while (!Thread.currentThread().isInterrupted) {
                                 val bytesRead = inputStream.read(buffer)
@@ -166,21 +218,15 @@ class OliveService : Service() {
                             Log.e("OliveService", "LX200 error during connection", e)
                         } finally {
                             lastLx200DisconnectTime = System.currentTimeMillis()
-                            // Explicitly close streams to prevent ParcelFileDescriptor and FileDescriptor leaks
-                            // which otherwise trigger ART FinalizerDaemon GC thrashing and USB bus starvation.
-                            try {
-                                inputStream?.close()
-                            } catch (_: Exception) {
-                            }
-                            try {
-                                outputStream?.close()
-                            } catch (_: Exception) {
-                            }
-                            try {
-                                // clientFd may already be closed by outputStream.close(), which throws EBADF.
-                                // We catch and ignore it to avoid logcat spam.
-                                Os.close(clientFd)
-                            } catch (_: Exception) {
+                            closeQuietly(inputStream)
+                            closeQuietly(outputStream)
+                            closeQuietly(readPfd)
+                            closeQuietly(writePfd)
+                            if (ownsClientFd) {
+                                try {
+                                    Os.close(clientFd)
+                                } catch (_: Exception) {
+                                }
                             }
                         }
                     } catch (e: Exception) {
@@ -195,91 +241,83 @@ class OliveService : Service() {
         }
         lx200Thread?.start()
 
-        alpacaThread = Thread {
-            try {
-                alpacaFd = Os.socket(OsConstants.AF_INET, OsConstants.SOCK_STREAM, 0)
-                val fd = alpacaFd!!
-                Os.setsockoptInt(fd, OsConstants.SOL_SOCKET, OsConstants.SO_REUSEADDR, 1)
-                Os.bind(fd, InetSocketAddress(InetAddress.getByName("0.0.0.0"), 11111))
-                Os.listen(fd, 50)
-
-                while (!Thread.currentThread().isInterrupted) {
-                    try {
-                        Log.d("OliveService", "Alpaca V4 waiting for accept...")
-                        val clientFd = Os.accept(fd, null)
-                        Log.d("OliveService", "Alpaca V4 accepted socket!")
-                        try {
-                            val pfd = ParcelFileDescriptor.dup(clientFd)
-                            val nativeFd = pfd.detachFd()
-                            Log.d(
-                                "OliveService",
-                                "Alpaca V4 handing off nativeFd $nativeFd"
-                            )
-                            OliveEngine.handleAlpacaConnection(nativeFd)
-                        } catch (e: Exception) {
-                            Log.e("OliveService", "Alpaca V4 error during handoff", e)
-                        } finally {
-                            try {
-                                Os.close(clientFd)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("OliveService", "Alpaca V4 error during accept", e)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("OliveService", "Alpaca V4 server FATAL error", e)
-            }
-        }
-        alpacaThread?.start()
-
-        alpacaThreadV6 = Thread {
-            try {
-                alpacaFdV6 = Os.socket(OsConstants.AF_INET6, OsConstants.SOCK_STREAM, 0)
-                val fd = alpacaFdV6!!
-                Os.setsockoptInt(fd, OsConstants.SOL_SOCKET, OsConstants.SO_REUSEADDR, 1)
-                try {
-                    Os.setsockoptInt(fd, OsConstants.IPPROTO_IPV6, OsConstants.IPV6_V6ONLY, 1)
-                } catch (e: Exception) {
-                    Log.e("OliveService", "Could not set IPV6_V6ONLY", e)
-                }
-                Os.bind(fd, InetSocketAddress(InetAddress.getByName("::"), 11111))
-                Os.listen(fd, 50)
-
-                while (!Thread.currentThread().isInterrupted) {
-                    try {
-                        Log.d("OliveService", "Alpaca V6 waiting for accept...")
-                        val clientFd = Os.accept(fd, null)
-                        Log.d("OliveService", "Alpaca V6 accepted socket!")
-                        try {
-                            val pfd = ParcelFileDescriptor.dup(clientFd)
-                            val nativeFd = pfd.detachFd()
-                            Log.d(
-                                "OliveService",
-                                "Alpaca V6 handing off nativeFd $nativeFd"
-                            )
-                            OliveEngine.handleAlpacaConnection(nativeFd)
-                        } catch (e: Exception) {
-                            Log.e("OliveService", "Alpaca V6 error during handoff", e)
-                        } finally {
-                            try {
-                                Os.close(clientFd)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("OliveService", "Alpaca V6 error during accept", e)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("OliveService", "Alpaca V6 server FATAL error", e)
-            }
-        }
-        alpacaThreadV6?.start()
+        alpacaThread = startAlpacaServer(
+            label = "Alpaca V4",
+            isIpv6 = false,
+            assignFd = { alpacaFd = it },
+            onAcceptFd = OliveEngine::handleAlpacaConnection
+        )
+        alpacaThreadV6 = startAlpacaServer(
+            label = "Alpaca V6",
+            isIpv6 = true,
+            assignFd = { alpacaFdV6 = it },
+            onAcceptFd = OliveEngine::handleAlpacaConnectionV6
+        )
         // UDP Discovery is now handled directly by Rust to avoid startup race conditions.
+    }
+
+    private fun startAlpacaServer(
+        label: String,
+        isIpv6: Boolean,
+        assignFd: (FileDescriptor) -> Unit,
+        onAcceptFd: (Int) -> Unit
+    ): Thread {
+        val thread = Thread {
+            try {
+                val domain = if (isIpv6) OsConstants.AF_INET6 else OsConstants.AF_INET
+                val fd = Os.socket(domain, OsConstants.SOCK_STREAM, 0)
+                assignFd(fd)
+                Os.setsockoptInt(fd, OsConstants.SOL_SOCKET, OsConstants.SO_REUSEADDR, 1)
+                if (isIpv6) {
+                    try {
+                        Os.setsockoptInt(fd, OsConstants.IPPROTO_IPV6, OsConstants.IPV6_V6ONLY, 1)
+                    } catch (e: Exception) {
+                        Log.e("OliveService", "Could not set IPV6_V6ONLY", e)
+                    }
+                }
+                val bindAddr = InetAddress.getByName(if (isIpv6) "::" else "0.0.0.0")
+                Os.bind(fd, InetSocketAddress(bindAddr, 11111))
+                Os.listen(fd, 50)
+
+                while (!Thread.currentThread().isInterrupted) {
+                    try {
+                        Log.d("OliveService", "$label waiting for accept...")
+                        val clientFd = Os.accept(fd, null)
+                        Log.d("OliveService", "$label accepted socket!")
+                        var pfd: ParcelFileDescriptor? = null
+                        try {
+                            pfd = ParcelFileDescriptor.dup(clientFd)
+                            val nativeFd = pfd.detachFd()
+                            pfd = null
+                            Log.d("OliveService", "$label handing off nativeFd $nativeFd")
+                            onAcceptFd(nativeFd)
+                        } catch (e: Exception) {
+                            Log.e("OliveService", "$label error during handoff", e)
+                        } finally {
+                            closeQuietly(pfd)
+                            try {
+                                Os.close(clientFd)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("OliveService", "$label error during accept", e)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("OliveService", "$label server FATAL error", e)
+            }
+        }
+        thread.start()
+        return thread
+    }
+
+    private fun closeQuietly(closeable: Closeable?) {
+        try {
+            closeable?.close()
+        } catch (_: Exception) {
+        }
     }
 
     private fun stopServers() {

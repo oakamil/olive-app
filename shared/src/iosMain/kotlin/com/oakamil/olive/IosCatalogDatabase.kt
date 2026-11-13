@@ -9,12 +9,14 @@ import com.oakamil.olive.cinterop.SQLITE_OPEN_FULLMUTEX
 import com.oakamil.olive.cinterop.SQLITE_OPEN_READONLY
 import com.oakamil.olive.cinterop.SQLITE_OPEN_READWRITE
 import com.oakamil.olive.cinterop.SQLITE_ROW
+import com.oakamil.olive.cinterop.olive_register_sqlite_math_functions
 import com.oakamil.olive.cinterop.olive_sqlite3_bind_text
 import com.oakamil.olive.cinterop.sqlite3_bind_double
 import com.oakamil.olive.cinterop.sqlite3_close_v2
 import com.oakamil.olive.cinterop.sqlite3_column_count
 import com.oakamil.olive.cinterop.sqlite3_column_double
 import com.oakamil.olive.cinterop.sqlite3_column_int
+import com.oakamil.olive.cinterop.sqlite3_column_int64
 import com.oakamil.olive.cinterop.sqlite3_column_name
 import com.oakamil.olive.cinterop.sqlite3_column_text
 import com.oakamil.olive.cinterop.sqlite3_column_type
@@ -119,23 +121,44 @@ class IosCatalogDatabase : CatalogDatabase {
                 ))
             ) {
                 try {
-                    if (fileManager.fileExistsAtPath(writableDbPath)) {
-                        fileManager.removeItemAtPath(writableDbPath, null)
+                    val tmpDbPath = "$writableDbPath.tmp"
+                    if (fileManager.fileExistsAtPath(tmpDbPath)) {
+                        fileManager.removeItemAtPath(tmpDbPath, null)
                     }
-                    fileManager.copyItemAtPath(bundleSource, writableDbPath, null)
-                    userDefaults.setInteger(
-                        CatalogDatabase.CONTENT_VERSION.toLong(),
-                        forKey = "olive_catalog_content_version"
-                    )
-                    Log.i(
-                        TAG,
-                        "Copied fresh bundled database from $bundleSource to $writableDbPath (content version ${CatalogDatabase.CONTENT_VERSION})"
-                    )
-                    return writableDbPath
+                    if (fileManager.copyItemAtPath(bundleSource, tmpDbPath, null)) {
+                        val swapped = if (fileManager.fileExistsAtPath(writableDbPath)) {
+                            fileManager.replaceItemAtURL(
+                                originalItemURL = NSURL.fileURLWithPath(writableDbPath),
+                                withItemAtURL = NSURL.fileURLWithPath(tmpDbPath),
+                                backupItemName = null,
+                                options = 0uL,
+                                resultingItemURL = null,
+                                error = null,
+                            )
+                        } else {
+                            fileManager.moveItemAtPath(tmpDbPath, writableDbPath, null)
+                        }
+                        if (swapped) {
+                            userDefaults.setInteger(
+                                CatalogDatabase.CONTENT_VERSION.toLong(),
+                                forKey = "olive_catalog_content_version"
+                            )
+                            Log.i(
+                                TAG,
+                                "Copied fresh bundled database from $bundleSource to $writableDbPath (content version ${CatalogDatabase.CONTENT_VERSION})"
+                            )
+                            return writableDbPath
+                        }
+                    }
+                    if (fileManager.fileExistsAtPath(tmpDbPath)) {
+                        fileManager.removeItemAtPath(tmpDbPath, null)
+                    }
+                    Log.w(TAG, "Could not safely copy database to Documents at $writableDbPath")
                 } catch (e: Throwable) {
                     Log.w(TAG, "Could not copy database to Documents: ${e.message}")
                 }
-            } else if (fileManager.fileExistsAtPath(writableDbPath)) {
+            }
+            if (fileManager.fileExistsAtPath(writableDbPath)) {
                 return writableDbPath
             }
         }
@@ -176,6 +199,13 @@ class IosCatalogDatabase : CatalogDatabase {
                 } else {
                     Log.e(TAG, "Failed to open catalog database at $path, rc=$rc")
                 }
+            }
+        }
+        val openedDb = db
+        if (openedDb != null) {
+            val mathRc = olive_register_sqlite_math_functions(openedDb)
+            if (mathRc != SQLITE_OK) {
+                Log.w(TAG, "Failed to register SQLite math functions (rc=$mathRc)")
             }
         }
         return db
@@ -260,7 +290,7 @@ class IosCatalogDatabase : CatalogDatabase {
                             sb.append("\"").append(name).append("\":")
                             when (sqlite3_column_type(stmt, i)) {
                                 SQLITE_NULL -> sb.append("null")
-                                SQLITE_INTEGER -> sb.append(sqlite3_column_int(stmt, i))
+                                SQLITE_INTEGER -> sb.append(sqlite3_column_int64(stmt, i))
                                 SQLITE_FLOAT -> sb.append(sqlite3_column_double(stmt, i))
                                 else -> {
                                     val text = columnString(stmt, i) ?: ""
@@ -301,7 +331,7 @@ class IosCatalogDatabase : CatalogDatabase {
                             sb.append("\"").append(name).append("\":")
                             when (sqlite3_column_type(stmt, i)) {
                                 SQLITE_NULL -> sb.append("null")
-                                SQLITE_INTEGER -> sb.append(sqlite3_column_int(stmt, i))
+                                SQLITE_INTEGER -> sb.append(sqlite3_column_int64(stmt, i))
                                 SQLITE_FLOAT -> sb.append(sqlite3_column_double(stmt, i))
                                 else -> {
                                     val text = columnString(stmt, i) ?: ""
@@ -332,10 +362,10 @@ class IosCatalogDatabase : CatalogDatabase {
         return (365.25 * (y + 4716)).toInt() + (30.6001 * (m + 1)).toInt() + dayFrac + b - 1524.5
     }
 
-    override fun refreshComets(): Boolean = mutex.withLock {
+    override fun refreshComets(): Boolean {
         try {
             val urlString = "https://cobs.si/api/elements.api?format=mpc&is-active=true&cur-mag=20"
-            val url = NSURL.URLWithString(urlString) ?: return@withLock false
+            val url = NSURL.URLWithString(urlString) ?: return false
             val request = NSMutableURLRequest.requestWithURL(url).apply {
                 setHTTPMethod("GET")
                 setValue("Mozilla/5.0", forHTTPHeaderField = "User-Agent")
@@ -366,105 +396,107 @@ class IosCatalogDatabase : CatalogDatabase {
             val data = resultHolder[0]
             if (!networkSuccess || data == null) {
                 Log.e(TAG, "Network fetch failed for comets")
-                return@withLock false
+                return false
             }
 
             val text = NSString.create(data, NSUTF8StringEncoding)?.toString()
-                ?: return@withLock false
+                ?: return false
 
             val lines = text.lines()
             if (lines.isEmpty()) {
                 Log.w(TAG, "Empty comet lines received")
-                return@withLock false
+                return false
             }
 
-            // If database is currently open in read-only mode, close it so it can reopen read-write
-            if (db != null && sqlite3_db_readonly(db, "main") == 1) {
-                sqlite3_close_v2(db)
-                db = null
-            }
+            return mutex.withLock {
+                // If database is currently open in read-only mode, close it so it can reopen read-write
+                if (db != null && sqlite3_db_readonly(db, "main") == 1) {
+                    sqlite3_close_v2(db)
+                    db = null
+                }
 
-            val database = openDatabase() ?: return@withLock false
-            if (sqlite3_db_readonly(database, "main") == 1) {
-                Log.e(TAG, "Cannot refresh comets: database is read-only")
-                return@withLock false
-            }
-
-            memScoped {
-                sqlite3_exec(database, "BEGIN TRANSACTION;", null, null, null)
-                sqlite3_exec(database, "DELETE FROM comets;", null, null, null)
-
-                val ppStmt = alloc<CPointerVar<cnames.structs.sqlite3_stmt>>()
-                val sql =
-                    "INSERT INTO comets (catalog_id, common_name, h, k, t_peri, q, e, w, node, incl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
-                if (sqlite3_prepare_v2(database, sql, -1, ppStmt.ptr, null) != SQLITE_OK) {
-                    sqlite3_exec(database, "ROLLBACK;", null, null, null)
-                    Log.e(TAG, "Failed to prepare comets insert statement")
+                val database = openDatabase() ?: return@withLock false
+                if (sqlite3_db_readonly(database, "main") == 1) {
+                    Log.e(TAG, "Cannot refresh comets: database is read-only")
                     return@withLock false
                 }
-                val stmt = ppStmt.value
 
-                try {
-                    for (line in lines) {
-                        if (line.trim().isEmpty() || line.length < 100) continue
-                        try {
-                            val hStr = line.substring(91, 96).trim()
-                            val kStr = line.substring(96, 101).trim()
-                            if (hStr.isEmpty() || kStr.isEmpty()) continue
+                memScoped {
+                    sqlite3_exec(database, "BEGIN TRANSACTION;", null, null, null)
+                    sqlite3_exec(database, "DELETE FROM comets;", null, null, null)
 
-                            val catalogId = line.take(12).trim().replace(Regex("\\s+"), " ")
-                            val year = line.substring(14, 18).trim().toInt()
-                            val month = line.substring(19, 21).trim().toInt()
-                            val dayFrac = line.substring(22, 29).trim().toDouble()
-                            val tPeri = dateToJd(year, month, dayFrac)
-
-                            val q = line.substring(30, 39).trim().toDouble()
-                            val e = line.substring(40, 49).trim().toDouble()
-                            val w = line.substring(50, 59).trim().toDouble()
-                            val node = line.substring(60, 69).trim().toDouble()
-                            val incl = line.substring(70, 79).trim().toDouble()
-
-                            val h = hStr.toDouble()
-                            val k = kStr.toDouble()
-
-                            var namePart = line.substring(102)
-                            val doubleSpaceIdx = namePart.indexOf("  ")
-                            if (doubleSpaceIdx != -1) {
-                                namePart = namePart.take(doubleSpaceIdx)
-                            }
-                            val commonName = namePart.trim()
-
-                            sqlite3_reset(stmt)
-                            olive_sqlite3_bind_text(stmt, 1, catalogId)
-                            olive_sqlite3_bind_text(stmt, 2, commonName)
-                            sqlite3_bind_double(stmt, 3, h)
-                            sqlite3_bind_double(stmt, 4, k)
-                            sqlite3_bind_double(stmt, 5, tPeri)
-                            sqlite3_bind_double(stmt, 6, q)
-                            sqlite3_bind_double(stmt, 7, e)
-                            sqlite3_bind_double(stmt, 8, w)
-                            sqlite3_bind_double(stmt, 9, node)
-                            sqlite3_bind_double(stmt, 10, incl)
-
-                            sqlite3_step(stmt)
-                        } catch (ex: Exception) {
-                            Log.e(TAG, "Error parsing comet line: $line: ${ex.message}")
-                        }
+                    val ppStmt = alloc<CPointerVar<cnames.structs.sqlite3_stmt>>()
+                    val sql =
+                        "INSERT INTO comets (catalog_id, common_name, h, k, t_peri, q, e, w, node, incl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
+                    if (sqlite3_prepare_v2(database, sql, -1, ppStmt.ptr, null) != SQLITE_OK) {
+                        sqlite3_exec(database, "ROLLBACK;", null, null, null)
+                        Log.e(TAG, "Failed to prepare comets insert statement")
+                        return@withLock false
                     }
-                    sqlite3_exec(database, "COMMIT;", null, null, null)
-                    Log.i(TAG, "Successfully refreshed comets")
-                    return@withLock true
-                } catch (e: Exception) {
-                    sqlite3_exec(database, "ROLLBACK;", null, null, null)
-                    Log.e(TAG, "Error in comets refresh transaction: ${e.message}")
-                    return@withLock false
-                } finally {
-                    sqlite3_finalize(stmt)
+                    val stmt = ppStmt.value
+
+                    try {
+                        for (line in lines) {
+                            if (line.trim().isEmpty() || line.length < 100) continue
+                            try {
+                                val hStr = line.substring(91, 96).trim()
+                                val kStr = line.substring(96, 101).trim()
+                                if (hStr.isEmpty() || kStr.isEmpty()) continue
+
+                                val catalogId = line.take(12).trim().replace(Regex("\\s+"), " ")
+                                val year = line.substring(14, 18).trim().toInt()
+                                val month = line.substring(19, 21).trim().toInt()
+                                val dayFrac = line.substring(22, 29).trim().toDouble()
+                                val tPeri = dateToJd(year, month, dayFrac)
+
+                                val q = line.substring(30, 39).trim().toDouble()
+                                val e = line.substring(40, 49).trim().toDouble()
+                                val w = line.substring(50, 59).trim().toDouble()
+                                val node = line.substring(60, 69).trim().toDouble()
+                                val incl = line.substring(70, 79).trim().toDouble()
+
+                                val h = hStr.toDouble()
+                                val k = kStr.toDouble()
+
+                                var namePart = line.substring(102)
+                                val doubleSpaceIdx = namePart.indexOf("  ")
+                                if (doubleSpaceIdx != -1) {
+                                    namePart = namePart.take(doubleSpaceIdx)
+                                }
+                                val commonName = namePart.trim()
+
+                                sqlite3_reset(stmt)
+                                olive_sqlite3_bind_text(stmt, 1, catalogId)
+                                olive_sqlite3_bind_text(stmt, 2, commonName)
+                                sqlite3_bind_double(stmt, 3, h)
+                                sqlite3_bind_double(stmt, 4, k)
+                                sqlite3_bind_double(stmt, 5, tPeri)
+                                sqlite3_bind_double(stmt, 6, q)
+                                sqlite3_bind_double(stmt, 7, e)
+                                sqlite3_bind_double(stmt, 8, w)
+                                sqlite3_bind_double(stmt, 9, node)
+                                sqlite3_bind_double(stmt, 10, incl)
+
+                                sqlite3_step(stmt)
+                            } catch (ex: Exception) {
+                                Log.e(TAG, "Error parsing comet line: $line: ${ex.message}")
+                            }
+                        }
+                        sqlite3_exec(database, "COMMIT;", null, null, null)
+                        Log.i(TAG, "Successfully refreshed comets")
+                        return@withLock true
+                    } catch (e: Exception) {
+                        sqlite3_exec(database, "ROLLBACK;", null, null, null)
+                        Log.e(TAG, "Error in comets refresh transaction: ${e.message}")
+                        return@withLock false
+                    } finally {
+                        sqlite3_finalize(stmt)
+                    }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error refreshing comets: ${e.message}")
-            return@withLock false
+            return false
         }
     }
 
@@ -537,22 +569,14 @@ class IosCatalogDatabase : CatalogDatabase {
 
         val radius = maxDistanceDegrees ?: if (catalogFilter == "Nearest Objects") 10.0 else null
         if (radius != null && targetRa != null && targetDec != null) {
-            val c = cos(targetDec * PI / 180.0).coerceAtLeast(0.01)
-            val maxDistSq = radius * radius
-            val deltaRa = radius / c
-
-            selection += " AND (dec BETWEEN ${targetDec - radius} AND ${targetDec + radius})"
-            if (deltaRa < 180.0) {
-                if (targetRa - deltaRa >= 0.0 && targetRa + deltaRa <= 360.0) {
-                    selection += " AND (ra BETWEEN ${targetRa - deltaRa} AND ${targetRa + deltaRa})"
-                } else {
-                    val raMin = (targetRa - deltaRa + 360.0) % 360.0
-                    val raMax = (targetRa + deltaRa) % 360.0
-                    selection += " AND (ra >= $raMin OR ra <= $raMax)"
-                }
+            val proximityClause = CatalogDatabase.buildSphericalProximityClauseSql(
+                targetRa = targetRa,
+                targetDec = targetDec,
+                radiusDegrees = radius
+            )
+            if (proximityClause.isNotEmpty()) {
+                selection += " AND $proximityClause"
             }
-            val raDiff = "min(abs(ra - $targetRa), 360.0 - abs(ra - $targetRa))"
-            selection += " AND (((($raDiff) * $c) * (($raDiff) * $c) + (dec - $targetDec) * (dec - $targetDec)) <= $maxDistSq)"
         }
 
         if (catalogFilter != null && catalogFilter != "All Objects" && catalogFilter != "Solar System" && catalogFilter != "Nearest Objects") {
@@ -560,7 +584,7 @@ class IosCatalogDatabase : CatalogDatabase {
             args.add(catalogFilter)
         }
 
-        if (magLimit != null) {
+        if (magLimit != null && magLimit.isFinite()) {
             selection += if (includeNullMagnitude) {
                 " AND (magnitude IS NULL OR magnitude <= $magLimit)"
             } else {
@@ -605,10 +629,7 @@ class IosCatalogDatabase : CatalogDatabase {
         val orderBy = when (sortBy) {
             "distance" -> {
                 if (targetRa != null && targetDec != null) {
-                    val c = cos(targetDec * PI / 180.0)
-                    val c2 = c * c
-                    val raDiff = "min(abs(ra - $targetRa), 360.0 - abs(ra - $targetRa))"
-                    "(($raDiff) * ($raDiff) * $c2) + ((dec - $targetDec) * (dec - $targetDec)) ASC"
+                    CatalogDatabase.buildSphericalDistanceOrderSql(targetRa, targetDec)
                 } else {
                     "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
                 }

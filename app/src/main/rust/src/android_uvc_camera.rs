@@ -112,7 +112,12 @@ impl AndroidUvcCamera {
     }
 
     pub fn push_external_frame(&self, nv21_data: &[u8], width: u32, height: u32) {
-        let y_plane_size = (width * height) as usize;
+        if width == 0 || height == 0 {
+            return;
+        }
+        let Some(y_plane_size) = (width as usize).checked_mul(height as usize) else {
+            return;
+        };
         if nv21_data.len() < y_plane_size {
             return;
         }
@@ -237,7 +242,7 @@ impl AndroidUvcCamera {
         }
 
         let target_stack = self.stack_count.load(Ordering::Relaxed).max(1);
-        let mut accum = self.accumulator.lock().unwrap();
+        let mut accum = self.accumulator.lock().unwrap_or_else(|e| e.into_inner());
 
         if accum.len() != y_plane_size {
             *accum = vec![0; y_plane_size];
@@ -255,8 +260,8 @@ impl AndroidUvcCamera {
         }
 
         if idx + 1 >= target_stack {
-            let current_exposure = self.exposure_us.load(Ordering::Relaxed);
-            let total_exposure_us = (current_exposure * (target_stack as i32)) as u64;
+            let current_exposure = self.exposure_us.load(Ordering::Relaxed).max(0) as u64;
+            let total_exposure_us = current_exposure.saturating_mul(target_stack as u64);
             let half_exposure = std::time::Duration::from_micros(total_exposure_us / 2);
             let pipeline_latency = std::time::Duration::from_millis(30);
 
@@ -269,15 +274,15 @@ impl AndroidUvcCamera {
                 width,
                 height,
                 timestamp,
-                exposure_time_us: total_exposure_us as i32,
-                gain: 1.0,
+                exposure_time_us: total_exposure_us.min(i32::MAX as u64) as i32,
+                gain: self.gain.load(Ordering::Relaxed) as f32,
                 post_process_time: std::time::Duration::from_millis(0),
                 frame_interval_us: 0,
                 metadata_valid: true,
                 zoom: 1.0,
             };
 
-            let mut lock = self.last_image.lock().unwrap();
+            let mut lock = self.last_image.lock().unwrap_or_else(|e| e.into_inner());
             *lock = Some(Arc::new(img));
             self.image_cvar.notify_all(); // Wake up wait_for_next_capture
 
@@ -288,7 +293,12 @@ impl AndroidUvcCamera {
 
 impl CameraTrait for AndroidUvcCamera {
     fn get_config(&self) -> Option<CameraConfig> {
-        Some(self.config.lock().unwrap().clone())
+        Some(
+            self.config
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
+        )
     }
 
     fn set_stack_count(&self, count: usize) {
@@ -301,7 +311,7 @@ impl CameraTrait for AndroidUvcCamera {
         last_timestamp: Option<SystemTime>,
         timeout: Option<std::time::Duration>,
     ) -> Option<Arc<Image>> {
-        let mut lock = self.last_image.lock().unwrap();
+        let mut lock = self.last_image.lock().unwrap_or_else(|e| e.into_inner());
         loop {
             if !self.is_running.load(Ordering::Relaxed) {
                 return None;
@@ -312,7 +322,10 @@ impl CameraTrait for AndroidUvcCamera {
                 }
             }
             if let Some(duration) = timeout {
-                let (new_lock, result) = self.image_cvar.wait_timeout(lock, duration).unwrap();
+                let (new_lock, result) = self
+                    .image_cvar
+                    .wait_timeout(lock, duration)
+                    .unwrap_or_else(|e| e.into_inner());
                 lock = new_lock;
                 if result.timed_out() {
                     if !self.is_running.load(Ordering::Relaxed) {
@@ -326,13 +339,19 @@ impl CameraTrait for AndroidUvcCamera {
                     return None;
                 }
             } else {
-                lock = self.image_cvar.wait(lock).unwrap();
+                lock = self
+                    .image_cvar
+                    .wait(lock)
+                    .unwrap_or_else(|e| e.into_inner());
             }
         }
     }
 
     fn get_last_capture(&self) -> Option<Arc<Image>> {
-        self.last_image.lock().unwrap().clone()
+        self.last_image
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn get_gain_range(&self) -> (f32, f32, f32) {

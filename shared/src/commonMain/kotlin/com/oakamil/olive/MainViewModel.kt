@@ -382,13 +382,14 @@ open class MainViewModel(
         currentLat = lat
         currentLon = lon
         currentZoom = 1.0f
-        val downsampling = if (cameraId == "demo") 0 else settingsManager.downsampling
+        val isDemo = cameraId == "demo"
+        val downsampling = if (isDemo) 0 else settingsManager.downsampling
 
-        val motionSensorMode = if (cameraId == "demo") 0 else settingsManager.motionSensorMode
+        val motionSensorMode = if (isDemo) 0 else settingsManager.motionSensorMode
         val isAutoSettings =
-            if (cameraId == "demo") false else settingsManager.cameraSettingsMode == "Auto"
+            if (isDemo) false else settingsManager.cameraSettingsMode == "Auto"
 
-        val initialZoom = if (cameraId == "demo") 1.0f else {
+        val initialZoom = if (isDemo) 1.0f else {
             if (isAutoSettings) {
                 if (ENABLE_AUTO_ZOOM) settingsManager.autoZoomRatio.coerceIn(1.0f, 2.0f) else 1.0f
             } else {
@@ -443,12 +444,18 @@ open class MainViewModel(
                 minAnalogGain = minG
                 maxAnalogGain = maxG
 
-                if (isAutoSettings) {
+                if (isDemo) {
+                    starSensitivity = 100f
+                    uvcStacking = 1
+                    engine.setEngineSigma(currentSigma)
+                } else if (isAutoSettings) {
                     val savedFocus = settingsManager.manualFocus
                     val focusToApply =
                         if (savedFocus in capabilities.focusRange) savedFocus else capabilities.defaultFocus
                     setFocus(focusToApply)
-                    updateUvcStacking(1)
+                    starSensitivity = 50f
+                    uvcStacking = 1
+                    engine.setEngineSigma(currentSigma)
                 } else {
                     var savedGain = settingsManager.manualGain
                     if (savedGain < 0f) savedGain = defaultG
@@ -466,9 +473,6 @@ open class MainViewModel(
 
                 supportedHotPixelModes =
                     engine.getNativeCameraSupportedHotPixelModes().toList()
-                if (!isAutoSettings) {
-                    engine.setEngineSigma(currentSigma)
-                }
                 engine.setEngineStrictMatch(false)
                 startPolling()
             }
@@ -694,8 +698,10 @@ open class MainViewModel(
         if (settingsManager.cameraSettingsMode == "Manual") {
             settingsManager.manualUvcStacking = uvcStacking
         }
-        val fps = settingsManager.uvcFps.coerceAtLeast(1)
-        currentExposure = (1_000_000f / fps) * uvcStacking
+        if (engineMode == EngineMode.UVC) {
+            val fps = settingsManager.uvcFps.coerceAtLeast(1)
+            currentExposure = (1_000_000f / fps) * uvcStacking
+        }
         engine.updateUvcStacking(uvcStacking)
     }
 
