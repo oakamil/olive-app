@@ -412,10 +412,20 @@ fun SkyMapView(
             )
         )
     }
-    val cardinalLayouts = remember(textMeasurer, colors) {
-        listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW").associateWith { dir ->
+    val cardinalLabels = mapOf(
+        "N" to stringResource(Res.string.dir_north),
+        "NE" to stringResource(Res.string.dir_northeast),
+        "E" to stringResource(Res.string.dir_east),
+        "SE" to stringResource(Res.string.dir_southeast),
+        "S" to stringResource(Res.string.dir_south),
+        "SW" to stringResource(Res.string.dir_southwest),
+        "W" to stringResource(Res.string.dir_west),
+        "NW" to stringResource(Res.string.dir_northwest)
+    )
+    val cardinalLayouts = remember(textMeasurer, colors, cardinalLabels) {
+        cardinalLabels.mapValues { (_, label) ->
             textMeasurer.measure(
-                dir,
+                label,
                 style = TextStyle(
                     color = colors.primary,
                     fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
@@ -1156,7 +1166,7 @@ fun SkyMapView(
                     }
 
                     // Dashed FOV border framing the camera view
-                    val isEstimate = stats.isImuEstimate || stats.solvedCrop == "Failed"
+                    val isEstimate = stats.isEstimateOrFailedSolve
                     val boxColor =
                         if (isEstimate) colors.secondary.copy(alpha = 0.7f) else colors.primary
                     drawPath(
@@ -1701,7 +1711,7 @@ fun SkyMapView(
                                 val raStr = String.format("%.2f°", centerRa)
                                 val decStr = String.format("%+.2f°", centerDec)
                                 Text(
-                                    text = "RA $raStr Dec $decStr",
+                                    text = stringResource(Res.string.format_ra_dec, raStr, decStr),
                                     style = TextStyle(
                                         fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
                                         fontWeight = FontWeight.Normal
@@ -1710,12 +1720,12 @@ fun SkyMapView(
                                     maxLines = 1
                                 )
                                 Text(
-                                    text = "Az ${String.format("%.0f", badgeAz)}° Alt ${
-                                        String.format(
-                                            "%.0f",
-                                            badgeAlt
-                                        )
-                                    }°  FOV ${String.format("%.1f", badgeFov)}°",
+                                    text = stringResource(
+                                        Res.string.format_az_alt_fov,
+                                        String.format("%.0f", badgeAz),
+                                        String.format("%.0f", badgeAlt),
+                                        String.format("%.1f", badgeFov)
+                                    ),
                                     style = TextStyle(
                                         fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
                                         fontWeight = FontWeight.Normal
@@ -1743,10 +1753,9 @@ fun SkyMapView(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val currentStats = viewModel.engineStats
-                            val isGoodSolve =
-                                currentStats.solvedCrop != "Failed" && !currentStats.isImuEstimate && currentStats.solvedCrop != null
+                            val isGoodSolve = currentStats.hasValidSolve
                             val statusIcon =
-                                if (currentStats.status == "Calibrating" || currentStats.status == "Calibrating Focus") Icons.Outlined.Loop
+                                if (currentStats.isCalibrating) Icons.Outlined.Loop
                                 else if (isGoodSolve) Icons.Outlined.Check
                                 else Icons.Outlined.ErrorOutline
                             Icon(
@@ -1762,7 +1771,7 @@ fun SkyMapView(
                                 val decStr =
                                     currentStats.dec?.let { String.format("%+.2f°", it) } ?: "-"
                                 Text(
-                                    text = "RA $raStr Dec $decStr",
+                                    text = stringResource(Res.string.format_ra_dec, raStr, decStr),
                                     style = TextStyle(
                                         fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
                                         fontWeight = FontWeight.Normal
@@ -2088,7 +2097,7 @@ fun SkyMapView(
                             color = colors.primary
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text(obj.objectType, color = colors.primary)
+                        Text(getLocalizedObjectType(obj.objectType), color = colors.primary)
                     }
                     Spacer(Modifier.height(4.dp))
                     Row {
@@ -2210,7 +2219,7 @@ fun SkyMapView(
                                 color = colors.primary
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text(target.objectType, color = colors.primary)
+                            Text(getLocalizedObjectType(target.objectType), color = colors.primary)
                         }
                         Spacer(Modifier.height(4.dp))
                         Row {

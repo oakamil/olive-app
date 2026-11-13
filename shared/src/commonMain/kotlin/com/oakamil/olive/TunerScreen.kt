@@ -584,7 +584,9 @@ fun TuningControls(
     var showNoiseReductionInfo by remember { mutableStateOf(false) }
     var showHotPixelModeInfo by remember { mutableStateOf(false) }
 
-    val gainLabel = if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) "ISO" else "Gain"
+    val isNativeMode = viewModel.engineMode == MainViewModel.EngineMode.NATIVE
+    val gainLabel =
+        stringResource(if (isNativeMode) Res.string.label_iso else Res.string.label_gain)
     val capabilities = LocalPlatformCapabilities.current
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -790,7 +792,11 @@ fun TuningControls(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    gainLabel + ": ${viewModel.currentGain.toInt()}",
+                    stringResource(
+                        Res.string.format_label_value_string,
+                        gainLabel,
+                        viewModel.currentGain.toInt().toString()
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onBackground
                 )
@@ -818,7 +824,7 @@ fun TuningControls(
             if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
                 val focusFormat = if (capabilities.isApple) "%.3f" else "%.2f"
                 val nudgeStep = if (capabilities.isApple) 0.002f else 0.05f
-                val isFocusLocked = viewModel.engineStats.status == "Calibrating Focus"
+                val isFocusLocked = viewModel.engineStats.isCalibratingFocus
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -1013,7 +1019,7 @@ fun TuningControls(
         }
         if (showGainInfo) {
             InfoPopup(title = gainLabel, onDismiss = { showGainInfo = false }) {
-                if (gainLabel == "ISO") {
+                if (isNativeMode) {
                     Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_iso)))
                 } else {
                     Text(stringResource(id = Res.string.info_gain))

@@ -890,12 +890,18 @@ fun SkyCatalogDialog(
                                     supportingContent = {
                                         val localizedType =
                                             getLocalizedObjectType(obj.objectType)
-                                        val magText = if (obj.magnitude != null) "Mag: ${
-                                            String.format(
-                                                "%.1f",
-                                                obj.magnitude
+                                        val magText = when {
+                                            obj.magnitude != null -> stringResource(
+                                                Res.string.format_mag,
+                                                String.format("%.1f", obj.magnitude)
                                             )
-                                        }" else if (obj.catalogLabel == "Planet") "" else "Mag: N/A"
+
+                                            obj.catalogLabel == "Planet" -> ""
+                                            else -> stringResource(
+                                                Res.string.format_mag,
+                                                stringResource(Res.string.value_not_available)
+                                            )
+                                        }
                                         @OptIn(ExperimentalLayoutApi::class)
                                         FlowRow(
                                             horizontalArrangement = Arrangement.spacedBy(12.dp),

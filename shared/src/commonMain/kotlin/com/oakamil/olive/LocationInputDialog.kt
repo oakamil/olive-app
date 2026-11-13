@@ -39,7 +39,7 @@ fun LocationInputDialog(
     ) Pair(initialLat, initialLon) else null
 
     val totalLatHundredths = validInitial?.let { (abs(it.first) * 100.0).roundToInt() }
-    var latSign by remember { mutableStateOf(if (validInitial != null && validInitial.first < 0) "S" else "N") }
+    var isNorth by remember { mutableStateOf(validInitial == null || validInitial.first >= 0) }
     var latDeg by remember {
         mutableStateOf(totalLatHundredths?.let { (it / 100).toString() } ?: "")
     }
@@ -50,7 +50,7 @@ fun LocationInputDialog(
     }
 
     val totalLonHundredths = validInitial?.let { (abs(it.second) * 100.0).roundToInt() }
-    var lonSign by remember { mutableStateOf(if (validInitial != null && validInitial.second < 0) "W" else "E") }
+    var isEast by remember { mutableStateOf(validInitial == null || validInitial.second >= 0) }
     var lonDeg by remember {
         mutableStateOf(totalLonHundredths?.let { (it / 100).toString() } ?: "")
     }
@@ -82,11 +82,14 @@ fun LocationInputDialog(
             ) {
                 Box(
                     modifier = Modifier
-                        .clickable { latSign = if (latSign == "N") "S" else "N" }
+                        .clickable { isNorth = !isNorth }
                         .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                    Text(latSign, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        stringResource(if (isNorth) Res.string.dir_north else Res.string.dir_south),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
                 }
                 CoordinateBox(
                     value = latDeg,
@@ -121,11 +124,14 @@ fun LocationInputDialog(
             ) {
                 Box(
                     modifier = Modifier
-                        .clickable { lonSign = if (lonSign == "W") "E" else "W" }
+                        .clickable { isEast = !isEast }
                         .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                    Text(lonSign, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        stringResource(if (isEast) Res.string.dir_east else Res.string.dir_west),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
                 }
                 CoordinateBox(
                     value = lonDeg,
@@ -214,12 +220,12 @@ fun LocationInputDialog(
                     val dLat = latDeg.toIntOrNull() ?: 0
                     val fLat = latFrac.padEnd(2, '0').toIntOrNull() ?: 0
                     var lat = (dLat + fLat / 100.0f).coerceIn(0.0f, 90.0f)
-                    if (latSign == "S") lat = -lat
+                    if (!isNorth) lat = -lat
 
                     val dLon = lonDeg.toIntOrNull() ?: 0
                     val fLon = lonFrac.padEnd(2, '0').toIntOrNull() ?: 0
                     var lon = (dLon + fLon / 100.0f).coerceIn(0.0f, 180.0f)
-                    if (lonSign == "W") lon = -lon
+                    if (!isEast) lon = -lon
 
                     onSave(lat, lon)
                     onDismiss()

@@ -78,7 +78,7 @@ fun GuidanceDisplay(
             }
         }
 
-        if (stats.targetRa == null && stats.targetDec == null && stats.status != "Solving" && stats.status != "Slewing" && stats.status != "Calibrating" && stats.ra == null) {
+        if (stats.targetRa == null && stats.targetDec == null && !stats.isActivelySolvingOrSlewing && stats.parsedStatus != EngineStatus.CALIBRATING && stats.ra == null) {
             return@Box
         }
 
@@ -157,7 +157,7 @@ fun GuidanceDisplay(
                                 .fillMaxHeight(),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (stats.offsetAngle == null && displayAngle != null && (stats.status == "Solving" || stats.status == "Slewing")) {
+                            if (stats.offsetAngle == null && displayAngle != null && stats.isActivelySolvingOrSlewing) {
                                 CircularProgressIndicator(
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.fillMaxSize(0.5f),
@@ -305,7 +305,7 @@ fun GuidanceDisplay(
                                     .fillMaxHeight(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (stats.offsetAngle == null && displayAngle != null && (stats.status == "Solving" || stats.status == "Slewing")) {
+                                if (stats.offsetAngle == null && displayAngle != null && stats.isActivelySolvingOrSlewing) {
                                     CircularProgressIndicator(
                                         color = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.fillMaxSize(0.5f),

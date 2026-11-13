@@ -241,7 +241,7 @@ open class MainViewModel(
             }
 
             engineStats = EngineStats(
-                status = obj.optString("status", "Idle"),
+                status = obj.optString("status", EngineStatus.IDLE.rawValue),
                 ra = if (obj.isNull("ra")) null else obj.getDouble("ra"),
                 dec = if (obj.isNull("dec")) null else obj.getDouble("dec"),
                 centerRa = if (obj.isNull("center_ra")) null else obj.getDouble("center_ra"),
