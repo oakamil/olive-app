@@ -377,17 +377,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraExposur
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraStacking(
-    _env: JNIEnv,
-    _class: JClass,
-    stack_count: jint,
-) {
-    if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
-        cam.set_stack_count(stack_count as usize);
-    }
-}
-
-#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_updateUvcStacking(
     _env: JNIEnv,
     _class: JClass,

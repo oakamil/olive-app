@@ -16,7 +16,6 @@ public final class MotionService {
         motionQueue.name = "com.oakamil.olive.motionQueue"
         motionQueue.qualityOfService = .userInteractive
         motionQueue.maxConcurrentOperationCount = 1
-        MotionService.registerStorageCallbacks()
     }
 
     public func startMotionUpdates() {

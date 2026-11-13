@@ -98,7 +98,6 @@ void olive_ios_register_storage_callbacks(
 
 // --- Memory Management ---
 void olive_ios_free_string(char *ptr);
-void olive_ios_free_bytes(uint8_t *ptr, size_t len);
 
 // --- Engine Lifecycle & Control ---
 bool olive_ios_start_engine(
@@ -148,9 +147,6 @@ void olive_ios_set_align_target_pixel(double x, double y);
 void olive_ios_clear_align_target_pixel(void);
 void olive_ios_sync_telescope(void);
 void olive_ios_sync_telescope_to_target(double ra, double dec);
-
-uint8_t *olive_ios_process_telescope_data(const uint8_t *data_ptr, size_t data_len, size_t *out_len);
-void olive_ios_reset_telescope_server(void);
 
 char *olive_ios_get_planets(const char *bsp_path, int64_t time_ms, double latitude, double longitude);
 char *olive_ios_get_asteroids(const char *bsp_path, int64_t time_ms, double latitude, double longitude, const char *asteroids_json);

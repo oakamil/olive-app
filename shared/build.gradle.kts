@@ -64,11 +64,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
 
-    variantFilter {
-        if (buildType.name == "debug") {
-            ignore = true
-        }
+androidComponents {
+    beforeVariants(selector().withBuildType("debug")) { variantBuilder ->
+        variantBuilder.enable = false
     }
 }
 
