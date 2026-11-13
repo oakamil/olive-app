@@ -345,8 +345,7 @@ fun MainScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 isStarting = isStarting,
                                 isStopping = isStopping,
-                                detectedIpAddress = detectedIpAddress,
-                                activeCameraSelection = activeCameraSelection
+                                detectedIpAddress = detectedIpAddress
                             )
                         }
                         ActionButtons(
@@ -370,8 +369,7 @@ fun MainScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 isStarting = isStarting,
                                 isStopping = isStopping,
-                                detectedIpAddress = detectedIpAddress,
-                                activeCameraSelection = activeCameraSelection
+                                detectedIpAddress = detectedIpAddress
                             )
                         }
                         ActionButtons(

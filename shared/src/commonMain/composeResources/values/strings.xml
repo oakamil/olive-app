@@ -15,7 +15,6 @@
     <string name="info_camera_selection"><![CDATA[<b>Internal Camera</b><br>Use the device\'s native camera for imaging the sky.<br><br><b>External Camera</b><br>Use a camera plugged into the device\'s USB port.<br><br><b>Demo Camera</b><br>Cycles through canned images for demo purposes.]]></string>
     <string name="info_sensor_mode"><![CDATA[Processed mode (recommended) uses the camera\'s own algorithms to pre-process the image. Raw mode relies on the engine to do the processing. Raw is only available on select phone models.]]></string>
     <string name="info_downsampling"><![CDATA[Based on this setting the image will be reduced in size prior to running the plate-solving algorithms.]]></string>
-    <string name="info_extractor"><![CDATA[Determines which algorithm to use for star detection. Cedar (cedar-detect) is recommended for raw mode.]]></string>
     <string name="info_guidance_mode"><![CDATA[The engine\'s guidance display can show Alt-Az offsets (distance to target) or equatorial RA/Dec offsets.]]></string>
     <string name="info_reverse_layout"><![CDATA[Swaps the left and right positions of on-screen Sky Map overlays and controls (clock, stats, position, centering, zoom, and guidance).]]></string>
     <string name="info_telescope_control" tools:ignore="TypographyDashes"><![CDATA[Olive Finder runs control servers for external connections:<br>- Meade LX200 protocol on port 4030<br>- ASCOM Alpaca protocol on port 11111<br>- ASCOM Alpaca discovery server<br><br><h2>SkySafari Integration</h2><b>Configuring SkySafari 7/8 Plus or Pro (Alpaca)</b><br>Menu > Settings > Telescope section - Presets<br>Add Preset > ASCOM Alpaca<br>Manual Configuration:<br>- IP Address - 127.0.0.1 if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>- Port - 11111<br>Check IP and Port for Devices<br>Next<br>- Preset Name: Olive<br>- Set Time &amp; Location: leave this checked only if Olive is on a separate device<br>- Readout Rate: 10 per second <i>(Important: swipe back instead of pressing the X)</i><br>Save Preset<br>Select the new preset > Use This Preset<br><br><b>Configuring SkySafari 7/8 Plus or Pro (LX200)</b><br>Menu > Settings > Telescope section - Presets<br>Add Preset > Other Connection > Meade LX200 Classic, Next > <i>Alt-Az. GoTo (Recommended)</i>, Next<br>Connect via WiFi<br>- IP Address - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>- Port - 4030<br>Check Connection<br>Next<br>- Preset Name: Olive<br>- Set Time &amp; Location: leave this checked only if Olive is on a separate device<br>- Readout Rate: 10 per second <i>(Important: swipe back instead of pressing the X)</i><br>Save Preset<br>Select the new preset > Use This Preset<br><br><b>Configuring SkySafari 6 Plus or Pro (LX200)</b><br>Settings > Telescope section - Setup<br>- Scope Type -- Meade LX200 Classic<br>- Mount Type -- <i>Alt-Az. GoTo (Recommended)</i><br>- Connect via WiFi<br>- IP Address - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>- Port - 4030<br>- Set Time &amp; Location: leave this checked only if Olive is on a separate device<br>- Readout Rate -- 10 per second <i>(Important: swipe back instead of pressing the X)</i><br>Press X<br><br><b>SkySafari Usage</b><br>Scope > Connect<br>Select an Object<br>- GoTo -> Olive will show guidance to the object<br>- Stop -> Stop the current GoTo target<br>- Align -> Center object in eyepiece, tap Align to update Olive\'s alignment*<br><br><h2>Stellarium Integration</h2><b>Configuring Stellarium+ (LX200)</b><br>Menu > Observing Tools > Telescope Control <i>(toggle on)</i><br>Type - Network<br>Host - localhost if using the same phone as Olive Finder, otherwise the IP address displayed in Olive Finder\'s screen<br>Toggle Link to on<br>Time and Location sync - Turn off if using Olive on the same device<br><br><b>Stellarium Usage</b><br>Menu > Observing Tools > Telescope Control <i>(toggle on)</i><br>Toggle Link to on<br>Select an Object<br>- GoTo -> Olive will show guidance to the object<br>- Sync -> Center object in eyepiece, tap Sync to update Olive\'s alignment*<br><br><small>* Olive uses a single alignment point to determine the offset of the camera\'s view to the telescope\'s view. Alignment only needs to be done once each time the camera is mounted on a telescope.</small>]]></string>
@@ -67,7 +66,6 @@
     <string name="label_camera_selection">Camera Selection</string>
     <string name="label_sensor_mode">Sensor Mode</string>
     <string name="label_downsampling">Downsampling</string>
-    <string name="label_extractor">Extractor</string>
     <string name="label_guidance_mode">Guidance Mode</string>
 
     <!-- Settings Labels -->
@@ -80,10 +78,8 @@
     <!-- Setting Values -->
     <string name="value_processed">Processed</string>
     <string name="value_raw">Raw</string>
-    <string name="value_cedar">Cedar</string>
     <string name="value_alt_az_offset">Alt-Az</string>
     <string name="value_equatorial_ra_dec">Equatorial</string>
-    <string name="value_olive">Olive</string>
     <string name="value_off">Off</string>
     <string name="value_on">On</string>
 

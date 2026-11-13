@@ -2,7 +2,6 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.protobuf")
 }
 
 android {
@@ -74,41 +73,7 @@ dependencies {
     implementation("androidx.graphics:graphics-shapes:1.0.0")
     implementation("com.github.requery:sqlite-android:3.49.0")
     implementation("com.github.ernestp:AndroidUSBCamera:3.6.0")
-    
-    // gRPC
-    implementation("io.grpc:grpc-okhttp:1.66.0")
-    implementation("io.grpc:grpc-protobuf-lite:1.66.0")
-    implementation("io.grpc:grpc-kotlin-stub:1.4.1")
-    implementation("io.grpc:grpc-stub:1.66.0")
-    implementation("com.google.protobuf:protobuf-kotlin-lite:4.26.1")
-    compileOnly("org.apache.tomcat:annotations-api:6.0.53")
     testImplementation("junit:junit:4.13.2")
-}
-
-protobuf {
-    protoc {
-        artifact = "com.google.protobuf:protoc:4.26.1"
-    }
-    plugins {
-        create("grpc") {
-            artifact = "io.grpc:protoc-gen-grpc-java:1.66.0"
-        }
-        create("grpckotlin") {
-            artifact = "io.grpc:protoc-gen-grpc-kotlin:1.4.1:jdk8@jar"
-        }
-    }
-    generateProtoTasks {
-        all().forEach { task ->
-            task.builtins {
-                create("java") {
-                    option("lite")
-                }
-                create("kotlin") {
-                    option("lite")
-                }
-            }
-        }
-    }
 }
 
 // Custom task to compile rust and copy to jniLibs

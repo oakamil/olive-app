@@ -73,7 +73,6 @@ class IosEngineBridge : EngineBridge {
 
     override fun startNativeCameraEngine(
         motionSensorMode: Int,
-        extractor: String,
         sensorMode: String,
         internalCameraId: String,
         downsampleMode: Int,
@@ -123,7 +122,6 @@ class IosEngineBridge : EngineBridge {
             selectedWidth,
             selectedHeight,
             if (isDemo) 0 else motionSensorMode,
-            extractor.ifEmpty { null },
             if (isDemo) 0 else downsampleMode,
             lat,
             lon,
@@ -150,7 +148,6 @@ class IosEngineBridge : EngineBridge {
         width: Int,
         height: Int,
         motionSensorMode: Int,
-        extractor: String,
         downsampleMode: Int,
         lat: Double,
         lon: Double,
@@ -173,7 +170,6 @@ class IosEngineBridge : EngineBridge {
             w,
             h,
             motionSensorMode,
-            extractor.ifEmpty { null },
             downsampleMode,
             lat,
             lon,

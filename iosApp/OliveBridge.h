@@ -105,7 +105,6 @@ bool olive_ios_start_engine(
     uint32_t width,
     uint32_t height,
     int32_t motion_sensor_mode,
-    const char *extractor,
     int32_t downsample_mode,
     double lat,
     double lon,

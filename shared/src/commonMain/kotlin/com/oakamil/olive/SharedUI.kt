@@ -431,7 +431,6 @@ fun NightVisionNumpad(
 fun StatsDisplay(
     stats: EngineStats,
     detectedIpAddress: String = "",
-    activeCameraSelection: String = "",
     onInfoClick: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -590,7 +589,7 @@ fun StatsDisplay(
             Text(cropString)
         }
 
-        if (activeCameraSelection != "cedar" && detectedIpAddress.isNotEmpty()) {
+        if (detectedIpAddress.isNotEmpty()) {
             Spacer(modifier = Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(Res.string.stat_ip_address), fontWeight = FontWeight.Bold)
