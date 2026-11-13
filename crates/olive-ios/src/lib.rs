@@ -149,7 +149,6 @@ pub extern "C" fn olive_ios_start_engine(
     width: u32,
     height: u32,
     motion_sensor_mode: i32,
-    extractor: *const c_char,
     downsample_mode: i32,
     lat: f64,
     lon: f64,
@@ -162,13 +161,6 @@ pub extern "C" fn olive_ios_start_engine(
     let camera_id_str = unsafe { c_str_to_str(camera_id) };
     let is_demo = camera_id_str == "demo";
     let is_external = camera_id_str == "external";
-
-    let extractor_str = unsafe { c_str_to_str(extractor) };
-    let ext_type = match extractor_str {
-        "Fast" => olive_engine::engine::Extractor::Fast,
-        "Cedar" => olive_engine::engine::Extractor::Cedar,
-        _ => olive_engine::engine::Extractor::Approximate,
-    };
 
     let fov = if initial_fov_deg > 0.0 {
         Some(initial_fov_deg)
@@ -223,7 +215,7 @@ pub extern "C" fn olive_ios_start_engine(
         database_path,
         isp: false,
         bg_mode: olive_engine::engine::BgMode::Block,
-        extractor_type: ext_type,
+        extractor_type: olive_engine::engine::Extractor::default(),
         crop: None,
         downsample: if is_demo { 0 } else { downsample_mode as u8 },
         auto_mode: auto_mode && !is_demo,

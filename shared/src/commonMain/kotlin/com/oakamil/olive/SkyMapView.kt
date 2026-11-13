@@ -140,8 +140,7 @@ fun SkyMapView(
     modifier: Modifier = Modifier,
     isStarting: Boolean = false,
     isStopping: Boolean = false,
-    detectedIpAddress: String = "",
-    activeCameraSelection: String = ""
+    detectedIpAddress: String = ""
 ) {
     val rawLat = viewModel.currentLat
     val rawLon = viewModel.currentLon
@@ -2337,7 +2336,6 @@ fun SkyMapView(
                 StatsDisplay(
                     stats = viewModel.engineStats,
                     detectedIpAddress = detectedIpAddress,
-                    activeCameraSelection = activeCameraSelection,
                     onInfoClick = {
                         showFullStats = false
                         showTelescopeControlInfo = true

@@ -49,10 +49,6 @@ SettingsManager(
         get() = storage.getInt("uvc_height", 1080)
         set(value) = storage.putInt("uvc_height", value)
 
-    var extractor: String
-        get() = storage.getString("extractor", "Olive") ?: "Olive"
-        set(value) = storage.putString("extractor", value)
-
     var sensorMode: String
         get() = storage.getString("sensor_mode", "Processed") ?: "Processed"
         set(value) = storage.putString("sensor_mode", value)

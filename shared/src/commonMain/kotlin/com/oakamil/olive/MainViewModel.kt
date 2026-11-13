@@ -215,11 +215,7 @@ open class MainViewModel(
     val currentSigma: Float
         get() {
             val s = starSensitivity / 100f
-            return if (settingsManager.extractor == "Cedar") {
-                15.0f - (s * 14.0f)
-            } else {
-                5.0f - (s * 3.0f)
-            }
+            return 5.0f - (s * 3.0f)
         }
 
     private var lastCalibratedFocus: Float? = null
@@ -408,7 +404,6 @@ open class MainViewModel(
             } else {
                 if (downsampling == 0) 1 else downsampling // 0 ("Off" in UI) maps to 1 (None) in engine
             }
-            val forcedExtractor = if (isAutoSettings) "Olive" else settingsManager.extractor
             val forcedCameraId = if (isAutoSettings && cameraId != "demo") {
                 if (capabilities.isApple) cameraId else "0"
             } else cameraId
@@ -416,7 +411,6 @@ open class MainViewModel(
             try {
                 engine.startNativeCameraEngine(
                     motionSensorMode,
-                    forcedExtractor,
                     forcedSensorMode,
                     forcedCameraId,
                     forcedDownsampling,
@@ -511,7 +505,6 @@ open class MainViewModel(
                     uvcWidth,
                     uvcHeight,
                     settingsManager.motionSensorMode,
-                    settingsManager.extractor,
                     forcedDownsampling,
                     lat,
                     lon,

@@ -67,7 +67,6 @@ fun StartEngineDialog(
     var uvcWidth by remember { mutableIntStateOf(settingsManager.uvcWidth) }
     var uvcHeight by remember { mutableIntStateOf(settingsManager.uvcHeight) }
     var uvcFormat by remember { mutableStateOf(settingsManager.uvcFormat) }
-    var extractor by remember { mutableStateOf(settingsManager.extractor) }
     var sensorMode by remember { mutableStateOf(settingsManager.sensorMode) }
     var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
@@ -93,7 +92,6 @@ fun StartEngineDialog(
         uvcWidth,
         uvcHeight,
         uvcFormat,
-        extractor,
         sensorMode,
         downsampling,
         internalCameraId
@@ -104,7 +102,6 @@ fun StartEngineDialog(
         settingsManager.uvcWidth = uvcWidth
         settingsManager.uvcHeight = uvcHeight
         settingsManager.uvcFormat = uvcFormat
-        settingsManager.extractor = extractor
         settingsManager.sensorMode = sensorMode
         settingsManager.downsampling = downsampling
         settingsManager.internalCameraId = internalCameraId
@@ -552,7 +549,7 @@ fun StartEngineDialog(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // Manual Mode: Sensor Mode, Downsampling, Extractor
+            // Manual Mode: Sensor Mode, Downsampling
             if (cameraSettingsMode == "Manual") {
                 if (cameraSelection == "internal" && !capabilities.isApple) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -653,51 +650,6 @@ fun StartEngineDialog(
                     }
                     Spacer(modifier = Modifier.height(24.dp))
                 }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(id = Res.string.label_extractor),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    IconButton(
-                        onClick = { activeInfoDialog = "extractor" },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = stringResource(id = Res.string.cd_info),
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
-                    listOf(
-                        "Olive" to stringResource(id = Res.string.value_olive),
-                        "Cedar" to stringResource(id = Res.string.value_cedar)
-                    ).forEach { (ext, label) ->
-                        RadioButton(
-                            selected = extractor == ext,
-                            onClick = { extractor = ext },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary,
-                                unselectedColor = MaterialTheme.colorScheme.onBackground
-                            )
-                        )
-                        Text(
-                            label,
-                            modifier = Modifier.padding(start = 8.dp, end = 16.dp),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
             }
 
             // Location
@@ -999,16 +951,6 @@ fun StartEngineDialog(
             }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_downsampling)))
-        }
-
-        "extractor" -> InfoPopup(
-            title = stringResource(id = Res.string.label_extractor),
-            onDismiss = {
-                @Suppress("AssignedValueIsNeverRead")
-                activeInfoDialog = null
-            }
-        ) {
-            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_extractor)))
         }
 
         "location" -> InfoPopup(

@@ -10,7 +10,6 @@ class LatestFrame(
 interface EngineBridge {
     fun startNativeCameraEngine(
         motionSensorMode: Int,
-        extractor: String,
         sensorMode: String,
         internalCameraId: String,
         downsampleMode: Int,
@@ -25,7 +24,6 @@ interface EngineBridge {
         width: Int,
         height: Int,
         motionSensorMode: Int,
-        extractor: String,
         downsampleMode: Int,
         lat: Double,
         lon: Double,

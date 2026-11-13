@@ -143,7 +143,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     mut env: JNIEnv,
     _class: JClass,
     motion_sensor_mode: jint,
-    extractor: jni::objects::JString,
     sensor_mode: jni::objects::JString,
     internal_camera_id: jni::objects::JString,
     downsample_mode: jni::sys::jint,
@@ -161,12 +160,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     let motion_sensor_mode = motion_sensor_mode as i32;
     let internal_camera_id_str: String = env.get_string(&internal_camera_id).unwrap().into();
     let sensor_mode_str: String = env.get_string(&sensor_mode).unwrap().into();
-    let extractor_str: String = env.get_string(&extractor).unwrap().into();
-    let ext_type = if extractor_str == "Cedar" {
-        olive_engine::engine::Extractor::Cedar
-    } else {
-        olive_engine::engine::Extractor::Approximate
-    };
 
     let mut runtime_lock = RUNTIME.lock().unwrap();
     if runtime_lock.is_none() {
@@ -215,7 +208,11 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 let mut cam = AndroidCamera::new(
                     Some(internal_camera_id_str.clone()),
                     Some(sensor_mode_str.clone()),
-                    Some(if internal_camera_id_str == "demo" { 1.0f32 } else { initial_zoom.max(1.0) }),
+                    Some(if internal_camera_id_str == "demo" {
+                        1.0f32
+                    } else {
+                        initial_zoom.max(1.0)
+                    }),
                 );
                 if let Err(e) = cam.start_capture() {
                     log::error!("Failed to start Android camera: {}", e);
@@ -231,7 +228,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 database_path: "default_database.npz".to_string(),
                 isp: false,
                 bg_mode: olive_engine::engine::BgMode::Block,
-                extractor_type: ext_type,
+                extractor_type: olive_engine::engine::Extractor::default(),
                 crop: None,
                 downsample: downsample_mode as u8,
                 auto_mode: auto_mode != 0 && internal_camera_id_str != "demo",
@@ -1405,7 +1402,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
     width: jint,
     height: jint,
     motion_sensor_mode: jint,
-    extractor: jni::objects::JString,
     downsample_mode: jni::sys::jint,
     latitude: jni::sys::jdouble,
     longitude: jni::sys::jdouble,
@@ -1427,12 +1423,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
         Some(std::sync::Arc::new(JniStorage { jvm, settings_mgr }));
 
     let motion_sensor_mode = motion_sensor_mode as i32;
-    let extractor_str: String = env.get_string(&extractor).unwrap().into();
-    let ext_type = if extractor_str == "Cedar" {
-        olive_engine::engine::Extractor::Cedar
-    } else {
-        olive_engine::engine::Extractor::Approximate
-    };
 
     let mut runtime_lock = RUNTIME.lock().unwrap();
     if runtime_lock.is_none() {
@@ -1486,7 +1476,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
                 database_path: "default_database.npz".to_string(),
                 isp: false,
                 bg_mode: olive_engine::engine::BgMode::Block,
-                extractor_type: ext_type,
+                extractor_type: olive_engine::engine::Extractor::default(),
                 crop: None,
                 downsample: downsample_mode as u8,
                 auto_mode: auto_mode != 0,

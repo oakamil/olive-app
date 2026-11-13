@@ -30,10 +30,5 @@
 # Preserve EngineStats to prevent serialization issues if used with GSON/Moshi (though currently we just parse JSON manually)
 -keep class com.oakamil.olive.EngineStats { *; }
 
-# Ignore missing gRPC dependencies on Android
--dontwarn javax.naming.**
--dontwarn com.squareup.okhttp.**
--dontwarn javax.lang.model.element.Modifier
-
 # Preserve UVCCamera library classes and members accessed via reflection and JNI
 -keep class com.jiangdg.uvc.** { *; }
