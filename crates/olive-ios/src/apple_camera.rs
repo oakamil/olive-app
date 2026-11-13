@@ -476,7 +476,10 @@ impl CameraTrait for AppleCamera {
     fn adjust_sensitivity(&self, factor: f64) -> bool {
         let current = self.get_exposure();
         let next = ((current as f64) * factor) as i32;
-        let clamped = next.clamp(MIN_EXPOSURE_US, MAX_EXPOSURE_US);
+        let (min_exp, max_exp) = self
+            .get_exposure_range()
+            .unwrap_or((MIN_EXPOSURE_US, MAX_EXPOSURE_US));
+        let clamped = next.clamp(min_exp, max_exp.max(min_exp));
 
         if clamped != current {
             self.set_exposure(clamped);
@@ -502,7 +505,7 @@ impl CameraTrait for AppleCamera {
     }
 
     fn set_stack_count(&self, count: usize) {
-        self.set_stack_count(count);
+        AppleCamera::set_stack_count(self, count);
     }
 }
 
@@ -531,7 +534,23 @@ pub extern "C" fn olive_ios_push_camera_frame(
 
     let receive_time = std::time::Instant::now();
 
-    let total_pixels = (width * height) as usize;
+    let width_usize = width as usize;
+    let height_usize = height as usize;
+    let stride_usize = stride as usize;
+    let Some(total_pixels) = width_usize.checked_mul(height_usize) else {
+        return;
+    };
+    let Some(max_row_offset) = (height_usize - 1).checked_mul(stride_usize) else {
+        return;
+    };
+    if max_row_offset
+        .checked_add(width_usize)
+        .is_none_or(|end| end > isize::MAX as usize)
+        || total_pixels > isize::MAX as usize
+    {
+        return;
+    }
+
     let mut data = Vec::with_capacity(total_pixels);
 
     unsafe {
@@ -539,9 +558,9 @@ pub extern "C" fn olive_ios_push_camera_frame(
             let slice = std::slice::from_raw_parts(buffer, total_pixels);
             data.extend_from_slice(slice);
         } else {
-            for row in 0..height {
-                let row_ptr = buffer.add((row * stride) as usize);
-                let row_slice = std::slice::from_raw_parts(row_ptr, width as usize);
+            for row in 0..height_usize {
+                let row_ptr = buffer.add(row * stride_usize);
+                let row_slice = std::slice::from_raw_parts(row_ptr, width_usize);
                 data.extend_from_slice(row_slice);
             }
         }
@@ -609,14 +628,14 @@ mod tests {
 
     #[test]
     fn test_optical_infinity_initial_focus() {
-        let camera = AppleCamera::new(1920, 1080, Some(65.0));
+        let camera = AppleCamera::new(1920, 1080, Some(65.0), 1.0);
         let focus = camera.get_focus().expect("Focus should be available");
         assert!((focus - OPTICAL_INFINITY_FOCUS).abs() < 1e-4);
     }
 
     #[test]
     fn test_atomic_focus_bits() {
-        let camera = AppleCamera::new(1920, 1080, None);
+        let camera = AppleCamera::new(1920, 1080, None, 1.0);
         camera.set_focus(0.918);
         let f = camera.get_focus().unwrap();
         assert!((f - 0.918).abs() < 1e-4);
@@ -624,7 +643,7 @@ mod tests {
 
     #[test]
     fn test_stride_aware_frame_push() {
-        let camera = AppleCamera::new(4, 2, None);
+        let camera = AppleCamera::new(4, 2, None, 1.0);
         set_active_apple_camera(Some(camera.clone()));
 
         // 4 pixels per row with 2 bytes padding -> stride = 6
@@ -647,7 +666,7 @@ mod tests {
 
     #[test]
     fn test_exposure_range_and_adjustment() {
-        let camera = AppleCamera::new(1920, 1080, None);
+        let camera = AppleCamera::new(1920, 1080, None, 1.0);
         assert_eq!(camera.get_exposure_range(), Some((16_667, 1_000_000)));
 
         camera.set_exposure(500_000);
@@ -669,7 +688,7 @@ mod tests {
 
     #[test]
     fn test_multi_frame_stacking() {
-        let camera = AppleCamera::new(2, 2, None);
+        let camera = AppleCamera::new(2, 2, None, 1.0);
         camera.set_stack_count(2);
 
         // Frame 1
@@ -710,7 +729,7 @@ mod tests {
 
     #[test]
     fn test_pedestal_trim_calibration() {
-        let camera = AppleCamera::new(64, 1, None);
+        let camera = AppleCamera::new(64, 1, None, 1.0);
         // Arm Class B external camera mode
         camera.set_is_ae(false);
         assert_eq!(camera.settle_frames.load(Ordering::Relaxed), 10);
@@ -761,12 +780,13 @@ mod tests {
 
     #[test]
     fn test_software_brightness_and_exposure_sync() {
-        let camera = AppleCamera::new(2, 2, None);
+        let camera = AppleCamera::new(2, 2, None, 1.0);
         // Stacking = 1, calibrated = true, delta = 0
         assert_eq!(camera.get_brightness(), 50);
         assert_eq!(camera.get_exposure(), 250_000);
 
         // Frame with exposure 33,333 us and default brightness 50 (offset = 0)
+        // Manual mode preserves target exposure (250,000 us) while image metadata records 33,333 us.
         camera.push_raw_luminance(
             vec![20, 30, 40, 50],
             2,
@@ -778,7 +798,7 @@ mod tests {
             std::time::Instant::now(),
             1.0,
         );
-        assert_eq!(camera.get_exposure(), 33_333);
+        assert_eq!(camera.get_exposure(), 250_000);
         let img = camera.get_last_capture().unwrap();
         assert_eq!(img.exposure_time_us, 33_333);
         assert_eq!(img.data, vec![20, 30, 40, 50]);
@@ -816,5 +836,33 @@ mod tests {
         );
         let img = camera.get_last_capture().unwrap();
         assert_eq!(img.data, vec![0, 20, 30, 40]); // 5 - 10 saturates to 0
+
+        // In AE mode, get_exposure() syncs to metered frame exposure after the 10-frame settle flush
+        camera.set_is_ae(true);
+        for _ in 0..10 {
+            camera.push_raw_luminance(
+                vec![0, 0, 0, 0],
+                2,
+                2,
+                SystemTime::now(),
+                0,
+                33_333,
+                100.0,
+                std::time::Instant::now(),
+                1.0,
+            );
+        }
+        camera.push_raw_luminance(
+            vec![20, 30, 40, 50],
+            2,
+            2,
+            SystemTime::now(),
+            0,
+            33_333,
+            100.0,
+            std::time::Instant::now(),
+            1.0,
+        );
+        assert_eq!(camera.get_exposure(), 33_333);
     }
 }

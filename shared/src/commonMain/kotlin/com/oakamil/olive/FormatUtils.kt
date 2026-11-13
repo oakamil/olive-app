@@ -316,17 +316,24 @@ private fun formatDouble(value: Double, precision: Int, alwaysSign: Boolean): St
     if (value.isNaN()) return "NaN"
     if (value.isInfinite()) return if (value > 0) "Infinity" else "-Infinity"
 
+    val safePrecision = precision.coerceIn(0, 12)
     val isNeg = value < 0
     val absVal = abs(value)
-    val factor = 10.0.pow(precision)
-    val rounded = (absVal * factor).roundToLong()
+    val factor = 10.0.pow(safePrecision)
+    val scaled = absVal * factor
+    if (!scaled.isFinite() || scaled >= 4.5e18) {
+        val sign = if (isNeg && absVal > 0.0) "-" else if (alwaysSign) "+" else ""
+        return "$sign$absVal"
+    }
 
-    val intPart = rounded / factor.toLong()
-    val fracPart = rounded % factor.toLong()
+    val rounded = scaled.roundToLong()
+    val factorLong = factor.toLong()
+    val intPart = rounded / factorLong
+    val fracPart = rounded % factorLong
 
     val sign = if (isNeg && rounded > 0L) "-" else if (alwaysSign) "+" else ""
-    return if (precision > 0) {
-        val fracStr = fracPart.toString().padStart(precision, '0')
+    return if (safePrecision > 0) {
+        val fracStr = fracPart.toString().padStart(safePrecision, '0')
         "$sign$intPart.$fracStr"
     } else {
         "$sign$intPart"

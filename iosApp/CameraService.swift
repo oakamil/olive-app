@@ -21,6 +21,7 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
     @Atomic private var appliedExposureUs: Int32 = 250_000
     @Atomic private var appliedIso: Float = 100.0
     @Atomic private var appliedFocus: Float = 0.92
+    @Atomic private var isAutoExposure: Bool = false
 
     /// Default optical infinity baseline for modern iPhone primary lenses.
     /// 1.0 is mechanical overrun ("hyper-infinity") causing star defocus.
@@ -42,7 +43,14 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         sessionQueue.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else {
+                completion(.failure(NSError(
+                    domain: "com.oakamil.olive",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "CameraService unavailable"]
+                )))
+                return
+            }
             if self.isRunning && self.captureSession.isRunning {
                 completion(.success(()))
                 return
@@ -81,6 +89,7 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
             self.appliedExposureUs = -1
             self.appliedIso = -1.0
             self.appliedFocus = -1.0
+            self.isAutoExposure = false
         }
     }
 
@@ -186,9 +195,7 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         let isExternalRequest = (cameraId == "external")
         let device: AVCaptureDevice
         if isExternalRequest {
-            if #available(iOS 17.0, *), let ext = discovery.devices.first(where: {
-                $0.deviceType == .external || (ProcessInfo.processInfo.isiOSAppOnMac && $0.deviceType == .continuityCamera)
-            }) {
+            if let ext = discovery.devices.first(where: { isExternalCameraDevice($0) }) {
                 device = ext
             } else if let defaultCam = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
                 device = defaultCam
@@ -221,10 +228,7 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
         }
         currentCameraDevice = device
 
-        var isExternalDevice = false
-        if #available(iOS 17.0, *) {
-            isExternalDevice = (device.deviceType == .external)
-        }
+        let isExternalDevice = isExternalCameraDevice(device)
 
         if isExternalDevice {
             // Multi-tier candidate format matching for external camera
@@ -245,19 +249,6 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
                     matchesRes = true
                 }
 
-                let matchesFormat: Bool
-                if let targetFormat = targetFormat {
-                    if isMjpeg || subType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange {
-                        matchesFormat = targetFormat.caseInsensitiveCompare("MJPEG") == .orderedSame
-                    } else if isYuv || subType == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
-                        matchesFormat = targetFormat.caseInsensitiveCompare("YUV2") == .orderedSame
-                    } else {
-                        matchesFormat = true
-                    }
-                } else {
-                    matchesFormat = true
-                }
-
                 let matchesFps: Bool
                 if targetFps > 0 {
                     let desired = Double(targetFps)
@@ -266,6 +257,22 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
                     }
                 } else {
                     matchesFps = true
+                }
+
+                let matchesFormat: Bool
+                if let targetFormat = targetFormat {
+                    let checkFps = targetFps > 0
+                        ? Double(targetFps)
+                        : (format.videoSupportedFrameRateRanges.map { $0.maxFrameRate }.max() ?? 30.0)
+                    let classified = classifyExternalFormatName(
+                        subType: subType,
+                        width: dims.width,
+                        height: dims.height,
+                        fps: checkFps
+                    )
+                    matchesFormat = classified.caseInsensitiveCompare(targetFormat) == .orderedSame
+                } else {
+                    matchesFormat = true
                 }
 
                 return matchesRes && matchesFormat && matchesFps
@@ -477,19 +484,24 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
                 if device.maxExposureTargetBias > 0.0 {
                     device.setExposureTargetBias(device.maxExposureTargetBias, completionHandler: nil)
                 }
+                self.isAutoExposure = true
                 olive_ios_set_camera_is_ae(true)
             } else if device.isExposureModeSupported(.custom) {
                 // Class B (SmartSens SC2210): Fixed-Iris Shutter Priority + Max ISO
                 device.setExposureModeCustom(duration: clampedDuration, iso: device.activeFormat.maxISO, completionHandler: nil)
+                self.isAutoExposure = false
                 olive_ios_set_camera_is_ae(false)
             } else if device.isExposureModeSupported(.autoExpose) {
                 device.exposureMode = .autoExpose
+                self.isAutoExposure = true
                 olive_ios_set_camera_is_ae(true)
             } else if device.isExposureModeSupported(.locked) {
                 device.exposureMode = .locked
+                self.isAutoExposure = false
                 olive_ios_set_camera_is_ae(false)
             }
         } else {
+            self.isAutoExposure = false
             // Internal iPhone configuration
             if device.activeFormat.isVideoHDRSupported {
                 device.automaticallyAdjustsVideoHDREnabled = false
@@ -553,8 +565,8 @@ public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBuffer
                     }
                 }
 
-                // 2. Clamped Exposure & ISO
-                if (exposureUs > 0 || gain > 0) && device.isExposureModeSupported(.custom) {
+                // 2. Clamped Exposure & ISO (skip when external hardware AEC owns exposure)
+                if !self.isAutoExposure && (exposureUs > 0 || gain > 0) && device.isExposureModeSupported(.custom) {
                     let newExp = exposureUs > 0 ? exposureUs : (self.appliedExposureUs > 0 ? self.appliedExposureUs : 250_000)
                     let newIso = gain > 0 ? gain : (self.appliedIso > 0.0 ? self.appliedIso : 100.0)
 
@@ -733,6 +745,38 @@ private func isYuvCodec(subType: FourCharCode) -> Bool {
     return str.contains("yuv") || str.contains("yuy") || str.contains("uyv") || str.contains("420") || str.contains("422")
 }
 
+private func isExternalCameraDevice(_ device: AVCaptureDevice) -> Bool {
+    guard #available(iOS 17.0, *) else { return false }
+    return device.deviceType == .external ||
+        (ProcessInfo.processInfo.isiOSAppOnMac && device.deviceType == .continuityCamera)
+}
+
+@available(iOS 17.0, *)
+private func externalCameraDeviceTypes() -> [AVCaptureDevice.DeviceType] {
+    var deviceTypes: [AVCaptureDevice.DeviceType] = [.external]
+    if ProcessInfo.processInfo.isiOSAppOnMac {
+        deviceTypes.append(.continuityCamera)
+    }
+    return deviceTypes
+}
+
+private func classifyExternalFormatName(
+    subType: FourCharCode,
+    width: Int32,
+    height: Int32,
+    fps: Double
+) -> String {
+    if isMjpegCodec(subType: subType) || subType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange {
+        return "MJPEG"
+    }
+    let bytesPerSec = Double(width) * Double(height) * 2.0 * max(fps, 1.0)
+    return bytesPerSec > 24_576_000.0 ? "MJPEG" : "YUV2"
+}
+
+private final class CaptureStartResultBox: @unchecked Sendable {
+    var succeeded = false
+}
+
 // MARK: - C-ABI Hardware Capture Hooks
 
 @_cdecl("olive_ios_get_available_cameras")
@@ -793,13 +837,8 @@ public func olive_ios_get_available_cameras() -> UnsafeMutablePointer<CChar>? {
 public func olive_ios_has_connected_external_camera() -> Bool {
     guard #available(iOS 17.0, *) else { return false }
 
-    var deviceTypes: [AVCaptureDevice.DeviceType] = [.external]
-    if ProcessInfo.processInfo.isiOSAppOnMac {
-        deviceTypes.append(.continuityCamera)
-    }
-
     let discovery = AVCaptureDevice.DiscoverySession(
-        deviceTypes: deviceTypes,
+        deviceTypes: externalCameraDeviceTypes(),
         mediaType: .video,
         position: .unspecified
     )
@@ -812,13 +851,8 @@ public func olive_ios_get_external_camera_formats() -> UnsafeMutablePointer<CCha
         return strdup("[]")
     }
 
-    var deviceTypes: [AVCaptureDevice.DeviceType] = [.external]
-    if ProcessInfo.processInfo.isiOSAppOnMac {
-        deviceTypes.append(.continuityCamera)
-    }
-
     let discovery = AVCaptureDevice.DiscoverySession(
-        deviceTypes: deviceTypes,
+        deviceTypes: externalCameraDeviceTypes(),
         mediaType: .video,
         position: .unspecified
     )
@@ -879,18 +913,16 @@ public func olive_ios_get_external_camera_formats() -> UnsafeMutablePointer<CCha
                     continue
                 }
 
-                // Determine physical wire format:
+                // Determine physical wire format consistently with setupCaptureSession:
                 // On USB 2.0 (High Speed), max isochronous bandwidth is 24,576,000 bytes/sec.
-                // Any mode whose uncompressed rate exceeds 24.576 MB/s is physically transported
-                // as compressed MJPEG over the USB cable and decoded to '420f' by Apple's UVC driver.
-                // Modes <= 24.576 MB/s can be transported as uncompressed YUV2.
-                let uncompressedBytesPerSec = Int64(dims.width) * Int64(dims.height) * 2 * Int64(stdFps)
-                let formatName: String
-                if isMjpeg || subType == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange {
-                    formatName = "MJPEG"
-                } else {
-                    formatName = (uncompressedBytesPerSec > 24_576_000) ? "MJPEG" : "YUV2"
-                }
+                // Any mode whose uncompressed rate exceeds 24.576 MB/s or decodes to full-range '420f'
+                // is transported as compressed MJPEG over USB; modes <= 24.576 MB/s can use YUV2.
+                let formatName = classifyExternalFormatName(
+                    subType: subType,
+                    width: dims.width,
+                    height: dims.height,
+                    fps: Double(stdFps)
+                )
 
                 let key = "\(dims.width)x\(dims.height)@\(stdFps):\(formatName)"
                 if seenKeys.contains(key) { continue }
@@ -922,9 +954,12 @@ public func olive_ios_start_hardware_capture(
     fps: Int32,
     format: UnsafePointer<CChar>?,
     initialZoom: Float
-) {
+) -> Bool {
     let idStr = cameraId != nil ? String(cString: cameraId!) : "0"
     let formatStr = format != nil ? String(cString: format!) : nil
+    let semaphore = DispatchSemaphore(value: 0)
+    let resultBox = CaptureStartResultBox()
+
     CameraService.shared.startCamera(
         cameraId: idStr,
         targetWidth: width,
@@ -932,8 +967,26 @@ public func olive_ios_start_hardware_capture(
         targetFps: fps,
         targetFormat: formatStr,
         initialZoom: initialZoom
-    ) { _ in }
-    MotionService.shared.startMotionUpdates()
+    ) { result in
+        switch result {
+        case .success:
+            resultBox.succeeded = true
+        case .failure(let error):
+            print("[CameraService] startCamera failed: \(error.localizedDescription)")
+            resultBox.succeeded = false
+        }
+        semaphore.signal()
+    }
+
+    if semaphore.wait(timeout: .now() + .seconds(8)) == .timedOut {
+        print("[CameraService] Timed out waiting for startCamera completion")
+        return false
+    }
+
+    if resultBox.succeeded {
+        MotionService.shared.startMotionUpdates()
+    }
+    return resultBox.succeeded
 }
 
 @_cdecl("olive_ios_stop_hardware_capture")

@@ -3,7 +3,7 @@
     <!-- Android OS Foreground Service & Notification Strings -->
     <!-- (All UI and application strings are defined in :shared composeResources/values/strings.xml) -->
     <string name="app_name">Olive Finder</string>
-    <string name="notif_engine_title">Olive Astro Engine</string>
-    <string name="notif_engine_text">Engine is running in background (%1$s)</string>
-    <string name="notif_channel_name">Olive Engine Service Channel</string>
+    <string name="notif_engine_title">Olive Finder</string>
+    <string name="notif_engine_text">Plate solving is running in the background</string>
+    <string name="notif_channel_name">Olive Finder Service Channel</string>
 </resources>

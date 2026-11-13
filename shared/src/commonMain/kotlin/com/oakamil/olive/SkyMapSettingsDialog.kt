@@ -39,6 +39,7 @@ fun SkyMapSettingsDialog(
     onDismiss: () -> Unit
 ) {
     val windowController = LocalPlatformWindowController.current
+    val capabilities = LocalPlatformCapabilities.current
     val settingsManager = viewModel.settingsManager
     val activeCameraSelection =
         if (viewModel.engineMode == MainViewModel.EngineMode.UVC) "uvc" else settingsManager.cameraSelection
@@ -352,7 +353,13 @@ fun SkyMapSettingsDialog(
                 val showZoom = activeCameraSelection == "internal" &&
                         settingsManager.cameraSettingsMode != "Auto"
                 if (showZoom) {
-                    val maxZoom = remember {
+                    val maxZoom = remember(
+                        viewModel.engineMode,
+                        settingsManager.cameraSettingsMode,
+                        settingsManager.sensorMode,
+                        settingsManager.internalCameraId,
+                        capabilities.isApple
+                    ) {
                         var mZ = 1f
                         try {
                             if (settingsManager.sensorMode == "Processed") {
@@ -443,10 +450,25 @@ fun SkyMapSettingsDialog(
                     )
 
                     if (activeCameraSelection == "internal") {
-                        var mainScreenExposure by remember {
+                        val minExpSec =
+                            (round((capabilities.exposureRange.start / 1_000_000f) * 10f) / 10f)
+                                .coerceAtLeast(0.1f)
+                        val maxExpSec =
+                            (capabilities.exposureRange.endInclusive / 1_000_000f)
+                                .coerceAtLeast(minExpSec)
+                        val expStepsCount =
+                            (round((maxExpSec - minExpSec) * 10f).toInt() - 1).coerceAtLeast(0)
+
+                        var mainScreenExposure by remember(
+                            capabilities.exposureRange,
+                            viewModel.engineMode
+                        ) {
                             val rawExp = viewModel.engine.getNativeCameraExposure()
                             val initialExp =
-                                if (rawExp > 0) (rawExp / 1000000f).coerceIn(0.1f, 2.0f) else 0.5f
+                                if (rawExp > 0) (rawExp / 1_000_000f).coerceIn(
+                                    minExpSec,
+                                    maxExpSec
+                                ) else 0.5f.coerceIn(minExpSec, maxExpSec)
                             mutableFloatStateOf(initialExp)
                         }
 
@@ -473,15 +495,16 @@ fun SkyMapSettingsDialog(
                             }
                         }
                         Slider(
-                            value = mainScreenExposure,
+                            value = mainScreenExposure.coerceIn(minExpSec, maxExpSec),
                             enabled = settingsManager.cameraSettingsMode != "Auto",
                             onValueChange = {
-                                val stepped = round(it * 10.0f) / 10.0f
+                                val stepped = (round(it * 10.0f) / 10.0f)
+                                    .coerceIn(minExpSec, maxExpSec)
                                 mainScreenExposure = stepped
-                                viewModel.setExposure(stepped * 1000000)
+                                viewModel.setExposure(stepped * 1_000_000f)
                             },
-                            valueRange = 0.1f..2.0f,
-                            steps = 18,
+                            valueRange = minExpSec..maxExpSec,
+                            steps = expStepsCount,
                             modifier = Modifier.fillMaxWidth()
                         )
                     } else if (activeCameraSelection == "uvc" || viewModel.engineMode.name == "UVC") {

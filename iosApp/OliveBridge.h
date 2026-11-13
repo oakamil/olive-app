@@ -7,10 +7,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <math.h>
 #include <sqlite3.h>
 #include <ifaddrs.h>
 #include <arpa/inet.h>
 #include <net/if.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifdef __cplusplus
@@ -18,8 +20,11 @@ extern "C" {
 #endif
 
 // --- Network Helpers ---
-static inline const char *olive_ios_get_local_ip(void) {
-    static char ip_str[64] = "127.0.0.1";
+static inline void olive_ios_get_local_ip(char *out_buf, size_t buf_len) {
+    if (!out_buf || buf_len == 0) {
+        return;
+    }
+    snprintf(out_buf, buf_len, "%s", "127.0.0.1");
     struct ifaddrs *interfaces = NULL;
     if (getifaddrs(&interfaces) == 0) {
         struct ifaddrs *temp = interfaces;
@@ -27,10 +32,14 @@ static inline const char *olive_ios_get_local_ip(void) {
             if (temp->ifa_addr && temp->ifa_addr->sa_family == AF_INET) {
                 if ((temp->ifa_flags & IFF_UP) && !(temp->ifa_flags & IFF_LOOPBACK)) {
                     const char *name = temp->ifa_name;
-                    if (name && (strncmp(name, "en", 2) == 0 || strncmp(name, "pdp_ip", 6) == 0)) {
+                    if (name && strncmp(name, "en", 2) == 0) {
                         struct sockaddr_in *p = (struct sockaddr_in *)temp->ifa_addr;
-                        inet_ntop(AF_INET, &p->sin_addr, ip_str, sizeof(ip_str));
-                        break;
+                        uint32_t addr = ntohl(p->sin_addr.s_addr);
+                        // Skip APIPA link-local (169.254.0.0/16)
+                        if ((addr >> 16) != 0xA9FE &&
+                            inet_ntop(AF_INET, &p->sin_addr, out_buf, (socklen_t)buf_len) != NULL) {
+                            break;
+                        }
                     }
                 }
             }
@@ -38,7 +47,6 @@ static inline const char *olive_ios_get_local_ip(void) {
         }
         freeifaddrs(interfaces);
     }
-    return ip_str;
 }
 
 // --- Camera Control Callback ---
@@ -51,7 +59,7 @@ void olive_ios_unregister_camera_control_callback(void);
 const char *olive_ios_get_available_cameras(void);
 const char *olive_ios_get_external_camera_formats(void);
 bool olive_ios_has_connected_external_camera(void);
-void olive_ios_start_hardware_capture(
+bool olive_ios_start_hardware_capture(
     const char *camera_id,
     int32_t width,
     int32_t height,
@@ -126,6 +134,7 @@ int32_t olive_ios_get_camera_exposure(void);
 
 void olive_ios_set_camera_gain(float gain);
 float olive_ios_get_camera_gain(void);
+void olive_ios_get_camera_gain_range(float *min_gain, float *max_gain, float *default_gain);
 
 void olive_ios_set_camera_focus(float distance);
 float olive_ios_get_camera_focus(void);
@@ -158,6 +167,51 @@ static inline int olive_sqlite3_bind_text(sqlite3_stmt *stmt, int col, const cha
         return sqlite3_bind_null(stmt, col);
     }
     return sqlite3_bind_text(stmt, col, val, -1, SQLITE_TRANSIENT);
+}
+
+static inline void olive_sqlite3_sin(sqlite3_context *ctx, int argc, sqlite3_value **argv) {
+    if (argc != 1 || sqlite3_value_type(argv[0]) == SQLITE_NULL) {
+        sqlite3_result_null(ctx);
+        return;
+    }
+    sqlite3_result_double(ctx, sin(sqlite3_value_double(argv[0])));
+}
+
+static inline void olive_sqlite3_cos(sqlite3_context *ctx, int argc, sqlite3_value **argv) {
+    if (argc != 1 || sqlite3_value_type(argv[0]) == SQLITE_NULL) {
+        sqlite3_result_null(ctx);
+        return;
+    }
+    sqlite3_result_double(ctx, cos(sqlite3_value_double(argv[0])));
+}
+
+static inline int olive_register_sqlite_math_functions(sqlite3 *db) {
+    if (!db) {
+        return SQLITE_MISUSE;
+    }
+    int rc_sin = sqlite3_create_function(
+        db,
+        "SIN",
+        1,
+        SQLITE_UTF8 | SQLITE_DETERMINISTIC,
+        NULL,
+        olive_sqlite3_sin,
+        NULL,
+        NULL
+    );
+    if (rc_sin != SQLITE_OK) {
+        return rc_sin;
+    }
+    return sqlite3_create_function(
+        db,
+        "COS",
+        1,
+        SQLITE_UTF8 | SQLITE_DETERMINISTIC,
+        NULL,
+        olive_sqlite3_cos,
+        NULL,
+        NULL
+    );
 }
 
 #ifdef __cplusplus

@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,6 +83,7 @@ fun TunerScreen(
     }
 
     val windowController = LocalPlatformWindowController.current
+    val capabilities = LocalPlatformCapabilities.current
     val colors = LocalOliveColors.current
     val isLandscape = windowController.isLandscape
     val displayRotationDegrees = windowController.getDisplayRotationDegrees()
@@ -90,9 +92,20 @@ fun TunerScreen(
         viewModel.fetchRealtimeSettings()
     }
 
-    val sensorOrientation = remember(viewModel.engineMode, settingsManager.internalCameraId) {
+    val effectiveCameraId =
+        if (settingsManager.cameraSettingsMode == "Auto" && !capabilities.isApple) {
+            "0"
+        } else {
+            settingsManager.internalCameraId
+        }
+    val sensorOrientation = remember(
+        viewModel.engineMode,
+        settingsManager.internalCameraId,
+        settingsManager.cameraSettingsMode,
+        capabilities.isApple
+    ) {
         if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) {
-            windowController.getCameraSensorOrientation(settingsManager.internalCameraId)
+            windowController.getCameraSensorOrientation(effectiveCameraId)
         } else {
             0
         }
@@ -195,6 +208,18 @@ fun TunerScreen(
                     val bH = frame.height.toFloat()
                     val fitPxScale = minOf(layoutW / bW, layoutH / bH)
 
+                    val latestLayoutW by rememberUpdatedState(layoutW)
+                    val latestLayoutH by rememberUpdatedState(layoutH)
+                    val latestBW by rememberUpdatedState(bW)
+                    val latestBH by rememberUpdatedState(bH)
+                    val latestFitPxScale by rememberUpdatedState(fitPxScale)
+                    val latestBaseScale by rememberUpdatedState(baseScale)
+                    val latestScale by rememberUpdatedState(scale)
+                    val latestOffset by rememberUpdatedState(offset)
+                    val latestImageRotation by rememberUpdatedState(imageRotation)
+                    val latestMirrorX by rememberUpdatedState(mirrorX)
+                    val latestMirrorY by rememberUpdatedState(mirrorY)
+
                     Image(
                         bitmap = frame,
                         contentDescription = stringResource(id = Res.string.cd_live_preview),
@@ -202,19 +227,19 @@ fun TunerScreen(
                             .fillMaxSize()
                             .pointerInput(Unit) {
                                 detectTapGestures { tapOffset ->
-                                    val cx = layoutW / 2f
-                                    val cy = layoutH / 2f
+                                    val cx = latestLayoutW / 2f
+                                    val cy = latestLayoutH / 2f
 
                                     // 1. Find tap offset from center of the screen
                                     val screenDx = tapOffset.x - cx
                                     val screenDy = tapOffset.y - cy
 
                                     // 2. Remove translation (pan)
-                                    val translatedDx = screenDx - offset.x
-                                    val translatedDy = screenDy - offset.y
+                                    val translatedDx = screenDx - latestOffset.x
+                                    val translatedDy = screenDy - latestOffset.y
 
                                     // 3. Remove rotation
-                                    val angleRad = -Math.toRadians(imageRotation.toDouble())
+                                    val angleRad = -Math.toRadians(latestImageRotation.toDouble())
                                     val rx =
                                         (translatedDx * cos(angleRad) - translatedDy * sin(
                                             angleRad
@@ -225,13 +250,13 @@ fun TunerScreen(
                                         )).toFloat()
 
                                     // 4. Remove scale (zoom and base fit)
-                                    val totalScale = scale * baseScale
-                                    val unscaledX = rx / (totalScale * mirrorX)
-                                    val unscaledY = ry / (totalScale * mirrorY)
+                                    val totalScale = latestScale * latestBaseScale
+                                    val unscaledX = rx / (totalScale * latestMirrorX)
+                                    val unscaledY = ry / (totalScale * latestMirrorY)
 
                                     // 5. Apply to bitmap coordinates
-                                    alignTargetX = (unscaledX / fitPxScale) + bW / 2f
-                                    alignTargetY = (unscaledY / fitPxScale) + bH / 2f
+                                    alignTargetX = (unscaledX / latestFitPxScale) + latestBW / 2f
+                                    alignTargetY = (unscaledY / latestFitPxScale) + latestBH / 2f
                                 }
                             }
                             .graphicsLayer(
@@ -595,7 +620,13 @@ fun TuningControls(
             val showZoom = activeCameraSelection == "internal" &&
                     (settingsManager.cameraSettingsMode != "Auto" || MainViewModel.ENABLE_AUTO_ZOOM)
             if (showZoom) {
-                val maxZoom = remember {
+                val maxZoom = remember(
+                    viewModel.engineMode,
+                    settingsManager.cameraSettingsMode,
+                    settingsManager.sensorMode,
+                    settingsManager.internalCameraId,
+                    capabilities.isApple
+                ) {
                     var mZ = 1f
                     try {
                         if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE && (settingsManager.cameraSettingsMode == "Auto" || settingsManager.sensorMode == "Processed")) {

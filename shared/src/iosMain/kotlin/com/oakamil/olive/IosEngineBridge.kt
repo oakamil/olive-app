@@ -13,6 +13,7 @@ import com.oakamil.olive.cinterop.olive_ios_get_camera_brightness
 import com.oakamil.olive.cinterop.olive_ios_get_camera_exposure
 import com.oakamil.olive.cinterop.olive_ios_get_camera_focus
 import com.oakamil.olive.cinterop.olive_ios_get_camera_gain
+import com.oakamil.olive.cinterop.olive_ios_get_camera_gain_range
 import com.oakamil.olive.cinterop.olive_ios_get_camera_zoom
 import com.oakamil.olive.cinterop.olive_ios_get_comets
 import com.oakamil.olive.cinterop.olive_ios_get_engine_stats
@@ -37,11 +38,16 @@ import com.oakamil.olive.cinterop.olive_ios_stop_hardware_capture
 import com.oakamil.olive.cinterop.olive_ios_sync_telescope
 import com.oakamil.olive.cinterop.olive_ios_sync_telescope_to_target
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.FloatVar
 import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.value
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
 import org.jetbrains.skia.ImageInfo
@@ -123,7 +129,7 @@ class IosEngineBridge : EngineBridge {
         check(started) { "Failed to initialize Olive iOS engine (check database path and permissions)" }
 
         if (!isDemo) {
-            olive_ios_start_hardware_capture(
+            val hwStarted = olive_ios_start_hardware_capture(
                 internalCameraId,
                 selectedWidth.toInt(),
                 selectedHeight.toInt(),
@@ -131,6 +137,10 @@ class IosEngineBridge : EngineBridge {
                 null,
                 effectiveZoom
             )
+            if (!hwStarted) {
+                stopEngine()
+                error("Failed to start iOS internal camera capture")
+            }
         }
     }
 
@@ -170,7 +180,7 @@ class IosEngineBridge : EngineBridge {
         )
         check(started) { "Failed to initialize Olive iOS external UVC engine" }
 
-        olive_ios_start_hardware_capture(
+        val hwStarted = olive_ios_start_hardware_capture(
             "external",
             reqWidth,
             reqHeight,
@@ -178,6 +188,10 @@ class IosEngineBridge : EngineBridge {
             reqFormat,
             1.0f
         )
+        if (!hwStarted) {
+            stopEngine()
+            error("Failed to start iOS external camera capture")
+        }
     }
 
     override fun stopEngine() {
@@ -212,8 +226,12 @@ class IosEngineBridge : EngineBridge {
         return olive_ios_get_camera_exposure()
     }
 
-    override fun getNativeCameraGainRange(): FloatArray {
-        return floatArrayOf(50f, 3200f, 3200f)
+    override fun getNativeCameraGainRange(): FloatArray = memScoped {
+        val minGain = alloc<FloatVar>()
+        val maxGain = alloc<FloatVar>()
+        val defaultGain = alloc<FloatVar>()
+        olive_ios_get_camera_gain_range(minGain.ptr, maxGain.ptr, defaultGain.ptr)
+        floatArrayOf(minGain.value, maxGain.value, defaultGain.value)
     }
 
     override fun getNativeCameraGain(): Float {

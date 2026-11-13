@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.core.content.edit
 import io.requery.android.database.sqlite.SQLiteDatabase
 import io.requery.android.database.sqlite.SQLiteOpenHelper
+import io.requery.android.database.sqlite.SQLiteStatement
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -29,6 +30,7 @@ class CatalogDatabaseHelper(private val context: Context) :
         private const val TAG = "CatalogDatabaseHelper"
     }
 
+    private val dbLock = Any()
     private var db: SQLiteDatabase? = null
 
     private var isInitialized = false
@@ -105,6 +107,12 @@ class CatalogDatabaseHelper(private val context: Context) :
     }
 
     fun openDatabase() {
+        synchronized(dbLock) {
+            openDatabaseLocked()
+        }
+    }
+
+    private fun openDatabaseLocked() {
         initializeIfNeeded()
         if (db == null || !db!!.isOpen) {
             val dbPath = context.getDatabasePath(DB_NAME).absolutePath
@@ -137,102 +145,94 @@ class CatalogDatabaseHelper(private val context: Context) :
     }
 
     override fun closeDatabase() {
-        db?.close()
-        db = null
+        synchronized(dbLock) {
+            db?.close()
+            db = null
+        }
     }
 
     override fun getCatalogDescriptions(): Map<String, String> {
-        openDatabase()
-        val database = db ?: return emptyMap()
         val map = mutableMapOf<String, String>()
-        try {
-            database.query(
-                "catalog_descriptions",
-                arrayOf("catalog_label", "description"),
-                null,
-                null,
-                null,
-                null,
-                null
-            ).use { c ->
-                while (c.moveToNext()) {
-                    map[c.getString(c.getColumnIndexOrThrow("catalog_label"))] =
-                        c.getString(c.getColumnIndexOrThrow("description"))
+        synchronized(dbLock) {
+            openDatabaseLocked()
+            val database = db ?: return emptyMap()
+            try {
+                database.query(
+                    "catalog_descriptions",
+                    arrayOf("catalog_label", "description"),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        map[c.getString(c.getColumnIndexOrThrow("catalog_label"))] =
+                            c.getString(c.getColumnIndexOrThrow("description"))
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching catalog descriptions", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching catalog descriptions", e)
         }
         return map
     }
 
-    override fun getAsteroidsJson(): String {
-        openDatabase()
-        val database = db ?: return "[]"
+    private fun queryTableAsJson(table: String): String {
         val array = JSONArray()
-        try {
-            database.query(
-                "asteroids",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-            ).use { c ->
-                while (c.moveToNext()) {
-                    val obj = JSONObject()
-                    for (i in 0 until c.columnCount) {
-                        when (c.getType(i)) {
-                            Cursor.FIELD_TYPE_INTEGER -> obj.put(c.getColumnName(i), c.getLong(i))
-                            Cursor.FIELD_TYPE_FLOAT -> obj.put(c.getColumnName(i), c.getDouble(i))
-                            Cursor.FIELD_TYPE_STRING -> obj.put(c.getColumnName(i), c.getString(i))
-                            Cursor.FIELD_TYPE_NULL -> obj.put(c.getColumnName(i), JSONObject.NULL)
-                            Cursor.FIELD_TYPE_BLOB -> Log.w(TAG, "Unexpected blob field")
+        synchronized(dbLock) {
+            openDatabaseLocked()
+            val database = db ?: return "[]"
+            try {
+                database.query(
+                    table,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        val obj = JSONObject()
+                        for (i in 0 until c.columnCount) {
+                            when (c.getType(i)) {
+                                Cursor.FIELD_TYPE_INTEGER -> obj.put(
+                                    c.getColumnName(i),
+                                    c.getLong(i)
+                                )
+
+                                Cursor.FIELD_TYPE_FLOAT -> obj.put(
+                                    c.getColumnName(i),
+                                    c.getDouble(i)
+                                )
+
+                                Cursor.FIELD_TYPE_STRING -> obj.put(
+                                    c.getColumnName(i),
+                                    c.getString(i)
+                                )
+
+                                Cursor.FIELD_TYPE_NULL -> obj.put(
+                                    c.getColumnName(i),
+                                    JSONObject.NULL
+                                )
+
+                                Cursor.FIELD_TYPE_BLOB -> Log.w(TAG, "Unexpected blob field")
+                            }
                         }
+                        array.put(obj)
                     }
-                    array.put(obj)
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching $table", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching asteroids", e)
         }
         return array.toString()
     }
 
-    override fun getCometsJson(): String {
-        openDatabase()
-        val database = db ?: return "[]"
-        val array = JSONArray()
-        try {
-            database.query(
-                "comets",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-            ).use { c ->
-                while (c.moveToNext()) {
-                    val obj = JSONObject()
-                    for (i in 0 until c.columnCount) {
-                        when (c.getType(i)) {
-                            Cursor.FIELD_TYPE_INTEGER -> obj.put(c.getColumnName(i), c.getLong(i))
-                            Cursor.FIELD_TYPE_FLOAT -> obj.put(c.getColumnName(i), c.getDouble(i))
-                            Cursor.FIELD_TYPE_STRING -> obj.put(c.getColumnName(i), c.getString(i))
-                            Cursor.FIELD_TYPE_NULL -> obj.put(c.getColumnName(i), JSONObject.NULL)
-                            Cursor.FIELD_TYPE_BLOB -> Log.w(TAG, "Unexpected blob field")
-                        }
-                    }
-                    array.put(obj)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching comets", e)
-        }
-        return array.toString()
-    }
+    override fun getAsteroidsJson(): String = queryTableAsJson("asteroids")
+
+    override fun getCometsJson(): String = queryTableAsJson("comets")
 
     private fun dateToJd(year: Int, month: Int, dayFrac: Double): Double {
         var y = year
@@ -247,80 +247,96 @@ class CatalogDatabaseHelper(private val context: Context) :
     }
 
     override fun refreshComets(): Boolean {
-        try {
+        val lines = try {
             val url =
                 URL("https://cobs.si/api/elements.api?format=mpc&is-active=true&cur-mag=20")
-            val connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
-
-            val reader = BufferedReader(InputStreamReader(connection.inputStream))
-            val lines = reader.readLines()
-            reader.close()
-
-            openDatabase()
-            val database = db ?: return false
-            database.beginTransaction()
-            try {
-                database.execSQL("DELETE FROM comets")
-                val statement = database.compileStatement(
-                    "INSERT INTO comets (catalog_id, common_name, h, k, t_peri, q, e, w, node, incl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                )
-
-                for (line in lines) {
-                    if (line.trim().isEmpty() || line.length < 100) continue
-                    try {
-                        val hStr = line.substring(91, 96).trim()
-                        val kStr = line.substring(96, 101).trim()
-                        if (hStr.isEmpty() || kStr.isEmpty()) continue
-
-                        val catalogId = line.take(12).trim().replace(Regex("\\s+"), " ")
-                        val year = line.substring(14, 18).trim().toInt()
-                        val month = line.substring(19, 21).trim().toInt()
-                        val dayFrac = line.substring(22, 29).trim().toDouble()
-                        val tPeri = dateToJd(year, month, dayFrac)
-
-                        val q = line.substring(30, 39).trim().toDouble()
-                        val e = line.substring(40, 49).trim().toDouble()
-                        val w = line.substring(50, 59).trim().toDouble()
-                        val node = line.substring(60, 69).trim().toDouble()
-                        val incl = line.substring(70, 79).trim().toDouble()
-
-                        val h = hStr.toDouble()
-                        val k = kStr.toDouble()
-
-                        var namePart = line.substring(102)
-                        val doubleSpaceIdx = namePart.indexOf("  ")
-                        if (doubleSpaceIdx != -1) {
-                            namePart = namePart.take(doubleSpaceIdx)
-                        }
-                        val commonName = namePart.trim()
-
-                        statement.bindString(1, catalogId)
-                        statement.bindString(2, commonName)
-                        statement.bindDouble(3, h)
-                        statement.bindDouble(4, k)
-                        statement.bindDouble(5, tPeri)
-                        statement.bindDouble(6, q)
-                        statement.bindDouble(7, e)
-                        statement.bindDouble(8, w)
-                        statement.bindDouble(9, node)
-                        statement.bindDouble(10, incl)
-                        statement.executeInsert()
-                    } catch (ex: Exception) {
-                        Log.e(TAG, $$"Error parsing comet line: $line", ex)
-                    }
-                }
-                database.setTransactionSuccessful()
-            } finally {
-                database.endTransaction()
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "Mozilla/5.0")
+                connectTimeout = 10000
+                readTimeout = 10000
             }
-            return true
+            try {
+                BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
+                    reader.readLines()
+                }
+            } finally {
+                connection.disconnect()
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error refreshing comets", e)
+            Log.e(TAG, "Error downloading comets", e)
             return false
+        }
+
+        synchronized(dbLock) {
+            return try {
+                openDatabaseLocked()
+                val database = db ?: return false
+                database.beginTransaction()
+                var statement: SQLiteStatement? = null
+                try {
+                    database.execSQL("DELETE FROM comets")
+                    statement = database.compileStatement(
+                        "INSERT INTO comets (catalog_id, common_name, h, k, t_peri, q, e, w, node, incl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    )
+
+                    for (line in lines) {
+                        if (line.trim().isEmpty() || line.length < 100) continue
+                        try {
+                            val hStr = line.substring(91, 96).trim()
+                            val kStr = line.substring(96, 101).trim()
+                            if (hStr.isEmpty() || kStr.isEmpty()) continue
+
+                            val catalogId = line.take(12).trim().replace(Regex("\\s+"), " ")
+                            val year = line.substring(14, 18).trim().toInt()
+                            val month = line.substring(19, 21).trim().toInt()
+                            val dayFrac = line.substring(22, 29).trim().toDouble()
+                            val tPeri = dateToJd(year, month, dayFrac)
+
+                            val q = line.substring(30, 39).trim().toDouble()
+                            val e = line.substring(40, 49).trim().toDouble()
+                            val w = line.substring(50, 59).trim().toDouble()
+                            val node = line.substring(60, 69).trim().toDouble()
+                            val incl = line.substring(70, 79).trim().toDouble()
+
+                            val h = hStr.toDouble()
+                            val k = kStr.toDouble()
+
+                            var namePart = line.substring(102)
+                            val doubleSpaceIdx = namePart.indexOf("  ")
+                            if (doubleSpaceIdx != -1) {
+                                namePart = namePart.take(doubleSpaceIdx)
+                            }
+                            val commonName = namePart.trim()
+
+                            statement.bindString(1, catalogId)
+                            statement.bindString(2, commonName)
+                            statement.bindDouble(3, h)
+                            statement.bindDouble(4, k)
+                            statement.bindDouble(5, tPeri)
+                            statement.bindDouble(6, q)
+                            statement.bindDouble(7, e)
+                            statement.bindDouble(8, w)
+                            statement.bindDouble(9, node)
+                            statement.bindDouble(10, incl)
+                            statement.executeInsert()
+                        } catch (ex: Exception) {
+                            Log.e(TAG, $$"Error parsing comet line: $line", ex)
+                        }
+                    }
+                    database.setTransactionSuccessful()
+                    true
+                } finally {
+                    try {
+                        statement?.close()
+                    } catch (_: Exception) {
+                    }
+                    database.endTransaction()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error refreshing comets", e)
+                false
+            }
         }
     }
 
@@ -341,9 +357,6 @@ class CatalogDatabaseHelper(private val context: Context) :
         limit: Int,
         offset: Int
     ): List<CatalogObject> {
-        openDatabase()
-        val database = db ?: return emptyList()
-
         val results = mutableListOf<CatalogObject>()
         val args = mutableListOf<String>()
         var selection = "1=1"
@@ -395,22 +408,14 @@ class CatalogDatabaseHelper(private val context: Context) :
 
         val radius = maxDistanceDegrees ?: if (catalogFilter == "Nearest Objects") 10.0 else null
         if (radius != null && targetRa != null && targetDec != null) {
-            val c = cos(Math.toRadians(targetDec)).coerceAtLeast(0.01)
-            val maxDistSq = radius * radius
-            val deltaRa = radius / c
-
-            selection += " AND (dec BETWEEN ${targetDec - radius} AND ${targetDec + radius})"
-            if (deltaRa < 180.0) {
-                if (targetRa - deltaRa >= 0.0 && targetRa + deltaRa <= 360.0) {
-                    selection += " AND (ra BETWEEN ${targetRa - deltaRa} AND ${targetRa + deltaRa})"
-                } else {
-                    val raMin = (targetRa - deltaRa + 360.0) % 360.0
-                    val raMax = (targetRa + deltaRa) % 360.0
-                    selection += " AND (ra >= $raMin OR ra <= $raMax)"
-                }
+            val proximityClause = CatalogDatabase.buildSphericalProximityClauseSql(
+                targetRa = targetRa,
+                targetDec = targetDec,
+                radiusDegrees = radius
+            )
+            if (proximityClause.isNotEmpty()) {
+                selection += " AND $proximityClause"
             }
-            val raDiff = "min(abs(ra - $targetRa), 360.0 - abs(ra - $targetRa))"
-            selection += " AND (((($raDiff) * $c) * (($raDiff) * $c) + (dec - $targetDec) * (dec - $targetDec)) <= $maxDistSq)"
         }
 
         if (catalogFilter != null && catalogFilter != "All Objects" && catalogFilter != "Solar System" && catalogFilter != "Nearest Objects") {
@@ -418,13 +423,12 @@ class CatalogDatabaseHelper(private val context: Context) :
             args.add(catalogFilter)
         }
 
-        if (magLimit != null) {
+        if (magLimit != null && magLimit.isFinite()) {
             selection += if (includeNullMagnitude) {
-                " AND (magnitude IS NULL OR magnitude <= ?)"
+                " AND (magnitude IS NULL OR magnitude <= $magLimit)"
             } else {
-                " AND (magnitude IS NOT NULL AND magnitude <= ?)"
+                " AND (magnitude IS NOT NULL AND magnitude <= $magLimit)"
             }
-            args.add(magLimit.toString())
         }
 
         if (typeFilters != null) {
@@ -464,12 +468,8 @@ class CatalogDatabaseHelper(private val context: Context) :
         val priorityCase = CatalogDatabase.buildPriorityCaseSql()
 
         val orderBy = when (sortBy) {
-            "distance" if targetRa != null && targetDec != null -> {
-                val c = cos(Math.toRadians(targetDec))
-                val c2 = c * c
-                val raDiff = "min(abs(ra - $targetRa), 360.0 - abs(ra - $targetRa))"
-                "(($raDiff) * ($raDiff) * $c2) + ((dec - $targetDec) * (dec - $targetDec)) ASC"
-            }
+            "distance" if targetRa != null && targetDec != null ->
+                CatalogDatabase.buildSphericalDistanceOrderSql(targetRa, targetDec)
 
             "name" -> "(common_name IS NULL OR common_name = '') ASC, common_name ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
             "brightness" -> "magnitude IS NULL ASC, magnitude ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
@@ -479,58 +479,62 @@ class CatalogDatabaseHelper(private val context: Context) :
         }
 
         try {
-            val cursor = database.query(
-                "catalog",
-                arrayOf("*", "MIN($priorityCase) as priority"),
-                selection,
-                args.toTypedArray(),
-                "ra, dec, object_type", // groupBy for deduplication!
-                null,
-                orderBy,
-                "$offset, $limit"
-            )
+            synchronized(dbLock) {
+                openDatabaseLocked()
+                val database = db ?: return emptyList()
+                val cursor = database.query(
+                    "catalog",
+                    arrayOf("*", "MIN($priorityCase) as priority"),
+                    selection,
+                    args.toTypedArray(),
+                    "ra, dec, object_type", // groupBy for deduplication!
+                    null,
+                    orderBy,
+                    "$offset, $limit"
+                )
 
-            cursor.use { c ->
-                while (c.moveToNext()) {
-                    val id = c.getInt(c.getColumnIndexOrThrow("id"))
-                    val label = c.getString(c.getColumnIndexOrThrow("catalog_label"))
-                    val entry = c.getString(c.getColumnIndexOrThrow("catalog_entry"))
-                    val ra = c.getDouble(c.getColumnIndexOrThrow("ra"))
-                    val dec = c.getDouble(c.getColumnIndexOrThrow("dec"))
-                    val constel = c.getString(c.getColumnIndexOrThrow("constellation"))
-                    val type = c.getString(c.getColumnIndexOrThrow("object_type"))
-                    val cat = c.getString(c.getColumnIndexOrThrow("broad_category"))
-                    val magIdx = c.getColumnIndexOrThrow("magnitude")
-                    val mag = if (c.isNull(magIdx)) null else c.getDouble(magIdx)
+                cursor.use { c ->
+                    while (c.moveToNext()) {
+                        val id = c.getInt(c.getColumnIndexOrThrow("id"))
+                        val label = c.getString(c.getColumnIndexOrThrow("catalog_label"))
+                        val entry = c.getString(c.getColumnIndexOrThrow("catalog_entry"))
+                        val ra = c.getDouble(c.getColumnIndexOrThrow("ra"))
+                        val dec = c.getDouble(c.getColumnIndexOrThrow("dec"))
+                        val constel = c.getString(c.getColumnIndexOrThrow("constellation"))
+                        val type = c.getString(c.getColumnIndexOrThrow("object_type"))
+                        val cat = c.getString(c.getColumnIndexOrThrow("broad_category"))
+                        val magIdx = c.getColumnIndexOrThrow("magnitude")
+                        val mag = if (c.isNull(magIdx)) null else c.getDouble(magIdx)
 
-                    val sbIdx = c.getColumnIndexOrThrow("surface_brightness")
-                    val sb = if (c.isNull(sbIdx)) null else c.getDouble(sbIdx)
+                        val sbIdx = c.getColumnIndexOrThrow("surface_brightness")
+                        val sb = if (c.isNull(sbIdx)) null else c.getDouble(sbIdx)
 
-                    val size = c.getString(c.getColumnIndexOrThrow("angular_size"))
+                        val size = c.getString(c.getColumnIndexOrThrow("angular_size"))
 
-                    val commonName = c.getString(c.getColumnIndexOrThrow("common_name"))
+                        val commonName = c.getString(c.getColumnIndexOrThrow("common_name"))
 
-                    val desc = c.getString(c.getColumnIndexOrThrow("description"))
-                    val copyright = c.getString(c.getColumnIndexOrThrow("copyright"))
+                        val desc = c.getString(c.getColumnIndexOrThrow("description"))
+                        val copyright = c.getString(c.getColumnIndexOrThrow("copyright"))
 
-                    results.add(
-                        CatalogObject(
-                            id,
-                            label,
-                            entry,
-                            ra,
-                            dec,
-                            constel,
-                            type,
-                            cat,
-                            mag,
-                            sb,
-                            size,
-                            commonName,
-                            desc,
-                            copyright
+                        results.add(
+                            CatalogObject(
+                                id,
+                                label,
+                                entry,
+                                ra,
+                                dec,
+                                constel,
+                                type,
+                                cat,
+                                mag,
+                                sb,
+                                size,
+                                commonName,
+                                desc,
+                                copyright
+                            )
                         )
-                    )
+                    }
                 }
             }
 

@@ -383,6 +383,13 @@ fun SkyCatalogDialog(
         }
     }
 
+    val effectiveLat = if (visibilityFilter == "Above Horizon") viewModel.currentLat else null
+    val effectiveLon = if (visibilityFilter == "Above Horizon") viewModel.currentLon else null
+    val effectiveRa =
+        if (selectedCategory == "Nearest Objects" || sortBy == "distance") currentRa else null
+    val effectiveDec =
+        if (selectedCategory == "Nearest Objects" || sortBy == "distance") currentDec else null
+
     LaunchedEffect(
         searchQuery,
         selectedCategory,
@@ -390,7 +397,11 @@ fun SkyCatalogDialog(
         magLimit,
         typeFilters,
         visibilityFilter,
-        viewModel.cometsRefreshVersion
+        viewModel.cometsRefreshVersion,
+        effectiveLat,
+        effectiveLon,
+        effectiveRa,
+        effectiveDec
     ) {
         isLoading = true
         searchResults = emptyList()

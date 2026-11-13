@@ -456,6 +456,30 @@ pub extern "C" fn olive_ios_get_camera_gain() -> f32 {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn olive_ios_get_camera_gain_range(
+    min_gain: *mut f32,
+    max_gain: *mut f32,
+    default_gain: *mut f32,
+) {
+    let (min_g, max_g, def_g) = if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
+        cam.get_gain_range()
+    } else {
+        (50.0, 3200.0, 3200.0)
+    };
+    unsafe {
+        if !min_gain.is_null() {
+            *min_gain = min_g;
+        }
+        if !max_gain.is_null() {
+            *max_gain = max_g;
+        }
+        if !default_gain.is_null() {
+            *default_gain = def_g;
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_set_camera_focus(distance: f32) {
     if let Some(cam) = CAMERA.lock().unwrap().as_ref() {
         cam.set_focus(distance);
@@ -521,7 +545,16 @@ pub extern "C" fn olive_ios_get_latest_frame_into(
             let data = &img.data;
 
             // RGBA requires 4 bytes per pixel + 8 bytes header (width, height)
-            let req_len = (width * height * 4) + 8;
+            let Some(pixel_count) = width.checked_mul(height) else {
+                return 0;
+            };
+            let Some(req_len) = pixel_count
+                .checked_mul(4)
+                .and_then(|bytes| bytes.checked_add(8))
+            else {
+                return 0;
+            };
+            let pixels = &data[..pixel_count.min(data.len())];
             if capacity >= req_len {
                 unsafe {
                     let slice = std::slice::from_raw_parts_mut(buffer, capacity);
@@ -529,7 +562,7 @@ pub extern "C" fn olive_ios_get_latest_frame_into(
                     slice[4..8].copy_from_slice(&(height as u32).to_le_bytes());
 
                     let mut dest_idx = 8;
-                    for &gray in data {
+                    for &gray in pixels {
                         slice[dest_idx] = gray; // R
                         slice[dest_idx + 1] = gray; // G
                         slice[dest_idx + 2] = gray; // B
@@ -1065,6 +1098,9 @@ mod tests {
         assert_eq!(olive_ios_get_camera_zoom(), 1.0);
         assert_eq!(olive_ios_get_camera_gain(), 100.0);
         assert_eq!(olive_ios_get_camera_exposure(), 250_000);
+        let (mut min_g, mut max_g, mut def_g) = (0.0f32, 0.0f32, 0.0f32);
+        olive_ios_get_camera_gain_range(&mut min_g, &mut max_g, &mut def_g);
+        assert_eq!((min_g, max_g, def_g), (50.0, 3200.0, 3200.0));
     }
 
     #[test]
