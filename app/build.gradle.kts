@@ -51,11 +51,11 @@ android {
             }
         }
     }
+}
 
-    variantFilter {
-        if (buildType.name == "debug") {
-            ignore = true
-        }
+androidComponents {
+    beforeVariants(selector().withBuildType("debug")) { variantBuilder ->
+        variantBuilder.enable = false
     }
 }
 
@@ -67,10 +67,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.graphics:graphics-shapes:1.0.0")
     implementation("com.github.requery:sqlite-android:3.49.0")
     implementation("com.github.ernestp:AndroidUSBCamera:3.6.0")
     testImplementation("junit:junit:4.13.2")
@@ -89,6 +86,6 @@ tasks.register<Exec>("cargoBuild") {
     commandLine("/Users/oakamil/.cargo/bin/cargo", "ndk", "-P", "24", "-t", "armeabi-v7a", "-t", "arm64-v8a", "-o", "../jniLibs", "build", "--release")
 }
 
-tasks.matching { it.name == "mergeDebugJniLibFolders" || it.name == "mergeReleaseJniLibFolders" }.configureEach {
+tasks.matching { it.name == "mergeReleaseJniLibFolders" }.configureEach {
     dependsOn("cargoBuild")
 }

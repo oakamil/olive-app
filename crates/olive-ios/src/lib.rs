@@ -4,7 +4,6 @@
 use log::{error, info, warn};
 use olive_engine::CameraTrait;
 use olive_engine::engine::EngineStateData;
-use olive_engine::telescope_server::Lx200Controller;
 use olive_imu::{ImuDevice, PersistentStorage};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -96,7 +95,6 @@ static ENGINE_IS_RUNNING: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>> = Mu
 static ENGINE_STATE: Mutex<Option<Arc<RwLock<EngineStateData>>>> = Mutex::new(None);
 static CAMERA: Mutex<Option<Arc<dyn CameraTrait>>> = Mutex::new(None);
 static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
-static LX200_CONTROLLER: Mutex<Option<Arc<RwLock<Lx200Controller>>>> = Mutex::new(None);
 
 // --- FFI Helpers ---
 
@@ -117,15 +115,6 @@ pub extern "C" fn olive_ios_free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
         unsafe {
             let _ = CString::from_raw(ptr);
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn olive_ios_free_bytes(ptr: *mut u8, len: usize) {
-    if !ptr.is_null() && len > 0 {
-        unsafe {
-            let _ = Vec::from_raw_parts(ptr, len, len);
         }
     }
 }
@@ -322,7 +311,6 @@ pub extern "C" fn olive_ios_start_engine(
             }
 
             let _ = engine.fused_solver.start_imu();
-            *LX200_CONTROLLER.lock().unwrap() = Some(engine.lx200_controller.clone());
             let is_running_clone = engine.is_running.clone();
             *ENGINE_IS_RUNNING.lock().unwrap() = Some(is_running_clone.clone());
             let telescope_server_handle = engine.telescope_server_handle.take();
@@ -387,7 +375,6 @@ pub extern "C" fn olive_ios_stop_engine() {
         let _ = thread.join();
     }
 
-    *LX200_CONTROLLER.lock().unwrap() = None;
     *ENGINE_STATE.lock().unwrap() = None;
     *CAMERA.lock().unwrap() = None;
 }
@@ -636,47 +623,6 @@ pub extern "C" fn olive_ios_sync_telescope_to_target(ra: f64, dec: f64) {
                 ra, dec
             );
         }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn olive_ios_process_telescope_data(
-    data_ptr: *const u8,
-    data_len: usize,
-    out_len: *mut usize,
-) -> *mut u8 {
-    if data_ptr.is_null() || data_len == 0 || out_len.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let controller_opt = LX200_CONTROLLER.lock().unwrap().clone();
-    if let Some(controller_lock) = controller_opt {
-        let data_slice = unsafe { std::slice::from_raw_parts(data_ptr, data_len) };
-        let mut controller = controller_lock.write().unwrap();
-        let response = controller.process_client_data(data_slice);
-        if !response.is_empty() {
-            let mut boxed = response.into_boxed_slice();
-            let ptr = boxed.as_mut_ptr();
-            unsafe {
-                *out_len = boxed.len();
-            }
-            std::mem::forget(boxed);
-            return ptr;
-        }
-    }
-    unsafe {
-        *out_len = 0;
-    }
-    std::ptr::null_mut()
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn olive_ios_reset_telescope_server() {
-    let controller_opt = LX200_CONTROLLER.lock().unwrap().clone();
-    if let Some(controller_lock) = controller_opt {
-        let mut controller = controller_lock.write().unwrap();
-        controller.client_buffer.clear();
-        controller.is_stellarium = false;
     }
 }
 

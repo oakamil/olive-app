@@ -59,8 +59,6 @@ interface EngineBridge {
     fun setEngineSigma(sigma: Float)
     fun setEngineStrictMatch(strict: Boolean)
     fun updateUvcStacking(frames: Int)
-    fun processTelescopeData(data: ByteArray): ByteArray?
-    fun resetTelescopeServer()
     fun getPlanets(bspPath: String, timeMs: Long, lat: Double, lon: Double): String
     fun getAsteroids(
         bspPath: String,

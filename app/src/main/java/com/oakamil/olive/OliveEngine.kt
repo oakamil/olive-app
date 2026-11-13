@@ -94,8 +94,8 @@ object OliveEngine : EngineBridge {
     external override fun setEngineSigma(sigma: Float)
     external override fun setEngineStrictMatch(strict: Boolean)
     external override fun updateUvcStacking(frames: Int)
-    external override fun processTelescopeData(data: ByteArray): ByteArray?
-    external override fun resetTelescopeServer()
+    external fun processTelescopeData(data: ByteArray): ByteArray?
+    external fun resetTelescopeServer()
     external fun handleAlpacaConnection(fd: Int)
     external override fun getPlanets(
         bspPath: String,

@@ -290,10 +290,10 @@ class MainActivity : ComponentActivity() {
             ) {
                 LaunchedEffect(viewModel.isEngineRunning) {
                     updateAutoPip(viewModel.isEngineRunning)
+                    windowController.setKeepScreenOn(viewModel.isEngineRunning)
                     if (viewModel.isEngineRunning) {
                         startupTimeoutJob?.cancel()
                         startupTimeoutJob = null
-                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                         isStarting = false
 
                         try {
@@ -305,7 +305,6 @@ class MainActivity : ComponentActivity() {
                             // Cleanup if needed
                         }
                     } else {
-                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                         windowController.restoreScreenBrightness()
                     }
                 }

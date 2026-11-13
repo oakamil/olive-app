@@ -6,7 +6,6 @@ package com.oakamil.olive
 import androidx.compose.ui.graphics.asComposeImageBitmap
 import com.oakamil.olive.cinterop.olive_ios_clear_align_target_pixel
 import com.oakamil.olive.cinterop.olive_ios_clear_goto_target
-import com.oakamil.olive.cinterop.olive_ios_free_bytes
 import com.oakamil.olive.cinterop.olive_ios_free_string
 import com.oakamil.olive.cinterop.olive_ios_get_asteroids
 import com.oakamil.olive.cinterop.olive_ios_get_available_cameras
@@ -20,8 +19,6 @@ import com.oakamil.olive.cinterop.olive_ios_get_engine_stats
 import com.oakamil.olive.cinterop.olive_ios_get_external_camera_formats
 import com.oakamil.olive.cinterop.olive_ios_get_latest_frame_into
 import com.oakamil.olive.cinterop.olive_ios_get_planets
-import com.oakamil.olive.cinterop.olive_ios_process_telescope_data
-import com.oakamil.olive.cinterop.olive_ios_reset_telescope_server
 import com.oakamil.olive.cinterop.olive_ios_set_align_target_pixel
 import com.oakamil.olive.cinterop.olive_ios_set_camera_brightness
 import com.oakamil.olive.cinterop.olive_ios_set_camera_exposure
@@ -42,19 +39,12 @@ import com.oakamil.olive.cinterop.olive_ios_sync_telescope_to_target
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.pin
-import kotlinx.cinterop.ptr
-import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
-import kotlinx.cinterop.value
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
 import org.jetbrains.skia.ImageInfo
-import platform.posix.size_tVar
 
 @OptIn(ExperimentalForeignApi::class)
 class IosEngineBridge : EngineBridge {
@@ -340,31 +330,6 @@ class IosEngineBridge : EngineBridge {
 
     override fun updateUvcStacking(frames: Int) {
         olive_ios_set_camera_stack_count(frames.coerceAtLeast(1).toULong())
-    }
-
-    override fun processTelescopeData(data: ByteArray): ByteArray? {
-        if (data.isEmpty()) return null
-        return memScoped {
-            val outLenVar = alloc<size_tVar>()
-            val dataPinned = data.pin()
-            try {
-                val resPtr = olive_ios_process_telescope_data(
-                    dataPinned.addressOf(0).reinterpret(),
-                    data.size.toULong(),
-                    outLenVar.ptr
-                ) ?: return null
-                val outLen = outLenVar.value.toInt()
-                val result = resPtr.readBytes(outLen)
-                olive_ios_free_bytes(resPtr, outLenVar.value)
-                result
-            } finally {
-                dataPinned.unpin()
-            }
-        }
-    }
-
-    override fun resetTelescopeServer() {
-        olive_ios_reset_telescope_server()
     }
 
     override fun getPlanets(bspPath: String, timeMs: Long, lat: Double, lon: Double): String {

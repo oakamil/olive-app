@@ -27,8 +27,5 @@
     native <methods>;
 }
 
-# Preserve EngineStats to prevent serialization issues if used with GSON/Moshi (though currently we just parse JSON manually)
--keep class com.oakamil.olive.EngineStats { *; }
-
 # Preserve UVCCamera library classes and members accessed via reflection and JNI
 -keep class com.jiangdg.uvc.** { *; }
