@@ -438,13 +438,14 @@ fun StatsDisplay(
             Text(stringResource(id = Res.string.stat_status), fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                when (stats.status) {
-                    "Solving" -> stringResource(id = Res.string.stat_solving)
-                    "Slewing" -> stringResource(id = Res.string.stat_slewing)
-                    "Idle" -> stringResource(id = Res.string.stat_idle)
-                    "Camera Mode" -> stringResource(id = Res.string.btn_camera_mode)
-                    "Calibrating Focus" -> stringResource(id = Res.string.stat_calibrating_focus)
-                    else -> stats.status
+                when (stats.parsedStatus) {
+                    EngineStatus.SOLVING -> stringResource(id = Res.string.stat_solving)
+                    EngineStatus.SLEWING -> stringResource(id = Res.string.stat_slewing)
+                    EngineStatus.IDLE -> stringResource(id = Res.string.stat_idle)
+                    EngineStatus.CAMERA_MODE -> stringResource(id = Res.string.btn_camera_mode)
+                    EngineStatus.CALIBRATING -> stringResource(id = Res.string.stat_calibrating)
+                    EngineStatus.CALIBRATING_FOCUS -> stringResource(id = Res.string.stat_calibrating_focus)
+                    null -> stats.status
                 }
             )
         }
@@ -557,7 +558,7 @@ fun StatsDisplay(
                 "Left" -> stringResource(id = Res.string.crop_left)
                 "Right" -> stringResource(id = Res.string.crop_right)
                 "Full" -> stringResource(id = Res.string.crop_full)
-                "Failed" -> stringResource(id = Res.string.crop_failed)
+                EngineStats.CROP_FAILED -> stringResource(id = Res.string.crop_failed)
 
                 "TopHighSens" -> stringResource(
                     id = Res.string.format_high_sens,

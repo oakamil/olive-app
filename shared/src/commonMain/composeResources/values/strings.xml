@@ -59,6 +59,8 @@
     <string name="label_exposure">Exposure</string>
     <string name="label_stacking_frames">Stacking (Frames)</string>
     <string name="label_brightness">Brightness</string>
+    <string name="label_iso">ISO</string>
+    <string name="label_gain">Gain</string>
     <string name="label_focus">Focus</string>
     <string name="label_noise_reduction">Noise Reduction</string>
     <string name="label_hot_pixel_mode">Hot Pixel Mode</string>
@@ -193,6 +195,7 @@
     <string name="stat_solving">Solving</string>
     <string name="stat_slewing">Slewing</string>
     <string name="stat_idle">Idle</string>
+    <string name="stat_calibrating">Calibrating</string>
     <string name="stat_calibrating_focus">Calibrating Focus</string>
     <string name="cd_clear_search">Clear search</string>
     <string name="cd_close_keyboard">Close Keyboard</string>
@@ -234,6 +237,8 @@
     <string name="label_constellation">Constellation</string>
     <string name="value_not_available">N/A</string>
     <string name="format_ra_dec">RA %1$s Dec %2$s</string>
+    <string name="format_az_alt_fov">Az %1$s° Alt %2$s°  FOV %3$s°</string>
+    <string name="format_mag">Mag: %1$s</string>
     <string name="stat_ip_address">IP Address</string>
     <string name="msg_confirm_alignment">Are you sure you want to sync the telescope's coordinates to this target?</string>
 
@@ -261,9 +266,13 @@
     <string name="info_location">Location is required to calculate sky coordinates and operate the engine.</string>
     <string name="format_coordinate">%1$.2f° %2$s, %3$.2f° %4$s</string>
     <string name="dir_north">N</string>
-    <string name="dir_south">S</string>
+    <string name="dir_northeast">NE</string>
     <string name="dir_east">E</string>
+    <string name="dir_southeast">SE</string>
+    <string name="dir_south">S</string>
+    <string name="dir_southwest">SW</string>
     <string name="dir_west">W</string>
+    <string name="dir_northwest">NW</string>
     <string name="status_location_not_set">Location not set</string>
     <string name="label_current_location">Location: %1$s</string>
     <string name="btn_edit_location">Edit</string>
