@@ -47,6 +47,7 @@ import platform.UIKit.UIApplicationOpenSettingsURLString
 import platform.UIKit.UIDevice
 import platform.UIKit.UIUserInterfaceIdiomPad
 import platform.UIKit.UIViewController
+import kotlin.math.round
 
 @OptIn(ExperimentalForeignApi::class)
 private fun hasConnectedExternalCamera(): Boolean =
@@ -92,10 +93,13 @@ private fun refreshExternalCameraFormats(
                 settingsManager.uvcWidth = best.width
                 settingsManager.uvcHeight = best.height
                 settingsManager.uvcFormat = best.format
-                println("Refreshed external camera formats: ${filtered.size} options, active: ${best.label}")
+                Log.d(
+                    "OliveUI",
+                    "Refreshed external camera formats: ${filtered.size} options, active: ${best.label}"
+                )
             }
         } catch (e: Exception) {
-            println("Failed to parse external camera formats: $e")
+            Log.w("OliveUI", "Failed to parse external camera formats", e)
         }
     }
 }
@@ -197,8 +201,8 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         IosLocationProvider(
             onLocationUpdated = { rawLat, rawLon ->
                 pendingLocationRefresh = false
-                val rLat = kotlin.math.round(rawLat * 100.0) / 100.0
-                val rLon = kotlin.math.round(rawLon * 100.0) / 100.0
+                val rLat = round(rawLat * 100.0) / 100.0
+                val rLon = round(rawLon * 100.0) / 100.0
                 viewModel.currentLat = rLat
                 viewModel.currentLon = rLon
                 settingsManager.saveLocation(rLat.toFloat(), rLon.toFloat())
@@ -210,7 +214,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             },
             onError = { err ->
                 pendingLocationRefresh = false
-                println("Location error: $err")
+                Log.w("OliveUI", "Location error: $err")
                 viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.FAILURE
                 coroutineScope.launch {
                     delay(1500L)
@@ -289,12 +293,18 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             NSProcessInfo.processInfo.arguments.filterIsInstance<String>()
         if (launchArgs.contains("-testEphemeris")) {
             val asteroids = viewModel.getAsteroids()
-            println("EPHEMERIS_TEST_ASTEROIDS: count=${asteroids.size}, first=${asteroids.firstOrNull()?.commonName}")
+            Log.d(
+                "EphemerisTest",
+                "EPHEMERIS_TEST_ASTEROIDS: count=${asteroids.size}, first=${asteroids.firstOrNull()?.commonName}"
+            )
             val cometsBefore = viewModel.getComets()
-            println("EPHEMERIS_TEST_COMETS_BEFORE: count=${cometsBefore.size}")
+            Log.d("EphemerisTest", "EPHEMERIS_TEST_COMETS_BEFORE: count=${cometsBefore.size}")
             val refreshSuccess = catalogDb.refreshComets()
             val cometsAfter = viewModel.getComets()
-            println("EPHEMERIS_TEST_COMETS_AFTER: refreshSuccess=$refreshSuccess, count=${cometsAfter.size}, first=${cometsAfter.firstOrNull()?.commonName}")
+            Log.d(
+                "EphemerisTest",
+                "EPHEMERIS_TEST_COMETS_AFTER: refreshSuccess=$refreshSuccess, count=${cometsAfter.size}, first=${cometsAfter.firstOrNull()?.commonName}"
+            )
         }
         if (launchArgs.contains("-autoStartDemo")) {
             activeCameraSelection = "demo"

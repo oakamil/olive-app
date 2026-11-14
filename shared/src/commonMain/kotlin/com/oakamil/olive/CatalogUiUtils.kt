@@ -31,7 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.sqrt
 
 fun getIconAndColorForType(
     objectType: String,
@@ -264,7 +266,7 @@ fun layoutCatalogItems(
 
     fun isTargetObj(obj: CatalogObject): Boolean =
         targetRa != null && targetDec != null &&
-                kotlin.math.abs(obj.dec - targetDec) < 0.05 &&
+                abs(obj.dec - targetDec) < 0.05 &&
                 AstrometryUtils.angularDistance(obj.ra, obj.dec, targetRa, targetDec) < 0.05
 
     // 1. Sort: Target first, then catalog priority (M > C > NGC), then brightness
@@ -459,7 +461,7 @@ fun findTappedStar(
         val dy = starYs[i] - tapOffset.y
         val distSq = dx * dx + dy * dy
         if (distSq < maxHitRadiusSq) {
-            val dist = kotlin.math.sqrt(distSq)
+            val dist = sqrt(distSq)
             if (dist < minDist) {
                 minDist = dist
                 closest = stars[i]

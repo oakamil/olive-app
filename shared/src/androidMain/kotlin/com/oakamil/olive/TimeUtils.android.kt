@@ -3,11 +3,12 @@
 
 package com.oakamil.olive
 
+import android.text.format.DateFormat
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
 @Composable
 actual fun is24HourFormat(): Boolean {
     val context = LocalContext.current
-    return android.text.format.DateFormat.is24HourFormat(context)
+    return DateFormat.is24HourFormat(context)
 }

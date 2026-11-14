@@ -538,8 +538,6 @@ class CatalogDatabaseHelper(private val context: Context) :
                 }
             }
 
-            // Sorting by distance is now completely handled by SQLite!
-
         } catch (e: Exception) {
             Log.e(TAG, "Error querying catalog", e)
             return emptyList()

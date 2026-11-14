@@ -1,5 +1,8 @@
 package com.oakamil.olive
 
+import kotlin.math.abs
+import kotlin.math.round
+
 data class UvcFormat(
     val width: Int,
     val height: Int,
@@ -53,8 +56,8 @@ data class UvcFormat(
             val valid = all.filter { fmt ->
                 val is1x = (fmt.width == maxWidth && fmt.height == maxHeight)
                 // Allow ±8 px rounding tolerance for macroblock-16 alignment (e.g. 960x544 for 1080p binned)
-                val is2x2Binned = (kotlin.math.abs(fmt.width - binnedWidth) <= 8 &&
-                        kotlin.math.abs(fmt.height - binnedHeight) <= 8)
+                val is2x2Binned = (abs(fmt.width - binnedWidth) <= 8 &&
+                        abs(fmt.height - binnedHeight) <= 8)
                 val matchesRes = is1x || is2x2Binned
                 val matchesFormat = fmt.format.equals("MJPEG", ignoreCase = true) ||
                         fmt.format.startsWith("YUV", ignoreCase = true) ||
@@ -139,7 +142,7 @@ data class UvcFormat(
                                                     ((raw[intOffset + 2].toLong() and 0xFF) shl 16) or
                                                     ((raw[intOffset + 3].toLong() and 0xFF) shl 24)
                                             if (interval > 0) {
-                                                val fps = kotlin.math.round(10_000_000.0 / interval)
+                                                val fps = round(10_000_000.0 / interval)
                                                     .toInt()
                                                 if (fps in 1..120) {
                                                     formats.add(
@@ -166,9 +169,9 @@ data class UvcFormat(
                                             ((raw[offset + 33].toLong() and 0xFF) shl 24)
                                     if (minInt in 1..maxInt) {
                                         val maxFps =
-                                            kotlin.math.round(10_000_000.0 / minInt).toInt()
+                                            round(10_000_000.0 / minInt).toInt()
                                         val minFps =
-                                            kotlin.math.round(10_000_000.0 / maxInt).toInt()
+                                            round(10_000_000.0 / maxInt).toInt()
                                         for (standardFps in listOf(30, 25, 20, 15, 10, 5, 2)) {
                                             if (standardFps in minFps..maxFps) {
                                                 formats.add(

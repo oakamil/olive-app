@@ -40,6 +40,7 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
+import kotlinx.datetime.Clock
 import platform.Foundation.NSBundle
 import platform.Foundation.NSData
 import platform.Foundation.NSDocumentDirectory
@@ -611,7 +612,7 @@ class IosCatalogDatabase : CatalogDatabase {
         }
 
         if (visibilityFilter == "Above Horizon" && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
-            val timeMs = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+            val timeMs = Clock.System.now().toEpochMilliseconds()
             val lst = AstrometryUtils.calculateLST(lon, timeMs)
             val lstRad = lst * PI / 180.0
 

@@ -7,7 +7,12 @@ use olive_engine::engine::EngineStateData;
 use olive_imu::{ImuDevice, PersistentStorage};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{
+    Arc, Mutex, RwLock,
+    atomic::{AtomicBool, Ordering},
+};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 pub mod apple_camera;
 pub mod apple_imu;
@@ -91,10 +96,11 @@ impl olive_imu::PersistentStorage for IosStorage {
 static RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static TELESCOPE_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static ENGINE_STOP_TX: Mutex<Option<tokio::sync::oneshot::Sender<()>>> = Mutex::new(None);
-static ENGINE_IS_RUNNING: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>> = Mutex::new(None);
+static ENGINE_IS_RUNNING: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 static ENGINE_STATE: Mutex<Option<Arc<RwLock<EngineStateData>>>> = Mutex::new(None);
 static CAMERA: Mutex<Option<Arc<dyn CameraTrait>>> = Mutex::new(None);
-static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
+static MAIN_ENGINE_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+static LAST_BUFFER_WARN: Mutex<Option<Instant>> = Mutex::new(None);
 
 // --- FFI Helpers ---
 
@@ -214,7 +220,7 @@ pub extern "C" fn olive_ios_start_engine(
         use_observer_location: !is_demo,
     };
 
-    let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let client_connected = Arc::new(AtomicBool::new(false));
 
     let mut initial_state = EngineStateData::default();
     if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon) {
@@ -327,7 +333,7 @@ pub extern "C" fn olive_ios_start_engine(
 
             // Wait for stop signal
             let _ = rx.await;
-            is_running_clone.store(false, std::sync::atomic::Ordering::Relaxed);
+            is_running_clone.store(false, Ordering::Relaxed);
             server_handle.abort();
             let _ = server_handle.await;
 
@@ -359,7 +365,7 @@ pub extern "C" fn olive_ios_start_engine(
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_stop_engine() {
     if let Some(running) = ENGINE_IS_RUNNING.lock().unwrap().take() {
-        running.store(false, std::sync::atomic::Ordering::SeqCst);
+        running.store(false, Ordering::SeqCst);
     }
 
     if let Some(tx) = ENGINE_STOP_TX.lock().unwrap().take() {
@@ -572,10 +578,23 @@ pub extern "C" fn olive_ios_get_latest_frame_into(
                 }
                 return img_ts_ms;
             } else {
-                warn!(
-                    "Provided buffer is too small. Need {}, got {}",
-                    req_len, capacity
-                );
+                let should_warn = {
+                    let mut last = LAST_BUFFER_WARN.lock().unwrap_or_else(|e| e.into_inner());
+                    let now = Instant::now();
+                    let ready = last.map_or(true, |prev| {
+                        now.saturating_duration_since(prev) >= Duration::from_secs(5)
+                    });
+                    if ready {
+                        *last = Some(now);
+                    }
+                    ready
+                };
+                if should_warn {
+                    warn!(
+                        "Provided buffer is too small. Need {}, got {}",
+                        req_len, capacity
+                    );
+                }
             }
         }
     }
@@ -920,11 +939,11 @@ pub extern "C" fn olive_ios_get_asteroids(
     let json_str = match result {
         Ok(Ok(asteroids)) => serde_json::to_string(&asteroids).unwrap_or_else(|_| "[]".to_string()),
         Ok(Err(e)) => {
-            log::error!("Asteroids calculation error: {}", e);
+            error!("Asteroids calculation error: {}", e);
             "[]".to_string()
         }
         Err(_) => {
-            log::error!("Asteroids calculation panicked");
+            error!("Asteroids calculation panicked");
             "[]".to_string()
         }
     };
@@ -1062,11 +1081,11 @@ pub extern "C" fn olive_ios_get_comets(
     let json_str = match result {
         Ok(Ok(comets)) => serde_json::to_string(&comets).unwrap_or_else(|_| "[]".to_string()),
         Ok(Err(e)) => {
-            log::error!("Comets calculation error: {}", e);
+            error!("Comets calculation error: {}", e);
             "[]".to_string()
         }
         Err(_) => {
-            log::error!("Comets calculation panicked");
+            error!("Comets calculation panicked");
             "[]".to_string()
         }
     };

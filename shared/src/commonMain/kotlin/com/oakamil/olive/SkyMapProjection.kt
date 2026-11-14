@@ -6,6 +6,7 @@ package com.oakamil.olive
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Matrix
+import kotlin.math.abs
 import kotlin.math.asin
 import kotlin.math.atan
 import kotlin.math.atan2
@@ -353,9 +354,9 @@ class SkyMapProjection(
 
             var g = 0f
             var h = 0f
-            if (kotlin.math.abs(dx3) >= 1e-4f || kotlin.math.abs(dy3) >= 1e-4f) {
+            if (abs(dx3) >= 1e-4f || abs(dy3) >= 1e-4f) {
                 val det = dx1 * dy2 - dy1 * dx2
-                if (kotlin.math.abs(det) >= 1e-7f) {
+                if (abs(det) >= 1e-7f) {
                     g = (dx3 * dy2 - dy3 * dx2) / det
                     h = (dx1 * dy3 - dy1 * dx3) / det
                 }

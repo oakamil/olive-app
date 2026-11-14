@@ -48,9 +48,11 @@ import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
+import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
 import org.jetbrains.skia.ImageInfo
+import platform.posix.free
 
 @OptIn(ExperimentalForeignApi::class)
 class IosEngineBridge : EngineBridge {
@@ -282,14 +284,14 @@ class IosEngineBridge : EngineBridge {
         val ptr = olive_ios_get_available_cameras()
             ?: return "[{\"id\":\"0\",\"name\":\"Back Camera (Wide)\",\"fov\":65.0,\"supports_raw\":false}]"
         val res = ptr.toKString()
-        platform.posix.free(ptr)
+        free(ptr)
         return res
     }
 
     override fun getAvailableExternalCameraFormats(): String {
         val ptr = olive_ios_get_external_camera_formats() ?: return "[]"
         val res = ptr.toKString()
-        platform.posix.free(ptr)
+        free(ptr)
         return res
     }
 
@@ -326,7 +328,7 @@ class IosEngineBridge : EngineBridge {
             val imageInfo = ImageInfo(width, height, ColorType.RGBA_8888, ColorAlphaType.PREMUL)
             val pixels = frameRawBuffer.copyOfRange(8, 8 + pixelByteCount)
 
-            val skiaBitmap = org.jetbrains.skia.Bitmap()
+            val skiaBitmap = Bitmap()
             skiaBitmap.installPixels(imageInfo, pixels, width * 4)
             skiaBitmap.setImmutable()
             val composeBitmap = skiaBitmap.asComposeImageBitmap()

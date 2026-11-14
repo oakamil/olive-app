@@ -159,10 +159,9 @@ impl AppleCamera {
                 .store(min_exp_us, Ordering::SeqCst);
             self.hardware_max_exposure_us
                 .store(max_exp_us, Ordering::SeqCst);
-            log::info!(
+            info!(
                 "AppleCamera updated hardware exposure range: [{} us, {} us]",
-                min_exp_us,
-                max_exp_us
+                min_exp_us, max_exp_us
             );
         }
         if min_gain > 0.0 && max_gain >= min_gain {
@@ -170,10 +169,9 @@ impl AppleCamera {
                 .store(min_gain.to_bits(), Ordering::SeqCst);
             self.hardware_max_gain
                 .store(max_gain.to_bits(), Ordering::SeqCst);
-            log::info!(
+            info!(
                 "AppleCamera updated hardware gain range: [{}, {}]",
-                min_gain,
-                max_gain
+                min_gain, max_gain
             );
         }
     }
@@ -215,7 +213,7 @@ impl AppleCamera {
         timestamp_ns: i64,
         applied_exposure_us: i32,
         applied_iso: f32,
-        receive_time: std::time::Instant,
+        receive_time: Instant,
         zoom: f32,
     ) {
         // Cold startup settle: flush initial 10 frames
@@ -532,7 +530,7 @@ pub extern "C" fn olive_ios_push_camera_frame(
         return;
     };
 
-    let receive_time = std::time::Instant::now();
+    let receive_time = Instant::now();
 
     let width_usize = width as usize;
     let height_usize = height as usize;
@@ -701,7 +699,7 @@ mod tests {
             0,
             100_000,
             100.0,
-            std::time::Instant::now(),
+            Instant::now(),
             1.0,
         );
         // After 1 frame, stack of 2 is not complete yet
@@ -717,7 +715,7 @@ mod tests {
             0,
             100_000,
             100.0,
-            std::time::Instant::now(),
+            Instant::now(),
             1.0,
         );
 
@@ -744,7 +742,7 @@ mod tests {
                 0,
                 33000,
                 100.0,
-                std::time::Instant::now(),
+                Instant::now(),
                 1.0,
             );
         }
@@ -763,7 +761,7 @@ mod tests {
             0,
             33000,
             100.0,
-            std::time::Instant::now(),
+            Instant::now(),
             1.0,
         );
 
@@ -795,7 +793,7 @@ mod tests {
             0,
             33_333,
             100.0,
-            std::time::Instant::now(),
+            Instant::now(),
             1.0,
         );
         assert_eq!(camera.get_exposure(), 250_000);
@@ -814,7 +812,7 @@ mod tests {
             0,
             33_333,
             100.0,
-            std::time::Instant::now(),
+            Instant::now(),
             1.0,
         );
         let img = camera.get_last_capture().unwrap();
@@ -831,7 +829,7 @@ mod tests {
             0,
             33_333,
             100.0,
-            std::time::Instant::now(),
+            Instant::now(),
             1.0,
         );
         let img = camera.get_last_capture().unwrap();
@@ -848,7 +846,7 @@ mod tests {
                 0,
                 33_333,
                 100.0,
-                std::time::Instant::now(),
+                Instant::now(),
                 1.0,
             );
         }
@@ -860,7 +858,7 @@ mod tests {
             0,
             33_333,
             100.0,
-            std::time::Instant::now(),
+            Instant::now(),
             1.0,
         );
         assert_eq!(camera.get_exposure(), 33_333);

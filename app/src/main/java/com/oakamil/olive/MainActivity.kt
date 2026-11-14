@@ -57,6 +57,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -357,13 +358,9 @@ class MainActivity : ComponentActivity() {
                         startupTimeoutJob = null
                         isStarting = false
 
-                        try {
-                            while (viewModel.isEngineRunning) {
-                                detectedIpAddress = getDeviceIpAddress()
-                                delay(10000)
-                            }
-                        } finally {
-                            // Cleanup if needed
+                        while (viewModel.isEngineRunning) {
+                            detectedIpAddress = getDeviceIpAddress()
+                            delay(10000)
                         }
                     } else {
                         windowController.restoreScreenBrightness()
@@ -659,8 +656,6 @@ class MainActivity : ComponentActivity() {
             fetchLocation(isManualRefresh = false)
         }
         if (viewModel.isEngineRunning && !isStopping) {
-            // Ensure engine is actually alive or restart if needed
-            // For now just logged, but we could add auto-restart logic here
             Log.d(
                 "OliveUI",
                 "App resumed, engine running mode: ${viewModel.engineMode}"
@@ -675,7 +670,7 @@ class MainActivity : ComponentActivity() {
         }
         windowController.restoreScreenBrightness()
         if (viewModel.isEngineRunning) {
-            kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO) {
                 viewModel.stopEngineSync()
             }
         }
