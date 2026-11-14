@@ -106,7 +106,7 @@ fun SkyCatalogDialog(
     onGoTo: (Double, Double, Double) -> Unit,
     onCenter: (Double, Double) -> Unit
 ) {
-    val colors = LocalOliveColors.current
+    val extColors = LocalOliveExtendedColors.current
     val focusManager = LocalFocusManager.current
     var showKeyboard by remember { mutableStateOf(false) }
     var searchQuery by viewModel::catalogSearchQuery
@@ -535,11 +535,11 @@ fun SkyCatalogDialog(
                                     },
                                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                                     colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = colors.surfaceVariant,
-                                        selectedTextColor = colors.primary,
-                                        unselectedTextColor = colors.primary,
-                                        selectedIconColor = colors.primary,
-                                        unselectedIconColor = colors.primary
+                                        selectedContainerColor = extColors.drawerSelectedContainer,
+                                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                                        unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                                        unselectedIconColor = MaterialTheme.colorScheme.onSurface
                                     )
                                 )
                             }
@@ -712,8 +712,7 @@ fun SkyCatalogDialog(
                                             leadingIcon = {
                                                 val (iVec, iCol) = getIconAndColorForType(
                                                     type,
-                                                    colors.primary,
-                                                    colors.secondary
+                                                    extColors
                                                 )
                                                 Icon(
                                                     iVec,
@@ -835,7 +834,7 @@ fun SkyCatalogDialog(
                                     ) {
                                         if (isRefreshingComets) {
                                             CircularProgressIndicator(
-                                                color = Color(0xFFFF5252),
+                                                color = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(24.dp)
                                             )
                                         } else {
@@ -884,7 +883,7 @@ fun SkyCatalogDialog(
 
                                 ListItem(
                                     colors = if (isBelowHorizon) ListItemDefaults.colors(
-                                        containerColor = colors.surfaceVariant
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                                     ) else ListItemDefaults.colors(),
                                     headlineContent = { Text(obj.displayName) },
                                     supportingContent = {
@@ -908,10 +907,7 @@ fun SkyCatalogDialog(
                                             verticalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                val (iVec, iCol) = obj.getIconAndColor(
-                                                    colors.primary,
-                                                    colors.secondary
-                                                )
+                                                val (iVec, iCol) = obj.getIconAndColor(extColors)
                                                 Icon(
                                                     imageVector = iVec,
                                                     contentDescription = null,
@@ -948,7 +944,7 @@ fun SkyCatalogDialog(
                                                 Text(
                                                     stringResource(Res.string.status_below_horizon),
                                                     style = MaterialTheme.typography.labelMedium,
-                                                    color = colors.primary,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     modifier = Modifier
                                                         .clickable { showRaDecForObj = obj }
                                                         .padding(end = 8.dp, start = 4.dp)
@@ -1090,7 +1086,7 @@ fun SkyCatalogDialog(
                                     Icon(
                                         Default.Close,
                                         contentDescription = stringResource(Res.string.cd_close_keyboard),
-                                        tint = colors.primary
+                                        tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
                                 IconButton(onClick = {
@@ -1100,7 +1096,7 @@ fun SkyCatalogDialog(
                                     Icon(
                                         imageVector = if (viewModel.landscapeKeyboardOnRight) Filled.KeyboardArrowLeft else Filled.KeyboardArrowRight,
                                         contentDescription = stringResource(Res.string.cd_swap_keyboard_side),
-                                        tint = colors.primary
+                                        tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
@@ -1138,7 +1134,7 @@ fun SkyCatalogDialog(
                                         Icon(
                                             Default.Close,
                                             contentDescription = stringResource(Res.string.cd_close_keyboard),
-                                            tint = colors.primary
+                                            tint = MaterialTheme.colorScheme.primary
                                         )
                                     }
                                 }
@@ -1298,7 +1294,6 @@ fun NightVisionKeyboard(
     onSpace: () -> Unit,
     onBackspace: () -> Unit,
 ) {
-    val colors = LocalOliveColors.current
     val keys = listOf(
         listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
         listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"),
@@ -1308,7 +1303,7 @@ fun NightVisionKeyboard(
 
     Column(
         modifier = modifier
-            .background(colors.background)
+            .background(MaterialTheme.colorScheme.surface)
             .padding(2.dp)
             .pointerInput(Unit) {
                 // Consume taps inside keyboard so they don't propagate to the parent and dismiss it
@@ -1363,17 +1358,18 @@ fun NightVisionKey(
     isLandscape: Boolean = false,
     onClick: () -> Unit,
 ) {
-    val colors = LocalOliveColors.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressedState by interactionSource.collectIsPressedAsState()
 
-    val bgColor = if (isPressedState) colors.primary else colors.surface
-    val textColor = if (isPressedState) colors.background else colors.primary
+    val bgColor =
+        if (isPressedState) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer
+    val textColor =
+        if (isPressedState) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
 
     val boxModifier = if (isLandscape) modifier.fillMaxHeight() else modifier.height(36.dp)
     Box(
         modifier = boxModifier
-            .border(1.dp, colors.outline, RoundedCornerShape(4.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
             .background(bgColor, RoundedCornerShape(4.dp))
             .clickable(
                 interactionSource = interactionSource,
@@ -1459,6 +1455,7 @@ fun GotoRaDecPopup(
                 stringResource(Res.string.label_epoch),
                 style = MaterialTheme.typography.labelLarge
             )
+            val extColors = LocalOliveExtendedColors.current
             Row(
                 modifier = Modifier
                     .padding(top = 4.dp, bottom = 12.dp)
@@ -1472,7 +1469,7 @@ fun GotoRaDecPopup(
                 ) {
                     Text(
                         stringResource(Res.string.label_j2000),
-                        color = if (epochIsJ2000) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+                        color = if (epochIsJ2000) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                     )
                 }
                 Box(
@@ -1483,7 +1480,7 @@ fun GotoRaDecPopup(
                 ) {
                     Text(
                         stringResource(Res.string.label_now),
-                        color = if (!epochIsJ2000) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+                        color = if (!epochIsJ2000) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -1524,10 +1521,14 @@ fun GotoRaDecPopup(
                 Box(
                     modifier = Modifier
                         .clickable { decSign = if (decSign == "+") "-" else "+" }
-                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                        .border(1.dp, extColors.numpadKeyBorder, RoundedCornerShape(4.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                    Text(decSign, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        decSign,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
                 CoordinateBox(
                     value = decD,

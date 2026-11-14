@@ -48,7 +48,8 @@ fun SkyMapSettingsDialog(
 
     InfoPopup(
         title = stringResource(Res.string.title_settings),
-        onDismiss = onDismiss
+        onDismiss = onDismiss,
+        fillMaxWidth = true
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -270,7 +271,7 @@ fun SkyMapSettingsDialog(
             // 6. Sliders (Screen Brightness, Low Power Timeout, Zoom, Star Sensitivity, Exposure / Stacking)
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 4.dp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+                color = LocalOliveExtendedColors.current.dialogDivider
             )
 
             // Screen Brightness

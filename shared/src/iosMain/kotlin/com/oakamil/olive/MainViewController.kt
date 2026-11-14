@@ -324,7 +324,10 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         LocalPlatformWindowController provides windowController
     ) {
         OliveTheme(theme = viewModel.currentTheme) {
-            Surface(modifier = Modifier.fillMaxSize()) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
                 when (currentScreen) {
                     "main" -> MainScreen(
                         viewModel = viewModel,

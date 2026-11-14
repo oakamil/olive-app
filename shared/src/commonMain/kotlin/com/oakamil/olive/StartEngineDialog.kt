@@ -136,6 +136,7 @@ fun StartEngineDialog(
     InfoPopup(
         title = stringResource(Res.string.btn_start_engine),
         onDismiss = onDismiss,
+        fillMaxWidth = true,
         bottomBar = {
             Button(
                 onClick = {

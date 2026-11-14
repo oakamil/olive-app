@@ -75,6 +75,7 @@ fun LocationInputDialog(
                 stringResource(Res.string.label_latitude),
                 style = MaterialTheme.typography.labelLarge
             )
+            val extColors = LocalOliveExtendedColors.current
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.padding(vertical = 4.dp),
@@ -83,12 +84,13 @@ fun LocationInputDialog(
                 Box(
                     modifier = Modifier
                         .clickable { isNorth = !isNorth }
-                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                        .border(1.dp, extColors.numpadKeyBorder, RoundedCornerShape(4.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text(
                         stringResource(if (isNorth) Res.string.dir_north else Res.string.dir_south),
-                        style = MaterialTheme.typography.bodyLarge
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 CoordinateBox(
@@ -100,7 +102,7 @@ fun LocationInputDialog(
                 Text(
                     ".",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 CoordinateBox(
                     value = latFrac,
@@ -125,12 +127,13 @@ fun LocationInputDialog(
                 Box(
                     modifier = Modifier
                         .clickable { isEast = !isEast }
-                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                        .border(1.dp, extColors.numpadKeyBorder, RoundedCornerShape(4.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text(
                         stringResource(if (isEast) Res.string.dir_east else Res.string.dir_west),
-                        style = MaterialTheme.typography.bodyLarge
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 CoordinateBox(
@@ -143,7 +146,7 @@ fun LocationInputDialog(
                 Text(
                     ".",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 CoordinateBox(
                     value = lonFrac,

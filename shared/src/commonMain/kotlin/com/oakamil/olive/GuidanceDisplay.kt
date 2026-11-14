@@ -369,7 +369,7 @@ fun GuidanceDisplay(
             if (isCompactLayout) {
                 Text(
                     text = stringResource(Res.string.no_target),
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                 )
             } else {
@@ -380,7 +380,7 @@ fun GuidanceDisplay(
         }
 
         if (isImuEnabled && (stats.ra != null || stats.isImuEstimate)) {
-            val colors = LocalOliveColors.current
+            val colors = MaterialTheme.colorScheme
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -409,7 +409,7 @@ fun GuidanceDisplay(
 
 @Composable
 fun DirectionArrow(rotation: Int, alignRight: Boolean, isOutlined: Boolean) {
-    val colors = LocalOliveColors.current
+    val colors = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -455,7 +455,7 @@ fun DirectionArrow(rotation: Int, alignRight: Boolean, isOutlined: Boolean) {
 
 @Composable
 fun TargetArrow(rotation: Double, isOutlined: Boolean) {
-    val colors = LocalOliveColors.current
+    val colors = MaterialTheme.colorScheme
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center

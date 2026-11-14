@@ -63,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -88,6 +89,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -128,7 +130,6 @@ object SkyMapTuning {
     const val BADGE_FONT_SIZE_SP = 12.5f
 
     // Visual Controls
-    const val BELOW_HORIZON_ALPHA = 0.85f
     const val MAX_DSO_LABELS = 25
 }
 
@@ -140,7 +141,9 @@ fun SkyMapView(
     modifier: Modifier = Modifier,
     isStarting: Boolean = false,
     isStopping: Boolean = false,
-    detectedIpAddress: String = ""
+    detectedIpAddress: String = "",
+    bottomOverlayInset: Dp = 0.dp,
+    endOverlayInset: Dp = 0.dp
 ) {
     val rawLat = viewModel.currentLat
     val rawLon = viewModel.currentLon
@@ -269,11 +272,13 @@ fun SkyMapView(
         viewModel.skyMapCenterTarget = null
     }
 
-    val colors = LocalOliveColors.current
+    val extColors = LocalOliveExtendedColors.current
     val cutout = WindowInsets.displayCutout.asPaddingValues()
     val safeTop = maxOf(8.dp, cutout.calculateTopPadding())
     val safeStart = maxOf(8.dp, cutout.calculateStartPadding(LocalLayoutDirection.current))
     val safeEnd = maxOf(8.dp, cutout.calculateEndPadding(LocalLayoutDirection.current))
+    val hudEnd = if (endOverlayInset > 0.dp) maxOf(safeEnd, endOverlayInset + 8.dp) else safeEnd
+    val hudBottom = bottomOverlayInset + 8.dp
 
     val textMeasurer = rememberTextMeasurer(cacheSize = 256)
     val catalogPainters = rememberCatalogPainters()
@@ -388,11 +393,11 @@ fun SkyMapView(
     // Pre-measured static text layouts to avoid allocations during drawing
     val zenithText = stringResource(Res.string.label_zenith)
     val nadirText = stringResource(Res.string.label_nadir)
-    val zenithTextLayout = remember(textMeasurer, zenithText, colors) {
+    val zenithTextLayout = remember(textMeasurer, zenithText, extColors) {
         textMeasurer.measure(
             text = zenithText,
             style = TextStyle(
-                color = colors.secondary,
+                color = extColors.zenithNadir,
                 fontSize = SkyMapTuning.ZENITH_NADIR_FONT_SIZE_SP.sp,
                 fontWeight = FontWeight.SemiBold,
                 shadow = Shadow.None,
@@ -400,11 +405,11 @@ fun SkyMapView(
             )
         )
     }
-    val nadirTextLayout = remember(textMeasurer, nadirText, colors) {
+    val nadirTextLayout = remember(textMeasurer, nadirText, extColors) {
         textMeasurer.measure(
             text = nadirText,
             style = TextStyle(
-                color = colors.secondary,
+                color = extColors.zenithNadir,
                 fontSize = SkyMapTuning.ZENITH_NADIR_FONT_SIZE_SP.sp,
                 fontWeight = FontWeight.SemiBold,
                 shadow = Shadow.None,
@@ -422,12 +427,12 @@ fun SkyMapView(
         "W" to stringResource(Res.string.dir_west),
         "NW" to stringResource(Res.string.dir_northwest)
     )
-    val cardinalLayouts = remember(textMeasurer, colors, cardinalLabels) {
+    val cardinalLayouts = remember(textMeasurer, extColors, cardinalLabels) {
         cardinalLabels.mapValues { (_, label) ->
             textMeasurer.measure(
                 label,
                 style = TextStyle(
-                    color = colors.primary,
+                    color = extColors.cardinalLabel,
                     fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
                     fontWeight = FontWeight.Bold,
                     shadow = Shadow.None,
@@ -436,12 +441,12 @@ fun SkyMapView(
             )
         }
     }
-    val constellationLayouts = remember(textMeasurer, colors) {
+    val constellationLayouts = remember(textMeasurer, extColors) {
         ConstellationData.CONSTELLATIONS.associate { c ->
             c.name to textMeasurer.measure(
                 text = c.name,
                 style = TextStyle(
-                    color = colors.secondary.copy(alpha = 0.85f),
+                    color = extColors.constellationLabel,
                     fontSize = SkyMapTuning.CONSTELLATION_FONT_SIZE_SP.sp,
                     fontWeight = FontWeight.Medium,
                     shadow = Shadow.None,
@@ -690,7 +695,7 @@ fun SkyMapView(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background)
+            .background(extColors.skyBackground)
     ) {
         val widthPx = constraints.maxWidth.toFloat()
         val heightPx = constraints.maxHeight.toFloat()
@@ -776,6 +781,7 @@ fun SkyMapView(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
+                .clipToBounds()
                 .pointerInput(Unit) {
                     detectTransformGestures { _, pan, zoom, _ ->
                         if (zoom != 1f) {
@@ -888,7 +894,7 @@ fun SkyMapView(
 
                 drawPath(
                     path = horizonPath,
-                    color = colors.secondary,
+                    color = extColors.horizonLine,
                     style = strokeHorizon
                 )
 
@@ -911,7 +917,7 @@ fun SkyMapView(
                             )
                             drawText(
                                 textLayoutResult = textLayout,
-                                color = colors.primary,
+                                color = extColors.cardinalLabel,
                                 topLeft = Offset(cLeft, cTop)
                             )
                         }
@@ -927,19 +933,19 @@ fun SkyMapView(
                     val zY = zenithPt.y
                     val stroke = 1.5.dp.toPx()
                     drawCircle(
-                        colors.secondary,
+                        extColors.zenithNadir,
                         radius = 3.dp.toPx(),
                         center = Offset(zX, zY),
                         style = strokeZenithCircle
                     )
                     drawLine(
-                        colors.secondary,
+                        extColors.zenithNadir,
                         Offset(zX - zArm, zY),
                         Offset(zX + zArm, zY),
                         strokeWidth = stroke
                     )
                     drawLine(
-                        colors.secondary,
+                        extColors.zenithNadir,
                         Offset(zX, zY - zArm),
                         Offset(zX, zY + zArm),
                         strokeWidth = stroke
@@ -948,7 +954,7 @@ fun SkyMapView(
                     val zLeft = zX + 8.dp.toPx()
                     drawText(
                         zenithTextLayout,
-                        color = colors.secondary,
+                        color = extColors.zenithNadir,
                         topLeft = Offset(zLeft, zTop)
                     )
                 }
@@ -961,13 +967,13 @@ fun SkyMapView(
                     val nY = nadirPt.y
                     val stroke = 1.5.dp.toPx()
                     drawLine(
-                        colors.secondary,
+                        extColors.zenithNadir,
                         Offset(nX - nArm, nY),
                         Offset(nX + nArm, nY),
                         strokeWidth = stroke
                     )
                     drawLine(
-                        colors.secondary,
+                        extColors.zenithNadir,
                         Offset(nX, nY - nArm),
                         Offset(nX, nY + nArm),
                         strokeWidth = stroke
@@ -976,13 +982,13 @@ fun SkyMapView(
                     val nLeft = nX + 6.dp.toPx()
                     drawText(
                         nadirTextLayout,
-                        color = colors.secondary,
+                        color = extColors.zenithNadir,
                         topLeft = Offset(nLeft, nTop)
                     )
                 }
             }
 
-            // 4. Batched Constellation Stick Figures (Single Path in DarkRed)
+            // 4. Batched Constellation Stick Figures
             constellationPath.reset()
             val maxLineLen = widthPx * 0.8f
             val maxLineLenSq = maxLineLen * maxLineLen
@@ -1010,7 +1016,7 @@ fun SkyMapView(
             }
             drawPath(
                 path = constellationPath,
-                color = colors.secondary,
+                color = extColors.constellationLine,
                 style = strokeConstellation
             )
 
@@ -1038,7 +1044,7 @@ fun SkyMapView(
                             )
                             drawText(
                                 textLayoutResult = textLayout,
-                                color = colors.secondary.copy(alpha = 0.85f),
+                                color = extColors.constellationLabel,
                                 topLeft = Offset(cLeft, cTop)
                             )
                         }
@@ -1168,7 +1174,7 @@ fun SkyMapView(
                     // Dashed FOV border framing the camera view
                     val isEstimate = stats.isEstimateOrFailedSolve
                     val boxColor =
-                        if (isEstimate) colors.secondary.copy(alpha = 0.7f) else colors.primary
+                        if (isEstimate) extColors.fovBoxEstimate else extColors.fovBoxSolved
                     drawPath(
                         path = camBoxPath,
                         color = boxColor,
@@ -1206,6 +1212,7 @@ fun SkyMapView(
             val camBoxActive =
                 camBoxRect != null && matrix != null && cameraFrame != null && camCenterRa != null && camCenterDec != null
             val layoutKey = listOf(
+                extColors,
                 centerAz,
                 centerAlt,
                 fov,
@@ -1331,8 +1338,7 @@ fun SkyMapView(
                     fontSizeSp = baseFontSize,
                     placedReticles = placedReticleRects,
                     placedLabels = placedLabelRects,
-                    primaryColor = colors.primary,
-                    secondaryColor = colors.secondary
+                    extendedColors = extColors
                 )
                 placedCatalogItems.addAll(computedCatalogItems)
                 for (i in 0 until placedCatalogItems.size) {
@@ -1404,12 +1410,9 @@ fun SkyMapView(
             for (i in 0 until placedCatalogItems.size) {
                 val item = placedCatalogItems[i]
                 val isAbove = placedCatalogIsAbove[i]
-                val (iconVector, themedColor) = item.obj.getIconAndColor(
-                    colors.primary,
-                    colors.secondary
-                )
+                val (iconVector, themedColor) = item.obj.getIconAndColor(extColors)
                 val baseColor =
-                    if (isAbove) themedColor else colors.secondary.copy(alpha = SkyMapTuning.BELOW_HORIZON_ALPHA)
+                    if (isAbove) themedColor else extColors.skyBelowHorizon
 
                 val isMultipleStar =
                     item.obj.objectType == "Multiple Star" || item.obj.objectType == "Double Star"
@@ -1450,11 +1453,11 @@ fun SkyMapView(
                 val sy = placedStarYs[i]
                 val isAbove = drawnStarIsAbove[i]
                 val baseColor =
-                    if (isAbove) colors.primary else colors.secondary.copy(alpha = SkyMapTuning.BELOW_HORIZON_ALPHA)
+                    if (isAbove) extColors.starAboveHorizon else extColors.skyBelowHorizon
                 val isMultipleStarIcon = obj.objectType != "Star" && fov <= 15.0
 
                 if (isMultipleStarIcon) {
-                    val (iconVector, _) = obj.getIconAndColor(colors.primary, colors.secondary)
+                    val (iconVector, _) = obj.getIconAndColor(extColors)
                     val painter = catalogPainters[iconVector]
                     if (painter != null) {
                         translate(
@@ -1485,7 +1488,7 @@ fun SkyMapView(
                 val s = iconSize / 2f
                 val arm = s * 0.6f
                 val stroke = 1.5.dp.toPx()
-                val reticleColor = colors.secondary
+                val reticleColor = extColors.alignReticle
 
                 // Top-Left corner
                 drawLine(
@@ -1560,51 +1563,52 @@ fun SkyMapView(
                 if (tPt.isSpecified) {
                     val s = 14f
                     val stroke = 2.dp.toPx()
+                    val markerColor = extColors.targetMarker
                     // Corner brackets
                     drawLine(
-                        colors.primary,
+                        markerColor,
                         Offset(tPt.x - s, tPt.y - s),
                         Offset(tPt.x - s + 8f, tPt.y - s),
                         strokeWidth = stroke
                     )
                     drawLine(
-                        colors.primary,
+                        markerColor,
                         Offset(tPt.x - s, tPt.y - s),
                         Offset(tPt.x - s, tPt.y - s + 8f),
                         strokeWidth = stroke
                     )
                     drawLine(
-                        colors.primary,
+                        markerColor,
                         Offset(tPt.x + s, tPt.y - s),
                         Offset(tPt.x + s - 8f, tPt.y - s),
                         strokeWidth = stroke
                     )
                     drawLine(
-                        colors.primary,
+                        markerColor,
                         Offset(tPt.x + s, tPt.y - s),
                         Offset(tPt.x + s, tPt.y - s + 8f),
                         strokeWidth = stroke
                     )
                     drawLine(
-                        colors.primary,
+                        markerColor,
                         Offset(tPt.x - s, tPt.y + s),
                         Offset(tPt.x - s + 8f, tPt.y + s),
                         strokeWidth = stroke
                     )
                     drawLine(
-                        colors.primary,
+                        markerColor,
                         Offset(tPt.x - s, tPt.y + s),
                         Offset(tPt.x - s, tPt.y + s - 8f),
                         strokeWidth = stroke
                     )
                     drawLine(
-                        colors.primary,
+                        markerColor,
                         Offset(tPt.x + s, tPt.y + s),
                         Offset(tPt.x + s - 8f, tPt.y + s),
                         strokeWidth = stroke
                     )
                     drawLine(
-                        colors.primary,
+                        markerColor,
                         Offset(tPt.x + s, tPt.y + s),
                         Offset(tPt.x + s, tPt.y + s - 8f),
                         strokeWidth = stroke
@@ -1618,7 +1622,7 @@ fun SkyMapView(
 
                     if (guideStart != null) {
                         drawLine(
-                            color = colors.primary.copy(alpha = 0.5f),
+                            color = extColors.targetGuideLine,
                             start = guideStart,
                             end = tPt,
                             strokeWidth = 1.5.dp.toPx(),
@@ -1634,7 +1638,7 @@ fun SkyMapView(
                 val sPt = projection.toScreenRaDecOffset(selObj.ra, selObj.dec, lat, lst)
                 if (sPt.isSpecified) {
                     drawCircle(
-                        color = colors.primary,
+                        color = extColors.selectedRing,
                         radius = 22f,
                         center = sPt,
                         style = strokeSelectionCircle
@@ -1652,7 +1656,7 @@ fun SkyMapView(
                     .align(if (isReversed) Alignment.TopEnd else Alignment.TopStart)
                     .padding(
                         start = if (isReversed) 0.dp else safeStart + 2.dp,
-                        end = if (isReversed) safeEnd + 2.dp else 0.dp
+                        end = if (isReversed) hudEnd + 2.dp else 0.dp
                     )
                     .height(topControlsY),
                 contentAlignment = if (isReversed) Alignment.BottomEnd else Alignment.BottomStart
@@ -1663,7 +1667,7 @@ fun SkyMapView(
                         fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
                         fontWeight = FontWeight.Bold
                     ),
-                    color = colors.primary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 3.dp)
                 )
             }
@@ -1676,7 +1680,7 @@ fun SkyMapView(
                     .align(if (isReversed) Alignment.TopEnd else Alignment.TopStart)
                     .padding(
                         start = if (isReversed) 0.dp else safeStart,
-                        end = if (isReversed) safeEnd else 0.dp,
+                        end = if (isReversed) hudEnd else 0.dp,
                         top = topControlsY
                     )
                     .width(IntrinsicSize.Max),
@@ -1686,8 +1690,11 @@ fun SkyMapView(
                 if (viewModel.showMapPosition) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.75f)),
-                        border = BorderStroke(1.dp, colors.outline),
+                        colors = CardDefaults.cardColors(
+                            containerColor = extColors.mapOverlaySurface,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        border = BorderStroke(1.dp, extColors.hudCardBorder),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         val badgeAz = viewModel.skyMapCenterAz ?: initialAltAz.first
@@ -1703,7 +1710,7 @@ fun SkyMapView(
                             Icon(
                                 imageVector = Icons.Default.Map,
                                 contentDescription = null,
-                                tint = colors.primary,
+                                tint = extColors.telemetryAccent,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(Modifier.width(8.dp))
@@ -1716,7 +1723,7 @@ fun SkyMapView(
                                         fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
                                         fontWeight = FontWeight.Normal
                                     ),
-                                    color = colors.primary,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1
                                 )
                                 Text(
@@ -1730,7 +1737,7 @@ fun SkyMapView(
                                         fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
                                         fontWeight = FontWeight.Normal
                                     ),
-                                    color = colors.secondary,
+                                    color = extColors.hudSecondaryStat,
                                     maxLines = 1
                                 )
                             }
@@ -1738,14 +1745,17 @@ fun SkyMapView(
                     }
                 }
 
-                // Stats Bubble (Tappable, primary border, shown when engine is running and showStats enabled)
+                // Stats Bubble (Tappable, shown when engine is running and showStats enabled)
                 if (viewModel.showStats && viewModel.isEngineRunning) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { showFullStats = true },
-                        colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.75f)),
-                        border = BorderStroke(1.dp, colors.primary),
+                        colors = CardDefaults.cardColors(
+                            containerColor = extColors.mapOverlaySurface,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        border = BorderStroke(1.dp, extColors.hudStatsBorder),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Row(
@@ -1761,7 +1771,7 @@ fun SkyMapView(
                             Icon(
                                 imageVector = statusIcon,
                                 contentDescription = stringResource(Res.string.cd_solve_status),
-                                tint = colors.primary,
+                                tint = extColors.telemetryAccent,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(Modifier.width(8.dp))
@@ -1776,7 +1786,7 @@ fun SkyMapView(
                                         fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
                                         fontWeight = FontWeight.Normal
                                     ),
-                                    color = colors.primary,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1
                                 )
                                 Row(
@@ -1787,28 +1797,28 @@ fun SkyMapView(
                                         Icon(
                                             imageVector = Icons.Outlined.StarOutline,
                                             contentDescription = stringResource(Res.string.cd_stars),
-                                            tint = colors.secondary,
+                                            tint = extColors.hudSecondaryStat,
                                             modifier = Modifier.size(13.dp)
                                         )
                                         Spacer(Modifier.width(2.dp))
                                         Text(
                                             text = "${currentStats.centroidCount}",
                                             style = TextStyle(fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp),
-                                            color = colors.secondary
+                                            color = extColors.hudSecondaryStat
                                         )
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
                                             imageVector = Icons.Outlined.PhotoCamera,
                                             contentDescription = stringResource(Res.string.stat_exposure),
-                                            tint = colors.secondary,
+                                            tint = extColors.hudSecondaryStat,
                                             modifier = Modifier.size(13.dp)
                                         )
                                         Spacer(Modifier.width(2.dp))
                                         Text(
                                             text = "${round(currentStats.exposureMs).toInt()}",
                                             style = TextStyle(fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp),
-                                            color = colors.secondary
+                                            color = extColors.hudSecondaryStat
                                         )
                                     }
                                     val pipelineTotalMs =
@@ -1828,14 +1838,14 @@ fun SkyMapView(
                                         Icon(
                                             imageVector = Icons.Outlined.HourglassEmpty,
                                             contentDescription = stringResource(Res.string.cd_pipeline_time),
-                                            tint = colors.secondary,
+                                            tint = extColors.hudSecondaryStat,
                                             modifier = Modifier.size(13.dp)
                                         )
                                         Spacer(Modifier.width(2.dp))
                                         Text(
                                             text = pipelineStr,
                                             style = TextStyle(fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp),
-                                            color = colors.secondary
+                                            color = extColors.hudSecondaryStat
                                         )
                                     }
                                 }
@@ -1853,7 +1863,7 @@ fun SkyMapView(
                 .padding(
                     top = topControlsY,
                     start = if (isReversed) safeStart else 0.dp,
-                    end = if (isReversed) 0.dp else safeEnd
+                    end = if (isReversed) 0.dp else hudEnd
                 ),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -1874,13 +1884,11 @@ fun SkyMapView(
                     enabled = canCenterTarget,
                     border = BorderStroke(
                         1.dp,
-                        if (canCenterTarget) colors.primary else colors.outline.copy(alpha = 0.4f)
+                        if (canCenterTarget) MaterialTheme.colorScheme.primary else extColors.mapButtonDisabledBorder
                     ),
                     colors = IconButtonDefaults.outlinedIconButtonColors(
-                        containerColor = if (canCenterTarget) colors.surface.copy(alpha = 0.6f) else colors.surface.copy(
-                            alpha = 0.3f
-                        ),
-                        disabledContainerColor = colors.surface.copy(alpha = 0.3f)
+                        containerColor = if (canCenterTarget) extColors.mapOverlaySurface else extColors.mapButtonDisabledSurface,
+                        disabledContainerColor = extColors.mapButtonDisabledSurface
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.size(36.dp)
@@ -1888,7 +1896,7 @@ fun SkyMapView(
                     Icon(
                         imageVector = Icons.Default.GpsFixed,
                         contentDescription = stringResource(Res.string.btn_center_target),
-                        tint = if (canCenterTarget) colors.primary else colors.secondary.copy(alpha = 0.4f),
+                        tint = if (canCenterTarget) MaterialTheme.colorScheme.primary else extColors.mapButtonDisabledIcon,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -1896,6 +1904,8 @@ fun SkyMapView(
 
             val hasSolve =
                 viewModel.isEngineRunning && !isStarting && !isStopping && stats.ra != null && stats.dec != null
+            val scopeActiveColor =
+                if (isCameraLocked) MaterialTheme.colorScheme.primary else extColors.telemetryAccent
             OutlinedIconButton(
                 onClick = {
                     viewModel.skyMapCameraLocked = true
@@ -1923,13 +1933,13 @@ fun SkyMapView(
                 enabled = hasSolve,
                 border = BorderStroke(
                     1.dp,
-                    if (hasSolve) colors.primary else colors.outline.copy(alpha = 0.4f)
+                    if (hasSolve) scopeActiveColor else extColors.mapButtonDisabledBorder
                 ),
                 colors = IconButtonDefaults.outlinedIconButtonColors(
-                    containerColor = if (hasSolve && isCameraLocked) colors.primary.copy(alpha = 0.25f)
-                    else if (hasSolve) colors.surface.copy(alpha = 0.6f)
-                    else colors.surface.copy(alpha = 0.3f),
-                    disabledContainerColor = colors.surface.copy(alpha = 0.3f)
+                    containerColor = if (hasSolve && isCameraLocked) extColors.mapButtonActiveSurface
+                    else if (hasSolve) extColors.mapOverlaySurface
+                    else extColors.mapButtonDisabledSurface,
+                    disabledContainerColor = extColors.mapButtonDisabledSurface
                 ),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.size(36.dp)
@@ -1937,7 +1947,7 @@ fun SkyMapView(
                 Icon(
                     imageVector = Icons.Default.CenterFocusStrong,
                     contentDescription = stringResource(Res.string.btn_center_telescope),
-                    tint = if (hasSolve) colors.primary else colors.secondary.copy(alpha = 0.4f),
+                    tint = if (hasSolve) scopeActiveColor else extColors.mapButtonDisabledIcon,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -1949,8 +1959,8 @@ fun SkyMapView(
                 .align(if (isReversed) Alignment.BottomStart else Alignment.BottomEnd)
                 .padding(
                     start = if (isReversed) safeStart else 0.dp,
-                    end = if (isReversed) 0.dp else safeEnd,
-                    bottom = 8.dp
+                    end = if (isReversed) 0.dp else hudEnd,
+                    bottom = hudBottom
                 ),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -1958,11 +1968,9 @@ fun SkyMapView(
                 onClick = {
                     viewModel.skyMapFov = (viewModel.skyMapFov / 1.4).coerceIn(0.5, 180.0)
                 },
-                border = BorderStroke(1.dp, colors.outline),
+                border = BorderStroke(1.dp, extColors.mapButtonBorder),
                 colors = IconButtonDefaults.outlinedIconButtonColors(
-                    containerColor = colors.surface.copy(
-                        alpha = 0.6f
-                    )
+                    containerColor = extColors.mapOverlaySurface
                 ),
                 shape = CircleShape,
                 modifier = Modifier.size(40.dp)
@@ -1970,18 +1978,16 @@ fun SkyMapView(
                 Icon(
                     Icons.Default.Add,
                     contentDescription = stringResource(Res.string.cd_zoom_in),
-                    tint = colors.primary
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
             OutlinedIconButton(
                 onClick = {
                     viewModel.skyMapFov = (viewModel.skyMapFov * 1.4).coerceIn(0.5, 180.0)
                 },
-                border = BorderStroke(1.dp, colors.outline),
+                border = BorderStroke(1.dp, extColors.mapButtonBorder),
                 colors = IconButtonDefaults.outlinedIconButtonColors(
-                    containerColor = colors.surface.copy(
-                        alpha = 0.6f
-                    )
+                    containerColor = extColors.mapOverlaySurface
                 ),
                 shape = CircleShape,
                 modifier = Modifier.size(40.dp)
@@ -1989,7 +1995,7 @@ fun SkyMapView(
                 Icon(
                     Icons.Default.Remove,
                     contentDescription = stringResource(Res.string.cd_zoom_out),
-                    tint = colors.primary
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
@@ -2008,19 +2014,22 @@ fun SkyMapView(
                     .align(if (isReversed) Alignment.BottomEnd else Alignment.BottomStart)
                     .padding(
                         start = if (isReversed) 0.dp else safeStart,
-                        end = if (isReversed) safeEnd else 0.dp,
-                        bottom = 8.dp
+                        end = if (isReversed) hudEnd else 0.dp,
+                        bottom = hudBottom
                     )
                     .width(guidanceWidth),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Target Object Bubble (Tappable, primary border)
+                // Target Object Bubble (Tappable, accent border)
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { showTargetPopup = true },
-                    colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.85f)),
-                    border = BorderStroke(1.dp, colors.primary),
+                    colors = CardDefaults.cardColors(
+                        containerColor = extColors.mapOverlaySurface,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    border = BorderStroke(1.dp, extColors.targetMarker),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Box(
@@ -2035,7 +2044,7 @@ fun SkyMapView(
                                 fontSize = SkyMapTuning.BADGE_FONT_SIZE_SP.sp,
                                 fontWeight = FontWeight.Bold
                             ),
-                            color = colors.primary,
+                            color = extColors.targetMarker,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -2047,8 +2056,11 @@ fun SkyMapView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f),
-                    colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.85f)),
-                    border = BorderStroke(1.dp, colors.outline),
+                    colors = CardDefaults.cardColors(
+                        containerColor = extColors.mapOverlaySurface,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    border = BorderStroke(1.dp, extColors.hudCardBorder),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Box(
@@ -2079,74 +2091,41 @@ fun SkyMapView(
             ) {
                 Column {
                     if (!obj.commonName.isNullOrBlank() && !obj.isFakeCommonName) {
-                        Row {
-                            Text(
-                                "${stringResource(Res.string.label_designation)}: ",
-                                fontWeight = FontWeight.Bold,
-                                color = colors.primary
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(obj.designation, color = colors.primary)
-                        }
+                        SkyMapInfoRow(
+                            label = "${stringResource(Res.string.label_designation)}:",
+                            value = obj.designation
+                        )
                         Spacer(Modifier.height(4.dp))
                     }
-                    Row {
-                        Text(
-                            "${stringResource(Res.string.label_type)}: ",
-                            fontWeight = FontWeight.Bold,
-                            color = colors.primary
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(getLocalizedObjectType(obj.objectType), color = colors.primary)
-                    }
+                    SkyMapInfoRow(
+                        label = "${stringResource(Res.string.label_type)}:",
+                        value = getLocalizedObjectType(obj.objectType)
+                    )
                     Spacer(Modifier.height(4.dp))
-                    Row {
-                        Text(
-                            "${stringResource(Res.string.label_magnitude)}: ",
-                            fontWeight = FontWeight.Bold,
-                            color = colors.primary
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            if (obj.magnitude != null) String.format(
-                                "%.2f",
-                                obj.magnitude
-                            ) else stringResource(Res.string.value_not_available),
-                            color = colors.primary
-                        )
-                    }
+                    SkyMapInfoRow(
+                        label = "${stringResource(Res.string.label_magnitude)}:",
+                        value = if (obj.magnitude != null) String.format(
+                            "%.2f",
+                            obj.magnitude
+                        ) else stringResource(Res.string.value_not_available)
+                    )
                     Spacer(Modifier.height(4.dp))
                     if (!obj.constellation.isNullOrBlank()) {
-                        Row {
-                            Text(
-                                "${stringResource(Res.string.label_constellation)}: ",
-                                fontWeight = FontWeight.Bold,
-                                color = colors.primary
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(obj.constellation, color = colors.primary)
-                        }
+                        SkyMapInfoRow(
+                            label = "${stringResource(Res.string.label_constellation)}:",
+                            value = obj.constellation
+                        )
                         Spacer(Modifier.height(4.dp))
                     }
-                    Row {
-                        Text(
-                            "${stringResource(Res.string.ra_j2000_label)}: ",
-                            fontWeight = FontWeight.Bold,
-                            color = colors.primary
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(formatRa(obj.ra), color = colors.primary)
-                    }
+                    SkyMapInfoRow(
+                        label = "${stringResource(Res.string.ra_j2000_label)}:",
+                        value = formatRa(obj.ra)
+                    )
                     Spacer(Modifier.height(4.dp))
-                    Row {
-                        Text(
-                            "${stringResource(Res.string.dec_j2000_label)}: ",
-                            fontWeight = FontWeight.Bold,
-                            color = colors.primary
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(formatDec(obj.dec), color = colors.primary)
-                    }
+                    SkyMapInfoRow(
+                        label = "${stringResource(Res.string.dec_j2000_label)}:",
+                        value = formatDec(obj.dec)
+                    )
                     val isAbove = !viewModel.hasValidLocation || AstrometryUtils.raDecToAltAz(
                         obj.ra,
                         obj.dec,
@@ -2162,6 +2141,8 @@ fun SkyMapView(
                             IconBarItem(
                                 icon = Icons.Default.GpsFixed,
                                 label = stringResource(Res.string.btn_goto),
+                                iconTint = MaterialTheme.colorScheme.primary,
+                                labelColor = MaterialTheme.colorScheme.primary,
                                 onClick = {
                                     viewModel.setGoToTarget(obj.ra, obj.dec)
                                     selectedObject = null
@@ -2176,7 +2157,7 @@ fun SkyMapView(
                         ) {
                             Text(
                                 stringResource(Res.string.status_below_horizon),
-                                color = colors.primary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
@@ -2201,94 +2182,51 @@ fun SkyMapView(
                 Column {
                     if (target != null) {
                         if (!target.commonName.isNullOrBlank() && !target.isFakeCommonName) {
-                            Row {
-                                Text(
-                                    "${stringResource(Res.string.label_designation)}: ",
-                                    fontWeight = FontWeight.Bold,
-                                    color = colors.primary
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(target.designation, color = colors.primary)
-                            }
+                            SkyMapInfoRow(
+                                label = "${stringResource(Res.string.label_designation)}:",
+                                value = target.designation
+                            )
                             Spacer(Modifier.height(4.dp))
                         }
-                        Row {
-                            Text(
-                                "${stringResource(Res.string.label_type)}: ",
-                                fontWeight = FontWeight.Bold,
-                                color = colors.primary
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(getLocalizedObjectType(target.objectType), color = colors.primary)
-                        }
+                        SkyMapInfoRow(
+                            label = "${stringResource(Res.string.label_type)}:",
+                            value = getLocalizedObjectType(target.objectType)
+                        )
                         Spacer(Modifier.height(4.dp))
-                        Row {
-                            Text(
-                                "${stringResource(Res.string.label_magnitude)}: ",
-                                fontWeight = FontWeight.Bold,
-                                color = colors.primary
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                if (target.magnitude != null) String.format(
-                                    "%.2f",
-                                    target.magnitude
-                                ) else stringResource(Res.string.value_not_available),
-                                color = colors.primary
-                            )
-                        }
+                        SkyMapInfoRow(
+                            label = "${stringResource(Res.string.label_magnitude)}:",
+                            value = if (target.magnitude != null) String.format(
+                                "%.2f",
+                                target.magnitude
+                            ) else stringResource(Res.string.value_not_available)
+                        )
                         Spacer(Modifier.height(4.dp))
                         if (!target.constellation.isNullOrBlank()) {
-                            Row {
-                                Text(
-                                    "${stringResource(Res.string.label_constellation)}: ",
-                                    fontWeight = FontWeight.Bold,
-                                    color = colors.primary
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(target.constellation, color = colors.primary)
-                            }
+                            SkyMapInfoRow(
+                                label = "${stringResource(Res.string.label_constellation)}:",
+                                value = target.constellation
+                            )
                             Spacer(Modifier.height(4.dp))
                         }
-                        Row {
-                            Text(
-                                "${stringResource(Res.string.ra_j2000_label)}: ",
-                                fontWeight = FontWeight.Bold,
-                                color = colors.primary
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(formatRa(target.ra), color = colors.primary)
-                        }
+                        SkyMapInfoRow(
+                            label = "${stringResource(Res.string.ra_j2000_label)}:",
+                            value = formatRa(target.ra)
+                        )
                         Spacer(Modifier.height(4.dp))
-                        Row {
-                            Text(
-                                "${stringResource(Res.string.dec_j2000_label)}: ",
-                                fontWeight = FontWeight.Bold,
-                                color = colors.primary
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(formatDec(target.dec), color = colors.primary)
-                        }
+                        SkyMapInfoRow(
+                            label = "${stringResource(Res.string.dec_j2000_label)}:",
+                            value = formatDec(target.dec)
+                        )
                     } else {
-                        Row {
-                            Text(
-                                "${stringResource(Res.string.ra_j2000_label)}: ",
-                                fontWeight = FontWeight.Bold,
-                                color = colors.primary
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(formatRa(stats.targetRa), color = colors.primary)
-                        }
+                        SkyMapInfoRow(
+                            label = "${stringResource(Res.string.ra_j2000_label)}:",
+                            value = formatRa(stats.targetRa)
+                        )
                         Spacer(Modifier.height(4.dp))
-                        Row {
-                            Text(
-                                "${stringResource(Res.string.dec_j2000_label)}: ",
-                                fontWeight = FontWeight.Bold,
-                                color = colors.primary
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(formatDec(stats.targetDec), color = colors.primary)
-                        }
+                        SkyMapInfoRow(
+                            label = "${stringResource(Res.string.dec_j2000_label)}:",
+                            value = formatDec(stats.targetDec)
+                        )
                     }
                     Spacer(Modifier.height(12.dp))
                     Row(
@@ -2299,6 +2237,8 @@ fun SkyMapView(
                         IconBarItem(
                             icon = Icons.Default.Stop,
                             label = stringResource(Res.string.btn_stop),
+                            iconTint = extColors.ctaStop,
+                            labelColor = extColors.ctaStop,
                             onClick = {
                                 viewModel.clearGoToTarget()
                                 showTargetPopup = false
@@ -2370,6 +2310,22 @@ fun SkyMapView(
                 Text(AnnotatedString.fromHtml(stringResource(id = infoRes)))
             }
         }
+    }
+}
+
+@Composable
+private fun SkyMapInfoRow(
+    label: String,
+    value: String
+) {
+    Row {
+        Text(
+            label,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(value, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 

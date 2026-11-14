@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -62,7 +63,9 @@ fun IconBarItem(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     isLoading: Boolean = false,
-    iconSize: Dp = 28.dp
+    iconSize: Dp = 28.dp,
+    iconTint: Color = MaterialTheme.colorScheme.onSurface,
+    labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -74,14 +77,14 @@ fun IconBarItem(
         if (isLoading) {
             CircularProgressIndicator(
                 modifier = Modifier.size(iconSize),
-                color = MaterialTheme.colorScheme.primary,
+                color = iconTint,
                 strokeWidth = 3.dp
             )
         } else {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
+                tint = if (enabled) iconTint else MaterialTheme.colorScheme.onSurface.copy(
                     alpha = 0.38f
                 ),
                 modifier = Modifier.size(iconSize)
@@ -94,7 +97,7 @@ fun IconBarItem(
         BasicText(
             text = label,
             style = baseStyle.copy(
-                color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
+                color = if (enabled) labelColor else MaterialTheme.colorScheme.onSurface.copy(
                     alpha = 0.38f
                 ),
                 textAlign = TextAlign.Center
@@ -124,6 +127,7 @@ fun OliveAlertDialog(
     dismissOnBackPress: Boolean = true
 ) {
     val onUserInteraction = LocalOnUserInteraction.current
+    val extColors = LocalOliveExtendedColors.current
     Dialog(
         onDismissRequest = {
             if (dismissOnClickOutside) {
@@ -138,14 +142,15 @@ fun OliveAlertDialog(
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
                 .padding(24.dp)
                 .widthIn(max = 440.dp)
                 .fillMaxWidth()
                 .border(
                     1.dp,
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    extColors.subtleBorder,
                     RoundedCornerShape(16.dp)
                 )
                 .pointerInput(Unit) {
@@ -175,6 +180,7 @@ fun OliveAlertDialog(
                         modifier = Modifier.weight(1f, fill = false)
                     )
                     if (showCloseButton) {
+                        Spacer(modifier = Modifier.width(8.dp))
                         IconButton(onClick = onDismiss) {
                             Icon(
                                 imageVector = Icons.Default.Close,
@@ -185,7 +191,7 @@ fun OliveAlertDialog(
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                HorizontalDivider(color = extColors.dialogDivider)
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = text,
@@ -243,23 +249,27 @@ fun NightVisionDialog(
 fun InfoPopup(
     title: String,
     onDismiss: () -> Unit,
+    fillMaxWidth: Boolean = false,
     bottomBar: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     val onUserInteraction = LocalOnUserInteraction.current
+    val extColors = LocalOliveExtendedColors.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
                 .padding(24.dp)
-                .fillMaxWidth()
+                .widthIn(min = 200.dp, max = 440.dp)
+                .then(if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier)
                 .border(
                     1.dp,
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    extColors.subtleBorder,
                     RoundedCornerShape(16.dp)
                 )
                 .pointerInput(Unit) {
@@ -271,7 +281,11 @@ fun InfoPopup(
                     }
                 }
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier.width(
+                    IntrinsicSize.Max
+                )
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -282,8 +296,10 @@ fun InfoPopup(
                     Text(
                         title,
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
                     IconButton(onClick = onDismiss) {
                         Icon(
                             Icons.Default.Close,
@@ -292,7 +308,7 @@ fun InfoPopup(
                         )
                     }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                HorizontalDivider(color = extColors.dialogDivider)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -303,7 +319,7 @@ fun InfoPopup(
                     content()
                 }
                 if (bottomBar != null) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                    HorizontalDivider(color = extColors.dialogDivider)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -325,10 +341,9 @@ fun CoordinateBox(
     placeholder: String = "00",
     onClick: () -> Unit
 ) {
+    val extColors = LocalOliveExtendedColors.current
     val borderColor =
-        if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(
-            alpha = 0.5f
-        )
+        if (isFocused) MaterialTheme.colorScheme.primary else extColors.subtleBorder
     val borderWidth = if (isFocused) 2.dp else 1.dp
 
     Row(
@@ -342,7 +357,7 @@ fun CoordinateBox(
         Text(
             text = value.ifEmpty { placeholder },
             style = MaterialTheme.typography.bodyLarge,
-            color = if (value.isEmpty()) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+            color = if (value.isEmpty()) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.alignByBaseline()
         )
         Text(
@@ -352,7 +367,7 @@ fun CoordinateBox(
             } else {
                 MaterialTheme.typography.labelSmall
             },
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+            color = extColors.secondaryText,
             modifier = Modifier
                 .padding(start = 2.dp)
                 .alignByBaseline()
@@ -367,6 +382,7 @@ fun NightVisionNumpad(
     onNext: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val extColors = LocalOliveExtendedColors.current
     val keys = listOf(
         listOf("1", "2", "3"),
         listOf("4", "5", "6"),
@@ -376,7 +392,7 @@ fun NightVisionNumpad(
 
     Column(
         modifier = modifier
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.surface)
             .padding(2.dp)
             .width(200.dp)
     ) {
@@ -392,9 +408,13 @@ fun NightVisionNumpad(
                         modifier = Modifier
                             .weight(1f)
                             .padding(horizontal = 2.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainer,
+                                RoundedCornerShape(4.dp)
+                            )
                             .border(
                                 1.dp,
-                                MaterialTheme.colorScheme.primary,
+                                extColors.numpadKeyBorder,
                                 RoundedCornerShape(4.dp)
                             )
                             .clickable {
@@ -411,12 +431,12 @@ fun NightVisionNumpad(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                 contentDescription = stringResource(Res.string.cd_next),
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
                         } else {
                             Text(
                                 text = key,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.titleLarge
                             )
                         }
@@ -428,174 +448,169 @@ fun NightVisionNumpad(
 }
 
 @Composable
+private fun StatRow(
+    label: String,
+    value: String
+) {
+    Row {
+        Text(
+            label,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(value, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+@Composable
 fun StatsDisplay(
     stats: EngineStats,
     detectedIpAddress: String = "",
     onInfoClick: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row {
-            Text(stringResource(id = Res.string.stat_status), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                when (stats.parsedStatus) {
-                    EngineStatus.SOLVING -> stringResource(id = Res.string.stat_solving)
-                    EngineStatus.SLEWING -> stringResource(id = Res.string.stat_slewing)
-                    EngineStatus.IDLE -> stringResource(id = Res.string.stat_idle)
-                    EngineStatus.CAMERA_MODE -> stringResource(id = Res.string.btn_camera_mode)
-                    EngineStatus.CALIBRATING -> stringResource(id = Res.string.stat_calibrating)
-                    EngineStatus.CALIBRATING_FOCUS -> stringResource(id = Res.string.stat_calibrating_focus)
-                    null -> stats.status
-                }
-            )
-        }
+        StatRow(
+            label = stringResource(id = Res.string.stat_status),
+            value = when (stats.parsedStatus) {
+                EngineStatus.SOLVING -> stringResource(id = Res.string.stat_solving)
+                EngineStatus.SLEWING -> stringResource(id = Res.string.stat_slewing)
+                EngineStatus.IDLE -> stringResource(id = Res.string.stat_idle)
+                EngineStatus.CAMERA_MODE -> stringResource(id = Res.string.btn_camera_mode)
+                EngineStatus.CALIBRATING -> stringResource(id = Res.string.stat_calibrating)
+                EngineStatus.CALIBRATING_FOCUS -> stringResource(id = Res.string.stat_calibrating_focus)
+                null -> stats.status
+            }
+        )
         Spacer(modifier = Modifier.height(4.dp))
-        Row {
-            Text(stringResource(id = Res.string.stat_star_count), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("${stats.centroidCount}")
-        }
+        StatRow(
+            label = stringResource(id = Res.string.stat_star_count),
+            value = "${stats.centroidCount}"
+        )
         Spacer(modifier = Modifier.height(8.dp))
 
-        Row {
-            Text(stringResource(id = Res.string.ra_j2000_label), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(stats.ra?.let { formatRa(it) } ?: "-")
-        }
+        StatRow(
+            label = stringResource(id = Res.string.ra_j2000_label),
+            value = stats.ra?.let { formatRa(it) } ?: "-"
+        )
         Spacer(modifier = Modifier.height(4.dp))
 
-        Row {
-            Text(stringResource(id = Res.string.dec_j2000_label), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(stats.dec?.let { formatDec(it) } ?: "-")
-        }
+        StatRow(
+            label = stringResource(id = Res.string.dec_j2000_label),
+            value = stats.dec?.let { formatDec(it) } ?: "-"
+        )
         Spacer(modifier = Modifier.height(4.dp))
 
         stats.fov?.let { fovVal ->
-            Row {
-                Text(stringResource(id = Res.string.stat_fov), fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    stringResource(
-                        id = Res.string.format_degree,
-                        String.format("%.2f", fovVal)
-                    )
+            StatRow(
+                label = stringResource(id = Res.string.stat_fov),
+                value = stringResource(
+                    id = Res.string.format_degree,
+                    String.format("%.2f", fovVal)
                 )
-            }
+            )
         }
         Spacer(modifier = Modifier.height(8.dp))
 
-        Row {
-            Text(stringResource(id = Res.string.stat_exposure), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                stringResource(
-                    id = Res.string.format_ms,
-                    String.format("%.2f", stats.exposureMs)
-                )
+        StatRow(
+            label = stringResource(id = Res.string.stat_exposure),
+            value = stringResource(
+                id = Res.string.format_ms,
+                String.format("%.2f", stats.exposureMs)
             )
-        }
+        )
         Spacer(modifier = Modifier.height(4.dp))
 
-        Row {
-            Text(stringResource(id = Res.string.stat_post_process), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                stringResource(
-                    id = Res.string.format_ms,
-                    String.format("%.1f", stats.postProcessMs)
-                )
+        StatRow(
+            label = stringResource(id = Res.string.stat_post_process),
+            value = stringResource(
+                id = Res.string.format_ms,
+                String.format("%.1f", stats.postProcessMs)
             )
-        }
+        )
         Spacer(modifier = Modifier.height(4.dp))
 
-        Row {
-            Text(stringResource(id = Res.string.stat_extraction), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                stringResource(
-                    id = Res.string.format_ms,
-                    String.format("%.1f", stats.extractMs)
-                )
+        StatRow(
+            label = stringResource(id = Res.string.stat_extraction),
+            value = stringResource(
+                id = Res.string.format_ms,
+                String.format("%.1f", stats.extractMs)
             )
-        }
+        )
         Spacer(modifier = Modifier.height(4.dp))
 
-        Row {
-            Text(stringResource(id = Res.string.stat_solve), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                stringResource(
-                    id = Res.string.format_ms,
-                    String.format("%.1f", stats.solveMs)
-                )
+        StatRow(
+            label = stringResource(id = Res.string.stat_solve),
+            value = stringResource(
+                id = Res.string.format_ms,
+                String.format("%.1f", stats.solveMs)
             )
-        }
+        )
         Spacer(modifier = Modifier.height(4.dp))
 
-        Row {
-            Text(stringResource(id = Res.string.stat_solve_rate), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                stringResource(
-                    id = Res.string.format_hz,
-                    String.format("%.1f", stats.solveRateHz)
-                )
+        StatRow(
+            label = stringResource(id = Res.string.stat_solve_rate),
+            value = stringResource(
+                id = Res.string.format_hz,
+                String.format("%.1f", stats.solveRateHz)
             )
-        }
+        )
         Spacer(modifier = Modifier.height(4.dp))
 
-        Row {
-            Text(stringResource(id = Res.string.stat_last_solve), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(4.dp))
-            val cropString = when (stats.solvedCrop) {
-                "Center2x", "Center" -> stringResource(id = Res.string.crop_center_2x)
-                "Center2xHighSens", "CenterHighSens" -> stringResource(id = Res.string.crop_center_2x_hs)
-                "Center1_5x", "CenterWide" -> stringResource(id = Res.string.crop_center_1_5x)
-                "Center1_5xHighSens", "CenterWideHighSens" -> stringResource(id = Res.string.crop_center_1_5x_hs)
-                "Top" -> stringResource(id = Res.string.crop_top)
-                "Bottom" -> stringResource(id = Res.string.crop_bottom)
-                "Left" -> stringResource(id = Res.string.crop_left)
-                "Right" -> stringResource(id = Res.string.crop_right)
-                "Full" -> stringResource(id = Res.string.crop_full)
-                EngineStats.CROP_FAILED -> stringResource(id = Res.string.crop_failed)
+        val cropString = when (stats.solvedCrop) {
+            "Center2x", "Center" -> stringResource(id = Res.string.crop_center_2x)
+            "Center2xHighSens", "CenterHighSens" -> stringResource(id = Res.string.crop_center_2x_hs)
+            "Center1_5x", "CenterWide" -> stringResource(id = Res.string.crop_center_1_5x)
+            "Center1_5xHighSens", "CenterWideHighSens" -> stringResource(id = Res.string.crop_center_1_5x_hs)
+            "Top" -> stringResource(id = Res.string.crop_top)
+            "Bottom" -> stringResource(id = Res.string.crop_bottom)
+            "Left" -> stringResource(id = Res.string.crop_left)
+            "Right" -> stringResource(id = Res.string.crop_right)
+            "Full" -> stringResource(id = Res.string.crop_full)
+            EngineStats.CROP_FAILED -> stringResource(id = Res.string.crop_failed)
 
-                "TopHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_top)
-                )
+            "TopHighSens" -> stringResource(
+                id = Res.string.format_high_sens,
+                stringResource(id = Res.string.crop_top)
+            )
 
-                "BottomHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_bottom)
-                )
+            "BottomHighSens" -> stringResource(
+                id = Res.string.format_high_sens,
+                stringResource(id = Res.string.crop_bottom)
+            )
 
-                "LeftHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_left)
-                )
+            "LeftHighSens" -> stringResource(
+                id = Res.string.format_high_sens,
+                stringResource(id = Res.string.crop_left)
+            )
 
-                "RightHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_right)
-                )
+            "RightHighSens" -> stringResource(
+                id = Res.string.format_high_sens,
+                stringResource(id = Res.string.crop_right)
+            )
 
-                "FullHighSens" -> stringResource(
-                    id = Res.string.format_high_sens,
-                    stringResource(id = Res.string.crop_full)
-                )
+            "FullHighSens" -> stringResource(
+                id = Res.string.format_high_sens,
+                stringResource(id = Res.string.crop_full)
+            )
 
-                else -> stats.solvedCrop ?: "-"
-            }
-            Text(cropString)
+            else -> stats.solvedCrop ?: "-"
         }
+        StatRow(
+            label = stringResource(id = Res.string.stat_last_solve),
+            value = cropString
+        )
 
         if (detectedIpAddress.isNotEmpty()) {
             Spacer(modifier = Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(Res.string.stat_ip_address), fontWeight = FontWeight.Bold)
+                Text(
+                    stringResource(Res.string.stat_ip_address),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text(detectedIpAddress)
+                Text(detectedIpAddress, color = MaterialTheme.colorScheme.onSurface)
                 if (onInfoClick != null) {
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(

@@ -84,7 +84,6 @@ fun TunerScreen(
 
     val windowController = LocalPlatformWindowController.current
     val capabilities = LocalPlatformCapabilities.current
-    val colors = LocalOliveColors.current
     val isLandscape = windowController.isLandscape
     val displayRotationDegrees = windowController.getDisplayRotationDegrees()
 
@@ -144,7 +143,7 @@ fun TunerScreen(
                 .fillMaxWidth()
                 .height(360.dp)
                 .padding(8.dp)
-                .background(MaterialTheme.colorScheme.surface)
+                .background(MaterialTheme.colorScheme.background)
                 .clipToBounds()
         ) {
             val frame = viewModel.latestFrame
@@ -272,6 +271,8 @@ fun TunerScreen(
                         (viewModel.engineStats.targetPixelX ?: (bW / 2.0)).toFloat()
                     val currentBoresightY =
                         (viewModel.engineStats.targetPixelY ?: (bH / 2.0)).toFloat()
+                    val reticleColor = MaterialTheme.colorScheme.secondary
+                    val crosshairColor = MaterialTheme.colorScheme.primary
 
                     Canvas(
                         modifier = Modifier
@@ -295,18 +296,17 @@ fun TunerScreen(
                         val s = 32f / (scale * baseScale)
                         val arm = 14f / (scale * baseScale)
                         val bracketStroke = 3f / (scale * baseScale)
-                        val darkRed = colors.secondary
 
                         // ┌ Top-Left
                         drawLine(
-                            darkRed,
+                            reticleColor,
                             Offset(boresightCanvasX - s, boresightCanvasY - s),
                             Offset(boresightCanvasX - s + arm, boresightCanvasY - s),
                             strokeWidth = bracketStroke,
                             cap = StrokeCap.Round
                         )
                         drawLine(
-                            darkRed,
+                            reticleColor,
                             Offset(boresightCanvasX - s, boresightCanvasY - s),
                             Offset(boresightCanvasX - s, boresightCanvasY - s + arm),
                             strokeWidth = bracketStroke,
@@ -314,14 +314,14 @@ fun TunerScreen(
                         )
                         // ┐ Top-Right
                         drawLine(
-                            darkRed,
+                            reticleColor,
                             Offset(boresightCanvasX + s, boresightCanvasY - s),
                             Offset(boresightCanvasX + s - arm, boresightCanvasY - s),
                             strokeWidth = bracketStroke,
                             cap = StrokeCap.Round
                         )
                         drawLine(
-                            darkRed,
+                            reticleColor,
                             Offset(boresightCanvasX + s, boresightCanvasY - s),
                             Offset(boresightCanvasX + s, boresightCanvasY - s + arm),
                             strokeWidth = bracketStroke,
@@ -329,14 +329,14 @@ fun TunerScreen(
                         )
                         // └ Bottom-Left
                         drawLine(
-                            darkRed,
+                            reticleColor,
                             Offset(boresightCanvasX - s, boresightCanvasY + s),
                             Offset(boresightCanvasX - s + arm, boresightCanvasY + s),
                             strokeWidth = bracketStroke,
                             cap = StrokeCap.Round
                         )
                         drawLine(
-                            darkRed,
+                            reticleColor,
                             Offset(boresightCanvasX - s, boresightCanvasY + s),
                             Offset(boresightCanvasX - s, boresightCanvasY + s - arm),
                             strokeWidth = bracketStroke,
@@ -344,14 +344,14 @@ fun TunerScreen(
                         )
                         // ┘ Bottom-Right
                         drawLine(
-                            darkRed,
+                            reticleColor,
                             Offset(boresightCanvasX + s, boresightCanvasY + s),
                             Offset(boresightCanvasX + s - arm, boresightCanvasY + s),
                             strokeWidth = bracketStroke,
                             cap = StrokeCap.Round
                         )
                         drawLine(
-                            darkRed,
+                            reticleColor,
                             Offset(boresightCanvasX + s, boresightCanvasY + s),
                             Offset(boresightCanvasX + s, boresightCanvasY + s - arm),
                             strokeWidth = bracketStroke,
@@ -366,19 +366,19 @@ fun TunerScreen(
                             val strokeW = 3f / (scale * baseScale)
 
                             drawCircle(
-                                color = colors.primary,
+                                color = crosshairColor,
                                 radius = 20f / (scale * baseScale),
                                 center = Offset(canvasX, canvasY),
                                 style = Stroke(width = strokeW)
                             )
                             drawLine(
-                                color = colors.primary,
+                                color = crosshairColor,
                                 start = Offset(canvasX - crosshairSize, canvasY),
                                 end = Offset(canvasX + crosshairSize, canvasY),
                                 strokeWidth = strokeW
                             )
                             drawLine(
-                                color = colors.primary,
+                                color = crosshairColor,
                                 start = Offset(canvasX, canvasY - crosshairSize),
                                 end = Offset(canvasX, canvasY + crosshairSize),
                                 strokeWidth = strokeW
@@ -426,6 +426,7 @@ fun TunerScreen(
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+        val extColors = LocalOliveExtendedColors.current
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -438,7 +439,7 @@ fun TunerScreen(
                     Text(
                         stringResource(id = Res.string.info_detected_stars) + ": ${viewModel.engineStats.centroidCount}",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = extColors.telemetryAccent
                     )
                 }
             }
@@ -451,7 +452,7 @@ fun TunerScreen(
                             viewModel.engineStats.hfr
                         ),
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = extColors.telemetryAccent
                     )
                     IconButton(
                         onClick = { showHfrInfo = true },
