@@ -33,6 +33,11 @@ import kotlinx.coroutines.withContext
 import platform.AVFoundation.AVAuthorizationStatusAuthorized
 import platform.AVFoundation.AVAuthorizationStatusNotDetermined
 import platform.AVFoundation.AVCaptureDevice
+import platform.AVFoundation.AVCaptureDeviceDiscoverySession
+import platform.AVFoundation.AVCaptureDevicePositionBack
+import platform.AVFoundation.AVCaptureDeviceTypeBuiltInTelephotoCamera
+import platform.AVFoundation.AVCaptureDeviceTypeBuiltInUltraWideCamera
+import platform.AVFoundation.AVCaptureDeviceTypeBuiltInWideAngleCamera
 import platform.AVFoundation.AVCaptureDeviceWasConnectedNotification
 import platform.AVFoundation.AVCaptureDeviceWasDisconnectedNotification
 import platform.AVFoundation.AVMediaTypeVideo
@@ -52,6 +57,19 @@ import kotlin.math.round
 @OptIn(ExperimentalForeignApi::class)
 private fun hasConnectedExternalCamera(): Boolean =
     runCatching { olive_ios_has_connected_external_camera() }.getOrDefault(false)
+
+private fun hasInternalBackCamera(): Boolean = runCatching {
+    val deviceTypes = listOfNotNull(
+        AVCaptureDeviceTypeBuiltInWideAngleCamera,
+        AVCaptureDeviceTypeBuiltInUltraWideCamera,
+        AVCaptureDeviceTypeBuiltInTelephotoCamera
+    )
+    AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes(
+        deviceTypes = deviceTypes,
+        mediaType = AVMediaTypeVideo,
+        position = AVCaptureDevicePositionBack
+    ).devices.isNotEmpty()
+}.getOrDefault(false)
 
 @OptIn(ExperimentalForeignApi::class)
 private fun getIosDeviceNetworkEndpoint(): String {
@@ -109,7 +127,13 @@ private fun refreshExternalCameraFormats(
 fun MainViewController(): UIViewController = ComposeUIViewController {
     val storage = remember { NSUserDefaultsStorage() }
     val isPad = remember { UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad }
-    val capabilities = remember { ApplePlatformCapabilities(supportsUsbCamera = isPad) }
+    val hasInternalCamera = remember { hasInternalBackCamera() }
+    val capabilities = remember(isPad, hasInternalCamera) {
+        ApplePlatformCapabilities(
+            supportsUsbCamera = isPad,
+            hasInternalCamera = hasInternalCamera
+        )
+    }
     val engine = remember { IosEngineBridge() }
     val catalogDb = remember { IosCatalogDatabase() }
     val viewModel = remember { MainViewModel(storage, capabilities, engine, catalogDb) }
@@ -123,7 +147,15 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
 
     var currentScreen by remember { mutableStateOf("main") }
     var isCameraConnected by remember { mutableStateOf(if (isPad) hasConnectedExternalCamera() else false) }
-    var activeCameraSelection by remember { mutableStateOf(settingsManager.cameraSelection) }
+    val initialCameraSelection = remember(capabilities) {
+        val target = if (isCameraConnected) "external" else settingsManager.cameraSelection
+        capabilities.resolveCameraSelection(target, isCameraConnected).also {
+            if (it != settingsManager.cameraSelection) {
+                settingsManager.cameraSelection = it
+            }
+        }
+    }
+    var activeCameraSelection by remember { mutableStateOf(initialCameraSelection) }
     var isStarting by remember { mutableStateOf(false) }
     var isStopping by remember { mutableStateOf(false) }
     var startupTimeoutJob by remember { mutableStateOf<Job?>(null) }
@@ -154,7 +186,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             isCameraConnected = hasExt
             if (hasExt) {
                 refreshExternalCameraFormats(engine, viewModel, settingsManager)
-                if (activeCameraSelection == "internal") {
+                if (activeCameraSelection != "external") {
                     activeCameraSelection = "external"
                     settingsManager.cameraSelection = "external"
                 }
@@ -170,9 +202,10 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             isCameraConnected = hasExt
             if (!hasExt) {
                 viewModel.availableUvcFormats = UvcFormat.FALLBACK_FORMATS
-                if (activeCameraSelection == "external") {
-                    activeCameraSelection = "internal"
-                    settingsManager.cameraSelection = "internal"
+                val resolved = capabilities.resolveCameraSelection(activeCameraSelection, false)
+                if (resolved != activeCameraSelection) {
+                    activeCameraSelection = resolved
+                    settingsManager.cameraSelection = resolved
                     currentScreen = "main"
                     if (viewModel.isEngineRunning) {
                         coroutineScope.launch {
@@ -259,9 +292,15 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                     }
                 }
             }
+            val effectiveSelection =
+                capabilities.resolveCameraSelection(activeCameraSelection, isCameraConnected)
+            if (effectiveSelection != activeCameraSelection) {
+                activeCameraSelection = effectiveSelection
+                settingsManager.cameraSelection = effectiveSelection
+            }
             val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
             val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
-            if (activeCameraSelection == "external") {
+            if (effectiveSelection == "external") {
                 viewModel.startUvcEngine(
                     lat = lat,
                     lon = lon,
@@ -273,7 +312,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                 )
             } else {
                 val cameraId =
-                    if (activeCameraSelection == "demo") "demo" else settingsManager.internalCameraId
+                    if (effectiveSelection == "demo") "demo" else settingsManager.internalCameraId
                 viewModel.executeStartEngine(
                     cameraId = cameraId,
                     lat = lat,
@@ -367,6 +406,14 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                                     isStopping = false
                                 }
                             } else {
+                                val resolved = capabilities.resolveCameraSelection(
+                                    activeCameraSelection,
+                                    isCameraConnected
+                                )
+                                if (resolved != activeCameraSelection) {
+                                    activeCameraSelection = resolved
+                                    settingsManager.cameraSelection = resolved
+                                }
                                 if (!viewModel.hasValidLocation && activeCameraSelection != "demo") {
                                     showLocationRequiredDialog = true
                                     return@MainScreen

@@ -75,6 +75,7 @@
     <string name="label_demo_camera">Demo Camera</string>
     <string name="label_camera">Camera</string>
     <string name="label_no_external_camera">No External Camera Detected</string>
+    <string name="label_no_internal_camera">No Internal Camera Detected</string>
 
     <!-- Setting Values -->
     <string name="value_processed">Processed</string>

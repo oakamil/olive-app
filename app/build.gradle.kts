@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -76,14 +79,83 @@ dependencies {
 // Custom task to compile rust and copy to jniLibs
 tasks.register<Exec>("cargoBuild") {
     // Target arm64 and armeabi-v7a
-    val projectDir = file("src/main/rust")
+    val rustDir = file("src/main/rust")
+    val userHome = System.getProperty("user.home")
+    val localProperties = Properties().apply {
+        val file = rootProject.file("local.properties")
+        if (file.isFile) {
+            file.inputStream().use { load(it) }
+        }
+    }
 
-    workingDir(projectDir)
-    environment("ANDROID_NDK_HOME", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358")
-    environment("CMAKE_TOOLCHAIN_FILE_aarch64_linux_android", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358/build/cmake/android.toolchain.cmake")
-    environment("CMAKE_TOOLCHAIN_FILE_armv7_linux_androideabi", "/Users/oakamil/Library/Android/sdk/ndk/28.2.13676358/build/cmake/android.toolchain.cmake")
-    environment("CMAKE_MAKE_PROGRAM", "/opt/homebrew/bin/ninja")
-    commandLine("/Users/oakamil/.cargo/bin/cargo", "ndk", "-P", "24", "-t", "armeabi-v7a", "-t", "arm64-v8a", "-o", "../jniLibs", "build", "--release")
+    fun resolveSdkDir(): File {
+        val candidates = listOfNotNull(
+            System.getenv("ANDROID_HOME")?.takeIf { it.isNotBlank() }?.let(::File),
+            System.getenv("ANDROID_SDK_ROOT")?.takeIf { it.isNotBlank() }?.let(::File),
+            localProperties.getProperty("sdk.dir")?.takeIf { it.isNotBlank() }?.let(::File),
+            File(userHome, "Library/Android/sdk"),
+            File(userHome, "Android/Sdk")
+        )
+        return candidates.firstOrNull { it.isDirectory } ?: File(userHome, "Library/Android/sdk")
+    }
+
+    fun resolveNdkDir(): String {
+        val explicit = listOfNotNull(
+            System.getenv("ANDROID_NDK_HOME")?.takeIf { it.isNotBlank() },
+            System.getenv("ANDROID_NDK_ROOT")?.takeIf { it.isNotBlank() },
+            localProperties.getProperty("ndk.dir")?.takeIf { it.isNotBlank() }
+        ).firstOrNull { File(it).isDirectory }
+        if (explicit != null) return explicit
+
+        val ndkParent = File(resolveSdkDir(), "ndk")
+        val preferred = File(ndkParent, "28.2.13676358")
+        if (preferred.isDirectory) return preferred.absolutePath
+
+        val latest = ndkParent.listFiles()
+            ?.filter { it.isDirectory }
+            ?.maxWithOrNull(Comparator { a, b ->
+                val aParts = a.name.split('.').mapNotNull { it.toLongOrNull() }
+                val bParts = b.name.split('.').mapNotNull { it.toLongOrNull() }
+                val maxLen = maxOf(aParts.size, bParts.size)
+                for (i in 0 until maxLen) {
+                    val cmp = aParts.getOrElse(i) { 0L }.compareTo(bParts.getOrElse(i) { 0L })
+                    if (cmp != 0) return@Comparator cmp
+                }
+                a.name.compareTo(b.name)
+            })
+        return latest?.absolutePath ?: preferred.absolutePath
+    }
+
+    fun resolveExecutable(envVar: String, vararg candidates: String): String {
+        val fromEnv = System.getenv(envVar)?.takeIf { it.isNotBlank() }
+        if (fromEnv != null) return fromEnv
+
+        candidates.firstOrNull { File(it).canExecute() }?.let { return it }
+
+        val binaryName = File(candidates.last()).name
+        val pathDirs = System.getenv("PATH")?.split(File.pathSeparator).orEmpty()
+        pathDirs.map { File(it, binaryName) }.firstOrNull { it.canExecute() }?.let {
+            return it.absolutePath
+        }
+        return binaryName
+    }
+
+    val ndkDir = resolveNdkDir()
+    val toolchainFile = File(ndkDir, "build/cmake/android.toolchain.cmake").absolutePath
+    val ninjaProgram = resolveExecutable(
+        "CMAKE_MAKE_PROGRAM",
+        "/opt/homebrew/bin/ninja",
+        "/usr/local/bin/ninja",
+        "/usr/bin/ninja"
+    )
+    val cargoProgram = resolveExecutable("CARGO", "$userHome/.cargo/bin/cargo")
+
+    workingDir(rustDir)
+    environment("ANDROID_NDK_HOME", ndkDir)
+    environment("CMAKE_TOOLCHAIN_FILE_aarch64_linux_android", toolchainFile)
+    environment("CMAKE_TOOLCHAIN_FILE_armv7_linux_androideabi", toolchainFile)
+    environment("CMAKE_MAKE_PROGRAM", ninjaProgram)
+    commandLine(cargoProgram, "ndk", "-P", "24", "-t", "armeabi-v7a", "-t", "arm64-v8a", "-o", "../jniLibs", "build", "--release")
 }
 
 tasks.matching { it.name == "mergeReleaseJniLibFolders" }.configureEach {
