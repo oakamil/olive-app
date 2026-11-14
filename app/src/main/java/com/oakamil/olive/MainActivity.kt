@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.location.Location
@@ -85,12 +87,29 @@ class MainActivity : ComponentActivity() {
     private var currentScreen by mutableStateOf("main")
     private var isInPipMode by mutableStateOf(false)
 
+    private val androidCapabilities: AndroidPlatformCapabilities by lazy {
+        AndroidPlatformCapabilities(hasInternalCamera = hasBackFacingCamera())
+    }
+
+    private fun hasBackFacingCamera(): Boolean {
+        val manager = getSystemService(CAMERA_SERVICE) as? CameraManager ?: return false
+        return try {
+            manager.cameraIdList.any { id ->
+                manager.getCameraCharacteristics(id)
+                    .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+            }
+        } catch (e: Exception) {
+            Log.w("OliveUI", "Failed to query internal camera availability", e)
+            false
+        }
+    }
+
     private val viewModel: MainViewModel by viewModels {
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val storage = SharedPreferencesStorage(applicationContext)
-                val capabilities = AndroidPlatformCapabilities
+                val capabilities = androidCapabilities
                 val engine = OliveEngine
                 val catalogDb = CatalogDatabaseHelper(applicationContext)
                 return MainViewModel(storage, capabilities, engine, catalogDb) as T
@@ -347,7 +366,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             CompositionLocalProvider(
-                LocalPlatformCapabilities provides AndroidPlatformCapabilities,
+                LocalPlatformCapabilities provides androidCapabilities,
                 LocalPlatformWindowController provides windowController
             ) {
                 LaunchedEffect(viewModel.isEngineRunning) {
@@ -706,8 +725,9 @@ class MainActivity : ComponentActivity() {
         } else {
             isCameraConnected = false
             connectedDevice = null
-            if (activeCameraSelection == "external") {
-                updateCameraSelection("internal")
+            val resolved = androidCapabilities.resolveCameraSelection(activeCameraSelection, false)
+            if (resolved != activeCameraSelection) {
+                updateCameraSelection(resolved)
             }
         }
     }
@@ -915,6 +935,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         } else {
+            val resolved =
+                androidCapabilities.resolveCameraSelection(activeCameraSelection, isCameraConnected)
+            if (resolved != activeCameraSelection) {
+                updateCameraSelection(resolved)
+            }
             val isDemoMode = activeCameraSelection == "demo"
             if (!isDemoMode && !viewModel.hasValidLocation) {
                 showLocationRequiredDialog = true
@@ -986,7 +1011,11 @@ class MainActivity : ComponentActivity() {
         }
 
         lifecycleScope.launch {
-            val selection = activeCameraSelection
+            val selection =
+                androidCapabilities.resolveCameraSelection(activeCameraSelection, isCameraConnected)
+            if (selection != activeCameraSelection) {
+                updateCameraSelection(selection)
+            }
             val isDemoMode = selection == "demo"
             val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
             val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
