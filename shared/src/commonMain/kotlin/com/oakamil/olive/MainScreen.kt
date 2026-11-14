@@ -6,19 +6,25 @@ package com.oakamil.olive
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.PictureInPicture
@@ -28,8 +34,10 @@ import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -41,12 +49,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeJoin.Companion.Round
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -158,12 +167,16 @@ fun MainScreen(
 
     @Composable
     fun GuidanceContent() {
+        val extColors = LocalOliveExtendedColors.current
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f),
-            colors = CardDefaults.cardColors(containerColor = Color.Black),
-            border = BorderStroke(2.dp, Color.Transparent)
+            colors = CardDefaults.cardColors(
+                containerColor = extColors.lowPowerCardSurface,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ),
+            border = extColors.lowPowerCardBorder?.let { BorderStroke(2.dp, it) }
         ) {
             Column(modifier = Modifier.padding(8.dp)) {
                 GuidanceDisplay(
@@ -179,6 +192,8 @@ fun MainScreen(
 
     @Composable
     fun ActionButtons(isVertical: Boolean = false, modifier: Modifier = Modifier) {
+        val extColors = LocalOliveExtendedColors.current
+
         @Composable
         fun Buttons(itemModifier: Modifier = Modifier) {
             // 1. Catalog
@@ -259,6 +274,8 @@ fun MainScreen(
 
             // 5. Start / Stop Engine
             val isEngineActive = viewModel.isEngineRunning
+            val ctaColor =
+                if (isEngineActive) extColors.ctaStop else MaterialTheme.colorScheme.primary
             IconBarItem(
                 modifier = itemModifier,
                 icon = if (isEngineActive) Icons.Outlined.Cancel else Icons.Outlined.PlayCircle,
@@ -270,6 +287,8 @@ fun MainScreen(
                 },
                 enabled = !isStopping && !isStarting,
                 isLoading = isStarting || isStopping,
+                iconTint = ctaColor,
+                labelColor = ctaColor,
                 onClick = {
                     if (isEngineActive) {
                         onToggleEngine()
@@ -280,29 +299,58 @@ fun MainScreen(
             )
         }
 
-        if (isVertical) {
-            Column(
-                modifier = modifier
-                    .fillMaxHeight()
-                    .width(76.dp)
-                    .padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.SpaceEvenly,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Buttons()
+        val consumeStrayPointers = Modifier.pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    awaitPointerEvent().changes.forEach { it.consume() }
+                }
             }
-        } else {
+        }
+
+        if (isVertical) {
             Row(
                 modifier = modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp, bottom = 0.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.Top
+                    .fillMaxHeight()
+                    .background(extColors.mapOverlaySurface)
+                    .then(consumeStrayPointers)
+                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.End))
             ) {
-                Buttons(itemModifier = Modifier.weight(1f))
+                VerticalDivider(color = extColors.actionBarBorder)
+                Column(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(76.dp)
+                        .padding(vertical = 8.dp),
+                    verticalArrangement = Arrangement.SpaceEvenly,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Buttons()
+                }
+            }
+        } else {
+            Column(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .background(extColors.mapOverlaySurface)
+                    .then(consumeStrayPointers)
+            ) {
+                HorizontalDivider(color = extColors.actionBarBorder)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 0.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Buttons(itemModifier = Modifier.weight(1f))
+                }
             }
         }
     }
+
+    val density = LocalDensity.current
+    var actionBarWidthDp by remember { mutableStateOf(0.dp) }
+    var actionBarHeightDp by remember { mutableStateOf(0.dp) }
 
     CompositionLocalProvider(
         LocalOnUserInteraction provides {
@@ -332,55 +380,31 @@ fun MainScreen(
                     .fillMaxSize()
                     .graphicsLayer { alpha = controlsAlpha }
             ) {
-                if (isWideLayout) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                        ) {
-                            SkyMapView(
-                                viewModel = viewModel,
-                                stats = viewModel.engineStats,
-                                modifier = Modifier.fillMaxSize(),
-                                isStarting = isStarting,
-                                isStopping = isStopping,
-                                detectedIpAddress = detectedIpAddress
-                            )
+                SkyMapView(
+                    viewModel = viewModel,
+                    stats = viewModel.engineStats,
+                    modifier = Modifier.fillMaxSize(),
+                    isStarting = isStarting,
+                    isStopping = isStopping,
+                    detectedIpAddress = detectedIpAddress,
+                    bottomOverlayInset = if (isWideLayout) 0.dp else actionBarHeightDp,
+                    endOverlayInset = if (isWideLayout) actionBarWidthDp else 0.dp
+                )
+                ActionButtons(
+                    isVertical = isWideLayout,
+                    modifier = Modifier
+                        .align(if (isWideLayout) Alignment.CenterEnd else Alignment.BottomCenter)
+                        .then(if (isWideLayout) Modifier.fillMaxHeight() else Modifier.fillMaxWidth())
+                        .onSizeChanged { size ->
+                            with(density) {
+                                if (isWideLayout) {
+                                    actionBarWidthDp = size.width.toDp()
+                                } else {
+                                    actionBarHeightDp = size.height.toDp()
+                                }
+                            }
                         }
-                        ActionButtons(
-                            isVertical = true,
-                            modifier = Modifier.fillMaxHeight()
-                        )
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                        ) {
-                            SkyMapView(
-                                viewModel = viewModel,
-                                stats = viewModel.engineStats,
-                                modifier = Modifier.fillMaxSize(),
-                                isStarting = isStarting,
-                                isStopping = isStopping,
-                                detectedIpAddress = detectedIpAddress
-                            )
-                        }
-                        ActionButtons(
-                            isVertical = false,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
+                )
             }
 
             if (isLowPowerMode || controlsAlpha < 1f) {

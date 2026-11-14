@@ -20,7 +20,7 @@ fun Modifier.simpleVerticalScrollbar(
     width: Dp = 4.dp,
     color: Color? = null
 ): Modifier = composed {
-    val clr = color ?: LocalOliveColors.current.primary
+    val clr = color ?: LocalOliveExtendedColors.current.scrollbarThumb
     val targetAlpha = if (state.isScrollInProgress) 1f else 0.4f
     val duration = if (state.isScrollInProgress) 150 else 500
 

@@ -35,33 +35,34 @@ import kotlin.math.hypot
 
 fun getIconAndColorForType(
     objectType: String,
-    primaryColor: Color = PureRed,
-    secondaryColor: Color = DarkRed
+    extendedColors: OliveExtendedColors
 ): Pair<ImageVector, Color> {
     return when (objectType) {
-        "Sun" -> Icons.Filled.WbSunny to primaryColor
-        "Asterism" -> Icons.Filled.Timeline to primaryColor
-        "Cluster + Nebula" -> Icons.Filled.BlurCircular to primaryColor
-        "Nebula" -> Icons.Filled.Air to primaryColor
-        "Dark Nebula" -> Icons.Filled.Cloud to secondaryColor
-        "Multiple Star", "Double Star" -> Icons.Outlined.AutoAwesome to primaryColor
-        "Galaxy" -> Icons.Outlined.Storm to primaryColor
-        "Asteroid" -> Icons.Filled.Cookie to primaryColor
-        "Planet", "Moon" -> CustomIcons.Planet to primaryColor
-        "Globular Cluster" -> Icons.Filled.LensBlur to primaryColor
-        "Open Cluster", "Cluster" -> Icons.Filled.ScatterPlot to primaryColor
-        "Comet" -> CustomIcons.TrailLength to primaryColor
-        "Star" -> Icons.Outlined.StarOutline to primaryColor
-        "Planetary Nebula" -> CustomIcons.CircleCircle to primaryColor
-        else -> Icons.Filled.LocationSearching to primaryColor
+        "Sun", "Planet", "Moon" -> {
+            val icon = if (objectType == "Sun") Icons.Filled.WbSunny else CustomIcons.Planet
+            icon to extendedColors.catSolarSystem
+        }
+
+        "Asterism" -> Icons.Filled.Timeline to extendedColors.catCluster
+        "Cluster + Nebula" -> Icons.Filled.BlurCircular to extendedColors.catNebula
+        "Nebula" -> Icons.Filled.Air to extendedColors.catNebula
+        "Dark Nebula" -> Icons.Filled.Cloud to extendedColors.catDarkNebula
+        "Multiple Star", "Double Star" -> Icons.Outlined.AutoAwesome to extendedColors.catDoubleStar
+        "Galaxy" -> Icons.Outlined.Storm to extendedColors.catGalaxy
+        "Asteroid" -> Icons.Filled.Cookie to extendedColors.catCometAsteroid
+        "Globular Cluster" -> Icons.Filled.LensBlur to extendedColors.catCluster
+        "Open Cluster", "Cluster" -> Icons.Filled.ScatterPlot to extendedColors.catCluster
+        "Comet" -> CustomIcons.TrailLength to extendedColors.catCometAsteroid
+        "Star" -> Icons.Outlined.StarOutline to extendedColors.catStar
+        "Planetary Nebula" -> CustomIcons.CircleCircle to extendedColors.catNebula
+        else -> Icons.Filled.LocationSearching to extendedColors.catStar
     }
 }
 
 fun CatalogObject.getIconAndColor(
-    primaryColor: Color = PureRed,
-    secondaryColor: Color = DarkRed
+    extendedColors: OliveExtendedColors
 ): Pair<ImageVector, Color> =
-    getIconAndColorForType(this.objectType, primaryColor, secondaryColor)
+    getIconAndColorForType(this.objectType, extendedColors)
 
 @Composable
 fun rememberCatalogPainters(): Map<ImageVector, Painter> {
@@ -257,8 +258,7 @@ fun layoutCatalogItems(
     fontSizeSp: Float = 12f,
     placedReticles: MutableList<Rect> = mutableListOf(),
     placedLabels: MutableList<Rect> = mutableListOf(),
-    primaryColor: Color = PureRed,
-    secondaryColor: Color = DarkRed
+    extendedColors: OliveExtendedColors
 ): List<PlacedCatalogItem> {
     if (candidates.isEmpty()) return emptyList()
 
@@ -314,7 +314,7 @@ fun layoutCatalogItems(
         var textH = 0f
 
         if (labelsPlaced < maxLabels || isTarget) {
-            val (_, themedColor) = obj.getIconAndColor(primaryColor, secondaryColor)
+            val (_, themedColor) = obj.getIconAndColor(extendedColors)
             val textLayout = textMeasurer.measure(
                 text = obj.displayName,
                 style = TextStyle(
