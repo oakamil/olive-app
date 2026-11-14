@@ -105,7 +105,12 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlin.math.abs
+import kotlin.math.atan
+import kotlin.math.floor
+import kotlin.math.ln
 import kotlin.math.round
+import kotlin.math.tan
 import kotlin.time.Duration.Companion.milliseconds
 
 
@@ -190,7 +195,7 @@ fun SkyMapView(
             val baseFovRad = Math.toRadians(stats.fov ?: 8.0)
             val aspect = cameraFrame.width.toDouble() / cameraFrame.height.toDouble()
             val effectiveFovRad =
-                if (aspect > 1.0) 2.0 * kotlin.math.atan(kotlin.math.tan(baseFovRad / 2.0) / aspect) else baseFovRad
+                if (aspect > 1.0) 2.0 * atan(tan(baseFovRad / 2.0) / aspect) else baseFovRad
             val camFov = Math.toDegrees(effectiveFovRad)
             val camRoll = stats.roll ?: 0.0
 
@@ -253,8 +258,8 @@ fun SkyMapView(
                 val curAz = viewModel.skyMapCenterAz
                 val curAlt = viewModel.skyMapCenterAlt
                 val dAz =
-                    if (curAz != null) kotlin.math.abs(((az - curAz) % 360.0 + 540.0) % 360.0 - 180.0) else 999.0
-                val dAlt = if (curAlt != null) kotlin.math.abs(alt - curAlt) else 999.0
+                    if (curAz != null) abs(((az - curAz) % 360.0 + 540.0) % 360.0 - 180.0) else 999.0
+                val dAlt = if (curAlt != null) abs(alt - curAlt) else 999.0
                 if (dAz >= 0.005 || dAlt >= 0.005) {
                     viewModel.skyMapCenterAz = az
                     viewModel.skyMapCenterAlt = alt
@@ -715,10 +720,10 @@ fun SkyMapView(
                 val alt = viewModel.skyMapCenterAlt ?: initialAltAz.second
                 val currentFov = viewModel.skyMapFov
                 val stepSize = maxOf(0.1, currentFov * 0.15)
-                val azGrid = kotlin.math.floor(az / stepSize).toInt()
-                val altGrid = kotlin.math.floor(alt / stepSize).toInt()
-                val fovGrid = kotlin.math.floor(
-                    kotlin.math.ln(currentFov.coerceAtLeast(0.5)) / kotlin.math.ln(1.15)
+                val azGrid = floor(az / stepSize).toInt()
+                val altGrid = floor(alt / stepSize).toInt()
+                val fovGrid = floor(
+                    ln(currentFov.coerceAtLeast(0.5)) / ln(1.15)
                 ).toInt()
                 Triple(azGrid, altGrid, fovGrid)
             }
@@ -1066,7 +1071,7 @@ fun SkyMapView(
             val aspect =
                 cameraFrame?.let { it.width.toDouble() / it.height.toDouble() } ?: 1.333
             val effectiveFovRad = if (aspect > 1.0) {
-                2.0 * kotlin.math.atan(kotlin.math.tan(baseFovRad / 2.0) / aspect)
+                2.0 * atan(tan(baseFovRad / 2.0) / aspect)
             } else {
                 baseFovRad
             }
@@ -1386,10 +1391,10 @@ fun SkyMapView(
                         val numPoints = placedStarXs.size
                         for (pIdx in 0 until numPoints) {
                             val px = placedStarXs[pIdx]
-                            val dx = kotlin.math.abs(px - screenPt.x)
+                            val dx = abs(px - screenPt.x)
                             if (dx >= minStarDistPx) continue
                             val py = placedStarYs[pIdx]
-                            val dy = kotlin.math.abs(py - screenPt.y)
+                            val dy = abs(py - screenPt.y)
                             if (dy >= minStarDistPx) continue
                             if (dx * dx + dy * dy < minStarDistSq) {
                                 tooClose = true

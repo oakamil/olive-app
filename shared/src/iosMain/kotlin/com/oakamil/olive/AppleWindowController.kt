@@ -15,6 +15,7 @@ import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import platform.UIKit.UIScreen
+import platform.darwin.NSObjectProtocol
 
 class AppleWindowController : PlatformWindowController {
     override var isLandscape: Boolean by mutableStateOf(false)
@@ -24,7 +25,7 @@ class AppleWindowController : PlatformWindowController {
         UIScreen.mainScreen.brightness.takeIf { it > 0.05 } ?: 0.5
     private var customAppBrightness: Double? = null
     private var keepScreenOn: Boolean = false
-    private val observerTokens = mutableListOf<platform.darwin.NSObjectProtocol>()
+    private val observerTokens = mutableListOf<NSObjectProtocol>()
 
     init {
         UIDevice.currentDevice.beginGeneratingDeviceOrientationNotifications()

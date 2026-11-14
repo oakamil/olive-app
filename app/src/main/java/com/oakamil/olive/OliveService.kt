@@ -173,9 +173,7 @@ class OliveService : Service() {
 
                 while (!Thread.currentThread().isInterrupted) {
                     try {
-                        Log.d("OliveService", "LX200 waiting for accept...")
                         val clientFd = Os.accept(fd, null)
-                        Log.d("OliveService", "LX200 accepted socket!")
 
                         val now = System.currentTimeMillis()
                         if (now - lastLx200DisconnectTime > 5000) {
@@ -253,7 +251,7 @@ class OliveService : Service() {
             assignFd = { alpacaFdV6 = it },
             onAcceptFd = OliveEngine::handleAlpacaConnectionV6
         )
-        // UDP Discovery is now handled directly by Rust to avoid startup race conditions.
+        // UDP Discovery runs in the native Rust engine.
     }
 
     private fun startAlpacaServer(
@@ -281,15 +279,13 @@ class OliveService : Service() {
 
                 while (!Thread.currentThread().isInterrupted) {
                     try {
-                        Log.d("OliveService", "$label waiting for accept...")
                         val clientFd = Os.accept(fd, null)
-                        Log.d("OliveService", "$label accepted socket!")
                         var pfd: ParcelFileDescriptor? = null
                         try {
                             pfd = ParcelFileDescriptor.dup(clientFd)
                             val nativeFd = pfd.detachFd()
                             pfd = null
-                            Log.d("OliveService", "$label handing off nativeFd $nativeFd")
+                            Log.d("OliveService", "$label accepted socket (fd=$nativeFd)")
                             onAcceptFd(nativeFd)
                         } catch (e: Exception) {
                             Log.e("OliveService", "$label error during handoff", e)

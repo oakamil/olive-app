@@ -1,33 +1,41 @@
-use jni::JNIEnv;
-use jni::objects::JClass;
-use jni::sys::jint;
+use jni::objects::{GlobalRef, JByteArray, JByteBuffer, JClass, JObject, JString};
+use jni::sys::{
+    jboolean, jbyteArray, jdouble, jfloat, jfloatArray, jint, jintArray, jlong, jstring,
+};
+use jni::{JNIEnv, JavaVM};
+use log::{LevelFilter, error, info, warn};
 use olive_imu::ImuDevice;
-use std::sync::Mutex;
-use std::thread;
+use std::sync::{
+    Arc, Mutex, MutexGuard, RwLock,
+    atomic::{AtomicBool, Ordering},
+    mpsc,
+};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 pub mod android_camera;
 pub mod android_imu;
 pub mod android_uvc_camera;
 
+static LAST_BUFFER_WARN: Mutex<Option<Instant>> = Mutex::new(None);
 static RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static TELESCOPE_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 static ENGINE_STOP_TX: Mutex<Option<tokio::sync::oneshot::Sender<()>>> = Mutex::new(None);
-static ENGINE_STATE: Mutex<
-    Option<std::sync::Arc<std::sync::RwLock<olive_engine::engine::EngineStateData>>>,
-> = Mutex::new(None);
-static CAMERA: Mutex<Option<std::sync::Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
-static UVC_CAMERA_RECEIVER: Mutex<Option<std::sync::Arc<android_uvc_camera::AndroidUvcCamera>>> =
+static ENGINE_STATE: Mutex<Option<Arc<RwLock<olive_engine::engine::EngineStateData>>>> =
     Mutex::new(None);
-static MAIN_ENGINE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
+static CAMERA: Mutex<Option<Arc<dyn olive_engine::CameraTrait>>> = Mutex::new(None);
+static UVC_CAMERA_RECEIVER: Mutex<Option<Arc<android_uvc_camera::AndroidUvcCamera>>> =
+    Mutex::new(None);
+static MAIN_ENGINE_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 static LX200_CONTROLLER: Mutex<
-    Option<std::sync::Arc<std::sync::RwLock<olive_engine::telescope_server::Lx200Controller>>>,
+    Option<Arc<RwLock<olive_engine::telescope_server::Lx200Controller>>>,
 > = Mutex::new(None);
 static ALPACA_FD_TX: Mutex<Option<tokio::sync::mpsc::Sender<i32>>> = Mutex::new(None);
 static ALPACA_V6_FD_TX: Mutex<Option<tokio::sync::mpsc::Sender<i32>>> = Mutex::new(None);
 
 struct JniStorage {
-    jvm: jni::JavaVM,
-    settings_mgr: jni::objects::GlobalRef,
+    jvm: JavaVM,
+    settings_mgr: GlobalRef,
 }
 
 impl olive_imu::PersistentStorage for JniStorage {
@@ -43,15 +51,12 @@ impl olive_imu::PersistentStorage for JniStorage {
                     Ok(result) => {
                         if let Ok(jstr) = result.l() {
                             if !jstr.is_null() {
-                                return env
-                                    .get_string(&jni::objects::JString::from(jstr))
-                                    .ok()
-                                    .map(|s| s.into());
+                                return env.get_string(&JString::from(jstr)).ok().map(|s| s.into());
                             }
                         }
                     }
                     Err(e) => {
-                        log::error!("JniStorage::get call_method error: {:?}", e);
+                        error!("JniStorage::get call_method error: {:?}", e);
                         if let Ok(true) = env.exception_check() {
                             let _ = env.exception_clear();
                         }
@@ -59,7 +64,7 @@ impl olive_imu::PersistentStorage for JniStorage {
                 }
             }
         } else {
-            log::error!("JniStorage::get attach_current_thread failed!");
+            error!("JniStorage::get attach_current_thread failed!");
         }
         None
     }
@@ -75,7 +80,7 @@ impl olive_imu::PersistentStorage for JniStorage {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        log::error!("JniStorage::set call_method error: {:?}", e);
+                        error!("JniStorage::set call_method error: {:?}", e);
                         if let Ok(true) = env.exception_check() {
                             let _ = env.exception_clear();
                         }
@@ -83,7 +88,7 @@ impl olive_imu::PersistentStorage for JniStorage {
                 }
             }
         } else {
-            log::error!("JniStorage::set attach_current_thread failed!");
+            error!("JniStorage::set attach_current_thread failed!");
         }
     }
 
@@ -98,7 +103,7 @@ impl olive_imu::PersistentStorage for JniStorage {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        log::error!("JniStorage::remove call_method error: {:?}", e);
+                        error!("JniStorage::remove call_method error: {:?}", e);
                         if let Ok(true) = env.exception_check() {
                             let _ = env.exception_clear();
                         }
@@ -106,36 +111,36 @@ impl olive_imu::PersistentStorage for JniStorage {
                 }
             }
         } else {
-            log::error!("JniStorage::remove attach_current_thread failed!");
+            error!("JniStorage::remove attach_current_thread failed!");
         }
     }
 }
 
-fn lock_or_recover<'a, T>(mutex: &'a Mutex<T>, name: &str) -> std::sync::MutexGuard<'a, T> {
+fn lock_or_recover<'a, T>(mutex: &'a Mutex<T>, name: &str) -> MutexGuard<'a, T> {
     mutex.lock().unwrap_or_else(|e| {
-        log::error!("Mutex {} poisoned; recovering inner state", name);
+        error!("Mutex {} poisoned; recovering inner state", name);
         e.into_inner()
     })
 }
 
 fn throw_runtime_exception(env: &mut JNIEnv, msg: &str) {
-    log::error!("Throwing Java RuntimeException: {}", msg);
+    error!("Throwing Java RuntimeException: {}", msg);
     if let Err(e) = env.throw_new("java/lang/RuntimeException", msg) {
-        log::error!("Failed to throw RuntimeException ({}): {:?}", msg, e);
+        error!("Failed to throw RuntimeException ({}): {:?}", msg, e);
     }
 }
 
 fn build_jni_storage(
     env: &JNIEnv,
-    settings_manager: &jni::objects::JObject,
-) -> Result<std::sync::Arc<dyn olive_imu::PersistentStorage>, String> {
+    settings_manager: &JObject,
+) -> Result<Arc<dyn olive_imu::PersistentStorage>, String> {
     let jvm = env
         .get_java_vm()
         .map_err(|e| format!("Failed to acquire JavaVM: {:?}", e))?;
     let settings_mgr = env
         .new_global_ref(settings_manager)
         .map_err(|e| format!("Failed to create global ref for SettingsManager: {:?}", e))?;
-    Ok(std::sync::Arc::new(JniStorage { jvm, settings_mgr }))
+    Ok(Arc::new(JniStorage { jvm, settings_mgr }))
 }
 
 fn get_or_init_runtime_handle(
@@ -170,8 +175,8 @@ fn prepare_engine_restart() -> tokio::sync::oneshot::Receiver<()> {
 
 fn finish_engine_startup(
     env: &mut JNIEnv,
-    ready_rx: std::sync::mpsc::Receiver<Result<(), String>>,
-    new_thread: thread::JoinHandle<()>,
+    ready_rx: mpsc::Receiver<Result<(), String>>,
+    new_thread: JoinHandle<()>,
 ) {
     match ready_rx.recv() {
         Ok(Ok(())) => {
@@ -191,21 +196,17 @@ fn finish_engine_startup(
     }
 }
 
-fn jstring_to_string(
-    env: &mut JNIEnv,
-    value: &jni::objects::JString,
-    name: &str,
-) -> Result<String, String> {
+fn jstring_to_string(env: &mut JNIEnv, value: &JString, name: &str) -> Result<String, String> {
     env.get_string(value)
         .map(|s| s.into())
         .map_err(|e| format!("Failed to read JNI string '{}': {:?}", name, e))
 }
 
-fn new_java_string(env: &JNIEnv, value: &str) -> jni::sys::jstring {
+fn new_java_string(env: &JNIEnv, value: &str) -> jstring {
     match env.new_string(value) {
         Ok(s) => s.into_raw(),
         Err(e) => {
-            log::error!("Failed to create Java string: {:?}", e);
+            error!("Failed to create Java string: {:?}", e);
             std::ptr::null_mut()
         }
     }
@@ -215,24 +216,24 @@ fn new_java_string(env: &JNIEnv, value: &str) -> jni::sys::jstring {
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_initJni(
     mut env: JNIEnv,
     _class: JClass,
-    files_dir: jni::objects::JString,
+    files_dir: JString,
 ) {
     android_logger::init_once(
         android_logger::Config::default()
-            .with_max_level(log::LevelFilter::Info)
+            .with_max_level(LevelFilter::Info)
             .with_tag("OliveRust"),
     );
 
     std::panic::set_hook(Box::new(|panic_info| {
-        log::error!("RUST PANIC: {}", panic_info);
+        error!("RUST PANIC: {}", panic_info);
     }));
 
     if let Ok(dir) = env.get_string(&files_dir) {
         if let Ok(dir_str) = dir.to_str() {
             if let Err(e) = std::env::set_current_dir(dir_str) {
-                log::error!("Failed to set current directory to {}: {}", dir_str, e);
+                error!("Failed to set current directory to {}: {}", dir_str, e);
             } else {
-                log::info!("Successfully set current directory to {}", dir_str);
+                info!("Successfully set current directory to {}", dir_str);
             }
         }
     }
@@ -243,14 +244,14 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     mut env: JNIEnv,
     _class: JClass,
     motion_sensor_mode: jint,
-    sensor_mode: jni::objects::JString,
-    internal_camera_id: jni::objects::JString,
-    downsample_mode: jni::sys::jint,
-    latitude: jni::sys::jdouble,
-    longitude: jni::sys::jdouble,
-    settings_manager: jni::objects::JObject,
-    auto_mode: jni::sys::jboolean,
-    initial_zoom: jni::sys::jfloat,
+    sensor_mode: JString,
+    internal_camera_id: JString,
+    downsample_mode: jint,
+    latitude: jdouble,
+    longitude: jdouble,
+    settings_manager: JObject,
+    auto_mode: jboolean,
+    initial_zoom: jfloat,
 ) {
     let storage = match build_jni_storage(&env, &settings_manager) {
         Ok(s) => Some(s),
@@ -286,7 +287,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
     };
 
     let rx = prepare_engine_restart();
-    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
 
     let new_thread = thread::spawn(move || {
         rt_handle.block_on(async {
@@ -294,14 +295,13 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             use olive_engine::CameraTrait;
             use olive_engine::control_server;
             use olive_engine::engine::{Engine, EngineConfig};
-            use std::sync::Arc;
 
-            let camera: std::sync::Arc<dyn CameraTrait> = if internal_camera_id_str == "demo" {
+            let camera: Arc<dyn CameraTrait> = if internal_camera_id_str == "demo" {
                 use olive_engine::dummy_camera::DummyCamera;
                 let mut cam = DummyCamera::new();
                 if let Err(e) = cam.start_capture() {
                     let msg = format!("Failed to start demo camera: {}", e);
-                    log::error!("{}", msg);
+                    error!("{}", msg);
                     let _ = ready_tx.send(Err(msg));
                     return;
                 }
@@ -315,14 +315,14 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                     Ok(c) => c,
                     Err(e) => {
                         let msg = format!("Failed to initialize Android camera: {}", e);
-                        log::error!("{}", msg);
+                        error!("{}", msg);
                         let _ = ready_tx.send(Err(msg));
                         return;
                     }
                 };
                 if let Err(e) = cam.start_capture() {
                     let msg = format!("Failed to start Android camera: {}", e);
-                    log::error!("{}", msg);
+                    error!("{}", msg);
                     let _ = ready_tx.send(Err(msg));
                     return;
                 }
@@ -345,7 +345,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 initial_fov: camera.get_config().and_then(|c| c.initial_fov),
                 use_observer_location: internal_camera_id_str != "demo",
             };
-            let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let client_connected = Arc::new(AtomicBool::new(false));
 
             let mut initial_state = olive_engine::engine::EngineStateData::default();
             if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
@@ -353,7 +353,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
                 initial_state.client_longitude = Some(longitude);
             }
 
-            let engine_state = Arc::new(std::sync::RwLock::new(initial_state));
+            let engine_state = Arc::new(RwLock::new(initial_state));
 
             let server_camera = camera.clone();
             let server_client_connected = client_connected.clone();
@@ -423,10 +423,11 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
             *lock_or_recover(&LX200_CONTROLLER, "LX200_CONTROLLER") =
                 Some(engine.lx200_controller.clone());
             let is_running_clone = engine.is_running.clone();
-            let telescope_handle = engine.telescope_server_handle.take(); // We now take ownership of this handle
+            // Take ownership of telescope server handle for shutdown
+            let telescope_handle = engine.telescope_server_handle.take();
 
             // Run engine in a separate thread since it might block
-            let engine_thread = std::thread::spawn(move || {
+            let engine_thread = thread::spawn(move || {
                 let handles = engine.start();
                 let _ = handles.0.join();
                 let _ = handles.1.join();
@@ -436,7 +437,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
 
             // Wait for stop signal
             let _ = rx.await;
-            is_running_clone.store(false, std::sync::atomic::Ordering::Relaxed);
+            is_running_clone.store(false, Ordering::Relaxed);
             server_handle.abort();
             let _ = server_handle.await;
 
@@ -470,8 +471,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_stopEngine(_env: JNIEn
     *lock_or_recover(&ALPACA_FD_TX, "ALPACA_FD_TX") = None;
     *lock_or_recover(&ALPACA_V6_FD_TX, "ALPACA_V6_FD_TX") = None;
 
-    // We join here because Kotlin will now call this from a background thread.
-    // This ensures hardware is released before the USB connection is closed.
+    // Join engine thread so hardware release completes before USB teardown.
     if let Some(handle) = lock_or_recover(&MAIN_ENGINE_THREAD, "MAIN_ENGINE_THREAD").take() {
         let _ = handle.join();
     }
@@ -502,7 +502,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_updateUvcStacking(
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraGain(
     _env: JNIEnv,
     _class: JClass,
-    gain: jni::sys::jfloat,
+    gain: jfloat,
 ) {
     if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         cam.set_gain(gain);
@@ -513,7 +513,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraGain(
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraFocus(
     _env: JNIEnv,
     _class: JClass,
-    distance: jni::sys::jfloat,
+    distance: jfloat,
 ) {
     if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         cam.set_focus(distance);
@@ -535,7 +535,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraNoiseRe
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraBrightnessRange<'local>(
     env: JNIEnv<'local>,
     _class: JClass,
-) -> jni::sys::jintArray {
+) -> jintArray {
     let result = if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         cam.get_brightness_range()
     } else {
@@ -546,13 +546,13 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraBrightn
         match env.new_int_array(3) {
             Ok(arr) => {
                 if let Err(e) = env.set_int_array_region(&arr, 0, &[min, max, current]) {
-                    log::error!("Failed to fill brightness range array: {:?}", e);
+                    error!("Failed to fill brightness range array: {:?}", e);
                     return std::ptr::null_mut();
                 }
                 arr.into_raw()
             }
             Err(e) => {
-                log::error!("Failed to allocate brightness range array: {:?}", e);
+                error!("Failed to allocate brightness range array: {:?}", e);
                 std::ptr::null_mut()
             }
         }
@@ -576,7 +576,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraBrightn
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraZoomRatio(
     _env: JNIEnv,
     _class: JClass,
-    zoom: jni::sys::jfloat,
+    zoom: jfloat,
 ) {
     if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         cam.set_zoom(zoom);
@@ -587,7 +587,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraZoomRat
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraGainRange(
     env: JNIEnv,
     _class: JClass,
-) -> jni::sys::jfloatArray {
+) -> jfloatArray {
     let (min, max, default_val) = if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         cam.get_gain_range()
     } else {
@@ -597,13 +597,13 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraGainRan
     match env.new_float_array(3) {
         Ok(array) => {
             if let Err(e) = env.set_float_array_region(&array, 0, &[min, max, default_val]) {
-                log::error!("Failed to fill gain range array: {:?}", e);
+                error!("Failed to fill gain range array: {:?}", e);
                 return std::ptr::null_mut();
             }
             array.into_raw()
         }
         Err(e) => {
-            log::error!("Failed to allocate gain range array: {:?}", e);
+            error!("Failed to allocate gain range array: {:?}", e);
             std::ptr::null_mut()
         }
     }
@@ -613,7 +613,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraGainRan
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraGain(
     _env: JNIEnv,
     _class: JClass,
-) -> jni::sys::jfloat {
+) -> jfloat {
     if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         cam.get_gain()
     } else {
@@ -637,9 +637,9 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraExposur
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getLatestFrameInto(
     env: JNIEnv,
     _class: JClass,
-    buffer: jni::objects::JByteBuffer,
-    last_timestamp_ms: jni::sys::jlong,
-) -> jni::sys::jlong {
+    buffer: JByteBuffer,
+    last_timestamp_ms: jlong,
+) -> jlong {
     if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         if let Some(img) = cam.get_last_capture() {
             let img_ts_ms = img
@@ -686,11 +686,23 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getLatestFrameInto(
                         return img_ts_ms;
                     }
                 } else {
-                    log::error!(
-                        "Provided ByteBuffer is too small. Need {}, got {}",
-                        req_len,
-                        capacity
-                    );
+                    let should_warn = {
+                        let mut last = lock_or_recover(&LAST_BUFFER_WARN, "LAST_BUFFER_WARN");
+                        let now = Instant::now();
+                        let ready = last.map_or(true, |prev| {
+                            now.saturating_duration_since(prev) >= Duration::from_secs(5)
+                        });
+                        if ready {
+                            *last = Some(now);
+                        }
+                        ready
+                    };
+                    if should_warn {
+                        warn!(
+                            "Provided ByteBuffer is too small. Need {}, got {}",
+                            req_len, capacity
+                        );
+                    }
                 }
             }
         }
@@ -702,7 +714,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getLatestFrameInto(
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEnginePaused(
     _env: JNIEnv,
     _class: JClass,
-    paused: jni::sys::jboolean,
+    paused: jboolean,
 ) {
     if let Some(state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").as_ref() {
         if let Ok(mut state) = state_arc.write() {
@@ -715,7 +727,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEnginePaused(
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getAvailableInternalCameras(
     env: JNIEnv,
     _class: JClass,
-) -> jni::sys::jstring {
+) -> jstring {
     use crate::android_camera::AndroidCamera;
     let json_str = AndroidCamera::get_available_cameras();
     new_java_string(&env, &json_str)
@@ -725,7 +737,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getAvailableInternalCa
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getEngineStats(
     env: JNIEnv,
     _class: JClass,
-) -> jni::sys::jstring {
+) -> jstring {
     let state_lock = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE");
     let json_str = if let Some(state) = state_lock.as_ref() {
         if let Ok(guard) = state.read() {
@@ -744,7 +756,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getEngineStats(
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEngineSigma(
     _env: JNIEnv,
     _class: JClass,
-    sigma: jni::sys::jfloat,
+    sigma: jfloat,
 ) {
     if let Some(engine_state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").as_ref() {
         if let Ok(mut state) = engine_state_arc.write() {
@@ -757,7 +769,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEngineSigma(
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEngineStrictMatch(
     _env: JNIEnv,
     _class: JClass,
-    strict: jni::sys::jboolean,
+    strict: jboolean,
 ) {
     if let Some(engine_state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").as_ref() {
         if let Ok(mut state) = engine_state_arc.write() {
@@ -810,9 +822,9 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnection
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraBrightness(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-) -> jni::sys::jint {
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
     if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         cam.get_brightness().unwrap_or(0)
     } else {
@@ -822,9 +834,9 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraBrightn
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraZoomRatio(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-) -> jni::sys::jfloat {
+    _env: JNIEnv,
+    _class: JClass,
+) -> jfloat {
     if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         cam.get_zoom().unwrap_or(1.0)
     } else {
@@ -834,9 +846,9 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraZoomRat
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraFocus(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-) -> jni::sys::jfloat {
+    _env: JNIEnv,
+    _class: JClass,
+) -> jfloat {
     if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         cam.get_focus().unwrap_or(0.0)
     } else {
@@ -848,9 +860,9 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraFocus(
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraSupportedHotPixelModes<
     'local,
 >(
-    env: jni::JNIEnv<'local>,
-    _class: jni::objects::JClass<'local>,
-) -> jni::sys::jintArray {
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jintArray {
     let modes = lock_or_recover(
         &crate::android_camera::SUPPORTED_HOT_PIXEL_MODES,
         "SUPPORTED_HOT_PIXEL_MODES",
@@ -860,14 +872,14 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraSupport
         Ok(array) => {
             if !modes_i32.is_empty() {
                 if let Err(e) = env.set_int_array_region(&array, 0, &modes_i32) {
-                    log::error!("Failed to fill hot pixel modes array: {:?}", e);
+                    error!("Failed to fill hot pixel modes array: {:?}", e);
                     return std::ptr::null_mut();
                 }
             }
             array.into_raw()
         }
         Err(e) => {
-            log::error!("Failed to allocate hot pixel modes array: {:?}", e);
+            error!("Failed to allocate hot pixel modes array: {:?}", e);
             std::ptr::null_mut()
         }
     }
@@ -875,29 +887,27 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraSupport
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setNativeCameraHotPixelMode(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-    mode: jni::sys::jint,
+    _env: JNIEnv,
+    _class: JClass,
+    mode: jint,
 ) {
-    crate::android_camera::CURRENT_HOT_PIXEL_MODE
-        .store(mode as u32, std::sync::atomic::Ordering::Relaxed);
+    crate::android_camera::CURRENT_HOT_PIXEL_MODE.store(mode as u32, Ordering::Relaxed);
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraHotPixelMode(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-) -> jni::sys::jint {
-    crate::android_camera::CURRENT_HOT_PIXEL_MODE.load(std::sync::atomic::Ordering::Relaxed)
-        as jni::sys::jint
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    crate::android_camera::CURRENT_HOT_PIXEL_MODE.load(Ordering::Relaxed) as jint
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_processTelescopeData<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
-    data: jni::objects::JByteArray<'local>,
-) -> jni::sys::jbyteArray {
+    data: JByteArray<'local>,
+) -> jbyteArray {
     let controller_opt = lock_or_recover(&LX200_CONTROLLER, "LX200_CONTROLLER").clone();
     if let Some(controller_lock) = controller_opt {
         if let Ok(data_bytes) = env.convert_byte_array(&data) {
@@ -935,11 +945,11 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_resetTelescopeServer<'
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getPlanets(
     mut env: JNIEnv,
     _class: JClass,
-    bsp_path: jni::objects::JString,
-    time_ms: jni::sys::jlong,
-    latitude: jni::sys::jdouble,
-    longitude: jni::sys::jdouble,
-) -> jni::sys::jstring {
+    bsp_path: JString,
+    time_ms: jlong,
+    latitude: jdouble,
+    longitude: jdouble,
+) -> jstring {
     use chrono::TimeZone;
     use serde::Serialize;
     use starfield::jplephem::kernel::SpiceKernel;
@@ -1040,11 +1050,11 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getPlanets(
     let json_str = match result_json {
         Ok(Ok(planets)) => serde_json::to_string(&planets).unwrap_or_else(|_| "[]".to_string()),
         Ok(Err(e)) => {
-            log::error!("Planet calculation error: {}", e);
+            error!("Planet calculation error: {}", e);
             "[]".to_string()
         }
         Err(_) => {
-            log::error!("Planet calculation panicked");
+            error!("Planet calculation panicked");
             "[]".to_string()
         }
     };
@@ -1054,33 +1064,31 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getPlanets(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setGoToTarget(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-    ra: jni::sys::jdouble,
-    dec: jni::sys::jdouble,
-    epoch: jni::sys::jdouble,
+    _env: JNIEnv,
+    _class: JClass,
+    ra: jdouble,
+    dec: jdouble,
+    epoch: jdouble,
 ) {
     if let Some(state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").as_ref() {
         if let Ok(mut state) = state_arc.write() {
             state.requested_target_ra = Some(ra as f64);
             state.requested_target_dec = Some(dec as f64);
             state.requested_target_epoch = Some(epoch as f64);
-            log::info!(
+            info!(
                 "Target slew requested via JNI (EngineState): RA={}, Dec={}, Epoch={}",
-                ra,
-                dec,
-                epoch
+                ra, dec, epoch
             );
         }
     } else {
-        log::warn!("setGoToTarget called but ENGINE_STATE is not initialized");
+        warn!("setGoToTarget called but ENGINE_STATE is not initialized");
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_clearGoToTarget(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
+    _env: JNIEnv,
+    _class: JClass,
 ) {
     if let Some(state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").as_ref() {
         if let Ok(mut state) = state_arc.write() {
@@ -1090,93 +1098,93 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_clearGoToTarget(
             state.target_ra = None;
             state.target_dec = None;
             state.requested_target_clear = true;
-            log::info!("Target slew cleared via JNI");
+            info!("Target slew cleared via JNI");
         }
     } else {
-        log::warn!("clearGoToTarget called but ENGINE_STATE is not initialized");
+        warn!("clearGoToTarget called but ENGINE_STATE is not initialized");
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setAlignTargetPixel(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-    x: jni::sys::jdouble,
-    y: jni::sys::jdouble,
+    _env: JNIEnv,
+    _class: JClass,
+    x: jdouble,
+    y: jdouble,
 ) {
     if let Some(state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").as_ref() {
         if let Ok(mut state) = state_arc.write() {
             state.pending_target_pixel_cmd = Some(olive_engine::engine::TargetPixelCommand::Set(
                 x as f64, y as f64,
             ));
-            log::info!("Align target pixel requested via JNI: ({}, {})", x, y);
+            info!("Align target pixel requested via JNI: ({}, {})", x, y);
         }
     } else {
-        log::warn!("setAlignTargetPixel called but ENGINE_STATE is not initialized");
+        warn!("setAlignTargetPixel called but ENGINE_STATE is not initialized");
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_clearAlignTargetPixel(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
+    _env: JNIEnv,
+    _class: JClass,
 ) {
     if let Some(state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").as_ref() {
         if let Ok(mut state) = state_arc.write() {
             state.pending_target_pixel_cmd = Some(olive_engine::engine::TargetPixelCommand::Clear);
-            log::info!("Clear align target pixel requested via JNI");
+            info!("Clear align target pixel requested via JNI");
         }
     } else {
-        log::warn!("clearAlignTargetPixel called but ENGINE_STATE is not initialized");
+        warn!("clearAlignTargetPixel called but ENGINE_STATE is not initialized");
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_syncTelescope(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
+    _env: JNIEnv,
+    _class: JClass,
 ) {
     if let Some(state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").as_ref() {
         if let Ok(mut state) = state_arc.write() {
             state.requested_sync = true;
-            log::info!("Sync telescope requested via JNI");
+            info!("Sync telescope requested via JNI");
         }
     } else {
-        log::warn!("syncTelescope called but ENGINE_STATE is not initialized");
+        warn!("syncTelescope called but ENGINE_STATE is not initialized");
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_syncTelescopeToTarget(
-    _env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-    ra: jni::sys::jdouble,
-    dec: jni::sys::jdouble,
+    _env: JNIEnv,
+    _class: JClass,
+    ra: jdouble,
+    dec: jdouble,
 ) {
     if let Some(state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").as_ref() {
         if let Ok(mut state) = state_arc.write() {
             state.requested_sync_coords = Some((ra as f64, dec as f64));
             state.requested_sync = true;
-            log::info!(
+            info!(
                 "Sync telescope to target ({}, {}) requested via JNI",
-                ra,
-                dec
+                ra, dec
             );
         }
     } else {
-        log::warn!("syncTelescopeToTarget called but ENGINE_STATE is not initialized");
+        warn!("syncTelescopeToTarget called but ENGINE_STATE is not initialized");
     }
 }
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getAsteroids(
-    mut env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-    bsp_path: jni::objects::JString,
-    time_ms: jni::sys::jlong,
-    latitude: jni::sys::jdouble,
-    longitude: jni::sys::jdouble,
-    asteroids_json: jni::objects::JString,
-) -> jni::sys::jstring {
+    mut env: JNIEnv,
+    _class: JClass,
+    bsp_path: JString,
+    time_ms: jlong,
+    latitude: jdouble,
+    longitude: jdouble,
+    asteroids_json: JString,
+) -> jstring {
     use chrono::TimeZone;
     use serde::{Deserialize, Serialize};
     use starfield::constants::{C_AUDAY, GM_SUN};
@@ -1341,11 +1349,11 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getAsteroids(
     let output = match result_json {
         Ok(Ok(planets)) => serde_json::to_string(&planets).unwrap_or_else(|_| "[]".to_string()),
         Ok(Err(e)) => {
-            log::error!("Asteroids calculation error: {}", e);
+            error!("Asteroids calculation error: {}", e);
             "[]".to_string()
         }
         Err(_) => {
-            log::error!("Asteroids calculation panicked");
+            error!("Asteroids calculation panicked");
             "[]".to_string()
         }
     };
@@ -1355,14 +1363,14 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getAsteroids(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getComets(
-    mut env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-    bsp_path: jni::objects::JString,
-    time_ms: jni::sys::jlong,
-    latitude: jni::sys::jdouble,
-    longitude: jni::sys::jdouble,
-    comets_json: jni::objects::JString,
-) -> jni::sys::jstring {
+    mut env: JNIEnv,
+    _class: JClass,
+    bsp_path: JString,
+    time_ms: jlong,
+    latitude: jdouble,
+    longitude: jdouble,
+    comets_json: JString,
+) -> jstring {
     use chrono::TimeZone;
     use serde::{Deserialize, Serialize};
     use starfield::constants::{C_AUDAY, GM_SUN};
@@ -1520,11 +1528,11 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getComets(
     let output = match result_json {
         Ok(Ok(planets)) => serde_json::to_string(&planets).unwrap_or_else(|_| "[]".to_string()),
         Ok(Err(e)) => {
-            log::error!("Comets calculation error: {}", e);
+            error!("Comets calculation error: {}", e);
             "[]".to_string()
         }
         Err(_) => {
-            log::error!("Comets calculation panicked");
+            error!("Comets calculation panicked");
             "[]".to_string()
         }
     };
@@ -1539,13 +1547,13 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
     width: jint,
     height: jint,
     motion_sensor_mode: jint,
-    downsample_mode: jni::sys::jint,
-    latitude: jni::sys::jdouble,
-    longitude: jni::sys::jdouble,
-    settings_manager: jni::objects::JObject,
-    auto_mode: jni::sys::jboolean,
+    downsample_mode: jint,
+    latitude: jdouble,
+    longitude: jdouble,
+    settings_manager: JObject,
+    auto_mode: jboolean,
     fps: jint,
-    uvc_wrapper: jni::objects::JObject,
+    uvc_wrapper: JObject,
 ) {
     let jvm_for_uvc = match env.get_java_vm() {
         Ok(vm) => vm,
@@ -1588,14 +1596,13 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
     };
 
     let rx = prepare_engine_restart();
-    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
 
-    let new_thread = std::thread::spawn(move || {
+    let new_thread = thread::spawn(move || {
         rt_handle.block_on(async {
             use olive_engine::CameraTrait;
             use olive_engine::control_server;
             use olive_engine::engine::{Engine, EngineConfig};
-            use std::sync::Arc;
 
             let uvc_cam = Arc::new(android_uvc_camera::AndroidUvcCamera::new(
                 width as u32,
@@ -1606,7 +1613,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
                 auto_mode != 0,
             ));
             *lock_or_recover(&UVC_CAMERA_RECEIVER, "UVC_CAMERA_RECEIVER") = Some(uvc_cam.clone());
-            let camera: std::sync::Arc<dyn CameraTrait> = uvc_cam;
+            let camera: Arc<dyn CameraTrait> = uvc_cam;
             *lock_or_recover(&CAMERA, "CAMERA") = Some(camera.clone());
 
             let config = EngineConfig {
@@ -1624,7 +1631,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
                 initial_fov: camera.get_config().and_then(|c| c.initial_fov),
                 use_observer_location: true,
             };
-            let client_connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let client_connected = Arc::new(AtomicBool::new(false));
 
             let mut initial_state = olive_engine::engine::EngineStateData::default();
             if latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 && longitude <= 180.0 {
@@ -1632,7 +1639,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
                 initial_state.client_longitude = Some(longitude);
             }
 
-            let engine_state = Arc::new(std::sync::RwLock::new(initial_state));
+            let engine_state = Arc::new(RwLock::new(initial_state));
 
             let server_camera = camera.clone();
             let server_client_connected = client_connected.clone();
@@ -1704,7 +1711,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
             let is_running_clone = engine.is_running.clone();
             let telescope_handle = engine.telescope_server_handle.take();
 
-            let engine_thread = std::thread::spawn(move || {
+            let engine_thread = thread::spawn(move || {
                 let handles = engine.start();
                 let _ = handles.0.join();
                 let _ = handles.1.join();
@@ -1713,7 +1720,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
             let _ = ready_tx.send(Ok(()));
 
             let _ = rx.await;
-            is_running_clone.store(false, std::sync::atomic::Ordering::Relaxed);
+            is_running_clone.store(false, Ordering::Relaxed);
             server_handle.abort();
             let _ = server_handle.await;
 
@@ -1731,12 +1738,12 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startExternalCameraEng
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_pushExternalUvcFrame(
-    env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-    buffer: jni::objects::JByteBuffer,
-    width: jni::sys::jint,
-    height: jni::sys::jint,
-    _timestamp: jni::sys::jlong,
+    env: JNIEnv,
+    _class: JClass,
+    buffer: JByteBuffer,
+    width: jint,
+    height: jint,
+    _timestamp: jlong,
 ) {
     if let Ok(data_ptr) = env.get_direct_buffer_address(&buffer) {
         if let Ok(data_len) = env.get_direct_buffer_capacity(&buffer) {
@@ -1753,7 +1760,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_pushExternalUvcFrame(
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraNoiseReduction(
     _env: JNIEnv,
     _class: JClass,
-) -> jni::sys::jint {
+) -> jint {
     if let Some(cam) = lock_or_recover(&CAMERA, "CAMERA").as_ref() {
         cam.get_noise_reduction() as i32
     } else {

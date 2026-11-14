@@ -4,23 +4,23 @@
 use log::{error, info, warn};
 use ndk_sys::*;
 use olive_engine::{CameraConfig, CameraTrait, CameraType, Image};
+use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::ptr;
 use std::sync::{
     Arc, Condvar, Mutex,
-    atomic::{AtomicI32, AtomicU32, Ordering},
+    atomic::{AtomicI32, AtomicI64, AtomicU32, Ordering},
     mpsc,
 };
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 const INITIAL_EXPOSURE_US: i32 = 250_000;
 const MIN_EXPOSURE_US: i32 = 16_667;
 const MAX_EXPOSURE_US: i32 = 5_000_000;
 
-pub static CURRENT_HOT_PIXEL_MODE: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(0);
+pub static CURRENT_HOT_PIXEL_MODE: AtomicU32 = AtomicU32::new(0);
 pub static SUPPORTED_HOT_PIXEL_MODES: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 
 // --- Data Structures ---
@@ -67,8 +67,9 @@ struct ImageReaderContext {
     white_level: f32,
     black_level: f32,
     format: i32,
-    frame_exposures: Arc<Mutex<std::collections::VecDeque<(i64, i32, f32, i64, f32)>>>,
-    prev_sensor_ts: Arc<std::sync::atomic::AtomicI64>,
+    frame_exposures: Arc<Mutex<VecDeque<(i64, i32, f32, i64, f32)>>>,
+    prev_sensor_ts: Arc<AtomicI64>,
+    last_metadata_warn: Mutex<Option<Instant>>,
     current_zoom: Arc<AtomicU32>,
     active_array_width: u32,
 }
@@ -1031,7 +1032,7 @@ impl AndroidCamera {
                 && !raw_image.is_null()
             {
                 let _image_guard = AcquiredImage(raw_image);
-                let receive_time = std::time::Instant::now();
+                let receive_time = Instant::now();
 
                 let mut data: *mut u8 = ptr::null_mut();
                 let mut len: i32 = 0;
@@ -1093,9 +1094,22 @@ impl AndroidCamera {
                 }
 
                 if !metadata_valid {
-                    // Only warn occasionally to avoid log spam if it completely breaks
-                    if timestamp % 10 == 0 {
-                        log::warn!(
+                    let should_warn = {
+                        let mut last = ctx
+                            .last_metadata_warn
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        let now = Instant::now();
+                        let ready = last.map_or(true, |prev| {
+                            now.saturating_duration_since(prev) >= Duration::from_secs(5)
+                        });
+                        if ready {
+                            *last = Some(now);
+                        }
+                        ready
+                    };
+                    if should_warn {
+                        warn!(
                             "Frame timestamp {} missing metadata - dropping telemetry",
                             timestamp
                         );
@@ -1180,8 +1194,7 @@ impl AndroidCamera {
             }
 
             let mut actual_zoom: f32 =
-                f32::from_bits(ctx.current_zoom.load(std::sync::atomic::Ordering::Relaxed))
-                    .max(1.0);
+                f32::from_bits(ctx.current_zoom.load(Ordering::Relaxed)).max(1.0);
             if ACameraMetadata_getConstEntry(
                 result,
                 acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO.0 as u32,
@@ -1204,9 +1217,7 @@ impl AndroidCamera {
             }
 
             if timestamp > 0 && exposure_ns >= 0 {
-                let prev = ctx
-                    .prev_sensor_ts
-                    .swap(timestamp, std::sync::atomic::Ordering::Relaxed);
+                let prev = ctx.prev_sensor_ts.swap(timestamp, Ordering::Relaxed);
                 let interval_us = if prev > 0 {
                     (timestamp - prev) / 1000
                 } else {
@@ -1294,13 +1305,9 @@ impl AndroidCamera {
             // A Looper is required for AImageReader callbacks
             ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS as i32);
 
-            let frame_exposures = Arc::new(Mutex::new(std::collections::VecDeque::<(
-                i64,
-                i32,
-                f32,
-                i64,
-                f32,
-            )>::with_capacity(30)));
+            let frame_exposures = Arc::new(Mutex::new(
+                VecDeque::<(i64, i32, f32, i64, f32)>::with_capacity(30),
+            ));
 
             let reader_context = Box::new(ImageReaderContext {
                 store: Arc::clone(&store),
@@ -1311,7 +1318,8 @@ impl AndroidCamera {
                 black_level: config.black_level,
                 format: config.format,
                 frame_exposures: Arc::clone(&frame_exposures),
-                prev_sensor_ts: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+                prev_sensor_ts: Arc::new(AtomicI64::new(0)),
+                last_metadata_warn: Mutex::new(None),
                 current_zoom: Arc::clone(&zoom_ref),
                 active_array_width: config.active_array_size[2].max(0) as u32,
             });
@@ -1669,8 +1677,6 @@ impl AndroidCamera {
                 1,
                 &current_gain,
             );
-
-            // Software cropping applied in engine
 
             let mut target_exposure = exposure_ref.load(Ordering::Relaxed);
             let mut exp_ns = (target_exposure as i64) * 1000;
