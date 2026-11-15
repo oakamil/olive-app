@@ -22,26 +22,51 @@ data class CatalogObject(
     val description: String?,
     val copyright: String?
 ) {
-    val isFakeCommonName: Boolean
-        get() = commonName != null && commonName.matches(Regex("^[a-zA-Z0-9]+\\s+([IVX]+\\s+)?\\d+[a-zA-Z]?$"))
+    val designation: String = when (catalogLabel) {
+        "Str", "Planet", "Solar System" -> catalogEntry
+        in COMPACT_CATALOG_LABELS -> catalogLabel + catalogEntry
+        else -> "$catalogLabel $catalogEntry"
+    }
 
-    val displayName: String
-        get() = if (commonName.isNullOrBlank() || isFakeCommonName) designation else commonName
+    val isFakeCommonName: Boolean = commonName != null && (
+            commonName.equals("none", ignoreCase = true) ||
+                    commonName.equals("nl", ignoreCase = true) ||
+                    FAKE_COMMON_NAME_REGEX.matches(commonName)
+            )
 
-    val designation: String
-        get() = when (catalogLabel) {
-            "Str", "Planet", "Solar System" -> {
-                catalogEntry
-            }
+    val displayName: String =
+        if (commonName.isNullOrBlank() || isFakeCommonName) designation else commonName
 
-            in listOf("M", "NGC", "IC", "C", "Col") -> {
-                catalogLabel + catalogEntry
-            }
+    val skyMapLabel: String =
+        if (commonName.isNullOrBlank() || isFakeCommonName) designation else extractPrimaryName(
+            commonName
+        )
 
-            else -> {
-                "$catalogLabel $catalogEntry"
-            }
+    companion object {
+        private val COMPACT_CATALOG_LABELS = setOf("M", "NGC", "IC", "C", "Col")
+        private val FAKE_COMMON_NAME_REGEX = Regex("^[a-zA-Z0-9]+\\s+([IVX]+\\s+)?\\d+[a-zA-Z]?$")
+        private val SLASH_OR_EQUALS_REGEX = Regex("\\s+[/=]\\s+")
+        private val BAYER_DESIGNATION_REGEX = Regex(
+            "^(?:Alpha|Beta|Gamma|Delta|Epsilon|Zeta|Eta|Theta|Iota|Kappa|Lambda|Mu|Nu|Xi|Omicron|Pi|Rho|Sigma|Tau|Upsilon|Phi|Chi|Psi|Omega|[A-Za-z]{1,2})\\s+[A-Z][a-zA-Z]{2}\\.?$",
+            RegexOption.IGNORE_CASE
+        )
+
+        private fun isTechnicalDesignation(s: String): Boolean =
+            s.any { it.isDigit() } || s.endsWith(" pm") || BAYER_DESIGNATION_REGEX.matches(s)
+
+        private fun extractPrimaryName(raw: String): String {
+            if ('/' !in raw && ',' !in raw && '=' !in raw) return raw.trim()
+            val slashParts =
+                raw.split(SLASH_OR_EQUALS_REGEX).map { it.trim() }.filter { it.isNotEmpty() }
+            if (slashParts.size <= 1 && ',' !in raw) return raw.trim()
+            slashParts.firstOrNull {
+                ',' !in it && !it.contains(" or ", ignoreCase = true) && !isTechnicalDesignation(it)
+            }?.let { return it }
+            val allParts =
+                slashParts.flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }
+            return allParts.firstOrNull { !isTechnicalDesignation(it) } ?: allParts.first()
         }
+    }
 }
 
 interface CatalogDatabase {

@@ -57,7 +57,11 @@ class ZoomFovTest {
     fun testZoomSliderDiscreteSteps() {
         val effectiveMaxZoom = 2.0f
         val stepsCount = (round((effectiveMaxZoom - 1.0f) * 10f).toInt() - 1).coerceAtLeast(0)
-        assertEquals("There should be 9 discrete steps between 1.0x and 2.0x for 0.1 increments", 9, stepsCount)
+        assertEquals(
+            "There should be 9 discrete steps between 1.0x and 2.0x for 0.1 increments",
+            9,
+            stepsCount
+        )
 
         // Verify stepping quantization
         val rawValues = listOf(1.04f, 1.08f, 1.49f, 1.51f, 1.95f, 2.04f)
