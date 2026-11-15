@@ -136,12 +136,15 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     }
     val engine = remember { IosEngineBridge() }
     val catalogDb = remember { IosCatalogDatabase() }
-    val viewModel = remember { MainViewModel(storage, capabilities, engine, catalogDb) }
+    val hipsBackend = remember { IosHiPSLocalBackend() }
+    val viewModel =
+        remember { MainViewModel(storage, capabilities, engine, catalogDb, hipsBackend) }
     val settingsManager = viewModel.settingsManager
     val windowController = remember { AppleWindowController() }
-    DisposableEffect(windowController) {
+    DisposableEffect(windowController, viewModel) {
         onDispose {
             windowController.dispose()
+            viewModel.dispose()
         }
     }
 
@@ -233,6 +236,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     val locationProvider = remember {
         IosLocationProvider(
             onLocationUpdated = { rawLat, rawLon ->
+                @Suppress("AssignedValueIsNeverRead")
                 pendingLocationRefresh = false
                 val rLat = round(rawLat * 100.0) / 100.0
                 val rLon = round(rawLon * 100.0) / 100.0
@@ -246,6 +250,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                 }
             },
             onError = { err ->
+                @Suppress("AssignedValueIsNeverRead")
                 pendingLocationRefresh = false
                 Log.w("OliveUI", "Location error: $err")
                 viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.FAILURE
@@ -256,6 +261,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             },
             onPermissionDenied = {
                 if (pendingLocationRefresh) {
+                    @Suppress("AssignedValueIsNeverRead")
                     pendingLocationRefresh = false
                     viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.IDLE
                     showLocationPermissionDialog = true

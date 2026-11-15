@@ -6,9 +6,11 @@ package com.oakamil.olive
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.HorizontalDivider
@@ -19,6 +21,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -93,6 +96,106 @@ fun SkyMapSettingsDialog(
                     modifier = Modifier.padding(start = 4.dp, end = 20.dp),
                     color = MaterialTheme.colorScheme.onBackground
                 )
+            }
+
+            // 2. Sky Background
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(Res.string.label_sky_background),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                IconButton(
+                    onClick = { activeInfoDialog = "sky_background" },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = stringResource(Res.string.cd_info),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                RadioButton(
+                    selected = viewModel.showSkyBackground,
+                    onClick = { viewModel.requestSkyBackgroundChange(true) },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+                Text(
+                    text = stringResource(Res.string.value_on),
+                    modifier = Modifier.padding(start = 4.dp, end = 20.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                RadioButton(
+                    selected = !viewModel.showSkyBackground,
+                    onClick = { viewModel.requestSkyBackgroundChange(false) },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+                Text(
+                    text = stringResource(Res.string.value_off),
+                    modifier = Modifier.padding(start = 4.dp, end = 20.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+            val dlState = viewModel.hipsDownloadState
+            val isDownloadingOrPacking =
+                dlState is HiPSDownloadState.Downloading || dlState is HiPSDownloadState.Packing
+            val hasStoredData = viewModel.skyStorageBytes > 0L
+
+            if (isDownloadingOrPacking || hasStoredData) {
+                val statusText = when (dlState) {
+                    is HiPSDownloadState.Downloading -> {
+                        val pct =
+                            ((dlState.completedTiles * 100) / dlState.totalTiles.coerceAtLeast(1)).coerceIn(
+                                0,
+                                100
+                            )
+                        stringResource(Res.string.hips_downloading_inline, pct)
+                    }
+
+                    is HiPSDownloadState.Packing -> stringResource(Res.string.hips_packing_inline)
+                    else -> stringResource(
+                        Res.string.hips_status_stored,
+                        HiPSDownloadManager.formatMbValue(viewModel.skyStorageBytes)
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, bottom = 4.dp)
+                ) {
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDownloadingOrPacking) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f)
+                        }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    if (isDownloadingOrPacking) {
+                        TextButton(onClick = { viewModel.showHiPSDownloadProgress = true }) {
+                            Text(text = stringResource(Res.string.hips_action_show))
+                        }
+                    }
+                    TextButton(onClick = { viewModel.removeDownloadedSkyPack() }) {
+                        Text(text = stringResource(Res.string.hips_action_remove))
+                    }
+                }
             }
 
             // 2. Guidance Mode
@@ -601,6 +704,25 @@ fun SkyMapSettingsDialog(
             }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_stacking)))
+        }
+
+        "sky_background" -> InfoPopup(
+            title = stringResource(Res.string.label_sky_background),
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
+        ) {
+            Text(
+                AnnotatedString.fromHtml(
+                    stringResource(
+                        Res.string.info_sky_background,
+                        HiPSDownloadManager.estimatedDownloadMb(),
+                        Healpix.MAX_ORDER,
+                        HiPSDownloadManager.formatCount(Healpix.TOTAL_TILES)
+                    )
+                )
+            )
         }
     }
 }

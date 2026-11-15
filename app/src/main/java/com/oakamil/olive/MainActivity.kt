@@ -112,7 +112,8 @@ class MainActivity : ComponentActivity() {
                 val capabilities = androidCapabilities
                 val engine = OliveEngine
                 val catalogDb = CatalogDatabaseHelper(applicationContext)
-                return MainViewModel(storage, capabilities, engine, catalogDb) as T
+                val hipsBackend = AndroidHiPSLocalBackend(applicationContext)
+                return MainViewModel(storage, capabilities, engine, catalogDb, hipsBackend) as T
             }
         }
     }

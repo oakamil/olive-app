@@ -53,6 +53,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -672,6 +673,13 @@ fun SkyMapView(
     val horizonScreenXs = remember { FloatArray(SkyMapProjection.HORIZON_POINTS.size) }
     val horizonScreenYs = remember { FloatArray(SkyMapProjection.HORIZON_POINTS.size) }
     val horizonScreenValid = remember { BooleanArray(SkyMapProjection.HORIZON_POINTS.size) }
+    val hipsRenderState = remember { HiPSRenderState() }
+    val hipsTileManager = viewModel.hipsTileManager
+    DisposableEffect(hipsTileManager) {
+        onDispose {
+            hipsRenderState.clear()
+        }
+    }
 
     // PathEffects pre-allocated
     val horizonDashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f) }
@@ -845,6 +853,19 @@ fun SkyMapView(
 
             placedLabelRects.clear()
             placedReticleRects.clear()
+
+            // 0. Sky Background
+            if (viewModel.showSkyBackground && hipsTileManager != null) {
+                hipsRenderState.render(
+                    drawScope = this,
+                    tileManager = hipsTileManager,
+                    projection = projection,
+                    latDeg = lat,
+                    lstDeg = currentLst,
+                    hasValidLocation = hasValidLocation,
+                    isNightVision = viewModel.currentTheme != "blue"
+                )
+            }
 
             // 1. Local Horizon Circle & Below-Horizon Shading (only if observer location is known)
             if (hasValidLocation) {
