@@ -490,6 +490,8 @@ fun MainScreen(
             )
         }
 
+        HiPSDownloadDialogs(viewModel = viewModel)
+
         if (showStartEngineDialog) {
             StartEngineDialog(
                 viewModel = viewModel,

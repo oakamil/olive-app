@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
@@ -12,9 +13,12 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
@@ -23,8 +27,21 @@ open class MainViewModel(
     val storage: KeyValueStorage,
     val capabilities: PlatformCapabilities,
     var engine: EngineBridge,
-    val catalogDb: CatalogDatabase
+    val catalogDb: CatalogDatabase,
+    private val hipsLocalBackend: HiPSLocalBackend? = null
 ) : ViewModel() {
+    var hipsTileManager by mutableStateOf<HiPSTileManager?>(null)
+        private set
+    var isSkyPackDownloaded by mutableStateOf(false)
+        private set
+    var skyStorageBytes by mutableLongStateOf(0L)
+        private set
+    var hipsDownloadState by mutableStateOf<HiPSDownloadState>(HiPSDownloadState.Idle)
+        private set
+    var showHiPSDownloadConfirm by mutableStateOf(false)
+    var showHiPSDownloadProgress by mutableStateOf(false)
+    private var hipsDownloadJob: Job? = null
+    private var hipsCleanupJob: Job? = null
     var uvcWrapper: UvcCameraHandler? = null
     var availableUvcFormats by mutableStateOf(UvcFormat.FALLBACK_FORMATS)
     private var lastLoggedMirrored: Boolean? = null
@@ -79,6 +96,152 @@ open class MainViewModel(
             _showMapPosition.value = value
             settingsManager.showMapPosition = value
         }
+
+    private val _showSkyBackground = mutableStateOf(settingsManager.showSkyBackground)
+    var showSkyBackground: Boolean
+        get() = _showSkyBackground.value
+        set(value) {
+            val effective = value && isSkyPackDownloaded
+            if (effective == _showSkyBackground.value) return
+            _showSkyBackground.value = effective
+            settingsManager.showSkyBackground = effective
+            if (effective) {
+                ensureHiPSTileManagerOpen()
+            } else {
+                hipsTileManager?.close()
+                hipsTileManager = null
+            }
+        }
+
+    init {
+        if (hipsLocalBackend != null) {
+            hipsCleanupJob = viewModelScope.launch {
+                refreshHiPSPackStateAsync()
+            }
+        } else {
+            showSkyBackground = false
+        }
+    }
+
+    private suspend fun syncHiPSStorageState(backend: HiPSLocalBackend): Boolean {
+        val (packBytes, stagedBytes) = withContext(Dispatchers.IO) {
+            val size = backend.downloadedPackSizeBytes()
+            if (size > 0L) size to 0L
+            else 0L to backend.getStagedStats().totalBytes
+        }
+        isSkyPackDownloaded = packBytes > 0L
+        skyStorageBytes = if (packBytes > 0L) packBytes else stagedBytes
+        return isSkyPackDownloaded
+    }
+
+    private suspend fun refreshHiPSPackStateAsync() {
+        val backend = hipsLocalBackend ?: return
+        if (syncHiPSStorageState(backend) && _showSkyBackground.value) {
+            ensureHiPSTileManagerOpen()
+        } else {
+            showSkyBackground = false
+        }
+    }
+
+    private fun ensureHiPSTileManagerOpen() {
+        val backend = hipsLocalBackend ?: return
+        if (hipsTileManager != null || !isSkyPackDownloaded) return
+        hipsTileManager = HiPSTileManager(backend.openDownloadedAssetSource())
+    }
+
+    fun requestSkyBackgroundChange(enabled: Boolean) {
+        if (!enabled) {
+            showSkyBackground = false
+            return
+        }
+        if (isSkyPackDownloaded) {
+            showSkyBackground = true
+            return
+        }
+        if (hipsDownloadJob?.isActive == true) {
+            showHiPSDownloadProgress = true
+            return
+        }
+        val backend = hipsLocalBackend
+        if (backend == null) {
+            showHiPSDownloadConfirm = true
+            return
+        }
+        viewModelScope.launch {
+            hipsCleanupJob?.join()
+            if (syncHiPSStorageState(backend)) {
+                showSkyBackground = true
+            } else {
+                showHiPSDownloadConfirm = true
+            }
+        }
+    }
+
+    fun startDss2Download() {
+        showHiPSDownloadConfirm = false
+        showHiPSDownloadProgress = true
+        if (hipsDownloadJob?.isActive == true) return
+        val backend = hipsLocalBackend
+        if (backend == null) {
+            hipsDownloadState = HiPSDownloadState.Failed(
+                completedTiles = 0,
+                totalTiles = Healpix.TOTAL_TILES,
+                reason = HiPSFailureReason.StorageBackendUnavailable
+            )
+            return
+        }
+
+        hipsDownloadJob = viewModelScope.launch {
+            hipsCleanupJob?.join()
+            val ok = HiPSDownloadManager.downloadDss2(backend) { state ->
+                hipsDownloadState = state
+                when (state) {
+                    is HiPSDownloadState.Downloading -> skyStorageBytes = state.downloadedBytes
+                    is HiPSDownloadState.Failed -> showHiPSDownloadProgress = true
+                    else -> {}
+                }
+            }
+            if (ok && syncHiPSStorageState(backend)) {
+                hipsDownloadState = HiPSDownloadState.Idle
+                showHiPSDownloadProgress = false
+                showSkyBackground = true
+            }
+        }
+    }
+
+    private fun launchHiPSCleanup(block: suspend (HiPSLocalBackend) -> Unit) {
+        val activeJob = hipsDownloadJob
+        val priorCleanup = hipsCleanupJob
+        hipsDownloadJob = null
+        hipsDownloadState = HiPSDownloadState.Idle
+        showHiPSDownloadProgress = false
+        val backend = hipsLocalBackend ?: return
+        hipsCleanupJob = viewModelScope.launch {
+            activeJob?.cancelAndJoin()
+            priorCleanup?.cancelAndJoin()
+            block(backend)
+        }
+    }
+
+    fun cancelDss2Download() {
+        launchHiPSCleanup { backend ->
+            syncHiPSStorageState(backend)
+        }
+    }
+
+    fun removeDownloadedSkyPack() {
+        showSkyBackground = false
+        isSkyPackDownloaded = false
+        skyStorageBytes = 0L
+        launchHiPSCleanup { backend ->
+            val removed = withContext(Dispatchers.IO) {
+                backend.deleteDownloadedPackAndStaging()
+            }
+            if (!removed) {
+                refreshHiPSPackStateAsync()
+            }
+        }
+    }
 
     private val _showStats = mutableStateOf(settingsManager.showStats)
     var showStats: Boolean
@@ -877,11 +1040,22 @@ open class MainViewModel(
         uvcWrapper = null
     }
 
-    override fun onCleared() {
+    fun dispose() {
         fovSaveJob?.cancel()
         settingsManager.skyMapFov = _skyMapFov.doubleValue
-        super.onCleared()
+        hipsDownloadJob?.cancel()
+        hipsDownloadJob = null
+        hipsCleanupJob?.cancel()
+        hipsCleanupJob = null
+        hipsTileManager?.close()
+        hipsTileManager = null
         catalogDb.closeDatabase()
+        viewModelScope.cancel()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        dispose()
     }
 
     companion object {

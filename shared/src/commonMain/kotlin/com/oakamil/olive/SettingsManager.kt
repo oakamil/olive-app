@@ -180,6 +180,10 @@ SettingsManager(
         get() = storage.getBoolean("show_map_position", true)
         set(value) = storage.putBoolean("show_map_position", value)
 
+    var showSkyBackground: Boolean
+        get() = storage.getBoolean("show_sky_background", false)
+        set(value) = storage.putBoolean("show_sky_background", value)
+
     var showStats: Boolean
         get() = storage.getBoolean("show_stats", true)
         set(value) = storage.putBoolean("show_stats", value)
