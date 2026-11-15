@@ -318,7 +318,7 @@ fun layoutCatalogItems(
         if (labelsPlaced < maxLabels || isTarget) {
             val (_, themedColor) = obj.getIconAndColor(extendedColors)
             val textLayout = textMeasurer.measure(
-                text = obj.displayName,
+                text = obj.skyMapLabel,
                 style = TextStyle(
                     color = themedColor,
                     fontSize = (fontSizeSp * uiScale).sp,

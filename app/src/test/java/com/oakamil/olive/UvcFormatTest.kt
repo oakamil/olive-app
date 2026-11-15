@@ -39,7 +39,10 @@ class UvcFormatTest {
         val fallbackFps = UvcFormat.FALLBACK_FORMATS.map { it.fps }
         assertEquals(listOf(30, 20, 10, 5), fallbackFps)
         for (format in UvcFormat.FALLBACK_FORMATS) {
-            assertTrue("Fallback format $format must fit USB 2.0 bandwidth", format.fitsUsb2Bandwidth())
+            assertTrue(
+                "Fallback format $format must fit USB 2.0 bandwidth",
+                format.fitsUsb2Bandwidth()
+            )
         }
     }
 
@@ -80,14 +83,23 @@ class UvcFormatTest {
         )
 
         // Exact match
-        assertEquals(UvcFormat(1920, 1080, 30, "MJPEG"), UvcFormat.findBestFormatForFps(30, formats))
+        assertEquals(
+            UvcFormat(1920, 1080, 30, "MJPEG"),
+            UvcFormat.findBestFormatForFps(30, formats)
+        )
         assertEquals(UvcFormat(960, 540, 15, "YUV2"), UvcFormat.findBestFormatForFps(15, formats))
 
         // Next fastest matching FPS when target is not available
         // Target 25 fps falls back to 20 fps
-        assertEquals(UvcFormat(1920, 1080, 20, "MJPEG"), UvcFormat.findBestFormatForFps(25, formats))
+        assertEquals(
+            UvcFormat(1920, 1080, 20, "MJPEG"),
+            UvcFormat.findBestFormatForFps(25, formats)
+        )
         // Target 12 fps falls back to 10 fps
-        assertEquals(UvcFormat(1920, 1080, 10, "MJPEG"), UvcFormat.findBestFormatForFps(12, formats))
+        assertEquals(
+            UvcFormat(1920, 1080, 10, "MJPEG"),
+            UvcFormat.findBestFormatForFps(12, formats)
+        )
         // Target 2 fps (below minimum 5) falls back to minimum available (5 fps)
         assertEquals(UvcFormat(1920, 1080, 5, "YUV2"), UvcFormat.findBestFormatForFps(2, formats))
     }
@@ -116,9 +128,40 @@ class UvcFormatTest {
     fun testIsUsb3Descriptors() {
         // USB 2.0 descriptors (e.g. Standard Device + Interface + Isochronous Endpoint, no 0x30)
         val usb2Raw = byteArrayOf(
-            18, 0x01, 0x10, 0x02, 0, 0, 0, 64, 1, 2, 3, 4, 0, 1, 1, 2, 0, 1, // Device Desc (bcdUSB 0x0210)
-            9, 0x02, 32, 0, 1, 1, 0, 0x80.toByte(), 50,                         // Config Desc
-            7, 0x05, 0x81.toByte(), 0x05, 0x00, 0x0c, 1                         // Endpoint Desc (0x05)
+            18,
+            0x01,
+            0x10,
+            0x02,
+            0,
+            0,
+            0,
+            64,
+            1,
+            2,
+            3,
+            4,
+            0,
+            1,
+            1,
+            2,
+            0,
+            1, // Device Desc (bcdUSB 0x0210)
+            9,
+            0x02,
+            32,
+            0,
+            1,
+            1,
+            0,
+            0x80.toByte(),
+            50,                         // Config Desc
+            7,
+            0x05,
+            0x81.toByte(),
+            0x05,
+            0x00,
+            0x0c,
+            1                         // Endpoint Desc (0x05)
         )
         assertFalse(UvcFormat.isUsb3Descriptors(usb2Raw))
         assertFalse(UvcFormat.isUsb3Descriptors(null))
@@ -126,10 +169,46 @@ class UvcFormatTest {
 
         // USB 3.0 descriptors (Device + Config + Endpoint + SuperSpeed Endpoint Companion Desc 0x30)
         val usb3Raw = byteArrayOf(
-            18, 0x01, 0x00, 0x03, 0, 0, 0, 9, 1, 2, 3, 4, 0, 1, 1, 2, 0, 1,  // Device Desc (bcdUSB 0x0300)
-            9, 0x02, 38, 0, 1, 1, 0, 0x80.toByte(), 50,                        // Config Desc
-            7, 0x05, 0x81.toByte(), 0x05, 0x00, 0x04, 1,                        // Endpoint Desc (0x05)
-            6, 0x30, 15, 2, 0x00, 0x00                                         // SS Endpoint Companion Desc (0x30)
+            18,
+            0x01,
+            0x00,
+            0x03,
+            0,
+            0,
+            0,
+            9,
+            1,
+            2,
+            3,
+            4,
+            0,
+            1,
+            1,
+            2,
+            0,
+            1,  // Device Desc (bcdUSB 0x0300)
+            9,
+            0x02,
+            38,
+            0,
+            1,
+            1,
+            0,
+            0x80.toByte(),
+            50,                        // Config Desc
+            7,
+            0x05,
+            0x81.toByte(),
+            0x05,
+            0x00,
+            0x04,
+            1,                        // Endpoint Desc (0x05)
+            6,
+            0x30,
+            15,
+            2,
+            0x00,
+            0x00                                         // SS Endpoint Companion Desc (0x30)
         )
         assertTrue(UvcFormat.isUsb3Descriptors(usb3Raw))
     }
@@ -176,7 +255,10 @@ class UvcFormatTest {
         val filtered = UvcFormat.filterFormats(inputList)
         assertEquals(3, filtered.size)
         assertEquals(UvcFormat(1920, 1080, 30, "MJPEG"), filtered[0]) // 1x won at 30 fps
-        assertEquals(UvcFormat(960, 540, 20, "YUV2"), filtered[1])    // 2x2 binned allowed as sole candidate at 20 fps
+        assertEquals(
+            UvcFormat(960, 540, 20, "YUV2"),
+            filtered[1]
+        )    // 2x2 binned allowed as sole candidate at 20 fps
         assertEquals(UvcFormat(1920, 1080, 5, "YUV2"), filtered[2])
     }
 }

@@ -313,10 +313,6 @@ fun SkyMapView(
     var showTargetPopup by remember { mutableStateOf(false) }
     var showSyncDialog by remember { mutableStateOf(false) }
 
-    var targetObjName by remember(
-        stats.targetRa,
-        stats.targetDec
-    ) { mutableStateOf<String?>(null) }
     var targetObject by remember(
         stats.targetRa,
         stats.targetDec
@@ -353,7 +349,6 @@ fun SkyMapView(
             }
 
             if (solarSystemMatch != null) {
-                targetObjName = solarSystemMatch.displayName
                 targetObject = solarSystemMatch
             } else {
                 withContext(Dispatchers.IO) {
@@ -363,23 +358,20 @@ fun SkyMapView(
                         limit = 1,
                         sortBy = "distance"
                     ).firstOrNull()
-                    if (obj != null && AstrometryUtils.angularDistance(
+                    targetObject = if (obj != null && AstrometryUtils.angularDistance(
                             obj.ra,
                             obj.dec,
                             targetRa,
                             targetDec
                         ) < 0.5
                     ) {
-                        targetObjName = obj.displayName
-                        targetObject = obj
+                        obj
                     } else {
-                        targetObjName = null
-                        targetObject = null
+                        null
                     }
                 }
             }
         } else {
-            targetObjName = null
             targetObject = null
             showTargetPopup = false
             showSyncDialog = false
@@ -2029,7 +2021,7 @@ fun SkyMapView(
         // Overlay Bottom: Target Object Bubble & Mini Guidance Bubble (shown only when a GoTo is active)
         if (viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
             val guidanceWidth = 88.dp * 16f / 9f
-            val targetDisplayName = targetObjName ?: stringResource(
+            val targetDisplayName = targetObject?.skyMapLabel ?: stringResource(
                 Res.string.format_ra_dec,
                 String.format("%.2f", stats.targetRa),
                 String.format("%.2f", stats.targetDec)
@@ -2194,12 +2186,12 @@ fun SkyMapView(
 
         // Target Object Info Popup (opened by tapping Target Object Bubble)
         if (showTargetPopup && viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
-            val targetDisplayName = targetObjName ?: stringResource(
+            val target = targetObject
+            val targetDisplayName = target?.displayName ?: stringResource(
                 Res.string.format_ra_dec,
                 String.format("%.2f", stats.targetRa),
                 String.format("%.2f", stats.targetDec)
             )
-            val target = targetObject
 
             InfoPopup(
                 title = targetDisplayName,

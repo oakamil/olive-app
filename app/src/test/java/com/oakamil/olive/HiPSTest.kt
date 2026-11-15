@@ -21,18 +21,36 @@ class HiPSTest {
     private class MapStorage : KeyValueStorage {
         private val map = HashMap<String, Any>()
         override fun getString(key: String, defValue: String?) = map[key] as? String ?: defValue
-        override fun putString(key: String, value: String) { map[key] = value }
+        override fun putString(key: String, value: String) {
+            map[key] = value
+        }
+
         override fun getInt(key: String, defValue: Int) = map[key] as? Int ?: defValue
-        override fun putInt(key: String, value: Int) { map[key] = value }
+        override fun putInt(key: String, value: Int) {
+            map[key] = value
+        }
+
         override fun getBoolean(key: String, defValue: Boolean) = map[key] as? Boolean ?: defValue
-        override fun putBoolean(key: String, value: Boolean) { map[key] = value }
+        override fun putBoolean(key: String, value: Boolean) {
+            map[key] = value
+        }
+
         override fun getFloat(key: String, defValue: Float) = map[key] as? Float ?: defValue
-        override fun putFloat(key: String, value: Float) { map[key] = value }
+        override fun putFloat(key: String, value: Float) {
+            map[key] = value
+        }
+
         override fun getStringSet(key: String, defValue: Set<String>?) =
             @Suppress("UNCHECKED_CAST") (map[key] as? Set<String> ?: defValue)
-        override fun putStringSet(key: String, value: Set<String>) { map[key] = value }
+
+        override fun putStringSet(key: String, value: Set<String>) {
+            map[key] = value
+        }
+
         override fun contains(key: String) = map.containsKey(key)
-        override fun remove(key: String) { map.remove(key) }
+        override fun remove(key: String) {
+            map.remove(key)
+        }
     }
 
     @Test
@@ -143,9 +161,18 @@ class HiPSTest {
     @Test
     fun testLodHysteresisStability() {
         // Promotions on zoom in (1080px screen, test with maxOrder = 3 and maxOrder = 4)
-        assertEquals(0, HiPSTileManager.computeNextOrderWithHysteresis(0, 400.0, 120.0, maxOrder = 3))
-        assertEquals(1, HiPSTileManager.computeNextOrderWithHysteresis(0, 200.0, 60.0, maxOrder = 3))
-        assertEquals(2, HiPSTileManager.computeNextOrderWithHysteresis(1, 100.0, 30.0, maxOrder = 3))
+        assertEquals(
+            0,
+            HiPSTileManager.computeNextOrderWithHysteresis(0, 400.0, 120.0, maxOrder = 3)
+        )
+        assertEquals(
+            1,
+            HiPSTileManager.computeNextOrderWithHysteresis(0, 200.0, 60.0, maxOrder = 3)
+        )
+        assertEquals(
+            2,
+            HiPSTileManager.computeNextOrderWithHysteresis(1, 100.0, 30.0, maxOrder = 3)
+        )
         assertEquals(3, HiPSTileManager.computeNextOrderWithHysteresis(2, 50.0, 15.0, maxOrder = 3))
 
         // Deadband stability: stay at Order 3 between 85..100 arcsec/px and fov 26..30 deg
@@ -153,9 +180,18 @@ class HiPSTest {
         assertEquals(2, HiPSTileManager.computeNextOrderWithHysteresis(2, 95.0, 28.0, maxOrder = 3))
 
         // Demotions on zoom out
-        assertEquals(2, HiPSTileManager.computeNextOrderWithHysteresis(3, 105.0, 31.0, maxOrder = 3))
-        assertEquals(1, HiPSTileManager.computeNextOrderWithHysteresis(2, 220.0, 62.0, maxOrder = 3))
-        assertEquals(0, HiPSTileManager.computeNextOrderWithHysteresis(1, 450.0, 130.0, maxOrder = 3))
+        assertEquals(
+            2,
+            HiPSTileManager.computeNextOrderWithHysteresis(3, 105.0, 31.0, maxOrder = 3)
+        )
+        assertEquals(
+            1,
+            HiPSTileManager.computeNextOrderWithHysteresis(2, 220.0, 62.0, maxOrder = 3)
+        )
+        assertEquals(
+            0,
+            HiPSTileManager.computeNextOrderWithHysteresis(1, 450.0, 130.0, maxOrder = 3)
+        )
 
         // Order 4 hysteresis transitions
         assertEquals(4, HiPSTileManager.computeNextOrderWithHysteresis(3, 35.0, 10.0, maxOrder = 4))
@@ -212,7 +248,8 @@ class HiPSTest {
         )
         assertEquals(null, HiPSPackToc.parseHeader(badFormatHeader))
 
-        val dataStart = HiPSPackToc.HEADER_BYTES.toLong() + tileCount.toLong() * HiPSPackToc.TOC_ENTRY_BYTES
+        val dataStart =
+            HiPSPackToc.HEADER_BYTES.toLong() + tileCount.toLong() * HiPSPackToc.TOC_ENTRY_BYTES
         val offsets = LongArray(tileCount)
         val lengths = IntArray(tileCount)
         offsets[0] = dataStart
@@ -232,7 +269,9 @@ class HiPSTest {
         val overflowOffsets = offsets.copyOf()
         overflowOffsets[0] = Long.MAX_VALUE - 10L
         val overflowToc = HiPSPackToc.buildTocBytes(overflowOffsets, lengths)
-        assertFalse(HiPSPackToc.parse(headerBytes, overflowToc)!!.isValid(totalLen, Healpix.MAX_ORDER))
+        assertFalse(
+            HiPSPackToc.parse(headerBytes, overflowToc)!!.isValid(totalLen, Healpix.MAX_ORDER)
+        )
     }
 
     private fun fakeJpeg(seed: Int, size: Int = 256): ByteArray {
@@ -261,7 +300,8 @@ class HiPSTest {
             assertEquals(0L, diskBackend.downloadedPackSizeBytes())
 
             val failingTile = HiPSDownloadManager.globalIndexToOrderIpix(500)
-            val failingPathSuffix = "/Norder${failingTile.first}/Dir${(failingTile.second / 10_000) * 10_000}/Npix${failingTile.second}.jpg"
+            val failingPathSuffix =
+                "/Norder${failingTile.first}/Dir${(failingTile.second / 10_000) * 10_000}/Npix${failingTile.second}.jpg"
 
             // First run: fail tile 500 across both mirrors; all other tiles must remain staged for resume
             val states1 = mutableListOf<HiPSDownloadState>()
@@ -277,7 +317,10 @@ class HiPSTest {
             assertFalse(ok1)
             assertEquals(0L, diskBackend.downloadedPackSizeBytes())
             val lastState1 = states1.last()
-            assertTrue("Expected Failed state, got $lastState1", lastState1 is HiPSDownloadState.Failed)
+            assertTrue(
+                "Expected Failed state, got $lastState1",
+                lastState1 is HiPSDownloadState.Failed
+            )
             val failedState = lastState1 as HiPSDownloadState.Failed
             assertEquals(Healpix.TOTAL_TILES - 1, failedState.completedTiles)
             assertEquals(HiPSFailureReason.TileDownloadFailed(1), failedState.reason)
@@ -291,7 +334,10 @@ class HiPSTest {
             val states2 = mutableListOf<HiPSDownloadState>()
             val backend2 = FakeNetworkBackend(diskBackend) { url ->
                 fetchCalls.incrementAndGet()
-                assertTrue("Expected resume to fetch only tile 500, got $url", url.endsWith(failingPathSuffix))
+                assertTrue(
+                    "Expected resume to fetch only tile 500, got $url",
+                    url.endsWith(failingPathSuffix)
+                )
                 if (url.startsWith("https://mirror-a.example")) null else expectedTile500
             }
             val ok2 = HiPSDownloadManager.downloadDss2(
@@ -301,7 +347,10 @@ class HiPSTest {
             ) { states2.add(it) }
 
             assertTrue(ok2)
-            assertEquals(2, fetchCalls.get()) // 1 failed mirror-a attempt + 1 succeeded mirror-b fallback
+            assertEquals(
+                2,
+                fetchCalls.get()
+            ) // 1 failed mirror-a attempt + 1 succeeded mirror-b fallback
             assertTrue(diskBackend.downloadedPackSizeBytes() > 0L)
             assertEquals(0L, diskBackend.getStagedStats().totalBytes)
             assertEquals(HiPSDownloadState.Idle, states2.last())
