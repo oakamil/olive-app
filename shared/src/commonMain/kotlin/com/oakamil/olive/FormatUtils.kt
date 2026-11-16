@@ -171,6 +171,10 @@ fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
                         "&quot;" -> "\""
                         "&apos;", "&#39;" -> "'"
                         "&nbsp;" -> " "
+                        "&copy;" -> "©"
+                        "&bull;" -> "•"
+                        "&ldquo;" -> "“"
+                        "&rdquo;" -> "”"
                         else -> null
                     }
                     if (decoded != null) {

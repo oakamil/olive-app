@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -52,7 +53,20 @@ fun SkyMapSettingsDialog(
     InfoPopup(
         title = stringResource(Res.string.title_settings),
         onDismiss = onDismiss,
-        fillMaxWidth = true
+        fillMaxWidth = true,
+        headerAction = {
+            IconButton(
+                onClick = { activeInfoDialog = "about" },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Help,
+                    contentDescription = stringResource(Res.string.cd_about),
+                    modifier = Modifier.size(26.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -721,6 +735,23 @@ fun SkyMapSettingsDialog(
                         Healpix.MAX_ORDER,
                         HiPSDownloadManager.formatCount(Healpix.TOTAL_TILES)
                     )
+                )
+            )
+        }
+
+        "about" -> InfoPopup(
+            title = stringResource(Res.string.title_about_olive),
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
+        ) {
+            val versionDisplay = capabilities.appVersion.takeIf { it.isNotBlank() }
+                ?.let { stringResource(Res.string.format_version, it) }
+                .orEmpty()
+            Text(
+                AnnotatedString.fromHtml(
+                    stringResource(Res.string.info_about_olive, versionDisplay)
                 )
             )
         }
