@@ -250,6 +250,7 @@ fun InfoPopup(
     title: String,
     onDismiss: () -> Unit,
     fillMaxWidth: Boolean = false,
+    headerAction: (@Composable () -> Unit)? = null,
     bottomBar: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
@@ -293,12 +294,21 @@ fun InfoPopup(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f, fill = false)
-                    )
+                    ) {
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (headerAction != null) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            headerAction()
+                        }
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(onClick = onDismiss) {
                         Icon(

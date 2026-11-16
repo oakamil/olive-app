@@ -113,6 +113,7 @@
     <string name="crop_failed">Failed</string>
     <!-- Content Descriptions -->
     <string name="cd_info">Info</string>
+    <string name="cd_about">About Olive Finder</string>
     <string name="cd_close">Close</string>
     <string name="cd_live_preview">Live Preview</string>
     <string name="cd_target">Target</string>
@@ -122,6 +123,7 @@
     <string name="desc_permissions_required">Olive Finder needs Camera permission to operate the telescope engine.</string>
 
     <!-- Value Format Strings -->
+    <string name="format_version">v%1$s</string>
     <string name="format_ms">%1$s ms</string>
     <string name="format_hz">%1$s Hz</string>
     <string name="format_zoom">%1$sx</string>
@@ -294,6 +296,8 @@
     <string name="label_nadir">Nadir</string>
     <string name="theme_night_vision">Night Vision</string>
     <string name="title_settings">Settings</string>
+    <string name="title_about_olive">About Olive Finder</string>
+    <string name="info_about_olive" tools:ignore="TypographyDashes"><![CDATA[<b>Olive Finder</b> %1$s<br>Real-time plate-solving telescope finder and push-to sky map.<br><br>Copyright © 2026 Omair Kamil.<br>Licensed under the <b>PolyForm Noncommercial License 1.0.0</b> for personal, educational, and non-commercial use. Provided “as is” without warranty of any kind.<br><br><b>Credits &amp; Attributions</b><br>• <b>Olive Engine:</b> Powered by <i>olive-engine</i> (Copyright © 2026 Omair Kamil), available under the GNU General Public License v3.0 or later (GPL-3.0-or-later).<br>• <b>Plate Solving:</b> <i>olive-solve</i> contains code derived from <i>smroid/cedar-solve</i>, <i>esa/tetra3</i> (European Space Agency), and the original <i>Tetra</i> algorithm developed by <i>brownj4</i> (Apache License 2.0).<br>• <b>Star &amp; Deep-Sky Catalogs:</b> Catalog database (<i>catalog.db</i>, CC-BY-SA-4.0) derived from <i>PiFinder</i> (MIT) and <i>OpenNGC</i> by Mattia Verga (CC-BY-SA-4.0). Individual catalog credits are available via the info icons in the Sky Catalog menu.<br>• <b>Solar System Data:</b> Planetary ephemeris from NASA/JPL DE421; asteroid and comet orbital elements from the IAU Minor Planet Center.<br>• <b>Sky Background Imagery:</b> Digitized Sky Survey 2 (STScI / Caltech / AAO), distributed in HiPS format by CDS Aladin for non-commercial educational use.]]></string>
     <string name="label_show_map_position">Show Map Position</string>
     <string name="label_sky_background">Sky Background</string>
     <string name="info_sky_background">Displays the offline Digitized Sky Survey 2 (DSS2 Color) photographic panorama behind constellations and catalog markers.&lt;br&gt;&lt;br&gt;Requires a one-time ~%1$d MB download (Orders 0–%2$d, %3$s tiles).&lt;br&gt;&lt;br&gt;Imagery: DSS2 Color — STScI / Caltech / AAO (non-commercial research and educational use).</string>

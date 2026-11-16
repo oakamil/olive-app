@@ -88,7 +88,13 @@ class MainActivity : ComponentActivity() {
     private var isInPipMode by mutableStateOf(false)
 
     private val androidCapabilities: AndroidPlatformCapabilities by lazy {
-        AndroidPlatformCapabilities(hasInternalCamera = hasBackFacingCamera())
+        val version = runCatching {
+            packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+        }.getOrDefault("")
+        AndroidPlatformCapabilities(
+            hasInternalCamera = hasBackFacingCamera(),
+            appVersion = version
+        )
     }
 
     private fun hasBackFacingCamera(): Boolean {

@@ -13,10 +13,12 @@ interface PlatformCapabilities {
     val defaultFocus: Float
     val focusRange: ClosedFloatingPointRange<Float>
     val exposureRange: ClosedFloatingPointRange<Float>
+    val appVersion: String
 }
 
 open class AndroidPlatformCapabilities(
-    override val hasInternalCamera: Boolean = true
+    override val hasInternalCamera: Boolean = true,
+    override val appVersion: String = ""
 ) : PlatformCapabilities {
     override val isApple: Boolean = false
     override val supportsUsbCamera: Boolean = true
@@ -32,7 +34,8 @@ open class AndroidPlatformCapabilities(
 
 open class ApplePlatformCapabilities(
     override val supportsUsbCamera: Boolean = false,
-    override val hasInternalCamera: Boolean = true
+    override val hasInternalCamera: Boolean = true,
+    override val appVersion: String = ""
 ) : PlatformCapabilities {
     override val isApple: Boolean = true
     override val supportsPip: Boolean = false

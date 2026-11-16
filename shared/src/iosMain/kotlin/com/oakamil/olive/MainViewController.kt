@@ -43,6 +43,7 @@ import platform.AVFoundation.AVCaptureDeviceWasDisconnectedNotification
 import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.authorizationStatusForMediaType
 import platform.AVFoundation.requestAccessForMediaType
+import platform.Foundation.NSBundle
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSProcessInfo
@@ -129,9 +130,13 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     val isPad = remember { UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad }
     val hasInternalCamera = remember { hasInternalBackCamera() }
     val capabilities = remember(isPad, hasInternalCamera) {
+        val version =
+            (NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String)
+                .orEmpty()
         ApplePlatformCapabilities(
             supportsUsbCamera = isPad,
-            hasInternalCamera = hasInternalCamera
+            hasInternalCamera = hasInternalCamera,
+            appVersion = version
         )
     }
     val engine = remember { IosEngineBridge() }

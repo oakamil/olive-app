@@ -15,8 +15,8 @@ android {
         applicationId = "com.oakamil.olive"
         minSdk = 29
         targetSdk = 36
-        versionCode = 39
-        versionName = "0.9.2"
+        versionCode = 40
+        versionName = "0.9.3"
     }
 
     buildFeatures {
