@@ -10,14 +10,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlin.concurrent.Volatile
@@ -42,8 +47,12 @@ open class MainViewModel(
     var showHiPSDownloadProgress by mutableStateOf(false)
     private var hipsDownloadJob: Job? = null
     private var hipsCleanupJob: Job? = null
+
+    @Volatile
     var uvcWrapper: UvcCameraHandler? = null
     var availableUvcFormats by mutableStateOf(UvcFormat.FALLBACK_FORMATS)
+
+    @Volatile
     private var lastLoggedMirrored: Boolean? = null
 
     private val timeMark = TimeSource.Monotonic.markNow()
@@ -362,6 +371,9 @@ open class MainViewModel(
     private var lastFrameReceivedRealtime = 0L
 
     private val _isLowPowerMode = mutableStateOf(false)
+
+    @Volatile
+    private var isLowPowerSnapshot = false
     var isLowPowerMode: Boolean
         get() = _isLowPowerMode.value
         set(value) {
@@ -369,6 +381,7 @@ open class MainViewModel(
             if (wasLowPower && !value) {
                 lastFrameReceivedRealtime = getElapsedRealtimeMs()
             }
+            isLowPowerSnapshot = value
             _isLowPowerMode.value = value
         }
 
@@ -381,17 +394,32 @@ open class MainViewModel(
             return 5.0f - (s * 3.0f)
         }
 
+    private data class StatsSnapshot(
+        val stats: EngineStats,
+        val currentSigma: Float?
+    )
+
+    private data class RealtimeSettingsSnapshot(
+        val gain: Float? = null,
+        val exposure: Float? = null,
+        val noiseReduction: Int? = null,
+        val hotPixelMode: Int? = null,
+        val uvcBrightness: Int? = null
+    )
+
     private var lastCalibratedFocus: Float? = null
     private var statsJob: Job? = null
     private var frameJob: Job? = null
+    private val engineLifecycleMutex = Mutex()
+    private var engineStartJob: Job? = null
 
     fun getAvailableInternalCameras(): String {
         return engine.getAvailableInternalCameras()
     }
 
-    private fun updateStats() {
+    private fun readStatsSnapshot(): StatsSnapshot? {
         val json = engine.getEngineStats()
-        try {
+        return try {
             val obj = JSONObject(json)
             val parsedMirrored =
                 if (obj.isNull("is_mirrored")) null else obj.getBoolean("is_mirrored")
@@ -403,7 +431,9 @@ open class MainViewModel(
                 )
             }
 
-            engineStats = EngineStats(
+            val calibratedFocus =
+                if (obj.isNull("focus")) null else obj.getDouble("focus").toFloat()
+            val stats = EngineStats(
                 status = obj.optString("status", EngineStatus.IDLE.rawValue),
                 ra = if (obj.isNull("ra")) null else obj.getDouble("ra"),
                 dec = if (obj.isNull("dec")) null else obj.getDouble("dec"),
@@ -431,51 +461,44 @@ open class MainViewModel(
                 targetPixelX = if (obj.isNull("target_pixel_x")) null else obj.getDouble("target_pixel_x"),
                 targetPixelY = if (obj.isNull("target_pixel_y")) null else obj.getDouble("target_pixel_y"),
                 distortion = if (obj.isNull("distortion")) null else obj.getDouble("distortion"),
-                focus = if (obj.isNull("focus")) null else obj.getDouble("focus").toFloat()
+                focus = calibratedFocus
             )
+            val currentSigma =
+                if (obj.isNull("current_sigma")) null else obj.getDouble("current_sigma").toFloat()
+            StatsSnapshot(stats, currentSigma)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
-            if (!obj.isNull("focus")) {
-                val calibratedFocus = obj.getDouble("focus").toFloat()
-                if (calibratedFocus != lastCalibratedFocus) {
-                    lastCalibratedFocus = calibratedFocus
-                    currentFocus = calibratedFocus
-                    if (settingsManager.cameraSettingsMode == "Auto") {
-                        settingsManager.manualFocus = calibratedFocus
-                    }
+    private fun applyStatsSnapshot(snapshot: StatsSnapshot) {
+        engineStats = snapshot.stats
+        snapshot.stats.focus?.let { calibratedFocus ->
+            if (calibratedFocus != lastCalibratedFocus) {
+                lastCalibratedFocus = calibratedFocus
+                currentFocus = calibratedFocus
+                if (settingsManager.cameraSettingsMode == "Auto") {
+                    settingsManager.manualFocus = calibratedFocus
                 }
             }
-
-            if (settingsManager.cameraSettingsMode == "Auto" && !obj.isNull("current_sigma")) {
-                val currentSigmaVal = obj.getDouble("current_sigma").toFloat()
+        }
+        snapshot.currentSigma?.let { currentSigmaVal ->
+            if (settingsManager.cameraSettingsMode == "Auto") {
                 starSensitivity = 100f * (5.0f - currentSigmaVal) / 3.0f
             }
-        } catch (_: Exception) {
         }
     }
 
+    @Volatile
     private var lastFrameTimestamp = 0L
 
-    private fun fetchLatestFrame() {
-        val frame = engine.getLatestFrame(lastFrameTimestamp)
-        if (frame != null && frame.timestamp > lastFrameTimestamp) {
-            viewModelScope.launch(Dispatchers.Main) {
-                if (isActive) {
-                    latestFrame = frame.imageBitmap
-                    lastFrameTimestamp = frame.timestamp
-                    lastFrameReceivedRealtime = getElapsedRealtimeMs()
-                    isCameraStuck = false
-                }
-            }
-        }
-    }
-
     fun dismissCameraStuckDialog() {
-        isCameraStuck = false
-        // Offset the timer by 10s so the 15s timeout takes 25s to trigger again
+        // Offset deadline before clearing flag so frameJob cannot observe !isCameraStuck with stale baseline.
         lastFrameReceivedRealtime = getElapsedRealtimeMs() + 10000L
+        isCameraStuck = false
     }
 
-    private fun startPolling() {
+    private fun startPolling(activeMode: EngineMode) {
         lastFrameReceivedRealtime = getElapsedRealtimeMs()
 
         statsJob?.cancel()
@@ -485,8 +508,22 @@ open class MainViewModel(
             var lastStatsErrorTime = 0L
             while (isActive) {
                 try {
-                    updateStats()
-                    fetchRealtimeSettings()
+                    val statsSnapshot = readStatsSnapshot()
+                    val settingsSnapshot = readRealtimeSettings(
+                        mode = activeMode,
+                        isAuto = settingsManager.cameraSettingsMode == "Auto",
+                        wrapper = uvcWrapper
+                    )
+                    withContext(Dispatchers.Main) {
+                        if (isActive && isEngineRunning) {
+                            statsSnapshot?.let { applyStatsSnapshot(it) }
+                            if (engineMode == activeMode) {
+                                applyRealtimeSettings(settingsSnapshot)
+                            }
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     val now = getElapsedRealtimeMs()
                     if (now - lastStatsErrorTime > 3000L) {
@@ -500,10 +537,32 @@ open class MainViewModel(
 
         frameJob = viewModelScope.launch(Dispatchers.IO) {
             var lastFrameErrorTime = 0L
+            var lastReportedStuckBaseline = -1L
             while (isActive) {
-                if (!isLowPowerMode) {
+                if (!isLowPowerSnapshot) {
+                    var markStuckBaseline: Long? = null
                     try {
-                        fetchLatestFrame()
+                        val sinceLast = lastFrameTimestamp
+                        val stuckCheckBaseline = lastFrameReceivedRealtime
+                        val frame = engine.getLatestFrame(sinceLast)
+                        if (frame != null && frame.timestamp > sinceLast) {
+                            withContext(Dispatchers.Main) {
+                                if (isActive && isEngineRunning) {
+                                    latestFrame = frame.imageBitmap
+                                    lastFrameTimestamp = frame.timestamp
+                                    lastFrameReceivedRealtime = getElapsedRealtimeMs()
+                                    isCameraStuck = false
+                                }
+                            }
+                        } else if (stuckCheckBaseline != lastReportedStuckBaseline) {
+                            val timeSinceLastFrame =
+                                getElapsedRealtimeMs() - stuckCheckBaseline
+                            if (timeSinceLastFrame > CAMERA_STUCK_TIMEOUT_MS) {
+                                markStuckBaseline = stuckCheckBaseline
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         val now = getElapsedRealtimeMs()
                         if (now - lastFrameErrorTime > 3000L) {
@@ -511,12 +570,14 @@ open class MainViewModel(
                             Log.e("MainViewModel", "Error in fetchLatestFrame: ${e.message}")
                         }
                     }
-
-                    if (isEngineRunning) {
-                        val timeSinceLastFrame =
-                            getElapsedRealtimeMs() - lastFrameReceivedRealtime
-                        if (timeSinceLastFrame > CAMERA_STUCK_TIMEOUT_MS) {
-                            isCameraStuck = true
+                    if (markStuckBaseline != null) {
+                        lastReportedStuckBaseline = markStuckBaseline
+                        withContext(Dispatchers.Main) {
+                            if (isActive && isEngineRunning && !isCameraStuck &&
+                                lastFrameReceivedRealtime == markStuckBaseline
+                            ) {
+                                isCameraStuck = true
+                            }
                         }
                     }
                 }
@@ -528,6 +589,40 @@ open class MainViewModel(
     private fun stopPolling() {
         statsJob?.cancel()
         frameJob?.cancel()
+        statsJob = null
+        frameJob = null
+    }
+
+    private suspend fun stopPollingAndJoin() {
+        val activeStatsJob = statsJob
+        val activeFrameJob = frameJob
+        statsJob = null
+        frameJob = null
+        activeStatsJob?.cancelAndJoin()
+        activeFrameJob?.cancelAndJoin()
+    }
+
+    private fun resetEngineUiState() {
+        engineMode = EngineMode.STOPPED
+        isLowPowerMode = false
+        currentZoom = 1.0f
+        skyMapCameraLocked = true
+        engineStats = EngineStats()
+        latestFrame = null
+        isCameraStuck = false
+        lastFrameTimestamp = 0L
+        lastCalibratedFocus = null
+    }
+
+    private fun prepareStartUiState(lat: Double, lon: Double, initialZoom: Float) {
+        latestFrame = null
+        lastFrameTimestamp = 0L
+        isCameraStuck = false
+        lastFrameReceivedRealtime = getElapsedRealtimeMs()
+        lastCalibratedFocus = null
+        currentLat = lat
+        currentLon = lon
+        currentZoom = initialZoom
     }
 
     fun executeStartEngine(
@@ -536,22 +631,9 @@ open class MainViewModel(
         lon: Double = INVALID_COORD,
         onFailed: (() -> Unit)? = null
     ) {
-        latestFrame = null
-        lastFrameTimestamp = 0L
-
-        isCameraStuck = false
-        lastFrameReceivedRealtime = getElapsedRealtimeMs()
-        lastCalibratedFocus = null
-        currentLat = lat
-        currentLon = lon
-        currentZoom = 1.0f
         val isDemo = cameraId == "demo"
-        val downsampling = if (isDemo) 0 else settingsManager.downsampling
-
-        val motionSensorMode = if (isDemo) 0 else settingsManager.motionSensorMode
         val isAutoSettings =
             if (isDemo) false else settingsManager.cameraSettingsMode == "Auto"
-
         val initialZoom = if (isDemo) 1.0f else {
             if (isAutoSettings) {
                 if (ENABLE_AUTO_ZOOM) settingsManager.autoZoomRatio.coerceIn(1.0f, 2.0f) else 1.0f
@@ -559,41 +641,64 @@ open class MainViewModel(
                 settingsManager.manualZoomRatio.coerceAtLeast(1.0f)
             }
         }
-        currentZoom = initialZoom
+        val downsampling = if (isDemo) 0 else settingsManager.downsampling
+        val motionSensorMode = if (isDemo) 0 else settingsManager.motionSensorMode
+        val forcedSensorMode = if (isAutoSettings) "Processed" else settingsManager.sensorMode
+        val forcedDownsampling = if (isAutoSettings) {
+            if (capabilities.isApple) 1 else 2 // 1 = None (iOS camera outputs 2016x1512 directly), 2 = 2x2 (Android 12MP -> 2000x1500)
+        } else {
+            if (downsampling == 0) 1 else downsampling // 0 ("Off" in UI) maps to 1 (None) in engine
+        }
+        val forcedCameraId = if (isAutoSettings && cameraId != "demo") {
+            if (capabilities.isApple) cameraId else "0"
+        } else cameraId
 
-        viewModelScope.launch(Dispatchers.IO) {
-            val forcedSensorMode = if (isAutoSettings) "Processed" else settingsManager.sensorMode
-            val forcedDownsampling = if (isAutoSettings) {
-                if (capabilities.isApple) 1 else 2 // 1 = None (iOS camera outputs 2016x1512 directly), 2 = 2x2 (Android 12MP -> 2000x1500)
-            } else {
-                if (downsampling == 0) 1 else downsampling // 0 ("Off" in UI) maps to 1 (None) in engine
-            }
-            val forcedCameraId = if (isAutoSettings && cameraId != "demo") {
-                if (capabilities.isApple) cameraId else "0"
-            } else cameraId
-
-            try {
-                engine.startNativeCameraEngine(
-                    motionSensorMode,
-                    forcedSensorMode,
-                    forcedCameraId,
-                    forcedDownsampling,
-                    lat,
-                    lon,
-                    settingsManager,
-                    isAutoSettings,
-                    initialZoom
-                )
-            } catch (e: Exception) {
-                Log.e("MainViewModel", "Failed to start camera engine", e)
-                launch(Dispatchers.Main) {
-                    stopEngineSync()
-                    onFailed?.invoke()
+        val prevStart = engineStartJob
+        prevStart?.cancel()
+        engineStartJob = viewModelScope.launch(Dispatchers.Main) {
+            prevStart?.join()
+            engineLifecycleMutex.withLock {
+                if (!isActive) return@withLock
+                if (isEngineRunning || uvcWrapper != null) {
+                    stopEngineInternalLocked()
                 }
-                return@launch
-            }
+                if (!isActive) return@withLock
+                prepareStartUiState(lat, lon, initialZoom)
 
-            launch(Dispatchers.Main) {
+                try {
+                    withContext(Dispatchers.IO) {
+                        engine.startNativeCameraEngine(
+                            motionSensorMode,
+                            forcedSensorMode,
+                            forcedCameraId,
+                            forcedDownsampling,
+                            lat,
+                            lon,
+                            settingsManager,
+                            isAutoSettings,
+                            initialZoom
+                        )
+                    }
+                } catch (e: CancellationException) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        engine.stopEngine()
+                    }
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "Failed to start camera engine", e)
+                    stopEngineInternalLocked()
+                    onFailed?.invoke()
+                    return@withLock
+                }
+
+                if (!isActive) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        engine.stopEngine()
+                    }
+                    resetEngineUiState()
+                    return@withLock
+                }
+
                 isLowPowerMode = false
                 engineMode = EngineMode.NATIVE
                 skyMapCameraLocked = true
@@ -637,7 +742,7 @@ open class MainViewModel(
                 supportedHotPixelModes =
                     engine.getNativeCameraSupportedHotPixelModes().toList()
                 engine.setEngineStrictMatch(false)
-                startPolling()
+                startPolling(EngineMode.NATIVE)
             }
         }
     }
@@ -645,89 +750,126 @@ open class MainViewModel(
     fun startUvcEngine(
         lat: Double = 200.0,
         lon: Double = 200.0,
+        wrapper: UvcCameraHandler? = uvcWrapper,
         onFailed: (() -> Unit)? = null
     ) {
-        latestFrame = null
-        lastFrameTimestamp = 0L
+        val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
+        val motionSensorMode = settingsManager.motionSensorMode
+        val configuredUvcFps = settingsManager.uvcFps
+        val configuredUvcWidth = settingsManager.uvcWidth
+        val configuredUvcHeight = settingsManager.uvcHeight
+        val configuredDownsampling = settingsManager.downsampling
 
-        isCameraStuck = false
-        lastFrameReceivedRealtime = getElapsedRealtimeMs()
-        lastCalibratedFocus = null
-        currentLat = lat
-        currentLon = lon
-        currentZoom = 1.0f
-        viewModelScope.launch(Dispatchers.IO) {
-            if (isEngineRunning) {
-                engine.stopEngine()
-            }
-
-            val isAutoSettings = settingsManager.cameraSettingsMode == "Auto"
-            val uvcWidth = uvcWrapper?.previewWidth ?: settingsManager.uvcWidth
-            val uvcHeight = uvcWrapper?.previewHeight ?: settingsManager.uvcHeight
-            val autoDownsampling = if (uvcWidth.toLong() * uvcHeight.toLong() < 1_250_000L) 0 else 2
-            val forcedDownsampling =
-                if (isAutoSettings) autoDownsampling else settingsManager.downsampling
+        val prevStart = engineStartJob
+        prevStart?.cancel()
+        engineStartJob = viewModelScope.launch(
+            context = Dispatchers.Main,
+            start = CoroutineStart.UNDISPATCHED
+        ) {
+            var releaseWrapperOnExit = true
+            var externalEngineStarted = false
             try {
-                engine.startExternalCameraEngine(
-                    uvcWidth,
-                    uvcHeight,
-                    settingsManager.motionSensorMode,
-                    forcedDownsampling,
-                    lat,
-                    lon,
-                    settingsManager,
-                    isAutoSettings,
-                    settingsManager.uvcFps,
-                    uvcWrapper
-                )
-            } catch (e: Exception) {
-                Log.e("MainViewModel", "Failed to start UVC engine", e)
-                launch(Dispatchers.Main) {
-                    stopEngineSync()
-                    onFailed?.invoke()
+                prevStart?.join()
+                engineLifecycleMutex.withLock {
+                    if (!isActive) return@withLock
+                    if (isEngineRunning || (uvcWrapper != null && uvcWrapper !== wrapper)) {
+                        stopEngineInternalLocked()
+                    }
+                    if (!isActive) return@withLock
+                    uvcWrapper = wrapper
+                    prepareStartUiState(lat, lon, 1.0f)
+
+                    val uvcWidth = wrapper?.previewWidth ?: configuredUvcWidth
+                    val uvcHeight = wrapper?.previewHeight ?: configuredUvcHeight
+                    val autoDownsampling =
+                        if (uvcWidth.toLong() * uvcHeight.toLong() < 1_250_000L) 0 else 2
+                    val forcedDownsampling =
+                        if (isAutoSettings) autoDownsampling else configuredDownsampling
+
+                    try {
+                        withContext(Dispatchers.IO) {
+                            engine.startExternalCameraEngine(
+                                uvcWidth,
+                                uvcHeight,
+                                motionSensorMode,
+                                forcedDownsampling,
+                                lat,
+                                lon,
+                                settingsManager,
+                                isAutoSettings,
+                                configuredUvcFps,
+                                wrapper
+                            )
+                            externalEngineStarted = true
+                        }
+                    } catch (e: CancellationException) {
+                        externalEngineStarted = true
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Failed to start UVC engine", e)
+                        stopEngineInternalLocked()
+                        releaseWrapperOnExit = false
+                        onFailed?.invoke()
+                        return@withLock
+                    }
+
+                    if (!isActive) {
+                        resetEngineUiState()
+                        return@withLock
+                    }
+
+                    engineMode = EngineMode.UVC
+                    skyMapCameraLocked = true
+
+                    uvcBrightnessMin = 0
+                    uvcBrightnessMax = 100
+                    minAnalogGain = 0f
+                    maxAnalogGain = 100f
+
+                    val fps = configuredUvcFps.coerceAtLeast(1)
+                    val initialGain = if (isAutoSettings) {
+                        100f
+                    } else {
+                        val saved = settingsManager.manualGain
+                        if (saved < 0f) 100f else saved.coerceIn(0f, 100f)
+                    }
+
+                    // Both Auto and Manual modes run the same AEC Prime-and-Lock startup sequence:
+                    // 200ms stabilize -> 750ms Mode 2 prime -> Lock Mode 1 -> 1/fps exposure -> initialGain
+                    currentExposure = (1_000_000 / fps).toFloat()
+                    currentGain = initialGain
+                    wrapper?.startZeroCopyStream(initialGain.toInt())
+
+                    val initialBrightness =
+                        if (isAutoSettings) 50 else settingsManager.manualUvcBrightness
+                    setUvcBrightness(initialBrightness)
+
+                    if (isAutoSettings) {
+                        updateStarSensitivity(50f)
+                        updateUvcStacking(1)
+                    } else {
+                        updateStarSensitivity(settingsManager.manualStarSensitivity)
+                        updateUvcStacking(settingsManager.manualUvcStacking)
+                    }
+
+                    engine.setEngineSigma(currentSigma)
+                    engine.setEngineStrictMatch(true)
+
+                    startPolling(EngineMode.UVC)
+                    releaseWrapperOnExit = false
                 }
-                return@launch
-            }
-
-            launch(Dispatchers.Main) {
-                engineMode = EngineMode.UVC
-                skyMapCameraLocked = true
-
-                uvcBrightnessMin = 0
-                uvcBrightnessMax = 100
-                minAnalogGain = 0f
-                maxAnalogGain = 100f
-
-                val fps = settingsManager.uvcFps.coerceAtLeast(1)
-                val initialGain = if (isAutoSettings) {
-                    100f
-                } else {
-                    val saved = settingsManager.manualGain
-                    if (saved < 0f) 100f else saved.coerceIn(0f, 100f)
+            } finally {
+                if (releaseWrapperOnExit) {
+                    if (uvcWrapper === wrapper) {
+                        uvcWrapper = null
+                    }
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        if (externalEngineStarted) {
+                            engine.stopEngine()
+                        }
+                        wrapper?.release()
+                    }
                 }
-
-                // Both Auto and Manual modes run the same AEC Prime-and-Lock startup sequence:
-                // 200ms stabilize -> 750ms Mode 2 prime -> Lock Mode 1 -> 1/fps exposure -> initialGain
-                currentExposure = (1_000_000 / fps).toFloat()
-                currentGain = initialGain
-                uvcWrapper?.startZeroCopyStream(initialGain.toInt())
-
-                val initialBrightness =
-                    if (isAutoSettings) 50 else settingsManager.manualUvcBrightness
-                setUvcBrightness(initialBrightness)
-
-                if (isAutoSettings) {
-                    updateStarSensitivity(50f)
-                    updateUvcStacking(1)
-                } else {
-                    updateStarSensitivity(settingsManager.manualStarSensitivity)
-                    updateUvcStacking(settingsManager.manualUvcStacking)
-                }
-
-                engine.setEngineSigma(currentSigma)
-                engine.setEngineStrictMatch(true)
-
-                startPolling()
             }
         }
     }
@@ -753,30 +895,69 @@ open class MainViewModel(
         }
     }
 
-    fun fetchRealtimeSettings() {
-        if (engineMode == EngineMode.NATIVE) {
-            if (settingsManager.cameraSettingsMode == "Auto") {
-                val gain = engine.getNativeCameraGain()
-                if (!gain.isNaN() && gain > 0) {
-                    currentGain = gain
+    private fun readRealtimeSettings(
+        mode: EngineMode,
+        isAuto: Boolean,
+        wrapper: UvcCameraHandler?
+    ): RealtimeSettingsSnapshot {
+        return when (mode) {
+            EngineMode.NATIVE -> {
+                var gain: Float? = null
+                var exposure: Float? = null
+                var noiseReduction: Int? = null
+                if (isAuto) {
+                    val g = engine.getNativeCameraGain()
+                    if (!g.isNaN() && g > 0) gain = g
+                    val exp = engine.getNativeCameraExposure()
+                    if (exp > 0) exposure = exp.toFloat()
+                    noiseReduction = engine.getNativeCameraNoiseReduction()
                 }
-                val exp = engine.getNativeCameraExposure()
-                if (exp > 0) {
-                    currentExposure = exp.toFloat()
-                }
-                noiseReductionMode = engine.getNativeCameraNoiseReduction()
+                RealtimeSettingsSnapshot(
+                    gain = gain,
+                    exposure = exposure,
+                    noiseReduction = noiseReduction,
+                    hotPixelMode = engine.getNativeCameraHotPixelMode()
+                )
             }
-            hotPixelMode = engine.getNativeCameraHotPixelMode()
-        } else if (engineMode == EngineMode.UVC && uvcWrapper?.isPipelineReady == true) {
-            if (settingsManager.cameraSettingsMode == "Auto") {
-                val hwGain = uvcWrapper?.getHardwareGain()
-                if (hwGain != null && hwGain in 0..100) {
-                    currentGain = hwGain.toFloat()
+
+            EngineMode.UVC if wrapper?.isPipelineReady == true -> {
+                var gain: Float? = null
+                if (isAuto) {
+                    val hwGain = wrapper.getHardwareGain()
+                    if (hwGain != null && hwGain in 0..100) gain = hwGain.toFloat()
                 }
+                val hwBrightness = wrapper.getHardwareBrightness()
+                RealtimeSettingsSnapshot(
+                    gain = gain,
+                    uvcBrightness = if (hwBrightness != null && hwBrightness in 0..100) hwBrightness else null
+                )
             }
-            val hwBrightness = uvcWrapper?.getHardwareBrightness()
-            if (hwBrightness != null && hwBrightness in 0..100) {
-                currentUvcBrightness = hwBrightness
+
+            else -> RealtimeSettingsSnapshot()
+        }
+    }
+
+    private fun applyRealtimeSettings(snapshot: RealtimeSettingsSnapshot) {
+        snapshot.gain?.let { currentGain = it }
+        snapshot.exposure?.let { currentExposure = it }
+        snapshot.noiseReduction?.let { noiseReductionMode = it }
+        snapshot.hotPixelMode?.let { hotPixelMode = it }
+        snapshot.uvcBrightness?.let { currentUvcBrightness = it }
+    }
+
+    suspend fun fetchRealtimeSettings() {
+        val mode = engineMode
+        if (mode == EngineMode.STOPPED) return
+        val snapshot = withContext(Dispatchers.IO) {
+            readRealtimeSettings(
+                mode = mode,
+                isAuto = settingsManager.cameraSettingsMode == "Auto",
+                wrapper = uvcWrapper
+            )
+        }
+        withContext(Dispatchers.Main) {
+            if (isEngineRunning && engineMode == mode) {
+                applyRealtimeSettings(snapshot)
             }
         }
     }
@@ -963,9 +1144,12 @@ open class MainViewModel(
         }
     }
 
-    fun getPlanets(): List<CatalogObject> {
-        val lat = currentLat ?: return emptyList()
-        val lon = currentLon ?: return emptyList()
+    fun getPlanets(
+        latValue: Double? = currentLat,
+        lonValue: Double? = currentLon
+    ): List<CatalogObject> {
+        val lat = latValue ?: return emptyList()
+        val lon = lonValue ?: return emptyList()
         if (!isValidCoordinate(lat, lon)) return emptyList()
 
         val bspPath = catalogDb.getBspPath()
@@ -977,9 +1161,12 @@ open class MainViewModel(
         return parseCatalogObjectsFromJson(json)
     }
 
-    fun getAsteroids(): List<CatalogObject> {
-        val lat = currentLat ?: return emptyList()
-        val lon = currentLon ?: return emptyList()
+    fun getAsteroids(
+        latValue: Double? = currentLat,
+        lonValue: Double? = currentLon
+    ): List<CatalogObject> {
+        val lat = latValue ?: return emptyList()
+        val lon = lonValue ?: return emptyList()
         if (!isValidCoordinate(lat, lon)) return emptyList()
 
         val bspPath = catalogDb.getBspPath()
@@ -992,9 +1179,12 @@ open class MainViewModel(
         return parseCatalogObjectsFromJson(json)
     }
 
-    fun getComets(): List<CatalogObject> {
-        val lat = currentLat ?: return emptyList()
-        val lon = currentLon ?: return emptyList()
+    fun getComets(
+        latValue: Double? = currentLat,
+        lonValue: Double? = currentLon
+    ): List<CatalogObject> {
+        val lat = latValue ?: return emptyList()
+        val lon = lonValue ?: return emptyList()
         if (!isValidCoordinate(lat, lon)) return emptyList()
 
         val bspPath = catalogDb.getBspPath()
@@ -1021,21 +1211,54 @@ open class MainViewModel(
         }
     }
 
-    fun stopEngineSync() {
-        engine.stopEngine()
+    private suspend fun stopEngineInternalLocked() {
+        stopPollingAndJoin()
+        val wasRunning = withContext(Dispatchers.Main) {
+            val running = isEngineRunning
+            resetEngineUiState()
+            running
+        }
+        withContext(Dispatchers.IO) {
+            if (wasRunning) {
+                engine.clearGoToTarget()
+                Log.i("MainViewModel", "GoTo Target cleared")
+            }
+            engine.stopEngine()
+            uvcWrapper?.release()
+            uvcWrapper = null
+        }
+    }
 
-        engineMode = EngineMode.STOPPED
-        isLowPowerMode = false
-        currentZoom = 1.0f
-        skyMapCameraLocked = true
+    suspend fun stopEngine() {
+        val activeStart = withContext(Dispatchers.Main.immediate) {
+            val start = engineStartJob
+            engineStartJob = null
+            start?.cancel()
+            start
+        }
+        activeStart?.join()
+        engineLifecycleMutex.withLock {
+            stopEngineInternalLocked()
+        }
+    }
+
+    // Main-thread pre-teardown for non-suspending Android lifecycle hooks such as onDestroy().
+    fun cancelAndResetForDestroy(): Boolean {
+        engineStartJob?.cancel()
+        engineStartJob = null
         stopPolling()
+        val wasRunning = isEngineRunning
+        resetEngineUiState()
+        return wasRunning
+    }
 
-        engineStats = EngineStats()
-        latestFrame = null
-        isCameraStuck = false
-        lastFrameTimestamp = 0L
-        clearGoToTarget()
-
+    // Blocking IO teardown paired with cancelAndResetForDestroy() inside MainActivity.onDestroy().
+    fun stopEngineNativeSync(clearGoTo: Boolean) {
+        if (clearGoTo) {
+            engine.clearGoToTarget()
+            Log.i("MainViewModel", "GoTo Target cleared")
+        }
+        engine.stopEngine()
         uvcWrapper?.release()
         uvcWrapper = null
     }

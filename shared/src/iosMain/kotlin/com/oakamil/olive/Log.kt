@@ -4,25 +4,18 @@ import platform.Foundation.NSLog
 
 @Suppress("unused")
 actual object Log {
-    actual fun v(tag: String, msg: String) {
-        NSLog("[VERBOSE] [%s] %s", tag, msg)
-    }
-
-    actual fun d(tag: String, msg: String) {
-        NSLog("[DEBUG] [%s] %s", tag, msg)
-    }
-
-    actual fun i(tag: String, msg: String) {
-        NSLog("[INFO] [%s] %s", tag, msg)
-    }
-
-    actual fun w(tag: String, msg: String, tr: Throwable?) {
+    private fun log(level: String, tag: String, msg: String, tr: Throwable? = null) {
         val extra = tr?.let { "\n${it.stackTraceToString()}" } ?: ""
-        NSLog("[WARN] [%s] %s%s", tag, msg, extra)
+        NSLog("[$level] [$tag] $msg$extra".replace("%", "%%"))
     }
 
-    actual fun e(tag: String, msg: String, tr: Throwable?) {
-        val extra = tr?.let { "\n${it.stackTraceToString()}" } ?: ""
-        NSLog("[ERROR] [%s] %s%s", tag, msg, extra)
-    }
+    actual fun v(tag: String, msg: String) = log("VERBOSE", tag, msg)
+
+    actual fun d(tag: String, msg: String) = log("DEBUG", tag, msg)
+
+    actual fun i(tag: String, msg: String) = log("INFO", tag, msg)
+
+    actual fun w(tag: String, msg: String, tr: Throwable?) = log("WARN", tag, msg, tr)
+
+    actual fun e(tag: String, msg: String, tr: Throwable?) = log("ERROR", tag, msg, tr)
 }

@@ -292,7 +292,7 @@
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/release",
 				);
 				MARKETING_VERSION = 0.9.2;
-				ONLY_ACTIVE_ARCH = YES;
+				ONLY_ACTIVE_ARCH = NO;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lolive_ios",

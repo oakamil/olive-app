@@ -573,28 +573,20 @@ class MainActivity : ComponentActivity() {
                                 text = stringResource(Res.string.body_camera_stuck),
                                 confirmButtonText = stringResource(Res.string.btn_restart),
                                 onConfirm = {
-                                    if (!isStopping) {
-                                        isStopping = true
-                                        lifecycleScope.launch {
-                                            try {
-                                                stopEngineAndService()
-                                            } finally {
-                                                isStopping = false
-                                            }
-                                            val launchIntent =
-                                                baseContext.packageManager.getLaunchIntentForPackage(
-                                                    baseContext.packageName
-                                                )
-                                            val componentName = launchIntent?.component
-                                            if (componentName != null) {
-                                                val restartIntent =
-                                                    Intent.makeRestartActivityTask(componentName)
-                                                restartIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                baseContext.startActivity(restartIntent)
-                                                finishAffinity()
-                                            } else {
-                                                Runtime.getRuntime().exit(0)
-                                            }
+                                    stopEngineFromUi(updateScreen = false) {
+                                        val launchIntent =
+                                            baseContext.packageManager.getLaunchIntentForPackage(
+                                                baseContext.packageName
+                                            )
+                                        val componentName = launchIntent?.component
+                                        if (componentName != null) {
+                                            val restartIntent =
+                                                Intent.makeRestartActivityTask(componentName)
+                                            restartIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            baseContext.startActivity(restartIntent)
+                                            finishAffinity()
+                                        } else {
+                                            Runtime.getRuntime().exit(0)
                                         }
                                     }
                                 },
@@ -695,13 +687,12 @@ class MainActivity : ComponentActivity() {
         } catch (_: Exception) {
         }
         windowController.restoreScreenBrightness()
-        if (viewModel.isEngineRunning) {
+        if (isStarting || viewModel.isEngineRunning || viewModel.uvcWrapper != null) {
+            val clearGoTo = viewModel.cancelAndResetForDestroy()
             runBlocking(Dispatchers.IO) {
-                viewModel.stopEngineSync()
+                viewModel.stopEngineNativeSync(clearGoTo = clearGoTo)
             }
         }
-        viewModel.uvcWrapper?.release()
-        viewModel.uvcWrapper = null
         stopBackgroundService()
 
         try {
@@ -728,10 +719,13 @@ class MainActivity : ComponentActivity() {
         if (camera != null) {
             isCameraConnected = true
             connectedDevice = camera
-            updateCameraSelection("external")
+            if (!isStarting && !isStopping && !viewModel.isEngineRunning) {
+                updateCameraSelection("external")
+            }
         } else {
             isCameraConnected = false
             connectedDevice = null
+            handleUvcDisconnect()
             val resolved = androidCapabilities.resolveCameraSelection(activeCameraSelection, false)
             if (resolved != activeCameraSelection) {
                 updateCameraSelection(resolved)
@@ -883,37 +877,65 @@ class MainActivity : ComponentActivity() {
     private suspend fun stopEngineAndService() {
         startupTimeoutJob?.cancel()
         startupTimeoutJob = null
-        withContext(Dispatchers.IO) {
-            viewModel.stopEngineSync()
-        }
-        viewModel.uvcWrapper?.release()
-        viewModel.uvcWrapper = null
+        viewModel.stopEngine()
         stopBackgroundService()
     }
 
-    private fun handleExternalEngineStop() {
-        startupTimeoutJob?.cancel()
-        startupTimeoutJob = null
-        isStarting = false
-        if (!viewModel.isEngineRunning || isStopping) return
+    private fun stopEngineFromUi(
+        updateScreen: Boolean = true,
+        afterStop: (() -> Unit)? = null
+    ) {
+        if (isStopping) return
         isStopping = true
-        currentScreen = "main"
+        if (updateScreen) {
+            currentScreen = "main"
+        }
         lifecycleScope.launch {
             try {
                 stopEngineAndService()
             } finally {
                 isStopping = false
             }
+            afterStop?.invoke()
         }
+    }
+
+    private fun releaseUvcWrapperAsync() {
+        val wrapperToRelease = viewModel.uvcWrapper ?: return
+        viewModel.uvcWrapper = null
+        lifecycleScope.launch(Dispatchers.IO) {
+            wrapperToRelease.release()
+        }
+    }
+
+    private fun handleExternalEngineStop() {
+        startupTimeoutJob?.cancel()
+        startupTimeoutJob = null
+        isStarting = false
+        if (!viewModel.isEngineRunning) return
+        stopEngineFromUi()
     }
 
     private fun handleStartupFailure() {
         startupTimeoutJob?.cancel()
         startupTimeoutJob = null
         isStarting = false
-        viewModel.uvcWrapper?.release()
-        viewModel.uvcWrapper = null
+        releaseUvcWrapperAsync()
         stopBackgroundService()
+    }
+
+    private fun handleUvcDisconnect() {
+        val wasUvcOrStartingExternal =
+            viewModel.engineMode == MainViewModel.EngineMode.UVC ||
+                    (isStarting && activeCameraSelection == "external")
+        if (wasUvcOrStartingExternal) {
+            startupTimeoutJob?.cancel()
+            startupTimeoutJob = null
+            isStarting = false
+            stopEngineFromUi()
+        } else if (!isStopping) {
+            releaseUvcWrapperAsync()
+        }
     }
 
     private fun armStartupTimeout() {
@@ -923,24 +945,17 @@ class MainActivity : ComponentActivity() {
             if (isStarting && !viewModel.isEngineRunning) {
                 Log.w("OliveUI", "Engine startup timed out! Cleaning up.")
                 isStarting = false
-                stopEngineAndService()
+                startupTimeoutJob = null
+                stopEngineFromUi(updateScreen = false)
             }
         }
     }
 
     private fun toggleEngine() {
-        if (isStopping) return // Ignore if already stopping
+        if (isStarting || isStopping) return
 
         if (viewModel.isEngineRunning) {
-            isStopping = true
-            currentScreen = "main"
-            lifecycleScope.launch {
-                try {
-                    stopEngineAndService()
-                } finally {
-                    isStopping = false
-                }
-            }
+            stopEngineFromUi()
         } else {
             val resolved =
                 androidCapabilities.resolveCameraSelection(activeCameraSelection, isCameraConnected)
@@ -1055,7 +1070,7 @@ class MainActivity : ComponentActivity() {
                     engineStarted = true // Pending permission or connection, keep isStarting true
                 } else {
                     Log.e("OliveUI", "UVC camera selected but none connected!")
-                    viewModel.stopEngineSync()
+                    viewModel.stopEngine()
                 }
             } else {
                 val camId = if (isDemoMode) "demo" else settingsManager.internalCameraId
@@ -1106,66 +1121,65 @@ class MainActivity : ComponentActivity() {
                 createNew: Boolean
             ) {
                 if (device != null && ctrlBlock != null) {
-                    try {
+                    val parsed = try {
                         val isUsb3 = UvcFormat.isUsb3Descriptors(ctrlBlock.rawDescriptors)
                         Log.i(
                             "OliveUI",
                             "USB Device link speed detected: ${if (isUsb3) "SuperSpeed (USB 3.x)" else "High-Speed (USB 2.0)"}"
                         )
-                        val parsed = UvcFormat.parseRawDescriptors(
+                        UvcFormat.parseRawDescriptors(
                             ctrlBlock.rawDescriptors,
                             isUsb3Override = isUsb3
                         )
-                        if (parsed.isNotEmpty()) {
-                            viewModel.availableUvcFormats = parsed
-                            val best = UvcFormat.findBestFormatForFps(
-                                viewModel.settingsManager.uvcFps,
-                                parsed
-                            )
-                            viewModel.settingsManager.uvcFps = best.fps
-                            viewModel.settingsManager.uvcWidth = best.width
-                            viewModel.settingsManager.uvcHeight = best.height
-                            viewModel.settingsManager.uvcFormat = best.format
-                        }
                     } catch (e: Exception) {
                         Log.w("OliveUI", "Failed to parse UVC raw descriptors", e)
+                        emptyList()
                     }
+                    val best = if (parsed.isNotEmpty()) {
+                        UvcFormat.findBestFormatForFps(
+                            viewModel.settingsManager.uvcFps,
+                            parsed
+                        )
+                    } else null
+                    val width = best?.width ?: viewModel.settingsManager.uvcWidth
+                    val height = best?.height ?: viewModel.settingsManager.uvcHeight
+                    val fps = (best?.fps ?: viewModel.settingsManager.uvcFps).coerceAtLeast(1)
+                    val format = best?.format ?: viewModel.settingsManager.uvcFormat
 
-                    viewModel.uvcWrapper?.release()
                     val wrapper = UvcCameraWrapper()
-                    wrapper.initialize(
-                        ctrlBlock,
-                        viewModel.settingsManager.uvcWidth,
-                        viewModel.settingsManager.uvcHeight,
-                        viewModel.settingsManager.uvcFps.coerceAtLeast(1),
-                        viewModel.settingsManager.uvcFormat
-                    )
-                    viewModel.uvcWrapper = wrapper
+                    wrapper.initialize(ctrlBlock, width, height, fps, format)
 
-                    if (isStarting) {
-                        lifecycleScope.launch {
-                            val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
-                            val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
-                            armStartupTimeout()
-                            viewModel.startUvcEngine(
-                                lat = lat,
-                                lon = lon,
-                                onFailed = { handleStartupFailure() }
-                            )
-                            startBackgroundService("UVC")
+                    lifecycleScope.launch(Dispatchers.Main) {
+                        if (isFinishing || isDestroyed || !isStarting) {
+                            withContext(Dispatchers.IO) { wrapper.release() }
+                            return@launch
                         }
+                        if (parsed.isNotEmpty()) {
+                            viewModel.availableUvcFormats = parsed
+                            if (best != null) {
+                                viewModel.settingsManager.uvcFps = best.fps
+                                viewModel.settingsManager.uvcWidth = best.width
+                                viewModel.settingsManager.uvcHeight = best.height
+                                viewModel.settingsManager.uvcFormat = best.format
+                            }
+                        }
+
+                        val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
+                        val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
+                        armStartupTimeout()
+                        viewModel.startUvcEngine(
+                            lat = lat,
+                            lon = lon,
+                            wrapper = wrapper,
+                            onFailed = { handleStartupFailure() }
+                        )
+                        startBackgroundService("UVC")
                     }
                 }
             }
 
             override fun onDisconnect(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
-                viewModel.uvcWrapper?.release()
-                viewModel.uvcWrapper = null
-                if (viewModel.engineMode == MainViewModel.EngineMode.UVC) {
-                    if (!isStopping) {
-                        runOnUiThread { toggleEngine() }
-                    }
-                }
+                runOnUiThread { handleUvcDisconnect() }
             }
 
             override fun onCancel(device: UsbDevice?) {
