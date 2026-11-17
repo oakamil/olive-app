@@ -89,12 +89,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.math.abs
-import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
-import kotlin.math.floor
-import kotlin.math.round
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -137,7 +133,7 @@ fun SkyCatalogDialog(
     var showCometsError by remember { mutableStateOf(false) }
 
     var searchResults by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
-    var showRaDecForObj by remember { mutableStateOf<CatalogObject?>(null) }
+    var selectedCatalogObj by remember { mutableStateOf<CatalogObject?>(null) }
     var showGotoRaDecPopup by remember { mutableStateOf(false) }
 
 
@@ -241,7 +237,13 @@ fun SkyCatalogDialog(
             if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
                 false
             if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
-                if (angularDistance(currentRa, currentDec, p.ra, p.dec) > 10.0) passes =
+                if (AstrometryUtils.angularDistance(
+                        currentRa,
+                        currentDec,
+                        p.ra,
+                        p.dec
+                    ) > 10.0
+                ) passes =
                     false
             }
             passes
@@ -295,7 +297,7 @@ fun SkyCatalogDialog(
                 if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
                     false
                 if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
-                    if (angularDistance(
+                    if (AstrometryUtils.angularDistance(
                             currentRa,
                             currentDec,
                             p.ra,
@@ -329,7 +331,7 @@ fun SkyCatalogDialog(
                 if (limit != null && (p.magnitude == null || p.magnitude > limit)) passes =
                     false
                 if (selectedCategory == "Nearest Objects" && currentRa != null && currentDec != null) {
-                    if (angularDistance(
+                    if (AstrometryUtils.angularDistance(
                             currentRa,
                             currentDec,
                             p.ra,
@@ -347,7 +349,7 @@ fun SkyCatalogDialog(
                 "distance" -> {
                     if (currentRa != null && currentDec != null) {
                         combinedList.sortBy {
-                            angularDistance(
+                            AstrometryUtils.angularDistance(
                                 currentRa,
                                 currentDec,
                                 it.ra,
@@ -863,7 +865,13 @@ fun SkyCatalogDialog(
                             val lon = viewModel.currentLon
                             val telescopeAltAz =
                                 if (currentRa != null && currentDec != null && lat != null && lon != null) {
-                                    raDecToAltAz(currentRa, currentDec, lat, lon, currentTimeMs)
+                                    AstrometryUtils.calculateAltAz(
+                                        currentRa,
+                                        currentDec,
+                                        lat,
+                                        lon,
+                                        currentTimeMs
+                                    )
                                 } else null
 
                             items(
@@ -872,7 +880,7 @@ fun SkyCatalogDialog(
                             ) { obj ->
                                 var isBelowHorizon = false
                                 if (visibilityFilter == "All Objects" && lat != null && lon != null) {
-                                    val objAltAz = raDecToAltAz(
+                                    val objAltAz = AstrometryUtils.calculateAltAz(
                                         obj.ra, obj.dec, lat, lon,
                                         currentTimeMs
                                     )
@@ -882,6 +890,7 @@ fun SkyCatalogDialog(
                                 }
 
                                 ListItem(
+                                    modifier = Modifier.clickable { selectedCatalogObj = obj },
                                     colors = if (isBelowHorizon) ListItemDefaults.colors(
                                         containerColor = MaterialTheme.colorScheme.surfaceVariant
                                     ) else ListItemDefaults.colors(),
@@ -946,7 +955,6 @@ fun SkyCatalogDialog(
                                                     style = MaterialTheme.typography.labelMedium,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     modifier = Modifier
-                                                        .clickable { showRaDecForObj = obj }
                                                         .padding(end = 8.dp, start = 4.dp)
                                                 )
                                             } else {
@@ -954,7 +962,7 @@ fun SkyCatalogDialog(
                                                     viewModel.isEngineRunning && telescopeAltAz != null && currentRa != null && currentDec != null && lat != null && lon != null
                                                 if (hasSolve) {
                                                     val objAltAz =
-                                                        raDecToAltAz(
+                                                        AstrometryUtils.calculateAltAz(
                                                             obj.ra,
                                                             obj.dec,
                                                             lat,
@@ -962,7 +970,7 @@ fun SkyCatalogDialog(
                                                             currentTimeMs
                                                         )
 
-                                                    val distance = angularDistance(
+                                                    val distance = AstrometryUtils.angularDistance(
                                                         currentRa,
                                                         currentDec, obj.ra, obj.dec
                                                     )
@@ -975,10 +983,12 @@ fun SkyCatalogDialog(
 
                                                     Column(
                                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                                        modifier = Modifier
-                                                            .padding(end = 8.dp)
-                                                            .clickable { showRaDecForObj = obj }
-                                                            .padding(4.dp)
+                                                        modifier = Modifier.padding(
+                                                            start = 4.dp,
+                                                            top = 4.dp,
+                                                            end = 12.dp,
+                                                            bottom = 4.dp,
+                                                        )
                                                     ) {
                                                         Icon(
                                                             imageVector = Default.ArrowUpward,
@@ -990,11 +1000,11 @@ fun SkyCatalogDialog(
                                                                 .size(24.dp)
                                                         )
                                                         Text(
-                                                            String.format(
-                                                                "%.1f°",
-                                                                distance
+                                                            text = stringResource(
+                                                                Res.string.format_degree,
+                                                                String.format("%.1f", distance),
                                                             ),
-                                                            style = MaterialTheme.typography.labelSmall
+                                                            style = MaterialTheme.typography.labelSmall,
                                                         )
                                                     }
                                                 }
@@ -1188,29 +1198,70 @@ fun SkyCatalogDialog(
         }
     }
 
-    val currentRaDecObj = showRaDecForObj
-    if (currentRaDecObj != null) {
-        InfoPopup(
-            title = currentRaDecObj.displayName,
+    val currentCatalogObj = selectedCatalogObj
+    if (currentCatalogObj != null) {
+        val lat = viewModel.currentLat
+        val lon = viewModel.currentLon
+        val timeMs = currentTimeMsState.longValue
+        val altAz = if (viewModel.hasValidLocation && lat != null && lon != null) {
+            AstrometryUtils.calculateAltAz(
+                currentCatalogObj.ra,
+                currentCatalogObj.dec,
+                lat,
+                lon,
+                timeMs
+            )
+        } else {
+            null
+        }
+        val isAbove = altAz == null || altAz.alt >= 0.0
+
+        ObjectInfoPopup(
+            coords = currentCatalogObj.ra to currentCatalogObj.dec,
+            catalogObject = currentCatalogObj,
+            catalogDb = viewModel.catalogDb,
             onDismiss = {
                 @Suppress("AssignedValueIsNeverRead")
-                showRaDecForObj = null
-            }
-        ) {
-            Column {
-                Row {
-                    Text(stringResource(Res.string.ra_j2000_label), fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(formatRa(currentRaDecObj.ra))
+                selectedCatalogObj = null
+            },
+            altAz = altAz,
+            bottomBar = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconBarItem(
+                        icon = Default.CenterFocusStrong,
+                        label = stringResource(Res.string.crop_center),
+                        onClick = {
+                            @Suppress("AssignedValueIsNeverRead")
+                            selectedCatalogObj = null
+                            onCenter(currentCatalogObj.ra, currentCatalogObj.dec)
+                        },
+                    )
+                    if (isAbove && viewModel.isEngineRunning) {
+                        IconBarItem(
+                            icon = Default.GpsFixed,
+                            label = stringResource(Res.string.btn_goto),
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            labelColor = MaterialTheme.colorScheme.primary,
+                            onClick = {
+                                @Suppress("AssignedValueIsNeverRead")
+                                selectedCatalogObj = null
+                                onGoTo(currentCatalogObj.ra, currentCatalogObj.dec, 2000.0)
+                            },
+                        )
+                    } else if (!isAbove && viewModel.isEngineRunning) {
+                        Text(
+                            stringResource(Res.string.status_below_horizon),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row {
-                    Text(stringResource(Res.string.dec_j2000_label), fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(formatDec(currentRaDecObj.dec))
-                }
-            }
-        }
+            },
+        )
     }
 
     if (showGotoRaDecPopup) {
@@ -1244,34 +1295,6 @@ fun SkyCatalogDialog(
     }
 }
 
-data class AltAz(val alt: Double, val az: Double)
-
-fun raDecToAltAz(ra: Double, dec: Double, lat: Double, lon: Double, timeMs: Long): AltAz {
-    val lst = AstrometryUtils.calculateLST(lon, timeMs)
-
-    val ha = Math.toRadians((lst - ra) % 360.0)
-    val decRad = Math.toRadians(dec)
-    val latRad = Math.toRadians(lat)
-
-    val sinAlt =
-        sin(decRad) * sin(latRad) + cos(decRad) * cos(
-            latRad
-        ) * cos(ha)
-    val alt = Math.toDegrees(asin(sinAlt.coerceIn(-1.0, 1.0)))
-
-    val y = -sin(ha) * cos(decRad)
-    val x =
-        cos(latRad) * sin(decRad) - sin(latRad) * cos(
-            decRad
-        ) * cos(ha)
-    var az = Math.toDegrees(atan2(y, x))
-    if (az < 0) az += 360.0
-
-    return AltAz(alt, az)
-}
-
-fun angularDistance(ra1: Double, dec1: Double, ra2: Double, dec2: Double): Double =
-    AstrometryUtils.angularDistance(ra1, dec1, ra2, dec2)
 
 fun targetBearingAltAz(az1: Double, alt1: Double, az2: Double, alt2: Double): Double {
     var dAz = az2 - az1
@@ -1382,43 +1405,6 @@ fun NightVisionKey(
     }
 }
 
-fun formatRa(raDegrees: Double): String {
-    val raHours = raDegrees / 15.0
-    var h = floor(raHours).toInt()
-    val remainder = raHours - h
-    var m = floor(remainder * 60.0).toInt()
-    var s = round((remainder * 60.0 - m) * 60.0).toInt()
-    if (s == 60) {
-        s = 0
-        m += 1
-    }
-    if (m == 60) {
-        m = 0
-        h += 1
-    }
-    if (h >= 24) {
-        h %= 24
-    }
-    return String.format("%02dh %02dm %02ds", h, m, s)
-}
-
-fun formatDec(decDegrees: Double): String {
-    val sign = if (decDegrees < 0) "-" else "+"
-    val absDec = abs(decDegrees)
-    var d = floor(absDec).toInt()
-    val remainder = absDec - d
-    var m = floor(remainder * 60.0).toInt()
-    var s = round((remainder * 60.0 - m) * 60.0).toInt()
-    if (s == 60) {
-        s = 0
-        m += 1
-    }
-    if (m == 60) {
-        m = 0
-        d += 1
-    }
-    return String.format("%s%02d° %02d' %02d\"", sign, d, m, s)
-}
 
 enum class CoordinateField {
     RA_H, RA_M, RA_S, DEC_D, DEC_M, DEC_S
