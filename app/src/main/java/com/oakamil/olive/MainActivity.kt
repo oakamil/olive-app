@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
                 val storage = SharedPreferencesStorage(applicationContext)
                 val capabilities = androidCapabilities
                 val engine = OliveEngine
-                val catalogDb = CatalogDatabaseHelper(applicationContext)
+                val catalogDb = CatalogDatabaseHelper(applicationContext, storage)
                 val hipsBackend = AndroidHiPSLocalBackend(applicationContext)
                 return MainViewModel(storage, capabilities, engine, catalogDb, hipsBackend) as T
             }

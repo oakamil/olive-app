@@ -1,5 +1,6 @@
 package com.oakamil.olive
 
+import kotlinx.datetime.Clock
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.asin
@@ -20,7 +21,8 @@ data class CatalogObject(
     val angularSize: String?,
     val commonName: String?,
     val description: String?,
-    val copyright: String?
+    val copyright: String?,
+    val distance: String? = null
 ) {
     val designation: String = when (catalogLabel) {
         "Str", "Planet", "Solar System" -> catalogEntry
@@ -69,11 +71,244 @@ data class CatalogObject(
     }
 }
 
+data class ParsedCometElements(
+    val catalogId: String,
+    val commonName: String,
+    val h: Double,
+    val k: Double,
+    val tPeri: Double,
+    val q: Double,
+    val e: Double,
+    val w: Double,
+    val node: Double,
+    val incl: Double,
+)
+
 interface CatalogDatabase {
     companion object {
-        const val CONTENT_VERSION = 1
+        // 1. Constants & Shared Catalog Metadata
+        const val CATALOG_DB_NAME = "catalog.db"
+        const val BSP_ASSET_NAME = "de421.bsp"
+        const val BRIGHT_STAR_PRIORITY_MAG_LIMIT = 4.0
+        const val COMETS_JSON_STORAGE_KEY = "user_comets_json"
+        const val COMETS_FEED_URL =
+            "https://cobs.si/api/elements.api?format=mpc&is-active=true&cur-mag=20"
 
-        fun buildPriorityCaseSql(brightStarMagLimit: Double = BRIGHT_STAR_PRIORITY_MAG_LIMIT): String =
+        const val CATALOG_OBJECT_COLUMNS_SQL =
+            "id, catalog_label, catalog_entry, ra, dec, constellation, object_type, " +
+                    "broad_category, magnitude, surface_brightness, angular_size, common_name, " +
+                    "description, copyright, distance"
+
+        private const val DEG_TO_RAD = PI / 180.0
+        private val DYNAMIC_CATALOG_LABELS = setOf("Solar System", "Planet", "Asteroid", "Comet")
+        private val SEARCH_QUERY_PREFIX_REGEX = Regex("^(sh2|ta2|[a-z]+)\\s*(\\d+)?$")
+        private val COMET_LINE_WHITESPACE_REGEX = Regex("\\s+")
+        private val SEARCH_CATALOG_ALIASES = mapOf(
+            "messier" to "M", "m" to "M",
+            "caldwell" to "C", "c" to "C",
+            "collinder" to "Col", "col" to "Col", "cr" to "Col",
+            "ngc" to "NGC",
+            "ic" to "IC",
+            "herschel" to "H", "h" to "H",
+            "barnard" to "B", "b" to "B",
+            "sharpless" to "Sh2", "sh2" to "Sh2", "sh" to "Sh2",
+            "ta2" to "Ta2", "taas" to "Ta2",
+            "abell" to "Abl", "abl" to "Abl",
+            "arp" to "Arp",
+            "saa" to "SaA",
+            "sam" to "SaM",
+            "sar" to "SaR",
+            "har" to "Har",
+            "rds" to "RDS",
+            "egc" to "EGC",
+        )
+
+        fun isDynamicObject(obj: CatalogObject): Boolean =
+            obj.id <= 0 || obj.catalogLabel in DYNAMIC_CATALOG_LABELS
+
+        // 2. Search & Proximity SQL Builders
+        fun buildCoLocatedQuerySql(): String =
+            "SELECT $CATALOG_OBJECT_COLUMNS_SQL FROM catalog " +
+                    "WHERE ra = ? AND dec = ? AND object_type = ? AND id != ? " +
+                    "ORDER BY ${buildPriorityCaseSql()} ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC;"
+
+        /** Builds the SQLite WHERE clause and bound parameters for [searchObjects]. */
+        fun buildSearchSelectionSql(
+            searchQuery: String,
+            catalogFilter: String?,
+            magLimit: Double?,
+            includeNullMagnitude: Boolean,
+            typeFilters: Set<String>?,
+            starFilter: Boolean?,
+            visibilityFilter: String?,
+            lat: Double?,
+            lon: Double?,
+            targetRa: Double?,
+            targetDec: Double?,
+            maxDistanceDegrees: Double?,
+            currentTimeMs: Long = Clock.System.now().toEpochMilliseconds(),
+        ): Pair<String, List<String>> {
+            val args = mutableListOf<String>()
+            val clauses = mutableListOf("1=1")
+
+            buildSearchClauseSql(searchQuery, args)?.let { clauses.add(it) }
+
+            val radius =
+                maxDistanceDegrees ?: if (catalogFilter == "Nearest Objects") 10.0 else null
+            if (radius != null && targetRa != null && targetDec != null) {
+                val proximityClause = buildSphericalProximityClauseSql(
+                    targetRa = targetRa,
+                    targetDec = targetDec,
+                    radiusDegrees = radius,
+                )
+                if (proximityClause.isNotEmpty()) {
+                    clauses.add(proximityClause)
+                }
+            }
+
+            if (catalogFilter != null &&
+                catalogFilter != "All Objects" &&
+                catalogFilter != "Solar System" &&
+                catalogFilter != "Nearest Objects"
+            ) {
+                clauses.add("catalog_label = ?")
+                args.add(catalogFilter)
+            }
+
+            if (magLimit != null && magLimit.isFinite()) {
+                clauses.add(
+                    if (includeNullMagnitude) {
+                        "(magnitude IS NULL OR magnitude <= $magLimit)"
+                    } else {
+                        "(magnitude IS NOT NULL AND magnitude <= $magLimit)"
+                    }
+                )
+            }
+
+            if (typeFilters != null) {
+                if (typeFilters.isEmpty()) {
+                    clauses.add("0 = 1")
+                } else {
+                    val placeholders = typeFilters.joinToString(",") { "?" }
+                    clauses.add("object_type IN ($placeholders)")
+                    args.addAll(typeFilters)
+                }
+            }
+
+            if (starFilter != null) {
+                clauses.add(if (starFilter) "object_type LIKE '%Star%'" else "object_type NOT LIKE '%Star%'")
+            }
+
+            if (visibilityFilter == "Above Horizon" &&
+                lat != null && lon != null &&
+                lat in -90.0..90.0 && lon in -180.0..180.0
+            ) {
+                val lst = AstrometryUtils.calculateLST(lon, currentTimeMs)
+                val lstRad = lst * DEG_TO_RAD
+                val latRad = lat * DEG_TO_RAD
+                val sinLat = sin(latRad)
+                val cosLat = cos(latRad)
+                clauses.add("(SIN(dec * $DEG_TO_RAD) * $sinLat + COS(dec * $DEG_TO_RAD) * $cosLat * COS($lstRad - ra * $DEG_TO_RAD)) > 0")
+            }
+
+            return clauses.joinToString(" AND ") to args
+        }
+
+        /** Builds the complete parameterized SELECT query and bound parameters for [searchObjects]. */
+        fun buildSearchQuerySql(
+            searchQuery: String,
+            catalogFilter: String?,
+            sortBy: String,
+            magLimit: Double?,
+            includeNullMagnitude: Boolean,
+            typeFilters: Set<String>?,
+            starFilter: Boolean?,
+            visibilityFilter: String?,
+            lat: Double?,
+            lon: Double?,
+            targetRa: Double?,
+            targetDec: Double?,
+            maxDistanceDegrees: Double?,
+            limit: Int,
+            offset: Int,
+            currentTimeMs: Long = Clock.System.now().toEpochMilliseconds(),
+        ): Pair<String, List<String>> {
+            val (selection, args) = buildSearchSelectionSql(
+                searchQuery = searchQuery,
+                catalogFilter = catalogFilter,
+                magLimit = magLimit,
+                includeNullMagnitude = includeNullMagnitude,
+                typeFilters = typeFilters,
+                starFilter = starFilter,
+                visibilityFilter = visibilityFilter,
+                lat = lat,
+                lon = lon,
+                targetRa = targetRa,
+                targetDec = targetDec,
+                maxDistanceDegrees = maxDistanceDegrees,
+                currentTimeMs = currentTimeMs,
+            )
+            val priorityCase = buildPriorityCaseSql()
+            val orderBy = buildOrderBySql(sortBy, targetRa, targetDec)
+            val sql =
+                "SELECT $CATALOG_OBJECT_COLUMNS_SQL, MIN($priorityCase) as priority " +
+                        "FROM catalog WHERE $selection " +
+                        "GROUP BY ra, dec, object_type " +
+                        "ORDER BY $orderBy " +
+                        "LIMIT $limit OFFSET $offset;"
+            return sql to args
+        }
+
+        private fun buildSearchClauseSql(searchQuery: String, args: MutableList<String>): String? {
+            if (searchQuery.isBlank()) return null
+            val q = searchQuery.trim().lowercase()
+            val match = SEARCH_QUERY_PREFIX_REGEX.matchEntire(q)
+            val noSpaceQuery = searchQuery.replace(" ", "")
+
+            var clause =
+                "(catalog_label || ' ' || catalog_entry LIKE ? OR REPLACE(catalog_label || catalog_entry, ' ', '') LIKE ? OR common_name LIKE ? OR catalog_entry = ?)"
+            args.add("%$searchQuery%")
+            args.add("%$noSpaceQuery%")
+            args.add("%$searchQuery%")
+            args.add(searchQuery)
+
+            if (match != null) {
+                val label = SEARCH_CATALOG_ALIASES[match.groupValues[1]]
+                val rawNum = match.groupValues[2]
+                if (label != null) {
+                    if (rawNum.isNotEmpty()) {
+                        val normalizedNum = rawNum.trimStart('0').ifEmpty { "0" }
+                        clause = "($clause OR (catalog_label = ? AND catalog_entry = ?))"
+                        args.add(label)
+                        args.add(normalizedNum)
+                    } else {
+                        clause = "($clause OR catalog_label = ?)"
+                        args.add(label)
+                    }
+                }
+            }
+            return clause
+        }
+
+        private fun buildOrderBySql(sortBy: String, targetRa: Double?, targetDec: Double?): String =
+            when (sortBy) {
+                "distance" if targetRa != null && targetDec != null ->
+                    buildSphericalDistanceOrderSql(targetRa, targetDec)
+
+                "name" ->
+                    "(common_name IS NULL OR common_name = '') ASC, common_name ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
+
+                "brightness" ->
+                    "magnitude IS NULL ASC, magnitude ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
+
+                "priority" ->
+                    "priority ASC, magnitude IS NULL ASC, magnitude ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
+
+                else ->
+                    "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
+            }
+
+        private fun buildPriorityCaseSql(brightStarMagLimit: Double = BRIGHT_STAR_PRIORITY_MAG_LIMIT): String =
             "CASE " +
                     "WHEN catalog_label = 'Str' AND magnitude IS NOT NULL AND magnitude <= $brightStarMagLimit THEN 3 " +
                     "WHEN catalog_label = 'M' THEN 4 " +
@@ -96,8 +331,6 @@ interface CatalogDatabase {
                     "WHEN catalog_label = 'Str' THEN 100 " +
                     "ELSE 999 END"
 
-        private const val DEG_TO_RAD = PI / 180.0
-
         private fun sphericalCosDistanceSql(targetRa: Double, targetDec: Double): String {
             val targetRaRad = targetRa * DEG_TO_RAD
             val targetDecRad = targetDec * DEG_TO_RAD
@@ -106,7 +339,7 @@ interface CatalogDatabase {
             return "(SIN(dec * $DEG_TO_RAD) * $sinTargetDec + COS(dec * $DEG_TO_RAD) * $cosTargetDec * COS(ra * $DEG_TO_RAD - $targetRaRad))"
         }
 
-        fun buildSphericalProximityClauseSql(
+        private fun buildSphericalProximityClauseSql(
             targetRa: Double,
             targetDec: Double,
             radiusDegrees: Double
@@ -144,11 +377,127 @@ interface CatalogDatabase {
             return clauses.joinToString(" AND ")
         }
 
-        fun buildSphericalDistanceOrderSql(targetRa: Double, targetDec: Double): String =
+        private fun buildSphericalDistanceOrderSql(targetRa: Double, targetDec: Double): String =
             "(1.0 - ${sphericalCosDistanceSql(targetRa, targetDec)}) ASC"
+
+        // 3. Comet Parsing & JSON Serialization
+        private fun dateToJd(year: Int, month: Int, dayFrac: Double): Double {
+            var y = year
+            var m = month
+            if (m <= 2) {
+                y -= 1
+                m += 12
+            }
+            val a = y / 100
+            val b = 2 - a + (a / 4)
+            return (365.25 * (y + 4716)).toInt() + (30.6001 * (m + 1)).toInt() + dayFrac + b - 1524.5
+        }
+
+        /** Parses one MPC comet orbital-elements line, or returns null for blank/incomplete records. */
+        fun parseCometLine(line: String): ParsedCometElements? {
+            if (line.trim().isEmpty() || line.length < 101) return null
+            val hStr = line.substring(91, 96).trim()
+            val kStr = line.substring(96, 101).trim()
+            if (hStr.isEmpty() || kStr.isEmpty()) return null
+
+            val catalogId = line.take(12).trim().replace(COMET_LINE_WHITESPACE_REGEX, " ")
+            val year = line.substring(14, 18).trim().toInt()
+            val month = line.substring(19, 21).trim().toInt()
+            val dayFrac = line.substring(22, 29).trim().toDouble()
+            val tPeri = dateToJd(year, month, dayFrac)
+
+            val q = line.substring(30, 39).trim().toDouble()
+            val e = line.substring(40, 49).trim().toDouble()
+            val w = line.substring(50, 59).trim().toDouble()
+            val node = line.substring(60, 69).trim().toDouble()
+            val incl = line.substring(70, 79).trim().toDouble()
+
+            val h = hStr.toDouble()
+            val k = kStr.toDouble()
+            if (!h.isFinite() || !k.isFinite() || !tPeri.isFinite() ||
+                !q.isFinite() || !e.isFinite() || !w.isFinite() ||
+                !node.isFinite() || !incl.isFinite()
+            ) {
+                throw IllegalArgumentException("Non-finite comet orbital element")
+            }
+
+            var namePart = if (line.length > 102) line.substring(102) else ""
+            val doubleSpaceIdx = namePart.indexOf("  ")
+            if (doubleSpaceIdx != -1) {
+                namePart = namePart.take(doubleSpaceIdx)
+            }
+
+            return ParsedCometElements(
+                catalogId = catalogId,
+                commonName = namePart.trim(),
+                h = h,
+                k = k,
+                tPeri = tPeri,
+                q = q,
+                e = e,
+                w = w,
+                node = node,
+                incl = incl,
+            )
+        }
+
+        fun escapeJson(str: String): String = buildString(str.length) {
+            for (ch in str) {
+                when (ch) {
+                    '\\' -> append("\\\\")
+                    '"' -> append("\\\"")
+                    '\b' -> append("\\b")
+                    '\n' -> append("\\n")
+                    '\r' -> append("\\r")
+                    '\t' -> append("\\t")
+                    else -> if (ch.code < 0x20) {
+                        append("\\u00")
+                        append(ch.code.toString(16).padStart(2, '0'))
+                    } else {
+                        append(ch)
+                    }
+                }
+            }
+        }
+
+        /** Parses MPC active-comet lines into a JSON array matching Rust `CometRecord`. Returns null if payload looks invalid. */
+        fun parseCometLinesToJson(
+            lines: List<String>,
+            onParseError: ((String, Exception) -> Unit)? = null,
+        ): String? {
+            if (lines.isEmpty()) return null
+            if (lines.any { it.trimStart().startsWith("<") }) return null
+            val sb = StringBuilder("[")
+            var nextId = 1
+            for (line in lines) {
+                val comet = try {
+                    parseCometLine(line)
+                } catch (ex: Exception) {
+                    onParseError?.invoke(line, ex)
+                    null
+                } ?: continue
+                if (nextId > 1) sb.append(',')
+                sb.append("{\"id\":").append(nextId++)
+                sb.append(",\"catalog_id\":\"").append(escapeJson(comet.catalogId)).append('"')
+                sb.append(",\"common_name\":\"").append(escapeJson(comet.commonName)).append('"')
+                sb.append(",\"h\":").append(comet.h)
+                sb.append(",\"k\":").append(comet.k)
+                sb.append(",\"t_peri\":").append(comet.tPeri)
+                sb.append(",\"q\":").append(comet.q)
+                sb.append(",\"e\":").append(comet.e)
+                sb.append(",\"w\":").append(comet.w)
+                sb.append(",\"node\":").append(comet.node)
+                sb.append(",\"incl\":").append(comet.incl).append('}')
+            }
+            if (nextId == 1) return null
+            sb.append(']')
+            return sb.toString()
+        }
     }
 
     fun getCatalogDescriptions(): Map<String, String>
+
+    fun getCoLocatedObjects(obj: CatalogObject): List<CatalogObject> = emptyList()
 
     fun searchObjects(
         searchQuery: String = "",

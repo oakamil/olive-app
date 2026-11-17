@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.jetbrains.compose.resources.StringResource
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.sqrt
@@ -171,15 +172,13 @@ val catalogCategories = listOf(
     "Harris", "RASC Doubles", "EGC"
 )
 
-const val BRIGHT_STAR_PRIORITY_MAG_LIMIT = 4.0
-
 fun getCatalogPriority(obj: CatalogObject): Int {
     if (obj.objectType == "Sun" || obj.catalogEntry == "Sun") return 1
     return when (obj.catalogLabel) {
         "Planet", "Moon", "Solar System" -> 2
         "Str" -> {
             val mag = obj.magnitude ?: 99.0
-            if (mag <= BRIGHT_STAR_PRIORITY_MAG_LIMIT) 3 else 100
+            if (mag <= CatalogDatabase.BRIGHT_STAR_PRIORITY_MAG_LIMIT) 3 else 100
         }
 
         "M" -> 4
@@ -208,7 +207,7 @@ fun getCatalogPriority(obj: CatalogObject): Int {
                 "Comet" -> 10
                 "Star", "Multiple Star" -> {
                     val mag = obj.magnitude ?: 99.0
-                    if (mag <= BRIGHT_STAR_PRIORITY_MAG_LIMIT) 3 else 100
+                    if (mag <= CatalogDatabase.BRIGHT_STAR_PRIORITY_MAG_LIMIT) 3 else 100
                 }
 
                 else -> 999
@@ -235,6 +234,29 @@ fun getLocalizedObjectType(type: String): String = when (type) {
     "Comet" -> stringResource(Res.string.type_comet)
     else -> type
 }
+
+private val COMPASS_DIRECTION_16_RES: List<StringResource> = listOf(
+    Res.string.dir_north,
+    Res.string.dir_north_northeast,
+    Res.string.dir_northeast,
+    Res.string.dir_east_northeast,
+    Res.string.dir_east,
+    Res.string.dir_east_southeast,
+    Res.string.dir_southeast,
+    Res.string.dir_south_southeast,
+    Res.string.dir_south,
+    Res.string.dir_south_southwest,
+    Res.string.dir_southwest,
+    Res.string.dir_west_southwest,
+    Res.string.dir_west,
+    Res.string.dir_west_northwest,
+    Res.string.dir_northwest,
+    Res.string.dir_north_northwest,
+)
+
+@Composable
+fun localizedCompassDirection(azimuthDeg: Double): String =
+    stringResource(COMPASS_DIRECTION_16_RES[AstrometryUtils.azimuthSectorIndex16(azimuthDeg)])
 
 data class PlacedCatalogItem(
     val obj: CatalogObject,

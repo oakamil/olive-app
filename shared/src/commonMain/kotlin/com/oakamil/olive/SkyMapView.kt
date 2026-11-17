@@ -2103,154 +2103,65 @@ fun SkyMapView(
         // Selected Object Info Popup
         val obj = selectedObject
         if (obj != null) {
-            InfoPopup(
-                title = obj.displayName,
-                onDismiss = { selectedObject = null }
-            ) {
-                Column {
-                    if (!obj.commonName.isNullOrBlank() && !obj.isFakeCommonName) {
-                        SkyMapInfoRow(
-                            label = "${stringResource(Res.string.label_designation)}:",
-                            value = obj.designation
-                        )
-                        Spacer(Modifier.height(4.dp))
-                    }
-                    SkyMapInfoRow(
-                        label = "${stringResource(Res.string.label_type)}:",
-                        value = getLocalizedObjectType(obj.objectType)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    SkyMapInfoRow(
-                        label = "${stringResource(Res.string.label_magnitude)}:",
-                        value = if (obj.magnitude != null) String.format(
-                            "%.2f",
-                            obj.magnitude
-                        ) else stringResource(Res.string.value_not_available)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    if (!obj.constellation.isNullOrBlank()) {
-                        SkyMapInfoRow(
-                            label = "${stringResource(Res.string.label_constellation)}:",
-                            value = obj.constellation
-                        )
-                        Spacer(Modifier.height(4.dp))
-                    }
-                    SkyMapInfoRow(
-                        label = "${stringResource(Res.string.ra_j2000_label)}:",
-                        value = formatRa(obj.ra)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    SkyMapInfoRow(
-                        label = "${stringResource(Res.string.dec_j2000_label)}:",
-                        value = formatDec(obj.dec)
-                    )
-                    val isAbove = !viewModel.hasValidLocation || AstrometryUtils.raDecToAltAz(
-                        obj.ra,
-                        obj.dec,
-                        lat,
-                        lst
-                    ).second >= 0.0
-                    if (viewModel.isEngineRunning && isAbove) {
-                        Spacer(Modifier.height(12.dp))
+            val altAz =
+                calculateOptionalAltAz(viewModel.hasValidLocation, obj.ra, obj.dec, lat, lst)
+            val isAbove = altAz == null || altAz.alt >= 0.0
+            ObjectInfoPopup(
+                coords = obj.ra to obj.dec,
+                catalogObject = obj,
+                catalogDb = viewModel.catalogDb,
+                onDismiss = { selectedObject = null },
+                altAz = altAz,
+                bottomBar = if (viewModel.isEngineRunning) {
+                    {
                         Box(
                             modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.Center,
                         ) {
-                            IconBarItem(
-                                icon = Icons.Default.GpsFixed,
-                                label = stringResource(Res.string.btn_goto),
-                                iconTint = MaterialTheme.colorScheme.primary,
-                                labelColor = MaterialTheme.colorScheme.primary,
-                                onClick = {
-                                    viewModel.setGoToTarget(obj.ra, obj.dec)
-                                    selectedObject = null
-                                }
-                            )
-                        }
-                    } else if (viewModel.isEngineRunning && !isAbove) {
-                        Spacer(Modifier.height(12.dp))
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                stringResource(Res.string.status_below_horizon),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.labelSmall
-                            )
+                            if (isAbove) {
+                                IconBarItem(
+                                    icon = Icons.Default.GpsFixed,
+                                    label = stringResource(Res.string.btn_goto),
+                                    iconTint = MaterialTheme.colorScheme.primary,
+                                    labelColor = MaterialTheme.colorScheme.primary,
+                                    onClick = {
+                                        viewModel.setGoToTarget(obj.ra, obj.dec)
+                                        selectedObject = null
+                                    },
+                                )
+                            } else {
+                                Text(
+                                    stringResource(Res.string.status_below_horizon),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
                         }
                     }
-                }
-            }
+                } else null,
+            )
         }
 
         // Target Object Info Popup (opened by tapping Target Object Bubble)
         if (showTargetPopup && viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
-            val target = targetObject
-            val targetDisplayName = target?.displayName ?: stringResource(
-                Res.string.format_ra_dec,
-                String.format("%.2f", stats.targetRa),
-                String.format("%.2f", stats.targetDec)
-            )
-
-            InfoPopup(
-                title = targetDisplayName,
-                onDismiss = { showTargetPopup = false }
-            ) {
-                Column {
-                    if (target != null) {
-                        if (!target.commonName.isNullOrBlank() && !target.isFakeCommonName) {
-                            SkyMapInfoRow(
-                                label = "${stringResource(Res.string.label_designation)}:",
-                                value = target.designation
-                            )
-                            Spacer(Modifier.height(4.dp))
-                        }
-                        SkyMapInfoRow(
-                            label = "${stringResource(Res.string.label_type)}:",
-                            value = getLocalizedObjectType(target.objectType)
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        SkyMapInfoRow(
-                            label = "${stringResource(Res.string.label_magnitude)}:",
-                            value = if (target.magnitude != null) String.format(
-                                "%.2f",
-                                target.magnitude
-                            ) else stringResource(Res.string.value_not_available)
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        if (!target.constellation.isNullOrBlank()) {
-                            SkyMapInfoRow(
-                                label = "${stringResource(Res.string.label_constellation)}:",
-                                value = target.constellation
-                            )
-                            Spacer(Modifier.height(4.dp))
-                        }
-                        SkyMapInfoRow(
-                            label = "${stringResource(Res.string.ra_j2000_label)}:",
-                            value = formatRa(target.ra)
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        SkyMapInfoRow(
-                            label = "${stringResource(Res.string.dec_j2000_label)}:",
-                            value = formatDec(target.dec)
-                        )
-                    } else {
-                        SkyMapInfoRow(
-                            label = "${stringResource(Res.string.ra_j2000_label)}:",
-                            value = formatRa(stats.targetRa)
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        SkyMapInfoRow(
-                            label = "${stringResource(Res.string.dec_j2000_label)}:",
-                            value = formatDec(stats.targetDec)
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
+            val coords = stats.targetRa to stats.targetDec
+            ObjectInfoPopup(
+                coords = coords,
+                catalogObject = targetObject,
+                catalogDb = viewModel.catalogDb,
+                onDismiss = { showTargetPopup = false },
+                altAz = calculateOptionalAltAz(
+                    viewModel.hasValidLocation,
+                    coords.first,
+                    coords.second,
+                    lat,
+                    lst
+                ),
+                bottomBar = {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconBarItem(
                             icon = Icons.Default.Stop,
@@ -2260,21 +2171,19 @@ fun SkyMapView(
                             onClick = {
                                 viewModel.clearGoToTarget()
                                 showTargetPopup = false
-                            }
+                            },
                         )
                         val liveStats = viewModel.engineStats
                         if (liveStats.isTargetVisible) {
                             IconBarItem(
                                 icon = Icons.Default.FilterCenterFocus,
                                 label = stringResource(Res.string.btn_align),
-                                onClick = {
-                                    showSyncDialog = true
-                                }
+                                onClick = { showSyncDialog = true },
                             )
                         }
                     }
-                }
-            }
+                },
+            )
         }
 
         // Align Confirmation Dialog
@@ -2331,20 +2240,15 @@ fun SkyMapView(
     }
 }
 
-@Composable
-private fun SkyMapInfoRow(
-    label: String,
-    value: String
-) {
-    Row {
-        Text(
-            label,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.width(4.dp))
-        Text(value, color = MaterialTheme.colorScheme.onSurface)
-    }
+private fun calculateOptionalAltAz(
+    hasValidLocation: Boolean,
+    raDeg: Double,
+    decDeg: Double,
+    lat: Double,
+    lst: Double,
+): AltAz? = if (hasValidLocation) {
+    AstrometryUtils.calculateAltAz(raDeg, decDeg, lat, lst)
+} else {
+    null
 }
-
 

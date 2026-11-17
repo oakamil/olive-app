@@ -140,7 +140,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         )
     }
     val engine = remember { IosEngineBridge() }
-    val catalogDb = remember { IosCatalogDatabase() }
+    val catalogDb = remember { IosCatalogDatabase(storage) }
     val hipsBackend = remember { IosHiPSLocalBackend() }
     val viewModel =
         remember { MainViewModel(storage, capabilities, engine, catalogDb, hipsBackend) }

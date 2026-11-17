@@ -7,10 +7,35 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.pow
+import kotlin.math.round
 import kotlin.math.sin
 import kotlin.math.tan
 
+data class AltAz(val alt: Double, val az: Double)
+
 object AstrometryUtils {
+    /** Formats RA in degrees (wrapping outside [0, 360)) as `HHh MMm SSs`. */
+    fun formatRa(raDegrees: Double): String {
+        if (!raDegrees.isFinite()) return ""
+        val normalizedRa = ((raDegrees % 360.0) + 360.0) % 360.0
+        val totalSeconds = round(normalizedRa * 240.0).toInt() % 86400
+        val h = totalSeconds / 3600
+        val m = (totalSeconds % 3600) / 60
+        val s = totalSeconds % 60
+        return String.format("%02dh %02dm %02ds", h, m, s)
+    }
+
+    /** Formats Dec in degrees as `±DD° MM' SS"`. */
+    fun formatDec(decDegrees: Double): String {
+        if (!decDegrees.isFinite()) return ""
+        val totalArcseconds = round(abs(decDegrees) * 3600.0).toLong()
+        val sign = if (decDegrees < 0 && totalArcseconds > 0L) "-" else "+"
+        val d = totalArcseconds / 3600L
+        val m = (totalArcseconds % 3600L) / 60L
+        val s = totalArcseconds % 60L
+        return String.format("%s%02d° %02d' %02d\"", sign, d, m, s)
+    }
+
     /**
      * Projects RA/Dec to screen X/Y coordinates using Gnomic (tangent plane) projection.
      */
@@ -159,6 +184,35 @@ object AstrometryUtils {
         val azDeg = (Math.toDegrees(azRad) % 360.0 + 360.0) % 360.0
         val altDeg = Math.toDegrees(altRad)
         return Pair(azDeg, altDeg)
+    }
+
+    /**
+     * Converts celestial coordinates (RA, Dec in degrees J2000) to horizontal [AltAz]
+     * using precomputed local sidereal time [lst] (degrees).
+     */
+    fun calculateAltAz(ra: Double, dec: Double, lat: Double, lst: Double): AltAz {
+        val (az, alt) = raDecToAltAz(ra, dec, lat, lst)
+        return AltAz(alt = alt, az = az)
+    }
+
+    /**
+     * Converts celestial coordinates (RA, Dec in degrees J2000) to horizontal [AltAz]
+     * for an observer at [lat], [lon] (degrees) and timestamp [timeMs] (UTC ms).
+     */
+    fun calculateAltAz(
+        ra: Double,
+        dec: Double,
+        lat: Double,
+        lon: Double,
+        timeMs: Long
+    ): AltAz = calculateAltAz(ra, dec, lat, calculateLST(lon, timeMs))
+
+    /**
+     * Returns the 16-point compass sector index (`0..15`, starting at North `0°` clockwise in `22.5°` steps).
+     */
+    fun azimuthSectorIndex16(azimuthDeg: Double): Int {
+        val normalized = ((azimuthDeg % 360.0) + 360.0) % 360.0
+        return (((normalized + 11.25) / 22.5).toInt()) and 0x0F
     }
 
     /**

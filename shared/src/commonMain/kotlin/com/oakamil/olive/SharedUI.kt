@@ -37,7 +37,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -52,6 +57,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.withContext
+import org.jetbrains.compose.resources.StringResource
 
 val LocalOnUserInteraction = compositionLocalOf { {} }
 
@@ -458,7 +467,132 @@ fun NightVisionNumpad(
 }
 
 @Composable
-private fun StatRow(
+fun ObjectInfoPopup(
+    coords: Pair<Double, Double>,
+    catalogObject: CatalogObject?,
+    catalogDb: CatalogDatabase,
+    onDismiss: () -> Unit,
+    altAz: AltAz? = null,
+    bottomBar: (@Composable () -> Unit)? = null,
+) {
+    var coLocated by remember(catalogObject) { mutableStateOf<List<CatalogObject>>(emptyList()) }
+    LaunchedEffect(catalogObject) {
+        if (catalogObject != null && !CatalogDatabase.isDynamicObject(catalogObject)) {
+            coLocated = withContext(Dispatchers.IO) { catalogDb.getCoLocatedObjects(catalogObject) }
+        }
+    }
+
+    val title = catalogObject?.displayName ?: stringResource(
+        Res.string.format_ra_dec,
+        String.format("%.2f", coords.first),
+        String.format("%.2f", coords.second),
+    )
+
+    InfoPopup(
+        title = title,
+        onDismiss = onDismiss,
+        fillMaxWidth = true,
+        bottomBar = bottomBar,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            val metadata = remember(catalogObject, coLocated) {
+                catalogObject?.let {
+                    CatalogObjectInfoFormatter.extractMetadata(it, coLocated)
+                }
+            }
+            if (catalogObject != null && metadata != null) {
+                metadata.designation?.let {
+                    LabeledValueRow(infoLabel(Res.string.label_designation), it)
+                }
+                metadata.alsoKnownAs?.let {
+                    LabeledValueRow(infoLabel(Res.string.label_also_known_as), it)
+                }
+                LabeledValueRow(
+                    infoLabel(Res.string.label_type),
+                    getLocalizedObjectType(catalogObject.objectType),
+                )
+                val magValue = catalogObject.magnitude?.let { String.format("%.2f", it) }
+                    ?: stringResource(Res.string.value_not_available)
+                LabeledValueRow(infoLabel(Res.string.label_magnitude), magValue)
+                metadata.surfaceBrightness?.let { sb ->
+                    LabeledValueRow(
+                        infoLabel(Res.string.label_surface_brightness),
+                        stringResource(
+                            Res.string.format_surface_brightness,
+                            String.format("%.1f", sb)
+                        ),
+                    )
+                }
+                localizedAngularSize(metadata.angularSizeTokens)?.let {
+                    LabeledValueRow(infoLabel(Res.string.label_angular_size), it)
+                }
+                catalogObject.constellation?.takeIf { it.isNotBlank() }?.let {
+                    LabeledValueRow(infoLabel(Res.string.label_constellation), it)
+                }
+                metadata.distance?.let {
+                    LabeledValueRow(infoLabel(Res.string.label_distance), it)
+                }
+            }
+            val displayRa = catalogObject?.ra ?: coords.first
+            val displayDec = catalogObject?.dec ?: coords.second
+            LabeledValueRow(
+                infoLabel(Res.string.ra_j2000_label),
+                AstrometryUtils.formatRa(displayRa)
+            )
+            LabeledValueRow(
+                infoLabel(Res.string.dec_j2000_label),
+                AstrometryUtils.formatDec(displayDec)
+            )
+            altAz?.let {
+                LabeledValueRow(
+                    infoLabel(Res.string.label_alt_az),
+                    stringResource(
+                        Res.string.format_alt_az,
+                        String.format("%.1f", it.alt),
+                        String.format("%.1f", it.az),
+                        localizedCompassDirection(it.az),
+                    ),
+                )
+            }
+            metadata?.notes?.let { notes ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = infoLabel(Res.string.label_notes),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = notes,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun infoLabel(res: StringResource): String =
+    stringResource(Res.string.format_info_label, stringResource(res))
+
+@Composable
+private fun localizedAngularSize(tokens: List<String>?): String? {
+    if (tokens.isNullOrEmpty()) return null
+    var formatted: String? = null
+    for (token in tokens) {
+        val part = if (CatalogObjectInfoFormatter.isBareNumber(token)) {
+            stringResource(Res.string.format_arcmin, token)
+        } else {
+            token
+        }
+        formatted =
+            formatted?.let { stringResource(Res.string.format_dimensions, it, part) } ?: part
+    }
+    return formatted
+}
+
+@Composable
+fun LabeledValueRow(
     label: String,
     value: String
 ) {
@@ -480,7 +614,7 @@ fun StatsDisplay(
     onInfoClick: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        StatRow(
+        LabeledValueRow(
             label = stringResource(id = Res.string.stat_status),
             value = when (stats.parsedStatus) {
                 EngineStatus.SOLVING -> stringResource(id = Res.string.stat_solving)
@@ -493,26 +627,26 @@ fun StatsDisplay(
             }
         )
         Spacer(modifier = Modifier.height(4.dp))
-        StatRow(
+        LabeledValueRow(
             label = stringResource(id = Res.string.stat_star_count),
             value = "${stats.centroidCount}"
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        StatRow(
+        LabeledValueRow(
             label = stringResource(id = Res.string.ra_j2000_label),
-            value = stats.ra?.let { formatRa(it) } ?: "-"
+            value = stats.ra?.let { AstrometryUtils.formatRa(it) } ?: "-"
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        StatRow(
+        LabeledValueRow(
             label = stringResource(id = Res.string.dec_j2000_label),
-            value = stats.dec?.let { formatDec(it) } ?: "-"
+            value = stats.dec?.let { AstrometryUtils.formatDec(it) } ?: "-"
         )
         Spacer(modifier = Modifier.height(4.dp))
 
         stats.fov?.let { fovVal ->
-            StatRow(
+            LabeledValueRow(
                 label = stringResource(id = Res.string.stat_fov),
                 value = stringResource(
                     id = Res.string.format_degree,
@@ -522,7 +656,7 @@ fun StatsDisplay(
         }
         Spacer(modifier = Modifier.height(8.dp))
 
-        StatRow(
+        LabeledValueRow(
             label = stringResource(id = Res.string.stat_exposure),
             value = stringResource(
                 id = Res.string.format_ms,
@@ -531,7 +665,7 @@ fun StatsDisplay(
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        StatRow(
+        LabeledValueRow(
             label = stringResource(id = Res.string.stat_post_process),
             value = stringResource(
                 id = Res.string.format_ms,
@@ -540,7 +674,7 @@ fun StatsDisplay(
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        StatRow(
+        LabeledValueRow(
             label = stringResource(id = Res.string.stat_extraction),
             value = stringResource(
                 id = Res.string.format_ms,
@@ -549,7 +683,7 @@ fun StatsDisplay(
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        StatRow(
+        LabeledValueRow(
             label = stringResource(id = Res.string.stat_solve),
             value = stringResource(
                 id = Res.string.format_ms,
@@ -558,7 +692,7 @@ fun StatsDisplay(
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        StatRow(
+        LabeledValueRow(
             label = stringResource(id = Res.string.stat_solve_rate),
             value = stringResource(
                 id = Res.string.format_hz,
@@ -606,7 +740,7 @@ fun StatsDisplay(
 
             else -> stats.solvedCrop ?: "-"
         }
-        StatRow(
+        LabeledValueRow(
             label = stringResource(id = Res.string.stat_last_solve),
             value = cropString
         )

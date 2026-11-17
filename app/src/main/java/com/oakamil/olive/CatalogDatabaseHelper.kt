@@ -1,125 +1,146 @@
 package com.oakamil.olive
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.database.Cursor
+import android.os.Build
 import android.util.Log
-import androidx.core.content.edit
+import androidx.core.content.pm.PackageInfoCompat
 import io.requery.android.database.sqlite.SQLiteDatabase
-import io.requery.android.database.sqlite.SQLiteOpenHelper
-import io.requery.android.database.sqlite.SQLiteStatement
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import kotlin.math.cos
 import kotlin.math.sin
 
-class CatalogDatabaseHelper(private val context: Context) :
-    SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION), CatalogDatabase {
-
-    override fun getBspPath(): String = context.getDatabasePath("de421.bsp").absolutePath
-
+class CatalogDatabaseHelper(
+    private val context: Context,
+    private val storage: KeyValueStorage,
+) : CatalogDatabase {
 
     companion object {
-        private const val DB_NAME = "catalog.db"
-        private const val DB_VERSION = 1
         private const val TAG = "CatalogDatabaseHelper"
+        private const val DB_MARKER_KEY = "asset_marker_catalog_db"
+        private const val BSP_MARKER_KEY = "asset_marker_de421_bsp"
+        private val STALE_SIDECAR_SUFFIXES = listOf("-wal", "-shm", "-journal", ".bak")
     }
 
     private val dbLock = Any()
     private var db: SQLiteDatabase? = null
+    private val verifiedAssetsThisSession = mutableSetOf<String>()
 
-    private var isInitialized = false
-
-    @Synchronized
-    private fun initializeIfNeeded() {
-        if (isInitialized) return
-        val prefs = context.getSharedPreferences("olive_prefs", Context.MODE_PRIVATE)
-        val lastContentVersion = prefs.getInt("catalog_content_version", 0)
-
-        val forceUpdate = CatalogDatabase.CONTENT_VERSION > lastContentVersion
-
-        val dbSuccess = copyAssetSafely(DB_NAME, forceUpdate)
-        val bspSuccess = copyAssetSafely("de421.bsp", forceUpdate)
-
-        if (forceUpdate && dbSuccess && bspSuccess) {
-            prefs.edit { putInt("catalog_content_version", CatalogDatabase.CONTENT_VERSION) }
-        }
-        if (dbSuccess) {
-            isInitialized = true
+    private val appUpdateMarker: String by lazy {
+        try {
+            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            "${PackageInfoCompat.getLongVersionCode(info)}:${info.lastUpdateTime}"
+        } catch (_: Exception) {
+            ""
         }
     }
 
-    private fun copyAssetSafely(filename: String, forceUpdate: Boolean): Boolean {
-        val file = context.getDatabasePath(filename)
-        if (file.exists() && !forceUpdate) {
-            return true
-        }
+    override fun getBspPath(): String = synchronized(dbLock) {
+        val bspFile = ensureAssetExtractedLocked(
+            assetName = CatalogDatabase.BSP_ASSET_NAME,
+            markerKey = BSP_MARKER_KEY,
+            isCatalogDb = false,
+        )
+        (bspFile ?: context.getDatabasePath(CatalogDatabase.BSP_ASSET_NAME)).absolutePath
+    }
 
-        file.parentFile?.mkdirs()
-        val tempFile = File(file.parentFile, "$filename.tmp")
+    private fun ensureAssetExtractedLocked(
+        assetName: String,
+        markerKey: String,
+        isCatalogDb: Boolean,
+    ): File? {
+        val destFile = context.getDatabasePath(assetName)
+        val hasValidDest = destFile.exists() && destFile.length() > 0L
+        if (assetName in verifiedAssetsThisSession && hasValidDest) {
+            return destFile
+        }
+        val marker = appUpdateMarker
+        if (marker.isNotEmpty() && storage.getString(markerKey) == marker && hasValidDest) {
+            verifiedAssetsThisSession.add(assetName)
+            return destFile
+        }
+        if (isCatalogDb) {
+            db?.close()
+            db = null
+            deleteSidecars(destFile)
+        }
+        if (!copyAssetAtomically(assetName, destFile)) {
+            return if (hasValidDest) destFile else null
+        }
+        if (marker.isNotEmpty()) {
+            storage.putString(markerKey, marker)
+        }
+        verifiedAssetsThisSession.add(assetName)
+        return destFile
+    }
+
+    private fun deleteSidecars(dbFile: File) {
+        val parent = dbFile.parentFile ?: return
+        for (suffix in STALE_SIDECAR_SUFFIXES) {
+            File(parent, "${dbFile.name}$suffix").takeIf { it.exists() }?.delete()
+        }
+    }
+
+    private fun copyAssetAtomically(assetName: String, destFile: File): Boolean {
+        destFile.parentFile?.mkdirs()
+        val tempFile = File(destFile.parentFile, "$assetName.tmp")
         if (tempFile.exists()) {
             tempFile.delete()
         }
-
         return try {
-            context.assets.open(filename).use { input ->
+            context.assets.open(assetName).use { input ->
                 FileOutputStream(tempFile).use { output ->
                     input.copyTo(output)
                 }
             }
-            if (file.exists()) {
-                file.delete()
-            }
-            val renamed = tempFile.renameTo(file)
-            if (renamed) {
-                Log.i(TAG, "Successfully staged and moved $filename into place.")
-                true
-            } else {
-                Log.e(TAG, "Failed to rename $tempFile to $file")
+            if (tempFile.length() <= 0L) {
                 tempFile.delete()
-                false
+                return false
             }
+            Files.move(
+                tempFile.toPath(),
+                destFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+            )
+            Log.i(TAG, "Staged read-only asset $assetName")
+            true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to copy asset $filename", e)
+            Log.e(TAG, "Failed to copy asset $assetName", e)
             tempFile.delete()
             false
         }
     }
 
-    override fun onCreate(db: SQLiteDatabase?) {
-        // Database is pre-populated, nothing to create
-    }
-
-    override fun onUpgrade(db: SQLiteDatabase?, oldVersion: Int, newVersion: Int) {
-        // Handle upgrades if necessary
-    }
-
-    override fun onOpen(db: SQLiteDatabase?) {
-        super.onOpen(db)
-        if (db != null) {
-            registerMathFunctions(db)
-        }
-    }
-
-    fun openDatabase() {
-        synchronized(dbLock) {
-            openDatabaseLocked()
-        }
-    }
-
     private fun openDatabaseLocked() {
-        initializeIfNeeded()
-        if (db == null || !db!!.isOpen) {
-            val dbPath = context.getDatabasePath(DB_NAME).absolutePath
-            val database = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READWRITE)
-            registerMathFunctions(database)
-            db = database
-        }
+        if (db?.isOpen == true) return
+        val dbFile = ensureAssetExtractedLocked(
+            assetName = CatalogDatabase.CATALOG_DB_NAME,
+            markerKey = DB_MARKER_KEY,
+            isCatalogDb = true,
+        ) ?: return
+        val database = SQLiteDatabase.openDatabase(
+            dbFile.absolutePath,
+            null,
+            SQLiteDatabase.OPEN_READONLY
+        )
+        registerMathFunctions(database)
+        db = database
     }
 
     private fun registerMathFunctions(database: SQLiteDatabase) {
@@ -178,78 +199,50 @@ class CatalogDatabaseHelper(private val context: Context) :
         return map
     }
 
-    private fun queryTableAsJson(table: String): String {
-        val array = JSONArray()
+    override fun getAsteroidsJson(): String {
         synchronized(dbLock) {
             openDatabaseLocked()
             val database = db ?: return "[]"
+            val sb = StringBuilder("[")
+            var first = true
             try {
-                database.query(
-                    table,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null
-                ).use { c ->
+                database.rawQuery("SELECT * FROM asteroids", null).use { c ->
+                    val colCount = c.columnCount
+                    val colNames = Array(colCount) { i -> c.getColumnName(i) }
                     while (c.moveToNext()) {
-                        val obj = JSONObject()
-                        for (i in 0 until c.columnCount) {
+                        if (!first) sb.append(',')
+                        first = false
+                        sb.append('{')
+                        for (i in 0 until colCount) {
+                            if (i > 0) sb.append(',')
+                            sb.append('"').append(colNames[i]).append("\":")
                             when (c.getType(i)) {
-                                Cursor.FIELD_TYPE_INTEGER -> obj.put(
-                                    c.getColumnName(i),
-                                    c.getLong(i)
-                                )
-
-                                Cursor.FIELD_TYPE_FLOAT -> obj.put(
-                                    c.getColumnName(i),
-                                    c.getDouble(i)
-                                )
-
-                                Cursor.FIELD_TYPE_STRING -> obj.put(
-                                    c.getColumnName(i),
-                                    c.getString(i)
-                                )
-
-                                Cursor.FIELD_TYPE_NULL -> obj.put(
-                                    c.getColumnName(i),
-                                    JSONObject.NULL
-                                )
-
-                                Cursor.FIELD_TYPE_BLOB -> Log.w(TAG, "Unexpected blob field")
+                                Cursor.FIELD_TYPE_INTEGER -> sb.append(c.getLong(i))
+                                Cursor.FIELD_TYPE_FLOAT -> sb.append(c.getDouble(i))
+                                Cursor.FIELD_TYPE_NULL -> sb.append("null")
+                                else -> sb.append('"')
+                                    .append(CatalogDatabase.escapeJson(c.getString(i).orEmpty()))
+                                    .append('"')
                             }
                         }
-                        array.put(obj)
+                        sb.append('}')
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error fetching $table", e)
+                Log.e(TAG, "Error fetching asteroids", e)
+                return "[]"
             }
+            sb.append(']')
+            return sb.toString()
         }
-        return array.toString()
     }
 
-    override fun getAsteroidsJson(): String = queryTableAsJson("asteroids")
-
-    override fun getCometsJson(): String = queryTableAsJson("comets")
-
-    private fun dateToJd(year: Int, month: Int, dayFrac: Double): Double {
-        var y = year
-        var m = month
-        if (m <= 2) {
-            y -= 1
-            m += 12
-        }
-        val a = y / 100
-        val b = 2 - a + (a / 4)
-        return (365.25 * (y + 4716)).toInt() + (30.6001 * (m + 1)).toInt() + dayFrac + b - 1524.5
-    }
+    override fun getCometsJson(): String =
+        storage.getString(CatalogDatabase.COMETS_JSON_STORAGE_KEY) ?: "[]"
 
     override fun refreshComets(): Boolean {
         val lines = try {
-            val url =
-                URL("https://cobs.si/api/elements.api?format=mpc&is-active=true&cur-mag=20")
+            val url = URL(CatalogDatabase.COMETS_FEED_URL)
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", "Mozilla/5.0")
@@ -257,6 +250,10 @@ class CatalogDatabaseHelper(private val context: Context) :
                 readTimeout = 10000
             }
             try {
+                if (connection.responseCode !in 200..299) {
+                    Log.w(TAG, "Unexpected HTTP ${connection.responseCode} downloading comets")
+                    return false
+                }
                 BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
                     reader.readLines()
                 }
@@ -268,76 +265,11 @@ class CatalogDatabaseHelper(private val context: Context) :
             return false
         }
 
-        synchronized(dbLock) {
-            return try {
-                openDatabaseLocked()
-                val database = db ?: return false
-                database.beginTransaction()
-                var statement: SQLiteStatement? = null
-                try {
-                    database.execSQL("DELETE FROM comets")
-                    statement = database.compileStatement(
-                        "INSERT INTO comets (catalog_id, common_name, h, k, t_peri, q, e, w, node, incl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                    )
-
-                    for (line in lines) {
-                        if (line.trim().isEmpty() || line.length < 100) continue
-                        try {
-                            val hStr = line.substring(91, 96).trim()
-                            val kStr = line.substring(96, 101).trim()
-                            if (hStr.isEmpty() || kStr.isEmpty()) continue
-
-                            val catalogId = line.take(12).trim().replace(Regex("\\s+"), " ")
-                            val year = line.substring(14, 18).trim().toInt()
-                            val month = line.substring(19, 21).trim().toInt()
-                            val dayFrac = line.substring(22, 29).trim().toDouble()
-                            val tPeri = dateToJd(year, month, dayFrac)
-
-                            val q = line.substring(30, 39).trim().toDouble()
-                            val e = line.substring(40, 49).trim().toDouble()
-                            val w = line.substring(50, 59).trim().toDouble()
-                            val node = line.substring(60, 69).trim().toDouble()
-                            val incl = line.substring(70, 79).trim().toDouble()
-
-                            val h = hStr.toDouble()
-                            val k = kStr.toDouble()
-
-                            var namePart = line.substring(102)
-                            val doubleSpaceIdx = namePart.indexOf("  ")
-                            if (doubleSpaceIdx != -1) {
-                                namePart = namePart.take(doubleSpaceIdx)
-                            }
-                            val commonName = namePart.trim()
-
-                            statement.bindString(1, catalogId)
-                            statement.bindString(2, commonName)
-                            statement.bindDouble(3, h)
-                            statement.bindDouble(4, k)
-                            statement.bindDouble(5, tPeri)
-                            statement.bindDouble(6, q)
-                            statement.bindDouble(7, e)
-                            statement.bindDouble(8, w)
-                            statement.bindDouble(9, node)
-                            statement.bindDouble(10, incl)
-                            statement.executeInsert()
-                        } catch (ex: Exception) {
-                            Log.e(TAG, $$"Error parsing comet line: $line", ex)
-                        }
-                    }
-                    database.setTransactionSuccessful()
-                    true
-                } finally {
-                    try {
-                        statement?.close()
-                    } catch (_: Exception) {
-                    }
-                    database.endTransaction()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error refreshing comets", e)
-                false
-            }
-        }
+        val json = CatalogDatabase.parseCometLinesToJson(lines) { line, ex ->
+            Log.e(TAG, "Error parsing comet line: $line", ex)
+        } ?: return false
+        storage.putString(CatalogDatabase.COMETS_JSON_STORAGE_KEY, json)
+        return true
     }
 
     override fun searchObjects(
@@ -357,192 +289,81 @@ class CatalogDatabaseHelper(private val context: Context) :
         limit: Int,
         offset: Int
     ): List<CatalogObject> {
-        val results = mutableListOf<CatalogObject>()
-        val args = mutableListOf<String>()
-        var selection = "1=1"
+        val (sql, args) = CatalogDatabase.buildSearchQuerySql(
+            searchQuery = searchQuery,
+            catalogFilter = catalogFilter,
+            sortBy = sortBy,
+            magLimit = magLimit,
+            includeNullMagnitude = includeNullMagnitude,
+            typeFilters = typeFilters,
+            starFilter = starFilter,
+            visibilityFilter = visibilityFilter,
+            lat = lat,
+            lon = lon,
+            targetRa = targetRa,
+            targetDec = targetDec,
+            maxDistanceDegrees = maxDistanceDegrees,
+            limit = limit,
+            offset = offset,
+        )
 
-        if (searchQuery.isNotBlank()) {
-            val q = searchQuery.trim().lowercase()
-            val regex = Regex("^([a-z]+)\\s*(\\d+)?$")
-            val match = regex.matchEntire(q)
-
-            val catalogAliases = mapOf(
-                "messier" to "M", "m" to "M",
-                "caldwell" to "C", "c" to "C",
-                "collinder" to "Col", "col" to "Col", "cr" to "Col",
-                "ngc" to "NGC",
-                "ic" to "IC",
-                "herschel" to "H", "h" to "H",
-                "barnard" to "B", "b" to "B",
-                "sharpless" to "Sh2", "sh2" to "Sh2", "sh" to "Sh2",
-                "abell" to "Abl", "abl" to "Abl",
-                "arp" to "Arp"
-            )
-
-            val noSpaceQuery = searchQuery.replace(" ", "")
-
-            var clause =
-                "(catalog_label || ' ' || catalog_entry LIKE ? OR REPLACE(catalog_label || catalog_entry, ' ', '') LIKE ? OR common_name LIKE ? OR catalog_entry = ?)"
-            args.add("%$searchQuery%")
-            args.add("%$noSpaceQuery%")
-            args.add("%$searchQuery%")
-            args.add(searchQuery)
-
-            if (match != null) {
-                val prefix = match.groupValues[1]
-                val num = match.groupValues[2]
-                val label = catalogAliases[prefix]
-                if (label != null) {
-                    if (num.isNotEmpty()) {
-                        clause = "($clause OR (catalog_label = ? AND catalog_entry = ?))"
-                        args.add(label)
-                        args.add(num)
-                    } else {
-                        clause = "($clause OR catalog_label = ?)"
-                        args.add(label)
-                    }
-                }
-            }
-            selection += " AND $clause"
-        }
-
-        val radius = maxDistanceDegrees ?: if (catalogFilter == "Nearest Objects") 10.0 else null
-        if (radius != null && targetRa != null && targetDec != null) {
-            val proximityClause = CatalogDatabase.buildSphericalProximityClauseSql(
-                targetRa = targetRa,
-                targetDec = targetDec,
-                radiusDegrees = radius
-            )
-            if (proximityClause.isNotEmpty()) {
-                selection += " AND $proximityClause"
-            }
-        }
-
-        if (catalogFilter != null && catalogFilter != "All Objects" && catalogFilter != "Solar System" && catalogFilter != "Nearest Objects") {
-            selection += " AND catalog_label = ?"
-            args.add(catalogFilter)
-        }
-
-        if (magLimit != null && magLimit.isFinite()) {
-            selection += if (includeNullMagnitude) {
-                " AND (magnitude IS NULL OR magnitude <= $magLimit)"
-            } else {
-                " AND (magnitude IS NOT NULL AND magnitude <= $magLimit)"
-            }
-        }
-
-        if (typeFilters != null) {
-            if (typeFilters.isEmpty()) {
-                selection += " AND 0 = 1"
-            } else {
-                val placeholders = typeFilters.joinToString(",") { "?" }
-                selection += " AND object_type IN ($placeholders)"
-                args.addAll(typeFilters)
-            }
-        }
-
-        if (starFilter != null) {
-            selection += if (starFilter) {
-                " AND object_type LIKE '%Star%'"
-            } else {
-                " AND object_type NOT LIKE '%Star%'"
-            }
-        }
-
-        if (visibilityFilter == "Above Horizon" && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
-            val timeMs = System.currentTimeMillis()
-            val lst = AstrometryUtils.calculateLST(lon, timeMs)
-            val lstRad = Math.toRadians(lst)
-
-            val latRad = Math.toRadians(lat)
-            val sinLat = sin(latRad)
-            val cosLat = cos(latRad)
-
-            // RA in db is in degrees
-            // Dec in db is in degrees
-            val altCondition =
-                "(SIN(dec * ${Math.PI / 180.0}) * $sinLat + COS(dec * ${Math.PI / 180.0}) * $cosLat * COS($lstRad - ra * ${Math.PI / 180.0})) > 0"
-            selection += " AND $altCondition"
-        }
-
-        val priorityCase = CatalogDatabase.buildPriorityCaseSql()
-
-        val orderBy = when (sortBy) {
-            "distance" if targetRa != null && targetDec != null ->
-                CatalogDatabase.buildSphericalDistanceOrderSql(targetRa, targetDec)
-
-            "name" -> "(common_name IS NULL OR common_name = '') ASC, common_name ASC, priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
-            "brightness" -> "magnitude IS NULL ASC, magnitude ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
-            "priority" -> "priority ASC, magnitude IS NULL ASC, magnitude ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
-            "catalog ID" -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
-            else -> "priority ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC"
-        }
-
-        try {
+        return try {
             synchronized(dbLock) {
                 openDatabaseLocked()
                 val database = db ?: return emptyList()
-                val cursor = database.query(
-                    "catalog",
-                    arrayOf("*", "MIN($priorityCase) as priority"),
-                    selection,
-                    args.toTypedArray(),
-                    "ra, dec, object_type", // groupBy for deduplication!
-                    null,
-                    orderBy,
-                    "$offset, $limit"
-                )
-
-                cursor.use { c ->
-                    while (c.moveToNext()) {
-                        val id = c.getInt(c.getColumnIndexOrThrow("id"))
-                        val label = c.getString(c.getColumnIndexOrThrow("catalog_label"))
-                        val entry = c.getString(c.getColumnIndexOrThrow("catalog_entry"))
-                        val ra = c.getDouble(c.getColumnIndexOrThrow("ra"))
-                        val dec = c.getDouble(c.getColumnIndexOrThrow("dec"))
-                        val constel = c.getString(c.getColumnIndexOrThrow("constellation"))
-                        val type = c.getString(c.getColumnIndexOrThrow("object_type"))
-                        val cat = c.getString(c.getColumnIndexOrThrow("broad_category"))
-                        val magIdx = c.getColumnIndexOrThrow("magnitude")
-                        val mag = if (c.isNull(magIdx)) null else c.getDouble(magIdx)
-
-                        val sbIdx = c.getColumnIndexOrThrow("surface_brightness")
-                        val sb = if (c.isNull(sbIdx)) null else c.getDouble(sbIdx)
-
-                        val size = c.getString(c.getColumnIndexOrThrow("angular_size"))
-
-                        val commonName = c.getString(c.getColumnIndexOrThrow("common_name"))
-
-                        val desc = c.getString(c.getColumnIndexOrThrow("description"))
-                        val copyright = c.getString(c.getColumnIndexOrThrow("copyright"))
-
-                        results.add(
-                            CatalogObject(
-                                id,
-                                label,
-                                entry,
-                                ra,
-                                dec,
-                                constel,
-                                type,
-                                cat,
-                                mag,
-                                sb,
-                                size,
-                                commonName,
-                                desc,
-                                copyright
-                            )
-                        )
-                    }
+                database.rawQuery(sql, args.toTypedArray()).use { c ->
+                    readCatalogObjects(c)
                 }
             }
-
         } catch (e: Exception) {
             Log.e(TAG, "Error querying catalog", e)
-            return emptyList()
+            emptyList()
         }
+    }
 
+    override fun getCoLocatedObjects(obj: CatalogObject): List<CatalogObject> {
+        if (CatalogDatabase.isDynamicObject(obj)) return emptyList()
+
+        return try {
+            synchronized(dbLock) {
+                openDatabaseLocked()
+                val database = db ?: return emptyList()
+                database.rawQuery(
+                    CatalogDatabase.buildCoLocatedQuerySql(),
+                    arrayOf<Any>(obj.ra, obj.dec, obj.objectType, obj.id)
+                ).use { cursor ->
+                    readCatalogObjects(cursor)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error querying co-located objects", e)
+            emptyList()
+        }
+    }
+
+    private fun readCatalogObjects(c: Cursor): List<CatalogObject> {
+        val results = mutableListOf<CatalogObject>()
+        while (c.moveToNext()) {
+            results.add(
+                CatalogObject(
+                    id = c.getInt(0),
+                    catalogLabel = c.getString(1).orEmpty(),
+                    catalogEntry = c.getString(2).orEmpty(),
+                    ra = c.getDouble(3),
+                    dec = c.getDouble(4),
+                    constellation = c.getString(5),
+                    objectType = c.getString(6).orEmpty(),
+                    broadCategory = c.getString(7).orEmpty(),
+                    magnitude = if (c.isNull(8)) null else c.getDouble(8),
+                    surfaceBrightness = if (c.isNull(9)) null else c.getDouble(9),
+                    angularSize = c.getString(10),
+                    commonName = c.getString(11),
+                    description = c.getString(12),
+                    copyright = c.getString(13),
+                    distance = c.getString(14)
+                )
+            )
+        }
         return results
     }
 }
