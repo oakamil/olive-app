@@ -23,12 +23,15 @@ import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.set
 import kotlinx.cinterop.toKString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import platform.AVFoundation.AVAuthorizationStatusAuthorized
 import platform.AVFoundation.AVAuthorizationStatusNotDetermined
@@ -53,6 +56,7 @@ import platform.UIKit.UIApplicationOpenSettingsURLString
 import platform.UIKit.UIDevice
 import platform.UIKit.UIUserInterfaceIdiomPad
 import platform.UIKit.UIViewController
+import platform.posix.gethostname
 import kotlin.math.round
 
 @OptIn(ExperimentalForeignApi::class)
@@ -73,23 +77,36 @@ private fun hasInternalBackCamera(): Boolean = runCatching {
 }.getOrDefault(false)
 
 @OptIn(ExperimentalForeignApi::class)
-private fun getIosDeviceNetworkEndpoint(): String {
-    val ip = memScoped {
-        val buf = allocArray<ByteVar>(64)
-        olive_ios_get_local_ip(buf, 64u)
-        buf.toKString().ifEmpty { "127.0.0.1" }
+private fun getIosDeviceNetworkEndpoint(): String = memScoped {
+    val ipBuf = allocArray<ByteVar>(64)
+    olive_ios_get_local_ip(ipBuf, 64u)
+    val ip = ipBuf.toKString().ifEmpty { "127.0.0.1" }
+
+    val hostBuf = allocArray<ByteVar>(256)
+    val rawHost = if (gethostname(hostBuf, 255u) == 0) {
+        hostBuf[255] = 0
+        hostBuf.toKString().trim().ifEmpty { "localhost" }
+    } else {
+        "localhost"
     }
-    val rawHost = NSProcessInfo.processInfo.hostName
-    val host = if (rawHost.endsWith(".local")) rawHost else "$rawHost.local"
-    return "$host ($ip)"
+    val host = if (rawHost.equals("localhost", ignoreCase = true) ||
+        rawHost.endsWith(".local", ignoreCase = true)
+    ) {
+        rawHost
+    } else {
+        "$rawHost.local"
+    }
+    "$host ($ip)"
 }
 
-private fun refreshExternalCameraFormats(
+private suspend fun refreshExternalCameraFormats(
     engine: EngineBridge,
     viewModel: MainViewModel,
     settingsManager: SettingsManager
 ) {
-    val formatsJson = engine.getAvailableExternalCameraFormats()
+    val formatsJson = withContext(Dispatchers.IO) {
+        engine.getAvailableExternalCameraFormats()
+    }
     if (formatsJson.isNotEmpty() && formatsJson != "[]") {
         try {
             val list = mutableListOf<UvcFormat>()
@@ -128,15 +145,17 @@ private fun refreshExternalCameraFormats(
 fun MainViewController(): UIViewController = ComposeUIViewController {
     val storage = remember { NSUserDefaultsStorage() }
     val isPad = remember { UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad }
-    val hasInternalCamera = remember { hasInternalBackCamera() }
-    val capabilities = remember(isPad, hasInternalCamera) {
-        val version =
-            (NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String)
-                .orEmpty()
-        ApplePlatformCapabilities(
-            supportsUsbCamera = isPad,
-            hasInternalCamera = hasInternalCamera,
-            appVersion = version
+    val appVersion = remember {
+        (NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String)
+            .orEmpty()
+    }
+    var capabilities by remember {
+        mutableStateOf(
+            ApplePlatformCapabilities(
+                supportsUsbCamera = isPad,
+                hasInternalCamera = true,
+                appVersion = appVersion
+            )
         )
     }
     val engine = remember { IosEngineBridge() }
@@ -154,31 +173,108 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     }
 
     var currentScreen by remember { mutableStateOf("main") }
-    var isCameraConnected by remember { mutableStateOf(if (isPad) hasConnectedExternalCamera() else false) }
-    val initialCameraSelection = remember(capabilities) {
-        val target = if (isCameraConnected) "external" else settingsManager.cameraSelection
-        capabilities.resolveCameraSelection(target, isCameraConnected).also {
-            if (it != settingsManager.cameraSelection) {
-                settingsManager.cameraSelection = it
-            }
-        }
-    }
-    var activeCameraSelection by remember { mutableStateOf(initialCameraSelection) }
+    var isCameraConnected by remember { mutableStateOf(false) }
+    var initialDiscoveryCompleted by remember { mutableStateOf(false) }
+    var userSelectedCamera by remember { mutableStateOf(false) }
+    var activeCameraSelection by remember { mutableStateOf(settingsManager.cameraSelection) }
     var isStarting by remember { mutableStateOf(false) }
-    var isStopping by remember { mutableStateOf(false) }
-    var startupTimeoutJob by remember { mutableStateOf<Job?>(null) }
-    var detectedIpAddress by remember { mutableStateOf(getIosDeviceNetworkEndpoint()) }
+    var activeStopCount by remember { mutableStateOf(0) }
+    val isStopping = activeStopCount > 0
+    var isResolvingToggle by remember { mutableStateOf(false) }
+    val startupTimeoutJob = remember { mutableStateOf<Job?>(null) }
+    var detectedIpAddress by remember { mutableStateOf("") }
     var showLocationRequiredDialog by remember { mutableStateOf(false) }
     var showCameraPermissionDialog by remember { mutableStateOf(false) }
     var showLocationPermissionDialog by remember { mutableStateOf(false) }
     var pendingLocationRefresh by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+    val cameraDiscoveryMutex = remember { Mutex() }
+
+    fun updateCameraSelection(selection: String) {
+        if (activeCameraSelection != selection) {
+            activeCameraSelection = selection
+        }
+        if (settingsManager.cameraSelection != selection) {
+            settingsManager.cameraSelection = selection
+        }
+    }
+
+    fun clearStartupState() {
+        startupTimeoutJob.value?.cancel()
+        startupTimeoutJob.value = null
+        isStarting = false
+    }
+
+    suspend fun stopEngineUi() {
+        clearStartupState()
+        activeStopCount++
+        try {
+            viewModel.stopEngine()
+        } finally {
+            activeStopCount--
+        }
+    }
+
+    suspend fun syncCameraState(
+        autoSwitchExternalOnConnect: Boolean = false,
+        forceRefreshFormats: Boolean = false,
+        fromHotplug: Boolean = false
+    ): ApplePlatformCapabilities {
+        return cameraDiscoveryMutex.withLock {
+            val (hasInternal, hasExt) = withContext(Dispatchers.IO) {
+                hasInternalBackCamera() to if (isPad) hasConnectedExternalCamera() else false
+            }
+            val wasConnected = isCameraConnected
+            isCameraConnected = hasExt
+            initialDiscoveryCompleted = true
+
+            val updatedCapabilities = ApplePlatformCapabilities(
+                supportsUsbCamera = isPad,
+                hasInternalCamera = hasInternal,
+                appVersion = appVersion
+            )
+            capabilities = updatedCapabilities
+            if (hasExt) {
+                if (!wasConnected || forceRefreshFormats) {
+                    refreshExternalCameraFormats(engine, viewModel, settingsManager)
+                }
+                val canAutoSwitch =
+                    autoSwitchExternalOnConnect &&
+                            !isStarting &&
+                            !isStopping &&
+                            !viewModel.isEngineRunning &&
+                            (fromHotplug || !userSelectedCamera)
+                if (canAutoSwitch) {
+                    updateCameraSelection("external")
+                }
+            } else {
+                viewModel.availableUvcFormats = UvcFormat.FALLBACK_FORMATS
+                if (!isStarting && !isStopping && !viewModel.isEngineRunning) {
+                    updateCameraSelection(
+                        updatedCapabilities.resolveCameraSelection(activeCameraSelection, false)
+                    )
+                }
+            }
+            updatedCapabilities
+        }
+    }
+
+    suspend fun resolvedCapabilities(): ApplePlatformCapabilities =
+        if (initialDiscoveryCompleted) capabilities else syncCameraState()
 
     fun openAppSettings() {
         val url = NSURL.URLWithString(UIApplicationOpenSettingsURLString)
         if (url != null) {
-            UIApplication.sharedApplication.openURL(url)
+            UIApplication.sharedApplication.openURL(
+                url = url,
+                options = emptyMap<Any?, Any?>(),
+                completionHandler = null
+            )
         }
+    }
+
+    LaunchedEffect(isPad) {
+        syncCameraState(autoSwitchExternalOnConnect = true)
     }
 
     DisposableEffect(isPad) {
@@ -190,14 +286,12 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             `object` = null,
             queue = NSOperationQueue.mainQueue
         ) { _ ->
-            val hasExt = hasConnectedExternalCamera()
-            isCameraConnected = hasExt
-            if (hasExt) {
-                refreshExternalCameraFormats(engine, viewModel, settingsManager)
-                if (activeCameraSelection != "external") {
-                    activeCameraSelection = "external"
-                    settingsManager.cameraSelection = "external"
-                }
+            coroutineScope.launch {
+                syncCameraState(
+                    autoSwitchExternalOnConnect = true,
+                    forceRefreshFormats = true,
+                    fromHotplug = true
+                )
             }
         }
 
@@ -206,21 +300,20 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
             `object` = null,
             queue = NSOperationQueue.mainQueue
         ) { _ ->
-            val hasExt = hasConnectedExternalCamera()
-            isCameraConnected = hasExt
-            if (!hasExt) {
-                viewModel.availableUvcFormats = UvcFormat.FALLBACK_FORMATS
-                val resolved = capabilities.resolveCameraSelection(activeCameraSelection, false)
-                if (resolved != activeCameraSelection) {
-                    activeCameraSelection = resolved
-                    settingsManager.cameraSelection = resolved
-                    currentScreen = "main"
-                    if (viewModel.isEngineRunning) {
-                        coroutineScope.launch {
-                            withContext(Dispatchers.IO) {
-                                viewModel.stopEngineSync()
-                            }
-                        }
+            coroutineScope.launch {
+                val updatedCapabilities = syncCameraState()
+                if (!isCameraConnected) {
+                    val shouldStopExternal =
+                        viewModel.engineMode == MainViewModel.EngineMode.UVC ||
+                                (isStarting && activeCameraSelection == "external")
+                    if (shouldStopExternal) {
+                        currentScreen = "main"
+                        stopEngineUi()
+                    }
+                    if (!isCameraConnected) {
+                        updateCameraSelection(
+                            updatedCapabilities.resolveCameraSelection(activeCameraSelection, false)
+                        )
                     }
                 }
             }
@@ -229,12 +322,6 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         onDispose {
             nc.removeObserver(connObs)
             nc.removeObserver(disconnObs)
-        }
-    }
-
-    LaunchedEffect(isCameraConnected) {
-        if (isCameraConnected) {
-            refreshExternalCameraFormats(engine, viewModel, settingsManager)
         }
     }
 
@@ -277,63 +364,52 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
 
     LaunchedEffect(viewModel.isEngineRunning) {
         if (viewModel.isEngineRunning) {
-            startupTimeoutJob?.cancel()
-            startupTimeoutJob = null
-            isStarting = false
+            clearStartupState()
             while (viewModel.isEngineRunning) {
-                detectedIpAddress = getIosDeviceNetworkEndpoint()
+                detectedIpAddress = withContext(Dispatchers.IO) { getIosDeviceNetworkEndpoint() }
                 delay(10000L)
             }
         } else {
-            isStarting = false
-            detectedIpAddress = getIosDeviceNetworkEndpoint()
+            detectedIpAddress = withContext(Dispatchers.IO) { getIosDeviceNetworkEndpoint() }
         }
     }
 
     val startEngineAction = {
         if (!isStarting && !isStopping) {
             isStarting = true
-            startupTimeoutJob?.cancel()
-            startupTimeoutJob = coroutineScope.launch {
+            startupTimeoutJob.value?.cancel()
+            startupTimeoutJob.value = coroutineScope.launch {
                 delay(10000L)
                 if (isStarting && !viewModel.isEngineRunning) {
-                    isStarting = false
-                    withContext(Dispatchers.IO) {
-                        viewModel.stopEngineSync()
-                    }
+                    startupTimeoutJob.value = null
+                    stopEngineUi()
                 }
             }
-            val effectiveSelection =
-                capabilities.resolveCameraSelection(activeCameraSelection, isCameraConnected)
-            if (effectiveSelection != activeCameraSelection) {
-                activeCameraSelection = effectiveSelection
-                settingsManager.cameraSelection = effectiveSelection
-            }
-            val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
-            val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
-            if (effectiveSelection == "external") {
-                viewModel.startUvcEngine(
-                    lat = lat,
-                    lon = lon,
-                    onFailed = {
-                        startupTimeoutJob?.cancel()
-                        startupTimeoutJob = null
-                        isStarting = false
-                    }
+            coroutineScope.launch {
+                val caps = resolvedCapabilities()
+                if (!isStarting) return@launch
+
+                updateCameraSelection(
+                    caps.resolveCameraSelection(activeCameraSelection, isCameraConnected)
                 )
-            } else {
-                val cameraId =
-                    if (effectiveSelection == "demo") "demo" else settingsManager.internalCameraId
-                viewModel.executeStartEngine(
-                    cameraId = cameraId,
-                    lat = lat,
-                    lon = lon,
-                    onFailed = {
-                        startupTimeoutJob?.cancel()
-                        startupTimeoutJob = null
-                        isStarting = false
-                    }
-                )
+                val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
+                val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
+                if (activeCameraSelection == "external") {
+                    viewModel.startUvcEngine(
+                        lat = lat,
+                        lon = lon,
+                        onFailed = { clearStartupState() }
+                    )
+                } else {
+                    val cameraId =
+                        if (activeCameraSelection == "demo") "demo" else settingsManager.internalCameraId
+                    viewModel.executeStartEngine(
+                        cameraId = cameraId,
+                        lat = lat,
+                        lon = lon,
+                        onFailed = { clearStartupState() }
+                    )
+                }
             }
         }
     }
@@ -397,68 +473,73 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         isStopping = isStopping,
                         isStarting = isStarting,
                         detectedIpAddress = detectedIpAddress,
-                        onCameraSelectionChanged = { activeCameraSelection = it },
+                        onCameraSelectionChanged = {
+                            userSelectedCamera = true
+                            activeCameraSelection = it
+                        },
                         onNavigateToTuner = {
                             @Suppress("AssignedValueIsNeverRead")
                             currentScreen = "tuner"
                         },
                         onEnterPipMode = { },
                         onToggleEngine = {
-                            if (isStarting || isStopping) return@MainScreen
+                            if (isStarting || isStopping || isResolvingToggle) return@MainScreen
 
                             if (viewModel.isEngineRunning) {
-                                startupTimeoutJob?.cancel()
-                                startupTimeoutJob = null
-                                isStopping = true
-                                coroutineScope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        viewModel.stopEngineSync()
-                                    }
-                                    isStopping = false
-                                }
+                                coroutineScope.launch { stopEngineUi() }
                             } else {
-                                val resolved = capabilities.resolveCameraSelection(
-                                    activeCameraSelection,
-                                    isCameraConnected
-                                )
-                                if (resolved != activeCameraSelection) {
-                                    activeCameraSelection = resolved
-                                    settingsManager.cameraSelection = resolved
-                                }
-                                if (!viewModel.hasValidLocation && activeCameraSelection != "demo") {
-                                    showLocationRequiredDialog = true
-                                    return@MainScreen
-                                }
-                                if (activeCameraSelection != "demo") {
-                                    val authStatus =
-                                        AVCaptureDevice.authorizationStatusForMediaType(
-                                            AVMediaTypeVideo
-                                        )
-                                    when (authStatus) {
-                                        AVAuthorizationStatusAuthorized -> {
-                                            startEngineAction()
+                                userSelectedCamera = true
+                                isResolvingToggle = true
+                                coroutineScope.launch {
+                                    try {
+                                        val caps = resolvedCapabilities()
+                                        if (isStarting || isStopping || viewModel.isEngineRunning) {
+                                            return@launch
                                         }
+                                        updateCameraSelection(
+                                            caps.resolveCameraSelection(
+                                                activeCameraSelection,
+                                                isCameraConnected
+                                            )
+                                        )
+                                        if (!viewModel.hasValidLocation && activeCameraSelection != "demo") {
+                                            showLocationRequiredDialog = true
+                                            return@launch
+                                        }
+                                        if (activeCameraSelection != "demo") {
+                                            val authStatus =
+                                                AVCaptureDevice.authorizationStatusForMediaType(
+                                                    AVMediaTypeVideo
+                                                )
+                                            when (authStatus) {
+                                                AVAuthorizationStatusAuthorized -> {
+                                                    startEngineAction()
+                                                }
 
-                                        AVAuthorizationStatusNotDetermined -> {
-                                            AVCaptureDevice.requestAccessForMediaType(
-                                                AVMediaTypeVideo
-                                            ) { granted ->
-                                                coroutineScope.launch {
-                                                    if (granted) {
-                                                        startEngineAction()
-                                                    } else {
-                                                        showCameraPermissionDialog = true
+                                                AVAuthorizationStatusNotDetermined -> {
+                                                    AVCaptureDevice.requestAccessForMediaType(
+                                                        AVMediaTypeVideo
+                                                    ) { granted ->
+                                                        coroutineScope.launch {
+                                                            if (granted) {
+                                                                startEngineAction()
+                                                            } else {
+                                                                showCameraPermissionDialog = true
+                                                            }
+                                                        }
                                                     }
                                                 }
-                                            }
-                                        }
 
-                                        else -> {
-                                            showCameraPermissionDialog = true
+                                                else -> {
+                                                    showCameraPermissionDialog = true
+                                                }
+                                            }
+                                        } else {
+                                            startEngineAction()
                                         }
+                                    } finally {
+                                        isResolvingToggle = false
                                     }
-                                } else {
-                                    startEngineAction()
                                 }
                             }
                         },
@@ -555,11 +636,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         confirmButtonText = stringResource(Res.string.btn_restart),
                         onConfirm = {
                             coroutineScope.launch {
-                                isStopping = true
-                                withContext(Dispatchers.IO) {
-                                    viewModel.stopEngineSync()
-                                }
-                                isStopping = false
+                                stopEngineUi()
                                 startEngineAction()
                             }
                         },

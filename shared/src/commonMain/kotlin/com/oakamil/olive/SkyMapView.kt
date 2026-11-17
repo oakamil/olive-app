@@ -296,11 +296,16 @@ fun SkyMapView(
     LaunchedEffect(lat, lon, hasValidLocation, viewModel.cometsRefreshVersion) {
         if (hasValidLocation) {
             while (isActive) {
-                withContext(Dispatchers.IO) {
-                    solPlanets = viewModel.getPlanets()
-                    solComets = viewModel.getComets()
-                    solAsteroids = viewModel.getAsteroids()
+                val (planets, comets, asteroids) = withContext(Dispatchers.IO) {
+                    Triple(
+                        viewModel.getPlanets(lat, lon),
+                        viewModel.getComets(lat, lon),
+                        viewModel.getAsteroids(lat, lon)
+                    )
                 }
+                solPlanets = planets
+                solComets = comets
+                solAsteroids = asteroids
                 delay(300_000)
             }
         }
@@ -351,14 +356,14 @@ fun SkyMapView(
             if (solarSystemMatch != null) {
                 targetObject = solarSystemMatch
             } else {
-                withContext(Dispatchers.IO) {
+                targetObject = withContext(Dispatchers.IO) {
                     val obj = viewModel.catalogDb.searchObjects(
                         targetRa = targetRa,
                         targetDec = targetDec,
                         limit = 1,
                         sortBy = "distance"
                     ).firstOrNull()
-                    targetObject = if (obj != null && AstrometryUtils.angularDistance(
+                    if (obj != null && AstrometryUtils.angularDistance(
                             obj.ra,
                             obj.dec,
                             targetRa,
@@ -458,8 +463,8 @@ fun SkyMapView(
     var tier1Stars by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     var tier1Dso by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            tier1Stars = viewModel.catalogDb.searchObjects(
+        val (stars, dso) = withContext(Dispatchers.IO) {
+            val loadedStars = viewModel.catalogDb.searchObjects(
                 starFilter = true,
                 magLimit = 5.0,
                 visibilityFilter = "Any",
@@ -478,8 +483,10 @@ fun SkyMapView(
                 sortBy = "brightness",
                 limit = 50
             )
-            tier1Dso = (messier + brightDso).distinctBy { it.id }
+            Pair(loadedStars, (messier + brightDso).distinctBy { it.id })
         }
+        tier1Stars = stars
+        tier1Dso = dso
     }
 
     // Tier 2 dynamic background query for dense deep sky objects and stars when zoomed in
