@@ -443,7 +443,7 @@ class HiPSRenderState {
         private const val BELOW_HORIZON_RAMP_SIN = 0.07 // ~4 deg smooth transition below horizon
         private const val BELOW_HORIZON_DIM_FACTOR = 0.22f
 
-        // Day Vision: subtract DSS2 sky-fog floor (~7/255) with gentle contrast lift so background blends over deep navy
+        // Day Vision: clamp normalized sky-fog residual (~4/255 + JPEG noise) with gentle contrast lift over deep navy
         private val DAY_VISION_FILTER = ColorFilter.colorMatrix(
             ColorMatrix(
                 floatArrayOf(
@@ -455,7 +455,7 @@ class HiPSRenderState {
             )
         )
 
-        // Night Vision: Rec.709 pure-red luminance boost with DSS2 plate-fog toe (~7/255) removed to preserve OLED blacks
+        // Night Vision: Rec.709 pure-red luminance boost clamping normalized sky-fog residual (~4/255) to preserve OLED blacks
         private val NIGHT_VISION_FILTER = ColorFilter.colorMatrix(
             ColorMatrix(
                 floatArrayOf(

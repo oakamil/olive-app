@@ -1,6 +1,6 @@
 package com.oakamil.olive
 
-@Suppress("unused")
+@Suppress("unused", "EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 expect object Log {
     fun v(tag: String, msg: String)
     fun d(tag: String, msg: String)

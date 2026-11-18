@@ -1,6 +1,6 @@
 package com.oakamil.olive
 
-@Suppress("unused")
+@Suppress("unused", "EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 actual object Log {
     actual fun v(tag: String, msg: String) {
         android.util.Log.v(tag, msg)

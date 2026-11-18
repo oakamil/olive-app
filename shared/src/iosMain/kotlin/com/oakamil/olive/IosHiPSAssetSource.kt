@@ -4,13 +4,18 @@
 package com.oakamil.olive
 
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asComposeImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.suspendCancellableCoroutine
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorType
 import org.jetbrains.skia.Image
+import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.impl.use
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSFileManager
@@ -86,7 +91,33 @@ class IosHiPSAssetSource(
         if (bytes.isEmpty()) return null
         return try {
             Image.makeFromEncoded(bytes).use { skImage ->
-                skImage.toComposeImageBitmap()
+                val w = skImage.width
+                val h = skImage.height
+                if (w <= 0 || h <= 0) return null
+                if (w < HiPSTileNormalizer.MIN_DIM || h < HiPSTileNormalizer.MIN_DIM) {
+                    return skImage.toComposeImageBitmap()
+                }
+                val rowBytesLong = w.toLong() * 4L
+                if (rowBytesLong * h.toLong() > Int.MAX_VALUE.toLong()) {
+                    return skImage.toComposeImageBitmap()
+                }
+                val rowBytes = rowBytesLong.toInt()
+                val alphaType =
+                    if (skImage.isOpaque) ColorAlphaType.OPAQUE else ColorAlphaType.UNPREMUL
+                val info = ImageInfo(w, h, ColorType.RGBA_8888, alphaType)
+                val pixels = Bitmap().use { tempBmp ->
+                    if (!tempBmp.allocPixels(info, rowBytes) || !skImage.readPixels(tempBmp)) {
+                        return skImage.toComposeImageBitmap()
+                    }
+                    tempBmp.readPixels(info, rowBytes) ?: return skImage.toComposeImageBitmap()
+                }
+                HiPSTileNormalizer.normalizeRgba(pixels, w, h)
+                val skiaBitmap = Bitmap()
+                if (!skiaBitmap.installPixels(info, pixels, rowBytes)) {
+                    return skImage.toComposeImageBitmap()
+                }
+                skiaBitmap.setImmutable()
+                skiaBitmap.asComposeImageBitmap()
             }
         } catch (e: Exception) {
             Log.w("HiPS", "Failed decoding tile on iOS", e)
