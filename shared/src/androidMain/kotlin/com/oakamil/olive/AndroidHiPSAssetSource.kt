@@ -154,6 +154,10 @@ class AndroidHiPSLocalBackend(
     private val packFile = File(hipsDir, HiPSLocalBackend.PACK_FILE_NAME)
     private val packTempFile = File(hipsDir, HiPSLocalBackend.TEMP_PACK_NAME)
     private val stagingDir = File(hipsDir, HiPSLocalBackend.STAGING_DIR_NAME)
+    private val hqDir = File(hipsDir, HiPSLocalBackend.HQ_DIR_NAME)
+    private val hqDataFile = File(hqDir, HiPSLocalBackend.HQ_DATA_FILE_NAME)
+    private val hqIndexFile = File(hqDir, HiPSLocalBackend.HQ_INDEX_FILE_NAME)
+    private val hqTempIndexFile = File(hqDir, HiPSLocalBackend.HQ_TEMP_INDEX_NAME)
 
     private fun stagedFile(globalIdx: Int): File = File(stagingDir, "$globalIdx.jpg")
 
@@ -326,6 +330,81 @@ class AndroidHiPSLocalBackend(
         } catch (_: Exception) {
             connection?.disconnect()
             null
+        }
+    }
+
+    override fun hqDataLengthBytes(): Long = if (hqDataFile.isFile) hqDataFile.length() else 0L
+
+    override fun hqStorageSizeBytes(): Long {
+        var total = 0L
+        if (hqDataFile.isFile) total += hqDataFile.length()
+        if (hqIndexFile.isFile) total += hqIndexFile.length()
+        return total
+    }
+
+    override fun readHqIndexBytes(): ByteArray? {
+        if (!hqIndexFile.isFile) return null
+        return try {
+            hqIndexFile.readBytes()
+        } catch (e: Exception) {
+            Log.w("HiPS", "Failed reading HQ index on Android", e)
+            null
+        }
+    }
+
+    override fun openHqAssetSource(): HiPSAssetSource = AndroidHiPSAssetSource(hqDataFile)
+
+    override fun appendHqBatch(
+        expectedDataEnd: Long,
+        payloads: List<ByteArray>,
+        newIndexBytes: ByteArray
+    ): Boolean {
+        if (expectedDataEnd < 0L || newIndexBytes.isEmpty()) return false
+        return try {
+            if (!hqDir.exists()) hqDir.mkdirs()
+            if (hqTempIndexFile.exists()) hqTempIndexFile.delete()
+            if (expectedDataEnd > 0L && !hqDataFile.isFile) return false
+
+            RandomAccessFile(hqDataFile, "rw").use { raf ->
+                val len = raf.length()
+                if (len < expectedDataEnd) return false
+                if (len > expectedDataEnd) {
+                    raf.setLength(expectedDataEnd)
+                }
+                raf.seek(expectedDataEnd)
+                for (payload in payloads) {
+                    raf.write(payload)
+                }
+                raf.fd.sync()
+            }
+
+            FileOutputStream(hqTempIndexFile).use { out ->
+                out.write(newIndexBytes)
+                out.flush()
+                out.fd.sync()
+            }
+            if (!hqTempIndexFile.renameTo(hqIndexFile)) {
+                if (hqIndexFile.exists()) hqIndexFile.delete()
+                if (!hqTempIndexFile.renameTo(hqIndexFile)) {
+                    hqTempIndexFile.delete()
+                    return false
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.w("HiPS", "Failed appending HQ batch on Android", e)
+            hqTempIndexFile.delete()
+            false
+        }
+    }
+
+    override fun deleteHqStorage(): Boolean {
+        return try {
+            if (hqDir.exists()) hqDir.deleteRecursively()
+            !hqDir.exists()
+        } catch (e: Exception) {
+            Log.w("HiPS", "Failed deleting HQ storage on Android", e)
+            false
         }
     }
 }

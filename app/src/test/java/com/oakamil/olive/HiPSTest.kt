@@ -3,13 +3,19 @@
 
 package com.oakamil.olive
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.io.FileOutputStream
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.PI
@@ -57,14 +63,15 @@ class HiPSTest {
     @Test
     fun testHealpixRoundTripAllOrders() {
         val out = IntArray(3)
-        for (order in Healpix.MIN_ORDER..Healpix.MAX_ORDER) {
+        for (order in Healpix.MIN_ORDER..Healpix.HQ_MAX_ORDER) {
             val nside = Healpix.nsideForOrder(order)
             val invNside = 1.0 / nside.toDouble()
             val npix = Healpix.tileCountForOrder(order)
             val step = when {
                 order <= 2 -> 1
                 order == 3 -> 7
-                else -> 29
+                order == 4 -> 29
+                else -> (npix / 251).coerceAtLeast(1)
             }
             var ipix = 0
             while (ipix < npix) {
@@ -417,7 +424,16 @@ class HiPSTest {
         }
     }
 
-    private fun setRgba(rgba: ByteArray, width: Int, x: Int, y: Int, r: Int, g: Int, b: Int, a: Int = 255) {
+    private fun setRgba(
+        rgba: ByteArray,
+        width: Int,
+        x: Int,
+        y: Int,
+        r: Int,
+        g: Int,
+        b: Int,
+        a: Int = 255
+    ) {
         val p = (y * width + x) * 4
         rgba[p] = r.toByte()
         rgba[p + 1] = g.toByte()
@@ -507,9 +523,33 @@ class HiPSTest {
         for (y in 0 until h) {
             for (x in 0 until w) {
                 when {
-                    x < 32 -> setRgba(rgba, w, x, y, 26, 17, 7)      // Warm Milky Way dust (R - B >= 10)
-                    x < 64 -> setRgba(rgba, w, x, y, 44, 114, 180)   // Bright reflection nebula (max >= 36)
-                    else -> setRgba(rgba, w, x, y, 10, 14, 20)       // Cool hazy plate (sub = 6, 10, 16)
+                    x < 32 -> setRgba(
+                        rgba,
+                        w,
+                        x,
+                        y,
+                        26,
+                        17,
+                        7
+                    )      // Warm Milky Way dust (R - B >= 10)
+                    x < 64 -> setRgba(
+                        rgba,
+                        w,
+                        x,
+                        y,
+                        44,
+                        114,
+                        180
+                    )   // Bright reflection nebula (max >= 36)
+                    else -> setRgba(
+                        rgba,
+                        w,
+                        x,
+                        y,
+                        10,
+                        14,
+                        20
+                    )       // Cool hazy plate (sub = 6, 10, 16)
                 }
             }
         }
@@ -595,4 +635,526 @@ class HiPSTest {
         HiPSTileNormalizer.normalizeRgba(overflowGuard, 32768, 32768)
         assertEquals(20, overflowGuard[0].toInt() and 0xFF)
     }
+
+    private fun sampleObj(
+        id: Int = 1,
+        label: String = "M",
+        entry: String = "57",
+        ra: Double = 283.396,
+        dec: Double = 33.029,
+        type: String = "Planetary Nebula",
+        size: String? = "1.4"
+    ) = CatalogObject(
+        id = id,
+        catalogLabel = label,
+        catalogEntry = entry,
+        ra = ra,
+        dec = dec,
+        constellation = "Lyr",
+        objectType = type,
+        broadCategory = "nebula",
+        magnitude = 8.8,
+        surfaceBrightness = null,
+        angularSize = size,
+        commonName = null,
+        description = null,
+        copyright = null
+    )
+
+    @Test
+    fun testHqTileKeyPackingObjectPlannerAndOrder8Hysteresis() {
+        for (order in 0..Healpix.HQ_MAX_ORDER) {
+            val maxIpix = Healpix.tileCountForOrder(order) - 1
+            for (ipix in intArrayOf(0, maxIpix / 2, maxIpix)) {
+                val packed = Healpix.packTileKey(order, ipix)
+                assertEquals(order, Healpix.tileKeyOrder(packed))
+                assertEquals(ipix, Healpix.tileKeyIpix(packed))
+            }
+        }
+
+        assertTrue(HiPSObjectPlanner.isEligibleObject(sampleObj(type = "Galaxy")))
+        assertTrue(HiPSObjectPlanner.isEligibleObject(sampleObj(type = "Dark Nebula")))
+        assertTrue(HiPSObjectPlanner.isEligibleObject(sampleObj(type = "Asterism", size = "3.1°")))
+        assertFalse(HiPSObjectPlanner.isEligibleObject(sampleObj(type = "Star")))
+        assertFalse(HiPSObjectPlanner.isEligibleObject(sampleObj(type = "Multiple Star")))
+        assertFalse(HiPSObjectPlanner.isEligibleObject(sampleObj(type = "Unknown")))
+        assertFalse(
+            HiPSObjectPlanner.isEligibleObject(
+                sampleObj(
+                    id = -1,
+                    label = "Planet",
+                    type = "Planet"
+                )
+            )
+        )
+
+        assertTrue(HiPSObjectPlanner.isEligibleSubCatalog("M"))
+        assertTrue(HiPSObjectPlanner.isEligibleSubCatalog("SaA"))
+        assertTrue(HiPSObjectPlanner.isEligibleSubCatalog("NGC"))
+        assertFalse(HiPSObjectPlanner.isEligibleSubCatalog("Str"))
+        assertFalse(HiPSObjectPlanner.isEligibleSubCatalog("SaM"))
+        assertFalse(HiPSObjectPlanner.isEligibleSubCatalog(null))
+
+        assertEquals(189.1, HiPSObjectPlanner.parseExtentArcmin("189.1x61.7")!!, 1e-6)
+        assertEquals(186.0, HiPSObjectPlanner.parseExtentArcmin("3.1°")!!, 1e-6)
+        assertEquals(0.5, HiPSObjectPlanner.parseExtentArcmin("30\"x20\"")!!, 1e-6)
+
+        // Dynamic order mapping across scales (including 3.1° asterism -> Order 3)
+        assertEquals(8, HiPSObjectPlanner.selectOrderAndFovDeg(1.4).first)    // M57
+        assertEquals(7, HiPSObjectPlanner.selectOrderAndFovDeg(8.0).first)    // M27
+        assertEquals(4, HiPSObjectPlanner.selectOrderAndFovDeg(85.0).first)   // M42
+        assertEquals(3, HiPSObjectPlanner.selectOrderAndFovDeg(186.0).first)  // 3.1° asterism
+        assertEquals(0, HiPSObjectPlanner.selectOrderAndFovDeg(1500.0).first) // 25° Big Dipper
+
+        // Order <= 4 plans require 0 downloads when the O0-O4 base pack is already present
+        val m31Plan = HiPSObjectPlanner.planCutout(10.6847, 41.2687, 189.1)
+        assertEquals(3, m31Plan.order)
+        assertTrue(m31Plan.requiredKeys.isNotEmpty())
+        assertEquals(
+            0,
+            HiPSObjectPlanner.filterMissingKeys(
+                m31Plan.requiredKeys,
+                isBasePackAvailable = true,
+                hqIndex = HiPSHqIndex.EMPTY
+            ).size
+        )
+        assertEquals(
+            m31Plan.requiredKeys.size,
+            HiPSObjectPlanner.filterMissingKeys(
+                m31Plan.requiredKeys,
+                isBasePackAvailable = false,
+                hqIndex = HiPSHqIndex.EMPTY
+            ).size
+        )
+
+        // Hysteresis activates HQ (> Order 4) right past Order 4 native FOV (< 9.0° and < 26"/px)
+        assertEquals(5, HiPSTileManager.computeNextOrderWithHysteresis(4, 24.5, 8.2, maxOrder = 8))
+        assertEquals(5, HiPSTileManager.computeNextOrderWithHysteresis(5, 28.0, 9.8, maxOrder = 8))
+        assertEquals(4, HiPSTileManager.computeNextOrderWithHysteresis(5, 31.0, 11.0, maxOrder = 8))
+        assertEquals(6, HiPSTileManager.computeNextOrderWithHysteresis(5, 9.0, 2.8, maxOrder = 8))
+        assertEquals(7, HiPSTileManager.computeNextOrderWithHysteresis(6, 4.5, 1.4, maxOrder = 8))
+        assertEquals(
+            8,
+            HiPSTileManager.computeNextOrderWithHysteresis(
+                4,
+                1.67,
+                0.5,
+                maxOrder = Healpix.HQ_MAX_ORDER
+            )
+        )
+        assertEquals(
+            4,
+            HiPSTileManager.computeNextOrderWithHysteresis(
+                4,
+                1.67,
+                0.5,
+                maxOrder = Healpix.MAX_ORDER
+            )
+        )
+
+        // +1 HQ lookahead maps 0..4 -> 0..4, 5 -> 6, 6 -> 7, 7 -> 8, 8 -> 8
+        for (ord in 0..Healpix.MAX_ORDER) {
+            assertEquals(ord, HiPSTileManager.effectiveHqOrder(ord))
+        }
+        assertEquals(6, HiPSTileManager.effectiveHqOrder(5))
+        assertEquals(7, HiPSTileManager.effectiveHqOrder(6))
+        assertEquals(8, HiPSTileManager.effectiveHqOrder(7))
+        assertEquals(8, HiPSTileManager.effectiveHqOrder(8))
+
+        // Nested multi-order HQ tiles under one O4 base tile respect +1 lookahead ceilings
+        val ipix4 = 42
+        val ipix6 = (ipix4 shl 4) + 3
+        val ipix8 = (ipix6 shl 4) + 5
+        val keyO6 = Healpix.packTileKey(6, ipix6)
+        val keyO8 = Healpix.packTileKey(8, ipix8)
+        val nestedIdx = HiPSHqIndex.prepareAppend(
+            HiPSHqIndex.EMPTY,
+            listOf(keyO8 to ByteArray(16) { 2 }, keyO6 to ByteArray(16) { 1 })
+        )!!.updatedIndex
+
+        fun collectHqUnderO4(ceilingOrder: Int): List<Int> {
+            val found = mutableListOf<Int>()
+            for (childOrder in (Healpix.MAX_ORDER + 1)..ceilingOrder) {
+                val shift = 2 * (childOrder - Healpix.MAX_ORDER)
+                val minKey = Healpix.packTileKey(childOrder, ipix4 shl shift)
+                val maxKey = Healpix.packTileKey(childOrder, ((ipix4 + 1) shl shift) - 1)
+                nestedIdx.forEachKeyInRange(minKey, maxKey) { found.add(it) }
+            }
+            return found
+        }
+        assertEquals(listOf(keyO6), collectHqUnderO4(HiPSTileManager.effectiveHqOrder(5)))
+        assertEquals(listOf(keyO6, keyO8), collectHqUnderO4(HiPSTileManager.effectiveHqOrder(7)))
+
+        // Wide Order 0 preview (55° FOV on 550px box) steps cleanly through Orders 1..6 while zooming in
+        var previewOrder = 0
+        val visitedOrders = mutableListOf<Int>()
+        for (zoom in floatArrayOf(1.1f, 2.2f, 4.5f, 9.0f, 18.0f, 30.0f)) {
+            val fov = 55.0 / zoom
+            val arcsecPx = (fov * 3600.0) / 550.0
+            previewOrder = HiPSTileManager.computeNextOrderWithHysteresis(
+                previewOrder,
+                arcsecPx,
+                fov,
+                maxOrder = Healpix.HQ_MAX_ORDER
+            )
+            visitedOrders.add(previewOrder)
+        }
+        assertEquals(listOf(1, 2, 3, 4, 5, 6), visitedOrders)
+
+        // Calibrated HQ tile byte estimates reflect empirical ESA DSSColor DSO tile sizes (>100 KB/tile)
+        for (hqOrd in 5..8) {
+            val singleTileBytes = HiPSDownloadManager.estimatedTilesBytes(
+                intArrayOf(Healpix.packTileKey(hqOrd, 0))
+            )
+            assertTrue(
+                "Expected Order $hqOrd estimate > 100 KB, got $singleTileBytes",
+                singleTileBytes > 100_000L
+            )
+        }
+
+        // Co-located size fallback and bulk catalog planner parity
+        val unsizedArp = sampleObj(
+            id = 10,
+            label = "Arp",
+            entry = "85",
+            ra = 202.47,
+            dec = 47.20,
+            type = "Galaxy",
+            size = null
+        )
+        val sizedNgc = sampleObj(
+            id = 11,
+            label = "NGC",
+            entry = "5194",
+            ra = 202.47,
+            dec = 47.20,
+            type = "Galaxy",
+            size = "11.2x6.9"
+        )
+        val starRow = sampleObj(
+            id = 12,
+            label = "Str",
+            entry = "1",
+            ra = 202.47,
+            dec = 47.20,
+            type = "Star",
+            size = null
+        )
+        assertEquals(
+            11.2,
+            HiPSObjectPlanner.resolveMajorAxisArcmin(unsizedArp, listOf(sizedNgc)),
+            1e-6
+        )
+        assertEquals(1.5, HiPSObjectPlanner.resolveMajorAxisArcmin(unsizedArp, emptyList()), 1e-6)
+
+        val singlePlan = HiPSObjectPlanner.planCutout(202.47, 47.20, 11.2)
+        val bulkKeys = HiPSObjectPlanner.planMissingForCatalog(
+            objects = listOf(unsizedArp, starRow),
+            isBasePackAvailable = true,
+            hqIndex = HiPSHqIndex.EMPTY,
+            coLocatedLookup = { listOf(sizedNgc) }
+        )
+        assertArrayEquals(singlePlan.requiredKeys, bulkKeys)
+
+        // Poles (dec = ±90°) and RA 0/360 wrap + 360° Zenith-up viewport corner coverage
+        for ((ra, dec) in listOf(0.01 to 22.01, 359.98 to -45.0, 120.0 to 90.0, 240.0 to -90.0)) {
+            val plan = HiPSObjectPlanner.planCutout(ra, dec, 12.0)
+            assertTrue(plan.requiredKeys.isNotEmpty())
+            val keySet = plan.requiredKeys.toSet()
+            for (lst in listOf(0.0, 73.0, 185.0, 291.0)) {
+                val (az0, alt0) = AstrometryUtils.raDecToAltAz(ra, dec, 37.7, lst)
+                for (zoom in floatArrayOf(1f, 2.5f, 4f)) {
+                    val fovNow = plan.baseFovDeg / zoom.toDouble()
+                    val maxPan = plan.baseFovDeg * (0.5 * (1.0 - 1.0 / zoom.toDouble()) + 0.08)
+                    val (panAz, panAlt) = panAndClampZenithUp(
+                        curAzDeg = az0,
+                        curAltDeg = alt0,
+                        objAzDeg = az0,
+                        objAltDeg = alt0,
+                        deltaX = 80f,
+                        deltaY = -60f,
+                        fovDeg = fovNow,
+                        minDimPx = 400f,
+                        maxPanDeg = maxPan
+                    )
+                    val (panRa, panDec) = AstrometryUtils.altAzToRaDec(panAz, panAlt, 37.7, lst)
+                    for ((cx, cy) in SkyMapProjection.computeCameraFovCorners(
+                        panRa,
+                        panDec,
+                        fovNow,
+                        0.0
+                    )) {
+                        val cornerKey =
+                            Healpix.packTileKey(plan.order, Healpix.ang2pixNest(plan.order, cx, cy))
+                        assertTrue(
+                            "Expected corner ($cx,$cy) covered at zoom=$zoom lst=$lst",
+                            cornerKey in keySet
+                        )
+                    }
+                }
+            }
+        }
+
+        // Zenith pole crossing in panAndClampZenithUp stays finite and clamped within maxPanDeg
+        val (crossedAz, crossedAlt) = panAndClampZenithUp(
+            curAzDeg = 10.0,
+            curAltDeg = 89.6,
+            objAzDeg = 10.0,
+            objAltDeg = 89.6,
+            deltaX = 0f,
+            deltaY = 500f,
+            fovDeg = 2.0,
+            minDimPx = 300f,
+            maxPanDeg = 1.2
+        )
+        assertTrue(crossedAz.isFinite() && crossedAlt.isFinite())
+        val (r0, d0) = AstrometryUtils.altAzToRaDec(10.0, 89.6, 40.0, 20.0)
+        val (r1, d1) = AstrometryUtils.altAzToRaDec(crossedAz, crossedAlt, 40.0, 20.0)
+        assertEquals(1.2, AstrometryUtils.angularDistance(r0, d0, r1, d1), 0.05)
+    }
+
+    @Test
+    fun testHqStoreIncrementalBatchesCrashRecoveryAndIndependentDeletion() = runBlocking {
+        val tempRoot = Files.createTempDirectory("hips_hq_test").toFile()
+        try {
+            val diskBackend = AndroidHiPSLocalBackend(tempRoot)
+            val targetKeys = IntArray(30) { i -> Healpix.packTileKey(8, 1000 + i) }
+            val failingKey = targetKeys[17]
+            val failingIpix = Healpix.tileKeyIpix(failingKey)
+            val failingSuffix = "/Norder8/Dir0/Npix$failingIpix.jpg"
+
+            // First pass: 29 of 30 succeed (> 25 batch size); committed tiles remain live for resume
+            val backend1 = FakeNetworkBackend(diskBackend) { url ->
+                if (url.endsWith(failingSuffix)) null else fakeJpeg(url.hashCode(), size = 300)
+            }
+            var latestIdx = HiPSHqIndex.EMPTY
+            val out1 = HiPSDownloadManager.downloadHqTiles(
+                backend = backend1,
+                missingKeys = targetKeys,
+                initialIndex = HiPSHqIndex.EMPTY,
+                mirrorBaseUrls = listOf("https://mirror-a.example"),
+                callbackDispatcher = Dispatchers.Default,
+                onProgress = { _, _, _ -> },
+                onBatchCommitted = { idx, _ -> latestIdx = idx }
+            )
+            assertEquals(29, out1.completedTiles)
+            assertFalse(out1.storageFailed)
+            assertEquals(29, latestIdx.size)
+            assertFalse(latestIdx.containsKey(failingKey))
+
+            // Simulate crash leaving unindexed trailing bytes on dss2_hq.dat before resume
+            val hqDataFile = File(File(tempRoot, "hq"), "dss2_hq.dat")
+            FileOutputStream(hqDataFile, true).use { it.write(ByteArray(77) { 0x5A }) }
+            val reloaded = diskBackend.loadHqIndex()
+            assertEquals(29, reloaded.size)
+
+            // Resume fetches only the 1 missing key and truncates the unindexed 77-byte tail cleanly
+            val fetchCalls = AtomicInteger(0)
+            val expectedRecovered = fakeJpeg(999, size = 340)
+            val remaining = HiPSObjectPlanner.filterMissingKeys(targetKeys, false, reloaded)
+            assertEquals(1, remaining.size)
+            assertEquals(failingKey, remaining[0])
+
+            val backend2 = FakeNetworkBackend(diskBackend) {
+                fetchCalls.incrementAndGet()
+                expectedRecovered
+            }
+            val out2 = HiPSDownloadManager.downloadHqTiles(
+                backend = backend2,
+                missingKeys = remaining,
+                initialIndex = reloaded,
+                mirrorBaseUrls = listOf("https://mirror-a.example"),
+                callbackDispatcher = Dispatchers.Default,
+                onProgress = { _, _, _ -> },
+                onBatchCommitted = { idx, _ -> latestIdx = idx }
+            )
+            assertEquals(1, out2.completedTiles)
+            assertEquals(1, fetchCalls.get())
+            assertEquals(30, latestIdx.size)
+            assertEquals(latestIdx.dataEndOffset, diskBackend.hqDataLengthBytes())
+
+            diskBackend.openHqAssetSource().useAssetSource { src ->
+                val eIdx = latestIdx.findEntryIndex(failingKey)
+                assertTrue(eIdx >= 0)
+                assertArrayEquals(
+                    expectedRecovered,
+                    src.readRange(latestIdx.offsets[eIdx], latestIdx.lengths[eIdx])
+                )
+            }
+
+            // Base sky pack deletion leaves HQ storage untouched, and vice versa
+            assertTrue(diskBackend.writeStagedTile(0, fakeJpeg(1)))
+            assertTrue(diskBackend.deleteDownloadedPackAndStaging())
+            assertEquals(30, diskBackend.loadHqIndex().size)
+            assertTrue(diskBackend.hqStorageSizeBytes() > 0L)
+
+            assertTrue(diskBackend.deleteHqStorage())
+            assertEquals(0, diskBackend.loadHqIndex().size)
+            assertEquals(0L, diskBackend.hqStorageSizeBytes())
+        } finally {
+            tempRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testHqIndexValidationCancellationAndStorageFailure() = runBlocking {
+        // prepareAppend deduplication, empty filtering, all-existing null, and range queries
+        val k5 = Healpix.packTileKey(5, 10)
+        val k6 = Healpix.packTileKey(6, 40)
+        val k7 = Healpix.packTileKey(7, 160)
+        val prep1 = HiPSHqIndex.prepareAppend(
+            HiPSHqIndex.EMPTY,
+            listOf(
+                k7 to ByteArray(20) { 3 },
+                k5 to ByteArray(10) { 1 },
+                k5 to ByteArray(10) { 9 },
+                k6 to ByteArray(0)
+            )
+        )!!
+        assertEquals(2, prep1.updatedIndex.size)
+        assertNull(HiPSHqIndex.prepareAppend(prep1.updatedIndex, listOf(k5 to ByteArray(10) { 1 })))
+
+        val inRange = mutableListOf<Int>()
+        prep1.updatedIndex.forEachKeyInRange(
+            Healpix.packTileKey(5, 0),
+            Healpix.packTileKey(5, Healpix.tileCountForOrder(5) - 1)
+        ) { inRange.add(it) }
+        assertEquals(listOf(k5), inRange)
+
+        // Parse rejects corrupt headers, truncated buffers, unsorted keys, bad offsets, and invalid order/ipix
+        val validBytes = prep1.indexBytes
+        val dataLen = prep1.updatedIndex.dataEndOffset
+        assertEquals(2, HiPSHqIndex.parse(validBytes, dataLen).size)
+        assertEquals(0, HiPSHqIndex.parse(null, dataLen).size)
+        assertEquals(0, HiPSHqIndex.parse(ByteArray(8), dataLen).size)
+        assertEquals(0, HiPSHqIndex.parse(HiPSHqIndex.serialize(HiPSHqIndex.EMPTY), 0L).size)
+        assertEquals(0, HiPSHqIndex.parse(validBytes.copyOf(validBytes.size - 1), dataLen).size)
+        assertEquals(0, HiPSHqIndex.parse(validBytes, dataLen - 1L).size)
+
+        val badMagic = validBytes.copyOf().also { it[0] = 'X'.code.toByte() }
+        assertEquals(0, HiPSHqIndex.parse(badMagic, dataLen).size)
+
+        val badVersion = validBytes.copyOf().also { HiPSPackToc.putU32Le(it, 8, 99) }
+        assertEquals(0, HiPSHqIndex.parse(badVersion, dataLen).size)
+
+        val dupKeys = validBytes.copyOf().also { HiPSPackToc.putU32Le(it, 32, k5) }
+        assertEquals(0, HiPSHqIndex.parse(dupKeys, dataLen).size)
+
+        val badOrder = validBytes.copyOf().also {
+            HiPSPackToc.putU32Le(it, 32, Healpix.packTileKey(Healpix.HQ_MAX_ORDER + 1, 0))
+        }
+        assertEquals(0, HiPSHqIndex.parse(badOrder, dataLen).size)
+
+        val overflowOffset = validBytes.copyOf().also {
+            HiPSPackToc.putU64Le(it, 24, Long.MAX_VALUE - 2L)
+        }
+        assertEquals(0, HiPSHqIndex.parse(overflowOffset, dataLen).size)
+
+        val tempRoot = Files.createTempDirectory("hips_hq_cancel_test").toFile()
+        try {
+            val diskBackend = AndroidHiPSLocalBackend(tempRoot)
+
+            // Corrupt idx + stale dat recovers cleanly when fresh batch appends at expectedDataEnd = 0L
+            val hqDir = File(tempRoot, "hq").apply { mkdirs() }
+            File(hqDir, "dss2_hq.dat").writeBytes(ByteArray(500) { 0x33 })
+            File(hqDir, "dss2_hq.idx").writeBytes(ByteArray(24) { 0x77 })
+            assertEquals(0, diskBackend.loadHqIndex().size)
+            assertTrue(diskBackend.appendHqBatch(0L, prep1.payloadsToWrite, validBytes))
+            assertEquals(dataLen, diskBackend.hqDataLengthBytes())
+            assertEquals(2, diskBackend.loadHqIndex().size)
+            assertTrue(diskBackend.deleteHqStorage())
+
+            // Mid-flight cancellation with flushOnExit = true preserves < 25 already-fetched tiles
+            val gate = CompletableDeferred<Unit>()
+            val queuedSignal1 = CompletableDeferred<Unit>()
+            val seen1 = AtomicInteger(0)
+            val keys10 = IntArray(10) { i -> Healpix.packTileKey(7, 200 + i) }
+            val slowBackend1 = object : HiPSLocalBackend by diskBackend {
+                override suspend fun fetchUrlBytes(url: String): ByteArray? {
+                    val n = seen1.incrementAndGet()
+                    if (n == 1) return fakeJpeg(n, size = 200)
+                    gate.await()
+                    return fakeJpeg(n, size = 200)
+                }
+            }
+            val job1 = launch(Dispatchers.Default) {
+                HiPSDownloadManager.downloadHqTiles(
+                    backend = slowBackend1,
+                    missingKeys = keys10,
+                    initialIndex = HiPSHqIndex.EMPTY,
+                    mirrorBaseUrls = listOf("https://mirror-a.example"),
+                    callbackDispatcher = Dispatchers.Default,
+                    flushOnExit = { true },
+                    onProgress = { done, _, _ ->
+                        if (done >= 1) queuedSignal1.complete(Unit)
+                    },
+                    onBatchCommitted = { _, _ -> }
+                )
+            }
+            queuedSignal1.await()
+            job1.cancelAndJoin()
+            assertEquals(1, diskBackend.loadHqIndex().size)
+            assertTrue(diskBackend.deleteHqStorage())
+
+            // Cancellation with flushOnExit = false (used by removeHqImages) writes 0 bytes
+            val queuedSignal2 = CompletableDeferred<Unit>()
+            val seen2 = AtomicInteger(0)
+            val slowBackend2 = object : HiPSLocalBackend by diskBackend {
+                override suspend fun fetchUrlBytes(url: String): ByteArray? {
+                    val n = seen2.incrementAndGet()
+                    if (n == 1) return fakeJpeg(n, size = 200)
+                    gate.await()
+                    return null
+                }
+            }
+            val job2 = launch(Dispatchers.Default) {
+                HiPSDownloadManager.downloadHqTiles(
+                    backend = slowBackend2,
+                    missingKeys = keys10,
+                    initialIndex = HiPSHqIndex.EMPTY,
+                    mirrorBaseUrls = listOf("https://mirror-a.example"),
+                    callbackDispatcher = Dispatchers.Default,
+                    flushOnExit = { false },
+                    onProgress = { done, _, _ ->
+                        if (done >= 1) queuedSignal2.complete(Unit)
+                    },
+                    onBatchCommitted = { _, _ -> }
+                )
+            }
+            queuedSignal2.await()
+            job2.cancelAndJoin()
+            assertEquals(0, diskBackend.loadHqIndex().size)
+            assertEquals(0L, diskBackend.hqStorageSizeBytes())
+
+            // Storage write failure sets outcome.storageFailed = true
+            val failingWriteBackend = object : HiPSLocalBackend by diskBackend {
+                override suspend fun fetchUrlBytes(url: String): ByteArray = fakeJpeg(1, size = 200)
+                override fun appendHqBatch(
+                    expectedDataEnd: Long,
+                    payloads: List<ByteArray>,
+                    newIndexBytes: ByteArray
+                ): Boolean = false
+            }
+            val failOut = HiPSDownloadManager.downloadHqTiles(
+                backend = failingWriteBackend,
+                missingKeys = intArrayOf(k5),
+                initialIndex = HiPSHqIndex.EMPTY,
+                mirrorBaseUrls = listOf("https://mirror-a.example"),
+                callbackDispatcher = Dispatchers.Default,
+                onProgress = { _, _, _ -> },
+                onBatchCommitted = { _, _ -> }
+            )
+            assertTrue(failOut.storageFailed)
+            assertEquals(0, failOut.completedTiles)
+        } finally {
+            tempRoot.deleteRecursively()
+        }
+    }
+
+    private inline fun <T> HiPSAssetSource.useAssetSource(block: (HiPSAssetSource) -> T): T =
+        try {
+            block(this)
+        } finally {
+            close()
+        }
 }

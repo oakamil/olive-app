@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -470,16 +472,28 @@ fun NightVisionNumpad(
 fun ObjectInfoPopup(
     coords: Pair<Double, Double>,
     catalogObject: CatalogObject?,
-    catalogDb: CatalogDatabase,
+    viewModel: MainViewModel,
+    timeMs: Long,
     onDismiss: () -> Unit,
     altAz: AltAz? = null,
     bottomBar: (@Composable () -> Unit)? = null,
 ) {
     var coLocated by remember(catalogObject) { mutableStateOf<List<CatalogObject>>(emptyList()) }
+    var coLocatedReady by remember(catalogObject) {
+        mutableStateOf(
+            catalogObject == null ||
+                    CatalogDatabase.isDynamicObject(catalogObject) ||
+                    HiPSObjectPlanner.parseExtentArcmin(catalogObject.angularSize) != null
+        )
+    }
+    var notesExpanded by remember(catalogObject) { mutableStateOf(false) }
     LaunchedEffect(catalogObject) {
         if (catalogObject != null && !CatalogDatabase.isDynamicObject(catalogObject)) {
-            coLocated = withContext(Dispatchers.IO) { catalogDb.getCoLocatedObjects(catalogObject) }
+            coLocated = withContext(Dispatchers.IO) {
+                viewModel.catalogDb.getCoLocatedObjects(catalogObject)
+            }
         }
+        coLocatedReady = true
     }
 
     val title = catalogObject?.displayName ?: stringResource(
@@ -556,15 +570,47 @@ fun ObjectInfoPopup(
             }
             metadata?.notes?.let { notes ->
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = infoLabel(Res.string.label_notes),
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = notes,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { notesExpanded = !notesExpanded }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = infoLabel(Res.string.label_notes),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = if (notesExpanded) {
+                            Icons.Default.KeyboardArrowUp
+                        } else {
+                            Icons.Default.KeyboardArrowDown
+                        },
+                        contentDescription = stringResource(
+                            if (notesExpanded) Res.string.cd_collapse_notes else Res.string.cd_expand_notes
+                        ),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                if (notesExpanded) {
+                    Text(
+                        text = notes,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+            if (catalogObject != null && coLocatedReady) {
+                ObjectHiPSPreview(
+                    catalogObject = catalogObject,
+                    coLocated = coLocated,
+                    viewModel = viewModel,
+                    timeMs = timeMs,
+                    modifier = Modifier.padding(top = 8.dp),
                 )
             }
         }

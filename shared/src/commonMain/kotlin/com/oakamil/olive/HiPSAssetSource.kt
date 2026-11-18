@@ -54,11 +54,43 @@ interface HiPSLocalBackend {
     /** Performs an HTTPS GET request and returns body bytes on HTTP `200`, or `null` otherwise. */
     suspend fun fetchUrlBytes(url: String): ByteArray?
 
+    /** Byte length of `hq/dss2_hq.dat`, or `0L` if absent. */
+    fun hqDataLengthBytes(): Long
+
+    /** Total on-disk bytes occupied by `hq/` (`dss2_hq.dat` + `dss2_hq.idx`), or `0L` if empty. */
+    fun hqStorageSizeBytes(): Long
+
+    /** Reads raw bytes of `hq/dss2_hq.idx`, or `null` if absent. */
+    fun readHqIndexBytes(): ByteArray?
+
+    /** Parses and validates the persisted [HiPSHqIndex] against `dss2_hq.dat`. */
+    fun loadHqIndex(): HiPSHqIndex = HiPSHqIndex.parse(readHqIndexBytes(), hqDataLengthBytes())
+
+    /** Opens a read-only [HiPSAssetSource] backed by `hq/dss2_hq.dat`. */
+    fun openHqAssetSource(): HiPSAssetSource
+
+    /**
+     * Appends [payloads] at [expectedDataEnd] in `hq/dss2_hq.dat` (truncating any unindexed tail),
+     * `fsync`s the data file, and atomically replaces `hq/dss2_hq.idx` with [newIndexBytes].
+     */
+    fun appendHqBatch(
+        expectedDataEnd: Long,
+        payloads: List<ByteArray>,
+        newIndexBytes: ByteArray
+    ): Boolean
+
+    /** Deletes only the `hq/` directory, leaving the base `O0–O4` sky pack untouched. */
+    fun deleteHqStorage(): Boolean
+
     companion object {
         private const val PACK_FILE_PREFIX = "dss2_o0_"
         val PACK_FILE_NAME = "${PACK_FILE_PREFIX}${Healpix.MAX_ORDER}.pack"
         val TEMP_PACK_NAME = "$PACK_FILE_NAME.tmp"
         const val STAGING_DIR_NAME = "dss2_staging"
+        const val HQ_DIR_NAME = "hq"
+        const val HQ_DATA_FILE_NAME = "dss2_hq.dat"
+        const val HQ_INDEX_FILE_NAME = "dss2_hq.idx"
+        const val HQ_TEMP_INDEX_NAME = "dss2_hq.idx.tmp"
         const val USER_AGENT = "OliveApp/1.0 (DSS2-HiPS)"
 
         fun isPackOrTempFileName(name: String): Boolean =

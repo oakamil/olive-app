@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -47,6 +48,29 @@ open class MainViewModel(
     var showHiPSDownloadProgress by mutableStateOf(false)
     private var hipsDownloadJob: Job? = null
     private var hipsCleanupJob: Job? = null
+
+    class HqCatalogConfirmRequest(
+        val categoryTitle: String,
+        val shortCode: String,
+        val missingKeys: IntArray
+    )
+
+    var hqIndex by mutableStateOf(HiPSHqIndex.EMPTY)
+        private set
+    var hqStorageBytes by mutableLongStateOf(0L)
+        private set
+    var hqDownloadState by mutableStateOf<HiPSHqDownloadState>(HiPSHqDownloadState.Idle)
+        private set
+    var pendingHqCatalogConfirm by mutableStateOf<HqCatalogConfirmRequest?>(null)
+    var showHqDownloadProgress by mutableStateOf(false)
+    var showRemoveHqConfirm by mutableStateOf(false)
+    private var hqDownloadJob: Job? = null
+    private var hqCleanupJob: Job? = null
+
+    @Volatile
+    private var suppressHqFlush = false
+
+    private val activePreviewManagers = mutableSetOf<HiPSTileManager>()
 
     @Volatile
     var uvcWrapper: UvcCameraHandler? = null
@@ -123,7 +147,14 @@ open class MainViewModel(
         }
 
     init {
+        settingsManager.savedLocation?.let { (lat, lon) ->
+            currentLat = lat
+            currentLon = lon
+        }
         if (hipsLocalBackend != null) {
+            hqCleanupJob = viewModelScope.launch {
+                syncHqStorageState(hipsLocalBackend)
+            }
             hipsCleanupJob = viewModelScope.launch {
                 refreshHiPSPackStateAsync()
             }
@@ -132,15 +163,30 @@ open class MainViewModel(
         }
     }
 
+    private fun updateHqStateOnMain(index: HiPSHqIndex, storageBytes: Long) {
+        hqIndex = index
+        hqStorageBytes = storageBytes
+        hipsTileManager?.updateHqIndexOnMain(index)
+        activePreviewManagers.forEach { it.updateHqIndexOnMain(index) }
+    }
+
     private suspend fun syncHiPSStorageState(backend: HiPSLocalBackend): Boolean {
         val (packBytes, stagedBytes) = withContext(Dispatchers.IO) {
             val size = backend.downloadedPackSizeBytes()
             if (size > 0L) size to 0L
             else 0L to backend.getStagedStats().totalBytes
         }
-        isSkyPackDownloaded = packBytes > 0L
-        skyStorageBytes = if (packBytes > 0L) packBytes else stagedBytes
-        return isSkyPackDownloaded
+        val downloaded = packBytes > 0L
+        isSkyPackDownloaded = downloaded
+        skyStorageBytes = if (downloaded) packBytes else stagedBytes
+        return downloaded
+    }
+
+    private suspend fun syncHqStorageState(backend: HiPSLocalBackend) {
+        val (loadedIndex, bytes) = withContext(Dispatchers.IO) {
+            backend.loadHqIndex() to backend.hqStorageSizeBytes()
+        }
+        updateHqStateOnMain(loadedIndex, bytes)
     }
 
     private suspend fun refreshHiPSPackStateAsync() {
@@ -155,7 +201,26 @@ open class MainViewModel(
     private fun ensureHiPSTileManagerOpen() {
         val backend = hipsLocalBackend ?: return
         if (hipsTileManager != null || !isSkyPackDownloaded) return
-        hipsTileManager = HiPSTileManager(backend.openDownloadedAssetSource())
+        hipsTileManager = HiPSTileManager(
+            assetSource = backend.openDownloadedAssetSource(),
+            openHqSource = { backend.openHqAssetSource() },
+            initialHqIndex = hqIndex
+        )
+    }
+
+    fun openPreviewTileManager(): HiPSTileManager? {
+        val backend = hipsLocalBackend ?: return null
+        if (!isSkyPackDownloaded) return null
+        return HiPSTileManager(
+            assetSource = backend.openDownloadedAssetSource(),
+            openHqSource = { backend.openHqAssetSource() },
+            initialHqIndex = hqIndex
+        ).also { activePreviewManagers.add(it) }
+    }
+
+    fun closePreviewTileManager(manager: HiPSTileManager) {
+        activePreviewManagers.remove(manager)
+        manager.close()
     }
 
     fun requestSkyBackgroundChange(enabled: Boolean) {
@@ -240,6 +305,7 @@ open class MainViewModel(
 
     fun removeDownloadedSkyPack() {
         showSkyBackground = false
+        activePreviewManagers.toList().forEach { closePreviewTileManager(it) }
         isSkyPackDownloaded = false
         skyStorageBytes = 0L
         launchHiPSCleanup { backend ->
@@ -248,6 +314,294 @@ open class MainViewModel(
             }
             if (!removed) {
                 refreshHiPSPackStateAsync()
+            }
+        }
+    }
+
+    fun objectHqTargetId(obj: CatalogObject): String =
+        "obj_${obj.catalogLabel}_${obj.catalogEntry}_${obj.id}"
+
+    /** Computes missing HQ tile keys for [shortCode], including cross-catalog co-located sizes. */
+    suspend fun planCatalogMissingHqKeys(shortCode: String): IntArray {
+        hipsCleanupJob?.join()
+        hqCleanupJob?.join()
+        val skyPackReady = isSkyPackDownloaded
+        val hqSnap = hqIndex
+        return withContext(Dispatchers.IO) {
+            val objects = catalogDb.searchObjects(
+                catalogFilter = shortCode,
+                limit = Int.MAX_VALUE,
+                offset = 0
+            )
+            HiPSObjectPlanner.planMissingForCatalog(
+                objects = objects,
+                isBasePackAvailable = skyPackReady,
+                hqIndex = hqSnap,
+                coLocatedLookup = { catalogDb.getCoLocatedObjects(it) }
+            )
+        }
+    }
+
+    fun downloadObjectHqImage(obj: CatalogObject, coLocated: List<CatalogObject>) {
+        val activeState = hqDownloadState
+        val targetId = objectHqTargetId(obj)
+        if (hqDownloadJob?.isActive == true) {
+            if (activeState is HiPSHqDownloadState.Downloading && activeState.isBulkCatalog) {
+                showHqDownloadProgress = true
+                return
+            }
+            if (activeState is HiPSHqDownloadState.Downloading && activeState.targetId == targetId) {
+                return
+            }
+        }
+        val major = HiPSObjectPlanner.resolveMajorAxisArcmin(obj, coLocated)
+        val plan = HiPSObjectPlanner.planCutout(obj.ra, obj.dec, major)
+        val missing = HiPSObjectPlanner.filterMissingKeys(
+            plan.requiredKeys,
+            isSkyPackDownloaded,
+            hqIndex
+        )
+        if (missing.isEmpty()) return
+        startHqDownloadInternal(
+            targetId = targetId,
+            isBulkCatalog = false,
+            catalogTitle = null,
+            missingKeys = missing,
+            cancelPriorSingleJob = true
+        )
+    }
+
+    fun requestCatalogHqDownload(
+        categoryTitle: String,
+        shortCode: String,
+        missingKeys: IntArray
+    ) {
+        val activeState = hqDownloadState
+        if (hqDownloadJob?.isActive == true &&
+            activeState is HiPSHqDownloadState.Downloading &&
+            activeState.isBulkCatalog
+        ) {
+            showHqDownloadProgress = true
+            return
+        }
+        if (missingKeys.isEmpty()) return
+        pendingHqCatalogConfirm = HqCatalogConfirmRequest(categoryTitle, shortCode, missingKeys)
+    }
+
+    fun confirmCatalogHqDownload() {
+        val req = pendingHqCatalogConfirm ?: return
+        pendingHqCatalogConfirm = null
+        showHqDownloadProgress = true
+        startHqDownloadInternal(
+            targetId = "cat_${req.shortCode}",
+            isBulkCatalog = true,
+            catalogTitle = req.categoryTitle,
+            missingKeys = req.missingKeys,
+            cancelPriorSingleJob = true
+        )
+    }
+
+    fun retryFailedHqDownload() {
+        val failed = hqDownloadState as? HiPSHqDownloadState.Failed ?: return
+        if (hqDownloadJob?.isActive == true) return
+        if (failed.isBulkCatalog && failed.targetId.startsWith("cat_")) {
+            val shortCode = failed.targetId.removePrefix("cat_")
+            hqDownloadState = HiPSHqDownloadState.Downloading(
+                targetId = failed.targetId,
+                isBulkCatalog = true,
+                catalogTitle = failed.catalogTitle,
+                completedTiles = 0,
+                totalTiles = failed.totalTiles,
+                downloadedBytes = 0L
+            )
+            showHqDownloadProgress = true
+            hqDownloadJob = viewModelScope.launch {
+                val missing = planCatalogMissingHqKeys(shortCode)
+                if (missing.isEmpty()) {
+                    hqDownloadState = HiPSHqDownloadState.Idle
+                    showHqDownloadProgress = false
+                } else {
+                    runHqDownloadJobBody(
+                        targetId = failed.targetId,
+                        isBulkCatalog = true,
+                        catalogTitle = failed.catalogTitle,
+                        rawMissingKeys = missing
+                    )
+                }
+            }
+        } else {
+            hqDownloadState = HiPSHqDownloadState.Idle
+        }
+    }
+
+    private fun startHqDownloadInternal(
+        targetId: String,
+        isBulkCatalog: Boolean,
+        catalogTitle: String?,
+        missingKeys: IntArray,
+        cancelPriorSingleJob: Boolean = false
+    ) {
+        val priorJob = hqDownloadJob
+        if (priorJob?.isActive == true && !cancelPriorSingleJob) return
+        val backend = hipsLocalBackend
+        if (backend == null) {
+            hqDownloadState = HiPSHqDownloadState.Failed(
+                targetId = targetId,
+                isBulkCatalog = isBulkCatalog,
+                catalogTitle = catalogTitle,
+                completedTiles = 0,
+                totalTiles = missingKeys.size,
+                reason = HiPSFailureReason.StorageBackendUnavailable
+            )
+            if (isBulkCatalog) showHqDownloadProgress = true
+            return
+        }
+        hqDownloadState = HiPSHqDownloadState.Downloading(
+            targetId = targetId,
+            isBulkCatalog = isBulkCatalog,
+            catalogTitle = catalogTitle,
+            completedTiles = 0,
+            totalTiles = missingKeys.size,
+            downloadedBytes = 0L
+        )
+        hqDownloadJob = viewModelScope.launch {
+            priorJob?.cancelAndJoin()
+            hipsCleanupJob?.join()
+            hqCleanupJob?.join()
+            runHqDownloadJobBody(targetId, isBulkCatalog, catalogTitle, missingKeys)
+        }
+    }
+
+    private suspend fun runHqDownloadJobBody(
+        targetId: String,
+        isBulkCatalog: Boolean,
+        catalogTitle: String?,
+        rawMissingKeys: IntArray
+    ) {
+        val backend = hipsLocalBackend ?: return
+        suppressHqFlush = false
+        syncHqStorageState(backend)
+        val missingKeys = HiPSObjectPlanner.filterMissingKeys(
+            rawMissingKeys,
+            isSkyPackDownloaded,
+            hqIndex
+        )
+        if (missingKeys.isEmpty()) {
+            hqDownloadState = HiPSHqDownloadState.Idle
+            showHqDownloadProgress = false
+            return
+        }
+        val outcome = HiPSDownloadManager.downloadHqTiles(
+            backend = backend,
+            missingKeys = missingKeys,
+            initialIndex = hqIndex,
+            flushOnExit = { !suppressHqFlush },
+            onProgress = { done, total, bytes ->
+                if (!suppressHqFlush) {
+                    hqDownloadState = HiPSHqDownloadState.Downloading(
+                        targetId = targetId,
+                        isBulkCatalog = isBulkCatalog,
+                        catalogTitle = catalogTitle,
+                        completedTiles = done,
+                        totalTiles = total,
+                        downloadedBytes = bytes
+                    )
+                }
+            },
+            onBatchCommitted = { updatedIndex, diskBytes ->
+                if (!suppressHqFlush) {
+                    updateHqStateOnMain(updatedIndex, diskBytes)
+                }
+            }
+        )
+        if (outcome.storageFailed || outcome.completedTiles < outcome.totalTiles) {
+            val reason = if (outcome.storageFailed) {
+                HiPSFailureReason.StorageWriteFailed
+            } else {
+                HiPSFailureReason.TileDownloadFailed(outcome.totalTiles - outcome.completedTiles)
+            }
+            hqDownloadState = HiPSHqDownloadState.Failed(
+                targetId = targetId,
+                isBulkCatalog = isBulkCatalog,
+                catalogTitle = catalogTitle,
+                completedTiles = outcome.completedTiles,
+                totalTiles = outcome.totalTiles,
+                reason = reason
+            )
+            if (isBulkCatalog) showHqDownloadProgress = true
+        } else {
+            hqDownloadState = HiPSHqDownloadState.Idle
+            showHqDownloadProgress = false
+        }
+    }
+
+    private fun launchHqCleanup(block: suspend (HiPSLocalBackend) -> Unit) {
+        val activeJob = hqDownloadJob
+        val priorCleanup = hqCleanupJob
+        hqDownloadJob = null
+        hqDownloadState = HiPSHqDownloadState.Idle
+        showHqDownloadProgress = false
+        val backend = hipsLocalBackend ?: return
+        hqCleanupJob = viewModelScope.launch {
+            activeJob?.cancelAndJoin()
+            priorCleanup?.cancelAndJoin()
+            block(backend)
+        }
+    }
+
+    fun cancelHqDownload() {
+        launchHqCleanup { backend ->
+            syncHqStorageState(backend)
+        }
+    }
+
+    fun removeHqImages() {
+        showRemoveHqConfirm = false
+        suppressHqFlush = true
+        updateHqStateOnMain(HiPSHqIndex.EMPTY, 0L)
+        launchHqCleanup { backend ->
+            try {
+                updateHqStateOnMain(HiPSHqIndex.EMPTY, 0L)
+                hipsTileManager?.releaseHqSource()
+                for (mgr in activePreviewManagers.toList()) {
+                    mgr.releaseHqSource()
+                }
+                val removed = withContext(Dispatchers.IO) {
+                    backend.deleteHqStorage()
+                }
+                if (!removed) {
+                    syncHqStorageState(backend)
+                }
+            } finally {
+                suppressHqFlush = false
+            }
+        }
+    }
+
+    /** Decodes all leaf tiles in [requiredKeys] from the HQ store off the Main thread. */
+    suspend fun loadCutoutTiles(requiredKeys: IntArray): List<Pair<Int, ImageBitmap>> {
+        val backend = hipsLocalBackend ?: return emptyList()
+        hqCleanupJob?.join()
+        val hqSnap = hqIndex
+        if (hqSnap.size == 0 || requiredKeys.isEmpty()) return emptyList()
+        return withContext(Dispatchers.IO) {
+            val hqSrc = backend.openHqAssetSource()
+            try {
+                val decoded = ArrayList<Pair<Int, ImageBitmap>>(requiredKeys.size)
+                for (key in requiredKeys) {
+                    if (!isActive || suppressHqFlush) break
+                    val entryIdx = hqSnap.findEntryIndex(key)
+                    if (entryIdx < 0) continue
+                    val raw = hqSrc.readRange(hqSnap.offsets[entryIdx], hqSnap.lengths[entryIdx])
+                        ?: continue
+                    val bmp = hqSrc.decodeTile(raw)
+                    if (bmp != null) {
+                        decoded.add(Healpix.tileKeyIpix(key) to bmp)
+                    }
+                }
+                decoded
+            } finally {
+                hqSrc.close()
             }
         }
     }
@@ -290,13 +644,6 @@ open class MainViewModel(
     var skyMapCameraLocked by mutableStateOf(true)
     var cometsRefreshVersion by mutableIntStateOf(0)
         private set
-
-    init {
-        settingsManager.savedLocation?.let { (lat, lon) ->
-            currentLat = lat
-            currentLon = lon
-        }
-    }
 
     // Catalog State
     var catalogSearchQuery by mutableStateOf("")
@@ -1264,16 +1611,25 @@ open class MainViewModel(
     }
 
     fun dispose() {
+        suppressHqFlush = true
         fovSaveJob?.cancel()
         settingsManager.skyMapFov = _skyMapFov.doubleValue
         hipsDownloadJob?.cancel()
         hipsDownloadJob = null
         hipsCleanupJob?.cancel()
         hipsCleanupJob = null
+        hqDownloadJob?.cancel()
+        hqDownloadJob = null
+        hqCleanupJob?.cancel()
+        hqCleanupJob = null
+        viewModelScope.cancel()
         hipsTileManager?.close()
         hipsTileManager = null
-        catalogDb.closeDatabase()
-        viewModelScope.cancel()
+        activePreviewManagers.forEach { it.close() }
+        activePreviewManagers.clear()
+        CoroutineScope(Dispatchers.IO).launch {
+            catalogDb.closeDatabase()
+        }
     }
 
     override fun onCleared() {

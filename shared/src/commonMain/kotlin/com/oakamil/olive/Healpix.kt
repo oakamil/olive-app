@@ -27,7 +27,18 @@ import kotlin.math.sqrt
 object Healpix {
     const val MIN_ORDER = 0
     const val MAX_ORDER = 4
+    const val HQ_MAX_ORDER = 8
     const val TOTAL_TILES = 4 * ((1 shl (2 * (MAX_ORDER + 1))) - 1)
+
+    // At HQ_MAX_ORDER = 8, max ipix is 12 * 4^8 - 1 = 786,431 (< 2^20 = 1,048,576)
+    private const val TILE_KEY_IPIX_BITS = 20
+    private const val TILE_KEY_IPIX_MASK = (1 shl TILE_KEY_IPIX_BITS) - 1
+
+    fun packTileKey(order: Int, ipix: Int): Int = (order shl TILE_KEY_IPIX_BITS) or ipix
+
+    fun tileKeyOrder(key: Int): Int = key ushr TILE_KEY_IPIX_BITS
+
+    fun tileKeyIpix(key: Int): Int = key and TILE_KEY_IPIX_MASK
 
     private val JRLL = intArrayOf(2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4)
     private val JPLL = intArrayOf(1, 3, 5, 7, 0, 2, 4, 6, 1, 3, 5, 7)
@@ -258,5 +269,34 @@ object Healpix {
             }
         }
         return count
+    }
+
+    /** Dot product between precomputed base-order (`0..MAX_ORDER`) tile center and unit vector `(vx, vy, vz)`. */
+    fun baseTileCenterDot(order: Int, ipix: Int, vx: Double, vy: Double, vz: Double): Double {
+        val gIdx = globalIndex(order.coerceIn(MIN_ORDER, MAX_ORDER), ipix)
+        return vx * tileCenterVecX[gIdx] + vy * tileCenterVecY[gIdx] + vz * tileCenterVecZ[gIdx]
+    }
+
+    /** Dot product between arbitrary-order (`0..HQ_MAX_ORDER`) tile center and unit vector `(vx, vy, vz)`. */
+    fun tileCenterDot(
+        order: Int,
+        ipix: Int,
+        vx: Double,
+        vy: Double,
+        vz: Double,
+        faceScratch: IntArray,
+        vecScratch: DoubleArray
+    ): Double {
+        if (order <= MAX_ORDER) return baseTileCenterDot(order, ipix, vx, vy, vz)
+        nestToFaceIxIy(order, ipix, faceScratch)
+        val invNside = 1.0 / nsideForOrder(order).toDouble()
+        faceUvToEqUnitVector(
+            faceScratch[0],
+            (faceScratch[1] + 0.5) * invNside,
+            (faceScratch[2] + 0.5) * invNside,
+            vecScratch,
+            0
+        )
+        return vx * vecScratch[0] + vy * vecScratch[1] + vz * vecScratch[2]
     }
 }

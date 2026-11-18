@@ -406,6 +406,23 @@ fun SkyCatalogDialog(
     val effectiveDec =
         if (selectedCategory == "Nearest Objects" || sortBy == "distance") currentDec else null
 
+    val isHqDownloading = viewModel.hqDownloadState is HiPSHqDownloadState.Downloading
+    var subCatalogMissingKeys by remember(selectedCategory) { mutableStateOf<IntArray?>(null) }
+    LaunchedEffect(
+        selectedCategory,
+        viewModel.isSkyPackDownloaded,
+        isHqDownloading,
+        if (isHqDownloading) 0 else viewModel.hqIndex.size
+    ) {
+        val shortCode = categoryToShortCode[selectedCategory]
+        if (!HiPSObjectPlanner.isEligibleSubCatalog(shortCode) || shortCode == null) {
+            subCatalogMissingKeys = null
+            return@LaunchedEffect
+        }
+        if (isHqDownloading && subCatalogMissingKeys != null) return@LaunchedEffect
+        subCatalogMissingKeys = viewModel.planCatalogMissingHqKeys(shortCode)
+    }
+
     LaunchedEffect(
         searchQuery,
         selectedCategory,
@@ -507,25 +524,7 @@ fun SkyCatalogDialog(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Text(
-                                                when (category) {
-                                                    "Asteroids" -> stringResource(Res.string.asteroids_catalog_title)
-                                                    "Comets" -> stringResource(Res.string.comets_catalog_title)
-                                                    "Messier" -> stringResource(Res.string.cat_messier)
-                                                    "NGC" -> stringResource(Res.string.cat_ngc)
-                                                    "IC" -> stringResource(Res.string.cat_ic)
-                                                    "Barnard" -> stringResource(Res.string.cat_barnard)
-                                                    "Caldwell" -> stringResource(Res.string.cat_caldwell)
-                                                    "Collinder" -> stringResource(Res.string.cat_collinder)
-                                                    "RASC Doubles" -> stringResource(Res.string.cat_rasc_doubles)
-                                                    "SAC Asterisms" -> stringResource(Res.string.cat_sac_asterisms)
-                                                    "All Objects" -> stringResource(Res.string.cat_all_objects)
-                                                    "Nearest Objects" -> stringResource(Res.string.cat_nearest_objects)
-                                                    "Solar System" -> stringResource(Res.string.cat_solar_system)
-                                                    "Bright Stars" -> stringResource(Res.string.cat_bright_stars)
-                                                    else -> category
-                                                }
-                                            )
+                                            Text(localizedCatalogCategory(category))
                                             val currentShortCode = categoryToShortCode[category]
                                             val currentDesc = catalogDescriptions[currentShortCode]
                                             if (currentDesc != null && currentDesc.isNotBlank()) {
@@ -835,6 +834,82 @@ fun SkyCatalogDialog(
                             state = pageListState
                         ) {
                             val currentCategory = selectedCategory
+                            val currentShortCode = categoryToShortCode[currentCategory]
+                            val missingHq = subCatalogMissingKeys
+                            val hqState = viewModel.hqDownloadState
+                            val catTargetId = currentShortCode?.let { "cat_$it" }
+
+                            if (currentShortCode != null && HiPSObjectPlanner.isEligibleSubCatalog(
+                                    currentShortCode
+                                )
+                            ) {
+                                val isThisCatDownloading =
+                                    hqState is HiPSHqDownloadState.Downloading && hqState.targetId == catTargetId
+                                if (isThisCatDownloading || (missingHq != null && missingHq.isNotEmpty())) {
+                                    item(key = "hq_bulk_header_$currentShortCode") {
+                                        val catTitle = localizedCatalogCategory(currentCategory)
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isThisCatDownloading) {
+                                                val pct = ((hqState.completedTiles * 100) /
+                                                        hqState.totalTiles.coerceAtLeast(1)).coerceIn(
+                                                    0,
+                                                    100
+                                                )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    CircularProgressIndicator(
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(20.dp),
+                                                        strokeWidth = 2.dp
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = stringResource(
+                                                            Res.string.hips_downloading_inline,
+                                                            pct
+                                                        ),
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    ListHeaderTextButton(
+                                                        label = stringResource(Res.string.hips_action_show),
+                                                        onClick = {
+                                                            viewModel.showHqDownloadProgress = true
+                                                        }
+                                                    )
+                                                }
+                                            } else if (missingHq != null) {
+                                                val estMb = HiPSDownloadManager.formatMbValue(
+                                                    HiPSDownloadManager.estimatedTilesBytes(
+                                                        missingHq
+                                                    )
+                                                )
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.requestCatalogHqDownload(
+                                                            categoryTitle = catTitle,
+                                                            shortCode = currentShortCode,
+                                                            missingKeys = missingHq
+                                                        )
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        stringResource(
+                                                            Res.string.btn_download_catalog_images,
+                                                            estMb
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
                             if (currentCategory == "Comets") {
                                 item {
@@ -1229,7 +1304,8 @@ fun SkyCatalogDialog(
         ObjectInfoPopup(
             coords = currentCatalogObj.ra to currentCatalogObj.dec,
             catalogObject = currentCatalogObj,
-            catalogDb = viewModel.catalogDb,
+            viewModel = viewModel,
+            timeMs = timeMs,
             onDismiss = {
                 @Suppress("AssignedValueIsNeverRead")
                 selectedCatalogObj = null
@@ -1305,6 +1381,40 @@ fun SkyCatalogDialog(
     }
 }
 
+
+@Composable
+private fun localizedCatalogCategory(category: String): String = when (category) {
+    "Asteroids" -> stringResource(Res.string.asteroids_catalog_title)
+    "Comets" -> stringResource(Res.string.comets_catalog_title)
+    "Messier" -> stringResource(Res.string.cat_messier)
+    "NGC" -> stringResource(Res.string.cat_ngc)
+    "IC" -> stringResource(Res.string.cat_ic)
+    "Barnard" -> stringResource(Res.string.cat_barnard)
+    "Caldwell" -> stringResource(Res.string.cat_caldwell)
+    "Collinder" -> stringResource(Res.string.cat_collinder)
+    "RASC Doubles" -> stringResource(Res.string.cat_rasc_doubles)
+    "SAC Asterisms" -> stringResource(Res.string.cat_sac_asterisms)
+    "All Objects" -> stringResource(Res.string.cat_all_objects)
+    "Nearest Objects" -> stringResource(Res.string.cat_nearest_objects)
+    "Solar System" -> stringResource(Res.string.cat_solar_system)
+    "Bright Stars" -> stringResource(Res.string.cat_bright_stars)
+    else -> category
+}
+
+@Composable
+private fun ListHeaderTextButton(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
 
 fun targetBearingAltAz(az1: Double, alt1: Double, az2: Double, alt2: Double): Double {
     var dAz = az2 - az1
