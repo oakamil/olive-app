@@ -140,6 +140,7 @@ class EqToScreenProjector {
 class HiPSRenderState {
     private val projector = EqToScreenProjector()
     private val visibleIndices = IntArray(Healpix.tileCountForOrder(Healpix.MAX_ORDER))
+    private val visibleDots = DoubleArray(Healpix.tileCountForOrder(Healpix.MAX_ORDER))
     private val faceIxIyScratch = IntArray(3)
     private val unitVecScratch = DoubleArray(3)
 
@@ -207,7 +208,9 @@ class HiPSRenderState {
         if (w <= 0f || h <= 0f) return
 
         val fovDeg = projection.fov
-        val targetOrder = tileManager.selectTargetOrder(fovDeg, w, h)
+        val desiredOrder = tileManager.selectTargetOrder(fovDeg, w, h)
+        val baseOrder = minOf(desiredOrder, Healpix.MAX_ORDER)
+        val maxHqOrder = HiPSTileManager.effectiveHqOrder(desiredOrder)
         val (centerRaDeg, centerDecDeg) = AstrometryUtils.altAzToRaDec(
             projection.centerAz,
             projection.centerAlt,
@@ -216,7 +219,7 @@ class HiPSRenderState {
         )
         val viewRadiusDeg = SkyMapProjection.cornerRadiusDeg(fovDeg, w, h)
         val visibleCount = Healpix.queryVisibleTiles(
-            targetOrder,
+            baseOrder,
             centerRaDeg,
             centerDecDeg,
             viewRadiusDeg,
@@ -228,11 +231,19 @@ class HiPSRenderState {
         sortIndicesByCenterProximity(
             visibleIndices,
             visibleCount,
-            targetOrder,
+            baseOrder,
             centerRaDeg,
             centerDecDeg
         )
-        tileManager.requestVisibleTiles(targetOrder, visibleIndices, visibleCount)
+        tileManager.requestVisibleTiles(
+            baseOrder = baseOrder,
+            visibleIpix = visibleIndices,
+            count = visibleCount,
+            desiredOrder = maxHqOrder,
+            centerRaDeg = centerRaDeg,
+            centerDecDeg = centerDecDeg,
+            viewRadiusDeg = viewRadiusDeg
+        )
 
         projector.configure(
             centerAzDeg = projection.centerAz,
@@ -246,30 +257,140 @@ class HiPSRenderState {
 
         tilePaint.colorFilter = if (isNightVision) NIGHT_VISION_FILTER else DAY_VISION_FILTER
 
-        val subdiv = when (targetOrder) {
-            0 -> 8
-            1 -> 4
-            else -> 2
-        }
+        val subdiv = subdivForOrder(baseOrder)
         val maxEdgePx = max(w, h) * 3.5f
 
         drawScope.drawIntoCanvas { canvas ->
             for (i in 0 until visibleCount) {
                 val ipix = visibleIndices[i]
-                val resolved = tileManager.resolveTile(targetOrder, ipix) ?: continue
+                val resolved = tileManager.resolveTile(baseOrder, ipix) ?: continue
+                if (maxHqOrder > Healpix.MAX_ORDER) {
+                    drawQuadtreeTile(
+                        canvas = canvas,
+                        tileManager = tileManager,
+                        order = baseOrder,
+                        ipix = ipix,
+                        desiredOrder = maxHqOrder,
+                        fallback = resolved,
+                        viewportW = w,
+                        viewportH = h,
+                        maxEdgePx = maxEdgePx,
+                        hasValidLocation = hasValidLocation
+                    )
+                } else {
+                    drawResolvedTile(
+                        canvas = canvas,
+                        targetOrder = baseOrder,
+                        targetIpix = ipix,
+                        resolved = resolved,
+                        subdiv = subdiv,
+                        viewportW = w,
+                        viewportH = h,
+                        maxEdgePx = maxEdgePx,
+                        hasValidLocation = hasValidLocation
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Renders a pre-decoded single-order leaf cutout (`tiles` of `(ipix, bitmap)` at [order])
+     * oriented Zenith-up via `(latDeg, lstDeg)` without below-horizon dimming.
+     */
+    fun renderCutout(
+        drawScope: DrawScope,
+        order: Int,
+        tiles: List<Pair<Int, ImageBitmap>>,
+        centerAzDeg: Double,
+        centerAltDeg: Double,
+        fovDeg: Double,
+        latDeg: Double,
+        lstDeg: Double,
+        isNightVision: Boolean
+    ) {
+        val w = drawScope.size.width
+        val h = drawScope.size.height
+        if (w <= 0f || h <= 0f || tiles.isEmpty()) return
+
+        projector.configure(
+            centerAzDeg = centerAzDeg,
+            centerAltDeg = centerAltDeg,
+            fovDeg = fovDeg,
+            viewportWidth = w,
+            viewportHeight = h,
+            latDeg = latDeg,
+            lstDeg = lstDeg
+        )
+        tilePaint.colorFilter = if (isNightVision) NIGHT_VISION_FILTER else DAY_VISION_FILTER
+        val subdiv = subdivForOrder(order)
+        val maxEdgePx = max(w, h) * 3.5f
+
+        drawScope.drawIntoCanvas { canvas ->
+            for ((ipix, bmp) in tiles) {
                 drawResolvedTile(
                     canvas = canvas,
-                    targetOrder = targetOrder,
+                    targetOrder = order,
                     targetIpix = ipix,
-                    resolved = resolved,
+                    resolved = ResolvedHiPSTile(order, bmp),
                     subdiv = subdiv,
                     viewportW = w,
                     viewportH = h,
                     maxEdgePx = maxEdgePx,
-                    hasValidLocation = hasValidLocation
+                    hasValidLocation = false
                 )
             }
         }
+    }
+
+    private fun drawQuadtreeTile(
+        canvas: Canvas,
+        tileManager: HiPSTileManager,
+        order: Int,
+        ipix: Int,
+        desiredOrder: Int,
+        fallback: ResolvedHiPSTile,
+        viewportW: Float,
+        viewportH: Float,
+        maxEdgePx: Float,
+        hasValidLocation: Boolean
+    ) {
+        val current = if (order > Healpix.MAX_ORDER) {
+            tileManager.getDecodedExactTile(order, ipix)?.let { ResolvedHiPSTile(order, it) }
+                ?: fallback
+        } else {
+            fallback
+        }
+        if (order < desiredOrder && tileManager.hasDecodedHqDescendant(order, ipix, desiredOrder)) {
+            val childOrder = order + 1
+            val baseChild = ipix shl 2
+            for (q in 0..3) {
+                drawQuadtreeTile(
+                    canvas = canvas,
+                    tileManager = tileManager,
+                    order = childOrder,
+                    ipix = baseChild + q,
+                    desiredOrder = desiredOrder,
+                    fallback = current,
+                    viewportW = viewportW,
+                    viewportH = viewportH,
+                    maxEdgePx = maxEdgePx,
+                    hasValidLocation = hasValidLocation
+                )
+            }
+            return
+        }
+        drawResolvedTile(
+            canvas = canvas,
+            targetOrder = order,
+            targetIpix = ipix,
+            resolved = current,
+            subdiv = 2,
+            viewportW = viewportW,
+            viewportH = viewportH,
+            maxEdgePx = maxEdgePx,
+            hasValidLocation = hasValidLocation
+        )
     }
 
     private fun drawResolvedTile(
@@ -420,6 +541,12 @@ class HiPSRenderState {
         canvas.drawVertices(vertices, BlendMode.Modulate, tilePaint)
     }
 
+    private fun subdivForOrder(order: Int): Int = when (order) {
+        0 -> 8
+        1 -> 4
+        else -> 2
+    }
+
     private fun sortIndicesByCenterProximity(
         indices: IntArray,
         count: Int,
@@ -428,13 +555,27 @@ class HiPSRenderState {
         centerDecDeg: Double
     ) {
         if (count <= 1) return
-        val centerIpix = Healpix.ang2pixNest(order, centerRaDeg, centerDecDeg)
+        val raRad = centerRaDeg * (PI / 180.0)
+        val decRad = centerDecDeg * (PI / 180.0)
+        val cosDec = cos(decRad)
+        val vx = cosDec * cos(raRad)
+        val vy = cosDec * sin(raRad)
+        val vz = sin(decRad)
+
+        for (i in 0 until count) {
+            visibleDots[i] = Healpix.baseTileCenterDot(order, indices[i], vx, vy, vz)
+        }
         for (i in 1 until count) {
-            if (indices[i] == centerIpix) {
-                indices[i] = indices[0]
-                indices[0] = centerIpix
-                break
+            val idxVal = indices[i]
+            val dotVal = visibleDots[i]
+            var j = i - 1
+            while (j >= 0 && visibleDots[j] < dotVal) {
+                indices[j + 1] = indices[j]
+                visibleDots[j + 1] = visibleDots[j]
+                j--
             }
+            indices[j + 1] = idxVal
+            visibleDots[j + 1] = dotVal
         }
     }
 

@@ -363,6 +363,7 @@ class CatalogObjectInfoFormatterTest {
         assertTrue(selection.contains("catalog_label = ?"))
         assertTrue(selection.contains("object_type IN (?,?)"))
         assertTrue(selection.contains("object_type NOT LIKE '%Star%'"))
+        assertTrue(selection.contains("object_type != 'Unknown'"))
         assertTrue(selection.contains("magnitude IS NOT NULL AND magnitude <= 10.0"))
         assertTrue(selection.contains("SIN(dec *"))
         assertTrue(args.contains("M"))
@@ -404,6 +405,7 @@ class CatalogObjectInfoFormatterTest {
 
         val (sh2Sql, sh2Args) = prefixArgs("sh2")
         assertFalse(sh2Sql.contains("catalog_label = ? AND catalog_entry = ?"))
+        assertFalse(sh2Sql.contains("object_type != 'Unknown'"))
         assertTrue(sh2Sql.contains("OR catalog_label = ?"))
         assertEquals("Sh2", sh2Args.last())
 

@@ -39,6 +39,7 @@ import platform.posix.O_WRONLY
 import platform.posix.SEEK_SET
 import platform.posix.errno
 import platform.posix.fsync
+import platform.posix.ftruncate
 import platform.posix.lseek
 import platform.posix.memcpy
 import platform.posix.pread
@@ -369,10 +370,19 @@ class IosHiPSLocalBackend : HiPSLocalBackend {
             }
         }
 
+        if (!atomicSwapFile(tempPath, packPath)) {
+            return false
+        }
+        fm.removeItemAtPath(stagingDir, null)
+        return true
+    }
+
+    private fun atomicSwapFile(tempPath: String, destPath: String): Boolean {
+        val fm = NSFileManager.defaultManager
         excludeFromBackup(tempPath)
-        val swapped = if (fm.fileExistsAtPath(packPath)) {
+        val swapped = if (fm.fileExistsAtPath(destPath)) {
             fm.replaceItemAtURL(
-                originalItemURL = NSURL.fileURLWithPath(packPath),
+                originalItemURL = NSURL.fileURLWithPath(destPath),
                 withItemAtURL = NSURL.fileURLWithPath(tempPath),
                 backupItemName = null,
                 options = 0uL,
@@ -380,14 +390,13 @@ class IosHiPSLocalBackend : HiPSLocalBackend {
                 error = null
             )
         } else {
-            fm.moveItemAtPath(tempPath, packPath, error = null)
+            fm.moveItemAtPath(tempPath, destPath, error = null)
         }
         if (!swapped) {
             fm.removeItemAtPath(tempPath, null)
             return false
         }
-        excludeFromBackup(packPath)
-        fm.removeItemAtPath(stagingDir, null)
+        excludeFromBackup(destPath)
         return true
     }
 
@@ -452,5 +461,120 @@ class IosHiPSLocalBackend : HiPSLocalBackend {
             }
             task.resume()
         }
+    }
+
+    private fun resolveHqDir(): String? =
+        resolveHipsDir()?.let { "$it/${HiPSLocalBackend.HQ_DIR_NAME}" }
+
+    override fun hqDataLengthBytes(): Long {
+        val hqDir = resolveHqDir() ?: return 0L
+        val dataPath = "$hqDir/${HiPSLocalBackend.HQ_DATA_FILE_NAME}"
+        if (!NSFileManager.defaultManager.fileExistsAtPath(dataPath)) return 0L
+        return fileSizeBytes(dataPath)
+    }
+
+    override fun hqStorageSizeBytes(): Long {
+        val hqDir = resolveHqDir() ?: return 0L
+        val fm = NSFileManager.defaultManager
+        val dataPath = "$hqDir/${HiPSLocalBackend.HQ_DATA_FILE_NAME}"
+        val idxPath = "$hqDir/${HiPSLocalBackend.HQ_INDEX_FILE_NAME}"
+        var total = 0L
+        if (fm.fileExistsAtPath(dataPath)) total += fileSizeBytes(dataPath)
+        if (fm.fileExistsAtPath(idxPath)) total += fileSizeBytes(idxPath)
+        return total
+    }
+
+    override fun readHqIndexBytes(): ByteArray? {
+        val hqDir = resolveHqDir() ?: return null
+        val idxPath = "$hqDir/${HiPSLocalBackend.HQ_INDEX_FILE_NAME}"
+        if (!NSFileManager.defaultManager.fileExistsAtPath(idxPath)) return null
+        val lenLong = fileSizeBytes(idxPath)
+        if (lenLong <= 0L || lenLong > Int.MAX_VALUE.toLong()) return null
+        val fd = posixOpen(idxPath, O_RDONLY)
+        if (fd < 0) return null
+        return try {
+            readPreadExact(fd, 0L, lenLong.toInt())
+        } finally {
+            posixClose(fd)
+        }
+    }
+
+    override fun openHqAssetSource(): HiPSAssetSource {
+        val path = resolveHqDir()?.let { "$it/${HiPSLocalBackend.HQ_DATA_FILE_NAME}" } ?: ""
+        return IosHiPSAssetSource(path)
+    }
+
+    override fun appendHqBatch(
+        expectedDataEnd: Long,
+        payloads: List<ByteArray>,
+        newIndexBytes: ByteArray
+    ): Boolean {
+        if (expectedDataEnd < 0L || newIndexBytes.isEmpty()) return false
+        val hipsDir = resolveHipsDir() ?: return false
+        if (!ensureDirExistsAndExcluded(hipsDir)) return false
+        val hqDir = "$hipsDir/${HiPSLocalBackend.HQ_DIR_NAME}"
+        if (!ensureDirExistsAndExcluded(hqDir)) return false
+
+        val fm = NSFileManager.defaultManager
+        val dataPath = "$hqDir/${HiPSLocalBackend.HQ_DATA_FILE_NAME}"
+        val idxPath = "$hqDir/${HiPSLocalBackend.HQ_INDEX_FILE_NAME}"
+        val tempIdxPath = "$hqDir/${HiPSLocalBackend.HQ_TEMP_INDEX_NAME}"
+        if (fm.fileExistsAtPath(tempIdxPath)) fm.removeItemAtPath(tempIdxPath, null)
+
+        val dataFlags = if (expectedDataEnd == 0L) {
+            O_WRONLY or O_CREAT or O_TRUNC
+        } else {
+            if (!fm.fileExistsAtPath(dataPath)) return false
+            O_WRONLY
+        }
+        val dataFd = posixOpen(dataPath, dataFlags, FILE_MODE_0644)
+        if (dataFd < 0) return false
+        val dataOk = try {
+            if (expectedDataEnd > 0L) {
+                val curLen = fileSizeBytes(dataPath)
+                if (curLen < expectedDataEnd) return false
+                if (curLen > expectedDataEnd && ftruncate(dataFd, expectedDataEnd) != 0) {
+                    return false
+                }
+                if (lseek(dataFd, expectedDataEnd, SEEK_SET) != expectedDataEnd) return false
+            }
+            var wroteAll = true
+            for (payload in payloads) {
+                if (!writeAll(dataFd, payload)) {
+                    wroteAll = false
+                    break
+                }
+            }
+            if (wroteAll) fsync(dataFd)
+            wroteAll
+        } finally {
+            posixClose(dataFd)
+        }
+        if (!dataOk) return false
+        excludeFromBackup(dataPath)
+
+        val idxFd = posixOpen(tempIdxPath, O_WRONLY or O_CREAT or O_TRUNC, FILE_MODE_0644)
+        if (idxFd < 0) return false
+        val idxOk = try {
+            val wrote = writeAll(idxFd, newIndexBytes)
+            if (wrote) fsync(idxFd)
+            wrote
+        } finally {
+            posixClose(idxFd)
+        }
+        if (!idxOk) {
+            fm.removeItemAtPath(tempIdxPath, null)
+            return false
+        }
+        return atomicSwapFile(tempIdxPath, idxPath)
+    }
+
+    override fun deleteHqStorage(): Boolean {
+        val hqDir = resolveHqDir() ?: return false
+        val fm = NSFileManager.defaultManager
+        if (fm.fileExistsAtPath(hqDir)) {
+            fm.removeItemAtPath(hqDir, null)
+        }
+        return !fm.fileExistsAtPath(hqDir)
     }
 }

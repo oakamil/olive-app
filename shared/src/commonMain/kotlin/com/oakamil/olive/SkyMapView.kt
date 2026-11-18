@@ -566,7 +566,7 @@ fun SkyMapView(
         nonStars.addAll(
             (tier1Dso + dynamicCatalogObjects)
                 .filter { obj ->
-                    if (obj.objectType.contains("Star")) return@filter false
+                    if (obj.objectType.contains("Star") || obj.objectType == "Unknown") return@filter false
                     if (isCurrentTarget(obj)) return@filter true
                     val typeMatches =
                         isAllTypes || obj.objectType in currentTypeFilters || obj.broadCategory in currentTypeFilters
@@ -2116,7 +2116,8 @@ fun SkyMapView(
             ObjectInfoPopup(
                 coords = obj.ra to obj.dec,
                 catalogObject = obj,
-                catalogDb = viewModel.catalogDb,
+                viewModel = viewModel,
+                timeMs = currentTimeMs,
                 onDismiss = { selectedObject = null },
                 altAz = altAz,
                 bottomBar = if (viewModel.isEngineRunning) {
@@ -2155,7 +2156,8 @@ fun SkyMapView(
             ObjectInfoPopup(
                 coords = coords,
                 catalogObject = targetObject,
-                catalogDb = viewModel.catalogDb,
+                viewModel = viewModel,
+                timeMs = currentTimeMs,
                 onDismiss = { showTargetPopup = false },
                 altAz = calculateOptionalAltAz(
                     viewModel.hasValidLocation,

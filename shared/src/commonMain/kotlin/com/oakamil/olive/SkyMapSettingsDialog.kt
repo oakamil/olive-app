@@ -185,31 +185,48 @@ fun SkyMapSettingsDialog(
                         HiPSDownloadManager.formatMbValue(viewModel.skyStorageBytes)
                     )
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 12.dp, bottom = 4.dp)
-                ) {
-                    Text(
-                        text = statusText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isDownloadingOrPacking) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f)
-                        }
+                HiPSStorageStatusRow(
+                    statusText = statusText,
+                    isActive = isDownloadingOrPacking,
+                    onShowProgress = if (isDownloadingOrPacking) {
+                        { viewModel.showHiPSDownloadProgress = true }
+                    } else null,
+                    onRemove = { viewModel.removeDownloadedSkyPack() }
+                )
+            }
+
+            // 2b. High-Quality Object Images Storage
+            val hqDlState = viewModel.hqDownloadState
+            val isHqBulkDownloading =
+                hqDlState is HiPSHqDownloadState.Downloading && hqDlState.isBulkCatalog
+            val hasHqStored = viewModel.hqStorageBytes > 0L
+            if (isHqBulkDownloading || hasHqStored) {
+                Text(
+                    text = stringResource(Res.string.label_hq_object_images),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                val hqStatusText = if (isHqBulkDownloading) {
+                    val pct =
+                        ((hqDlState.completedTiles * 100) / hqDlState.totalTiles.coerceAtLeast(1)).coerceIn(
+                            0,
+                            100
+                        )
+                    stringResource(Res.string.hips_downloading_inline, pct)
+                } else {
+                    stringResource(
+                        Res.string.hips_status_stored,
+                        HiPSDownloadManager.formatMbValue(viewModel.hqStorageBytes)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    if (isDownloadingOrPacking) {
-                        TextButton(onClick = { viewModel.showHiPSDownloadProgress = true }) {
-                            Text(text = stringResource(Res.string.hips_action_show))
-                        }
-                    }
-                    TextButton(onClick = { viewModel.removeDownloadedSkyPack() }) {
-                        Text(text = stringResource(Res.string.hips_action_remove))
-                    }
                 }
+                HiPSStorageStatusRow(
+                    statusText = hqStatusText,
+                    isActive = isHqBulkDownloading,
+                    onShowProgress = if (isHqBulkDownloading) {
+                        { viewModel.showHqDownloadProgress = true }
+                    } else null,
+                    onRemove = { viewModel.showRemoveHqConfirm = true }
+                )
             }
 
             // 2. Guidance Mode
@@ -754,6 +771,40 @@ fun SkyMapSettingsDialog(
                     stringResource(Res.string.info_about_olive, versionDisplay)
                 )
             )
+        }
+    }
+}
+
+@Composable
+private fun HiPSStorageStatusRow(
+    statusText: String,
+    isActive: Boolean,
+    onShowProgress: (() -> Unit)?,
+    onRemove: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, bottom = 4.dp)
+    ) {
+        Text(
+            text = statusText,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (isActive) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f)
+            }
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        if (onShowProgress != null) {
+            TextButton(onClick = onShowProgress) {
+                Text(text = stringResource(Res.string.hips_action_show))
+            }
+        }
+        TextButton(onClick = onRemove) {
+            Text(text = stringResource(Res.string.hips_action_remove))
         }
     }
 }

@@ -196,7 +196,13 @@ interface CatalogDatabase {
             }
 
             if (starFilter != null) {
-                clauses.add(if (starFilter) "object_type LIKE '%Star%'" else "object_type NOT LIKE '%Star%'")
+                clauses.add(
+                    if (starFilter) {
+                        "object_type LIKE '%Star%'"
+                    } else {
+                        "object_type NOT LIKE '%Star%' AND object_type != 'Unknown'"
+                    }
+                )
             }
 
             if (visibilityFilter == "Above Horizon" &&
