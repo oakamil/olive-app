@@ -4,6 +4,7 @@
 package com.oakamil.olive
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -30,6 +31,8 @@ class AndroidHiPSAssetSource(
 ) : HiPSAssetSource {
 
     private val lock = Any()
+    private val rgbaLock = Any()
+    private var rgbaBuffer: ByteArray? = null
     private var raf: RandomAccessFile? = null
     private var channel: FileChannel? = null
     private var closed = false
@@ -70,7 +73,39 @@ class AndroidHiPSAssetSource(
     override fun decodeTile(bytes: ByteArray): ImageBitmap? {
         if (bytes.isEmpty()) return null
         return try {
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            val opts = BitmapFactory.Options().apply {
+                inMutable = true
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
+            val bmp = if (decoded.isMutable && decoded.config == Bitmap.Config.ARGB_8888) {
+                decoded
+            } else {
+                val copy =
+                    decoded.copy(Bitmap.Config.ARGB_8888, true) ?: return decoded.asImageBitmap()
+                decoded.recycle()
+                copy
+            }
+            if (bmp.width < HiPSTileNormalizer.MIN_DIM || bmp.height < HiPSTileNormalizer.MIN_DIM) {
+                return bmp.asImageBitmap()
+            }
+            val byteCountLong = bmp.width.toLong() * bmp.height.toLong() * 4L
+            if (byteCountLong > Int.MAX_VALUE.toLong()) return bmp.asImageBitmap()
+            val byteCount = byteCountLong.toInt()
+            synchronized(rgbaLock) {
+                val existing = rgbaBuffer
+                val rgba = if (existing != null && existing.size >= byteCount) {
+                    existing
+                } else {
+                    ByteArray(byteCount).also { rgbaBuffer = it }
+                }
+                val buf = ByteBuffer.wrap(rgba, 0, byteCount)
+                bmp.copyPixelsToBuffer(buf)
+                HiPSTileNormalizer.normalizeRgba(rgba, bmp.width, bmp.height)
+                buf.rewind()
+                bmp.copyPixelsFromBuffer(buf)
+            }
+            bmp.asImageBitmap()
         } catch (e: Exception) {
             Log.w("HiPS", "Failed decoding tile on Android", e)
             null
@@ -90,6 +125,9 @@ class AndroidHiPSAssetSource(
             }
             channel = null
             raf = null
+        }
+        synchronized(rgbaLock) {
+            rgbaBuffer = null
         }
     }
 }

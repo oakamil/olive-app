@@ -13,4 +13,5 @@ package com.oakamil.olive
     AnnotationTarget.FIELD
 )
 @Retention(AnnotationRetention.BINARY)
+@Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 expect annotation class Keep()

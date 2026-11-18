@@ -13,6 +13,7 @@ import org.junit.Test
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -414,5 +415,184 @@ class HiPSTest {
         } finally {
             tempRoot.deleteRecursively()
         }
+    }
+
+    private fun setRgba(rgba: ByteArray, width: Int, x: Int, y: Int, r: Int, g: Int, b: Int, a: Int = 255) {
+        val p = (y * width + x) * 4
+        rgba[p] = r.toByte()
+        rgba[p + 1] = g.toByte()
+        rgba[p + 2] = b.toByte()
+        rgba[p + 3] = a.toByte()
+    }
+
+    private fun channel(rgba: ByteArray, width: Int, x: Int, y: Int, c: Int): Int {
+        return rgba[(y * width + x) * 4 + c].toInt() and 0xFF
+    }
+
+    @Test
+    fun testTileNormalizerFlattensDiagonalPlateSeamAndStraddlingStar() {
+        val w = 128
+        val h = 128
+        val rgba = ByteArray(w * h * 4)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val isHazySide = x + y >= w
+                if (isHazySide) {
+                    setRgba(rgba, w, x, y, 10, 14, 21)
+                } else {
+                    setRgba(rgba, w, x, y, 2, 3, 2)
+                }
+            }
+        }
+        // Plant a compact star halo centered right on the diagonal seam & cell boundary (64, 64)
+        for (dy in -2..2) {
+            for (dx in -2..2) {
+                val distSq = dx * dx + dy * dy
+                if (distSq <= 4) {
+                    val b = 44 - distSq * 4
+                    setRgba(rgba, w, 64 + dx, 64 + dy, b - 8, b - 4, b)
+                }
+            }
+        }
+
+        HiPSTileNormalizer.normalizeRgba(rgba, w, h)
+
+        var maxDiffOnSeam = 0
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                if (x in 62..66 && y in 62..66) continue
+                val r = channel(rgba, w, x, y, 0)
+                val g = channel(rgba, w, x, y, 1)
+                val b = channel(rgba, w, x, y, 2)
+                val maxCh = maxOf(r, g, b)
+                if (x + y >= w) {
+                    assertTrue(
+                        "Expected hazy diagonal plate flattened <= 5, got ($r,$g,$b) at ($x,$y)",
+                        maxCh <= 5
+                    )
+                } else {
+                    assertEquals(2, r)
+                    assertEquals(3, g)
+                    assertEquals(2, b)
+                }
+                if (x + y in (w - 2)..(w + 2)) {
+                    maxDiffOnSeam = maxOf(maxDiffOnSeam, maxCh)
+                }
+            }
+        }
+        assertTrue(
+            "Expected no bright straddling fringe near seam, max=$maxDiffOnSeam",
+            maxDiffOnSeam <= 5
+        )
+
+        // Straddling star keeps its center peak without an own-cell step ring across x = 63 -> 64 -> 65
+        val leftWingB = channel(rgba, w, 63, 64, 2)
+        val centerB = channel(rgba, w, 64, 64, 2)
+        val rightWingB = channel(rgba, w, 65, 64, 2)
+        assertTrue(
+            "Expected star center ($centerB) brighter than wings ($leftWingB, $rightWingB)",
+            centerB > leftWingB && centerB > rightWingB
+        )
+        assertTrue(
+            "Expected symmetric halo across seam cell boundary, got $leftWingB vs $rightWingB",
+            abs(leftWingB - rightWingB) <= 3
+        )
+    }
+
+    @Test
+    fun testTileNormalizerPreservesNebulaeTapersHighlightsAndKeepsAlpha() {
+        val w = 96
+        val h = 64
+        val rgba = ByteArray(w * h * 4)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                when {
+                    x < 32 -> setRgba(rgba, w, x, y, 26, 17, 7)      // Warm Milky Way dust (R - B >= 10)
+                    x < 64 -> setRgba(rgba, w, x, y, 44, 114, 180)   // Bright reflection nebula (max >= 36)
+                    else -> setRgba(rgba, w, x, y, 10, 14, 20)       // Cool hazy plate (sub = 6, 10, 16)
+                }
+            }
+        }
+        // Odd y-coordinates avoid the even 4x4 block sample grid while testing pixel-level rules on a hazy plate
+        setRgba(rgba, w, 88, 11, 200, 210, 232)
+        setRgba(rgba, w, 88, 21, 255, 255, 255)
+        setRgba(rgba, w, 88, 31, 10, 14, 20, 173)
+
+        HiPSTileNormalizer.normalizeRgba(rgba, w, h)
+
+        assertEquals(26, channel(rgba, w, 16, 20, 0))
+        assertEquals(17, channel(rgba, w, 16, 20, 1))
+        assertEquals(7, channel(rgba, w, 16, 20, 2))
+
+        assertEquals(44, channel(rgba, w, 40, 20, 0))
+        assertEquals(114, channel(rgba, w, 40, 20, 1))
+        assertEquals(180, channel(rgba, w, 40, 20, 2))
+
+        // Highlight taper (pMax = 232 > 210) subtracts a tapered fraction rather than full 16 or 0
+        val taperedB = channel(rgba, w, 88, 11, 2)
+        assertTrue("Expected tapered highlight in 217..231, got $taperedB", taperedB in 217..231)
+
+        // Saturated 255 core is untouched even inside an active hazy plate
+        assertEquals(255, channel(rgba, w, 88, 21, 0))
+        assertEquals(255, channel(rgba, w, 88, 21, 1))
+        assertEquals(255, channel(rgba, w, 88, 21, 2))
+
+        // Non-255 alpha is preserved while RGB pedestal is normalized to TARGET_FLOOR (4)
+        assertEquals(4, channel(rgba, w, 88, 31, 0))
+        assertEquals(4, channel(rgba, w, 88, 31, 1))
+        assertEquals(4, channel(rgba, w, 88, 31, 2))
+        assertEquals(173, channel(rgba, w, 88, 31, 3))
+    }
+
+    @Test
+    fun testTileNormalizerSmoothRampMonotonicityAndDimensionGuards() {
+        val w = 64
+        val h = 32
+        val ramp = ByteArray(w * h * 4)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val b = when {
+                    x < 16 -> 20
+                    x < 48 -> 20 + (x - 15)
+                    else -> 52
+                }
+                setRgba(ramp, w, x, y, b - 10, b - 6, b)
+            }
+        }
+
+        HiPSTileNormalizer.normalizeRgba(ramp, w, h)
+
+        var prevB = channel(ramp, w, 0, 16, 2)
+        assertEquals(4, prevB)
+        for (x in 1 until w) {
+            val curB = channel(ramp, w, x, 16, 2)
+            assertTrue("Expected monotonic ramp at x=$x: prev=$prevB, cur=$curB", curB >= prevB)
+            assertTrue(
+                "Expected smooth transition without step jump at x=$x: prev=$prevB, cur=$curB",
+                curB - prevB <= 6
+            )
+            prevB = curB
+        }
+        assertEquals(52, prevB)
+
+        // Non-multiple-of-16 dimensions (40x40 -> 3x3 cells with 8px edge cells) normalize cleanly
+        val nonMult = ByteArray(40 * 40 * 4)
+        for (y in 0 until 40) {
+            for (x in 0 until 40) {
+                setRgba(nonMult, 40, x, y, 10, 14, 20)
+            }
+        }
+        HiPSTileNormalizer.normalizeRgba(nonMult, 40, 40)
+        assertEquals(4, channel(nonMult, 40, 39, 39, 2))
+
+        // Undersized tiles (< MIN_DIM) and 32-bit Int overflow dimensions return safely as no-ops
+        val tiny = ByteArray(12 * 12 * 4)
+        setRgba(tiny, 12, 5, 5, 10, 14, 20)
+        HiPSTileNormalizer.normalizeRgba(tiny, 12, 12)
+        assertEquals(20, channel(tiny, 12, 5, 5, 2))
+
+        val overflowGuard = ByteArray(16) { 20 }
+        HiPSTileNormalizer.normalizeRgba(overflowGuard, 32768, 32768)
+        assertEquals(20, overflowGuard[0].toInt() and 0xFF)
     }
 }
