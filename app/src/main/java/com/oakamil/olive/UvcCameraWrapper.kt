@@ -8,16 +8,17 @@ import com.jiangdg.usb.USBMonitor
 import com.jiangdg.uvc.UVCCamera
 import java.util.concurrent.atomic.AtomicBoolean
 
-class UvcCameraWrapper() {
+class UvcCameraWrapper() : UvcCameraHandler {
     var uvcCameraInstance: UVCCamera? = null
-    var previewWidth: Int = 640
+    override var previewWidth: Int = 640
         private set
-    var previewHeight: Int = 480
+    override var previewHeight: Int = 480
         private set
 
     private var currentFps: Int = 30
 
-    val isPipelineReady = AtomicBoolean(false)
+    private val pipelineReady = AtomicBoolean(false)
+    override val isPipelineReady: Boolean get() = pipelineReady.get()
 
     @Volatile
     var isAutoExposureActive: Boolean = false
@@ -190,12 +191,12 @@ class UvcCameraWrapper() {
     @Volatile
     private var primeThread: Thread? = null
 
-    fun startZeroCopyStream(initialGain: Int = 100) {
-        isPipelineReady.set(false)
+    override fun startZeroCopyStream(initialGain: Int) {
+        pipelineReady.set(false)
         primeThread?.interrupt()
         synchronized(cameraLock) {
             uvcCameraInstance?.setFrameCallback({ frame ->
-                if (frame != null && frame.isDirect && isPipelineReady.get()) {
+                if (frame != null && frame.isDirect && pipelineReady.get()) {
                     OliveEngine.pushExternalUvcFrame(
                         frame,
                         previewWidth,
@@ -363,7 +364,7 @@ class UvcCameraWrapper() {
                 Log.e("UvcCameraWrapper", "AE configuration error: ${e.message}", e)
             } finally {
                 if (isPreviewRunning && Thread.currentThread() == primeThread) {
-                    isPipelineReady.set(true)
+                    pipelineReady.set(true)
                     Log.i("UvcCameraWrapper", "UVC astro pipeline ready (Auto-Exposure active)")
                 }
             }
@@ -404,10 +405,11 @@ class UvcCameraWrapper() {
 
     // Used from native (JNI) to query if camera is running pure Auto-Exposure (Mode 8 or 2)
     @Keep
+    @Suppress("unused")
     fun isAutoExposure(): Boolean = isAutoExposureActive
 
-    fun release() {
-        isPipelineReady.set(false)
+    override fun release() {
+        pipelineReady.set(false)
         isPreviewRunning = false
         primeThread?.interrupt()
         primeThread = null
@@ -431,7 +433,7 @@ class UvcCameraWrapper() {
         dummySurfaceTexture = null
     }
 
-    fun getHardwareGain(): Int? {
+    override fun getHardwareGain(): Int? {
         synchronized(cameraLock) {
             if (uvcCameraInstance == null) return null
             return try {
@@ -443,7 +445,7 @@ class UvcCameraWrapper() {
         }
     }
 
-    fun getHardwareBrightness(): Int? {
+    override fun getHardwareBrightness(): Int? {
         synchronized(cameraLock) {
             if (uvcCameraInstance == null) return null
             return try {

@@ -1,3 +1,4 @@
+use log::warn;
 use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 use ndk_sys::*;
 use olive_imu::{ImuDevice, SensorEvent};
@@ -57,7 +58,7 @@ impl ImuDevice for AndroidImu {
 
             self.sensor = ASensorManager_getDefaultSensor(self.manager, sensor_type);
             if self.sensor.is_null() && self.mode == 2 {
-                log::warn!("Game rotation vector not available, falling back to rotation vector");
+                warn!("Game rotation vector not available, falling back to rotation vector");
                 self.sensor = ASensorManager_getDefaultSensor(self.manager, 11);
             }
 
@@ -79,7 +80,7 @@ impl ImuDevice for AndroidImu {
             // Set rate to 10ms (10,000 microseconds)
             let rate_status = ASensorEventQueue_setEventRate(self.queue, self.sensor, 10_000);
             if rate_status < 0 {
-                log::warn!("Failed to set sensor event rate: {}", rate_status);
+                warn!("Failed to set sensor event rate: {}", rate_status);
             }
         }
         Ok(())

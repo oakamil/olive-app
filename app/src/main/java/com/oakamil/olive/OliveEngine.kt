@@ -1,76 +1,111 @@
 package com.oakamil.olive
 
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.createBitmap
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
-object OliveEngine {
+object OliveEngine : EngineBridge {
     init {
         System.loadLibrary("olive_jni")
     }
 
-
     external fun initJni(filesDir: String)
 
-
-    external fun startNativeCameraEngine(
+    external override fun startNativeCameraEngine(
         motionSensorMode: Int,
-        extractor: String,
         sensorMode: String,
         internalCameraId: String,
         downsampleMode: Int,
         lat: Double,
         lon: Double,
-        timeMs: Long,
         settingsManager: SettingsManager,
-        autoMode: Boolean
+        autoMode: Boolean,
+        initialZoom: Float
     )
 
-    external fun startExternalCameraEngine(
+    external override fun startExternalCameraEngine(
         width: Int,
         height: Int,
         motionSensorMode: Int,
-        extractor: String,
         downsampleMode: Int,
         lat: Double,
         lon: Double,
-        timeMs: Long,
         settingsManager: SettingsManager,
         autoMode: Boolean,
         uvcFps: Int,
-        uvcWrapper: UvcCameraWrapper?
+        uvcWrapper: UvcCameraHandler?
     )
 
-    external fun pushExternalUvcFrame(buffer: ByteBuffer, width: Int, height: Int, timestamp: Long)
+    external fun pushExternalUvcFrame(
+        buffer: ByteBuffer,
+        width: Int,
+        height: Int,
+        timestamp: Long
+    )
 
-    external fun stopEngine()
-    external fun getEngineStats(): String
-    external fun setNativeCameraExposure(exposureUs: Int)
-    external fun setNativeCameraGain(gain: Float)
-    external fun setNativeCameraFocus(distance: Float)
-    external fun setNativeCameraNoiseReduction(mode: Int)
-    external fun getNativeCameraExposure(): Int
-    external fun getNativeCameraGainRange(): FloatArray?
-    external fun getNativeCameraGain(): Float
-    external fun getNativeCameraNoiseReduction(): Int
-    external fun getNativeCameraBrightnessRange(): IntArray?
-    external fun getNativeCameraBrightness(): Int
-    external fun setNativeCameraBrightness(brightness: Int)
-    external fun setNativeCameraZoomRatio(zoom: Float)
-    external fun getNativeCameraZoomRatio(): Float
-    external fun getNativeCameraFocus(): Float
-    external fun getNativeCameraSupportedHotPixelModes(): IntArray
-    external fun setNativeCameraHotPixelMode(mode: Int)
-    external fun getNativeCameraHotPixelMode(): Int
-    external fun getAvailableInternalCameras(): String
+    external override fun stopEngine()
+    external override fun getEngineStats(): String
+    external override fun setNativeCameraExposure(exposureUs: Int)
+    external override fun setNativeCameraGain(gain: Float)
+    external override fun setNativeCameraFocus(distance: Float)
+    external override fun setNativeCameraNoiseReduction(mode: Int)
+    external override fun getNativeCameraExposure(): Int
+    external override fun getNativeCameraGainRange(): FloatArray?
+    external override fun getNativeCameraGain(): Float
+    external override fun getNativeCameraNoiseReduction(): Int
+    external override fun getNativeCameraBrightnessRange(): IntArray?
+    external override fun getNativeCameraBrightness(): Int
+    external override fun setNativeCameraBrightness(brightness: Int)
+    external override fun setNativeCameraZoomRatio(zoom: Float)
+    external override fun getNativeCameraZoomRatio(): Float
+    external override fun getNativeCameraFocus(): Float
+    external override fun getNativeCameraSupportedHotPixelModes(): IntArray
+    external override fun setNativeCameraHotPixelMode(mode: Int)
+    external override fun getNativeCameraHotPixelMode(): Int
+    external override fun getAvailableInternalCameras(): String
+
     external fun getLatestFrameInto(buffer: ByteBuffer, lastTimestamp: Long): Long
-    external fun setEnginePaused(paused: Boolean)
-    external fun setEngineSigma(sigma: Float)
-    external fun setEngineStrictMatch(strict: Boolean)
-    external fun updateUvcStacking(frames: Int)
+
+    private var frameBuffer: ByteBuffer? = null
+
+    override fun getLatestFrame(lastTimestamp: Long): LatestFrame? {
+        val targetSize = 52 * 1024 * 1024
+        if (frameBuffer == null || frameBuffer!!.capacity() < targetSize) {
+            frameBuffer = ByteBuffer.allocateDirect(targetSize).order(ByteOrder.LITTLE_ENDIAN)
+        }
+        val buffer = frameBuffer ?: return null
+
+        val ts = getLatestFrameInto(buffer, lastTimestamp)
+        if (ts <= 0L || ts <= lastTimestamp) return null
+
+        buffer.rewind()
+        val width = buffer.int
+        val height = buffer.int
+        val pixelCount = width * height
+        if (pixelCount !in 1..25000000) return null
+
+        val bitmap = createBitmap(width, height)
+        bitmap.copyPixelsFromBuffer(buffer)
+        return LatestFrame(ts, bitmap.asImageBitmap())
+    }
+
+    external override fun setEnginePaused(paused: Boolean)
+    external override fun setEngineSigma(sigma: Float)
+    external override fun setEngineStrictMatch(strict: Boolean)
+    external override fun updateUvcStacking(frames: Int)
     external fun processTelescopeData(data: ByteArray): ByteArray?
     external fun resetTelescopeServer()
     external fun handleAlpacaConnection(fd: Int)
-    external fun getPlanets(bspPath: String, timeMs: Long, lat: Double, lon: Double): String
-    external fun getAsteroids(
+    external fun handleAlpacaConnectionV6(fd: Int)
+    external override fun getPlanets(
+        bspPath: String,
+        timeMs: Long,
+        lat: Double,
+        lon: Double
+    ): String
+
+    external override fun getAsteroids(
         bspPath: String,
         timeMs: Long,
         lat: Double,
@@ -78,7 +113,7 @@ object OliveEngine {
         asteroidsJson: String
     ): String
 
-    external fun getComets(
+    external override fun getComets(
         bspPath: String,
         timeMs: Long,
         lat: Double,
@@ -86,10 +121,10 @@ object OliveEngine {
         jsonArray: String
     ): String
 
-    external fun setGoToTarget(ra: Double, dec: Double, epoch: Double)
-    external fun clearGoToTarget()
-    external fun setAlignTargetPixel(x: Double, y: Double)
-    external fun clearAlignTargetPixel()
-    external fun syncTelescope()
-    external fun syncTelescopeToTarget(ra: Double, dec: Double)
+    external override fun setGoToTarget(ra: Double, dec: Double, epoch: Double)
+    external override fun clearGoToTarget()
+    external override fun setAlignTargetPixel(x: Double, y: Double)
+    external override fun clearAlignTargetPixel()
+    external override fun syncTelescope()
+    external override fun syncTelescopeToTarget(ra: Double, dec: Double)
 }
