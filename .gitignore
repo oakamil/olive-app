@@ -5,6 +5,8 @@ obj/
 .gradle/
 build/
 app/build/
+shared/build/
+iosApp/build/
 
 # Local configuration file (sdk path, etc)
 local.properties
@@ -21,11 +23,22 @@ Thumbs.db
 # Rust/Cargo
 app/src/main/rust/target/
 app/src/main/rust/Cargo.lock
+crates/**/target/
+crates/**/Cargo.lock
 
 # Log Files
 *.log
 
 # Other
 .antigravitycli/
+.kotlin/
+**/xcuserdata/
+*.xcuserstate
+DerivedData/
+*.xcscmblueprint
+*.xccheckout
+.build/
+*.swp
+*~
 app/release/
 app/src/main/jniLibs/

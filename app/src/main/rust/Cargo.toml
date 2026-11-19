@@ -10,8 +10,8 @@ crate-type = ["cdylib"]
 [dependencies]
 jni = "0.21.1"
 olive-engine = { path = "../../../../../olive-engine" }
-olive-solve = { path = "../../../../../olive-solve" }
-olive-imu = { path = "../../../../../olive-solve/olive-imu" }
+olive-solve = { git = "https://github.com/oakamil/olive-solve.git", rev = "bc471d9b1a2081b5bdc1ffc2c4b8b105ed7ea365" }
+olive-imu = { git = "https://github.com/oakamil/olive-solve.git", rev = "bc471d9b1a2081b5bdc1ffc2c4b8b105ed7ea365" }
 tokio = { version = "1.37.0", features = ["rt-multi-thread"] }
 log = "0.4"
 android_logger = "0.13"
@@ -27,3 +27,5 @@ starfield = "0.10.2"
 opt-level = 3
 lto = "fat"
 codegen-units = 1
+panic = "abort"
+strip = true

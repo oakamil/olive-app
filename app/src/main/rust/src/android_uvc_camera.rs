@@ -1,8 +1,12 @@
-use jni::{JavaVM, objects::GlobalRef};
+use jni::{
+    JavaVM,
+    objects::{GlobalRef, JValue},
+};
+use log::info;
 use olive_engine::{CameraConfig, CameraTrait, CameraType, Image};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 pub struct AndroidUvcCamera {
     config: Mutex<CameraConfig>,
@@ -27,7 +31,7 @@ pub struct AndroidUvcCamera {
 
     jvm: Option<JavaVM>,
     uvc_wrapper: Option<GlobalRef>,
-    is_running: std::sync::atomic::AtomicBool,
+    is_running: AtomicBool,
 }
 
 impl AndroidUvcCamera {
@@ -75,7 +79,7 @@ impl AndroidUvcCamera {
             image_cvar: Condvar::new(),
             jvm,
             uvc_wrapper,
-            is_running: std::sync::atomic::AtomicBool::new(true),
+            is_running: AtomicBool::new(true),
         }
     }
 
@@ -112,7 +116,12 @@ impl AndroidUvcCamera {
     }
 
     pub fn push_external_frame(&self, nv21_data: &[u8], width: u32, height: u32) {
-        let y_plane_size = (width * height) as usize;
+        if width == 0 || height == 0 {
+            return;
+        }
+        let Some(y_plane_size) = (width as usize).checked_mul(height as usize) else {
+            return;
+        };
         if nv21_data.len() < y_plane_size {
             return;
         }
@@ -142,9 +151,7 @@ impl AndroidUvcCamera {
             if is_ae {
                 // Mode 8 (Aperture Priority Auto-Exposure - Sony IMX662):
                 // Initial 10 frames already flushed; bypass brightness calibration so Sony AEC runs cleanly.
-                log::info!(
-                    "Camera in Auto-Exposure mode: bypassing brightness calibration, locking."
-                );
+                info!("Camera in Auto-Exposure mode: bypassing brightness calibration, locking.");
                 self.calibrated.store(true, Ordering::Relaxed);
                 // Proceed to deliver this settled frame to the Engine!
             } else {
@@ -159,7 +166,7 @@ impl AndroidUvcCamera {
 
                         if median > 100 {
                             // Daytime/bright scene: skip brightness cal, set gain to 100
-                            log::info!(
+                            info!(
                                 "Daytime scene detected (median={}). Skipping brightness cal.",
                                 median
                             );
@@ -180,11 +187,9 @@ impl AndroidUvcCamera {
                             let new_b = (current_b - step).clamp(0, 100);
 
                             if new_b != current_b {
-                                log::info!(
+                                info!(
                                     "Auto-calibrating brightness: P5={}, adjusting {} -> {}",
-                                    p5,
-                                    current_b,
-                                    new_b
+                                    p5, current_b, new_b
                                 );
                                 self.set_brightness(new_b);
                                 self.settle_frames.store(3, Ordering::Relaxed);
@@ -193,7 +198,7 @@ impl AndroidUvcCamera {
                         }
 
                         // Brightness settled! Now transition to Phase 1: set gain to 100
-                        log::info!("Brightness settled at P5={}. Setting gain to 100...", p5);
+                        info!("Brightness settled at P5={}. Setting gain to 100...", p5);
                         self.set_gain(100.0);
                         self.settle_frames.store(3, Ordering::Relaxed);
                         self.cal_phase.store(1, Ordering::Relaxed);
@@ -202,7 +207,7 @@ impl AndroidUvcCamera {
                     1 => {
                         // Phase 1: Verify at Gain 100
                         if p5 >= 5 && p5 <= 14 {
-                            log::info!(
+                            info!(
                                 "Calibration verified at Gain 100: P5={} (Optimal). Locking calibration.",
                                 p5
                             );
@@ -210,7 +215,7 @@ impl AndroidUvcCamera {
                             // Do not return: pass this settled frame directly to Engine!
                         } else {
                             // Rare trim step if gain caused unexpected pedestal shift
-                            log::info!("Post-gain trim needed at Gain 100: P5={}", p5);
+                            info!("Post-gain trim needed at Gain 100: P5={}", p5);
                             let current_b = self.brightness.load(Ordering::Relaxed);
                             let delta = ((p5 - 10) as f32 / 1.5).round() as i32;
                             let step = if delta == 0 {
@@ -228,7 +233,7 @@ impl AndroidUvcCamera {
                     }
                     _ => {
                         // Final Lock Phase
-                        log::info!("Calibration locked: final P5={}", p5);
+                        info!("Calibration locked: final P5={}", p5);
                         self.calibrated.store(true, Ordering::Relaxed);
                         // Do not return: pass this frame to Engine!
                     }
@@ -237,7 +242,7 @@ impl AndroidUvcCamera {
         }
 
         let target_stack = self.stack_count.load(Ordering::Relaxed).max(1);
-        let mut accum = self.accumulator.lock().unwrap();
+        let mut accum = self.accumulator.lock().unwrap_or_else(|e| e.into_inner());
 
         if accum.len() != y_plane_size {
             *accum = vec![0; y_plane_size];
@@ -255,10 +260,10 @@ impl AndroidUvcCamera {
         }
 
         if idx + 1 >= target_stack {
-            let current_exposure = self.exposure_us.load(Ordering::Relaxed);
-            let total_exposure_us = (current_exposure * (target_stack as i32)) as u64;
-            let half_exposure = std::time::Duration::from_micros(total_exposure_us / 2);
-            let pipeline_latency = std::time::Duration::from_millis(30);
+            let current_exposure = self.exposure_us.load(Ordering::Relaxed).max(0) as u64;
+            let total_exposure_us = current_exposure.saturating_mul(target_stack as u64);
+            let half_exposure = Duration::from_micros(total_exposure_us / 2);
+            let pipeline_latency = Duration::from_millis(30);
 
             let timestamp = SystemTime::now()
                 .checked_sub(half_exposure + pipeline_latency)
@@ -269,14 +274,15 @@ impl AndroidUvcCamera {
                 width,
                 height,
                 timestamp,
-                exposure_time_us: total_exposure_us as i32,
-                gain: 1.0,
-                post_process_time: std::time::Duration::from_millis(0),
+                exposure_time_us: total_exposure_us.min(i32::MAX as u64) as i32,
+                gain: self.gain.load(Ordering::Relaxed) as f32,
+                post_process_time: Duration::from_millis(0),
                 frame_interval_us: 0,
                 metadata_valid: true,
+                zoom: 1.0,
             };
 
-            let mut lock = self.last_image.lock().unwrap();
+            let mut lock = self.last_image.lock().unwrap_or_else(|e| e.into_inner());
             *lock = Some(Arc::new(img));
             self.image_cvar.notify_all(); // Wake up wait_for_next_capture
 
@@ -287,7 +293,12 @@ impl AndroidUvcCamera {
 
 impl CameraTrait for AndroidUvcCamera {
     fn get_config(&self) -> Option<CameraConfig> {
-        Some(self.config.lock().unwrap().clone())
+        Some(
+            self.config
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
+        )
     }
 
     fn set_stack_count(&self, count: usize) {
@@ -298,9 +309,9 @@ impl CameraTrait for AndroidUvcCamera {
     fn wait_for_next_capture(
         &self,
         last_timestamp: Option<SystemTime>,
-        timeout: Option<std::time::Duration>,
+        timeout: Option<Duration>,
     ) -> Option<Arc<Image>> {
-        let mut lock = self.last_image.lock().unwrap();
+        let mut lock = self.last_image.lock().unwrap_or_else(|e| e.into_inner());
         loop {
             if !self.is_running.load(Ordering::Relaxed) {
                 return None;
@@ -311,7 +322,10 @@ impl CameraTrait for AndroidUvcCamera {
                 }
             }
             if let Some(duration) = timeout {
-                let (new_lock, result) = self.image_cvar.wait_timeout(lock, duration).unwrap();
+                let (new_lock, result) = self
+                    .image_cvar
+                    .wait_timeout(lock, duration)
+                    .unwrap_or_else(|e| e.into_inner());
                 lock = new_lock;
                 if result.timed_out() {
                     if !self.is_running.load(Ordering::Relaxed) {
@@ -325,13 +339,19 @@ impl CameraTrait for AndroidUvcCamera {
                     return None;
                 }
             } else {
-                lock = self.image_cvar.wait(lock).unwrap();
+                lock = self
+                    .image_cvar
+                    .wait(lock)
+                    .unwrap_or_else(|e| e.into_inner());
             }
         }
     }
 
     fn get_last_capture(&self) -> Option<Arc<Image>> {
-        self.last_image.lock().unwrap().clone()
+        self.last_image
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn get_gain_range(&self) -> (f32, f32, f32) {
@@ -351,7 +371,7 @@ impl CameraTrait for AndroidUvcCamera {
                     wrapper.as_obj(),
                     "setBrightness",
                     "(I)V",
-                    &[jni::objects::JValue::Int(brightness)],
+                    &[JValue::Int(brightness)],
                 );
                 let _ = env.exception_clear();
             }
@@ -372,7 +392,7 @@ impl CameraTrait for AndroidUvcCamera {
                     wrapper.as_obj(),
                     "setGain",
                     "(I)V",
-                    &[jni::objects::JValue::Int(gain as i32)],
+                    &[JValue::Int(gain as i32)],
                 );
                 let _ = env.exception_clear();
             }

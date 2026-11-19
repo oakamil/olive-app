@@ -13,6 +13,11 @@
     public static int d(...);
 }
 
+-assumenosideeffects class com.oakamil.olive.Log {
+    public static void v(...);
+    public static void d(...);
+}
+
 # Preserve standard Android entry points
 -keep class com.oakamil.olive.MainActivity { *; }
 -keep class com.oakamil.olive.OliveService { *; }
@@ -21,14 +26,6 @@
 -keepclasseswithmembers class com.oakamil.olive.OliveEngine {
     native <methods>;
 }
-
-# Preserve EngineStats to prevent serialization issues if used with GSON/Moshi (though currently we just parse JSON manually)
--keep class com.oakamil.olive.EngineStats { *; }
-
-# Ignore missing gRPC dependencies on Android
--dontwarn javax.naming.**
--dontwarn com.squareup.okhttp.**
--dontwarn javax.lang.model.element.Modifier
 
 # Preserve UVCCamera library classes and members accessed via reflection and JNI
 -keep class com.jiangdg.uvc.** { *; }
