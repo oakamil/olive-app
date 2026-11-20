@@ -1756,6 +1756,164 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_pushExternalUvcFrame(
     }
 }
 
+unsafe extern "C" {
+    fn dlopen(
+        filename: *const std::os::raw::c_char,
+        flags: std::os::raw::c_int,
+    ) -> *mut std::ffi::c_void;
+    fn dlsym(
+        handle: *mut std::ffi::c_void,
+        symbol: *const std::os::raw::c_char,
+    ) -> *mut std::ffi::c_void;
+    fn dlclose(handle: *mut std::ffi::c_void) -> std::os::raw::c_int;
+}
+
+fn is_ptr_aligned(p: *const std::ffi::c_void) -> bool {
+    !p.is_null() && (p as usize).is_multiple_of(std::mem::align_of::<*const std::ffi::c_void>())
+}
+
+/// Looks up `name` in an already-loaded library (RTLD_LAZY | RTLD_NOLOAD; identical on LP32/LP64).
+unsafe fn loaded_sym(lib: &std::ffi::CStr, name: &std::ffi::CStr) -> *mut std::ffi::c_void {
+    unsafe {
+        let handle = dlopen(lib.as_ptr(), 0x1 | 0x4);
+        if handle.is_null() {
+            return std::ptr::null_mut();
+        }
+        let sym = dlsym(handle, name.as_ptr());
+        let _ = dlclose(handle);
+        sym
+    }
+}
+
+/// Returns the `uvc_device_handle_t*` owned by a `UVCCamera` native pointer, or null if the
+/// layout doesn't match libUVCCamera.so (AndroidUSBCamera 3.6.0) on arm64-v8a / armeabi-v7a:
+///   slots[4] = mDeviceHandle, slots[5] = mStatusCallback (whose first word == mDeviceHandle)
+unsafe fn resolve_uvc_devh(native_ptr: jlong) -> *mut std::ffi::c_void {
+    let Ok(addr) = usize::try_from(native_ptr) else {
+        return std::ptr::null_mut();
+    };
+    let cam = addr as *const std::ffi::c_void;
+    if !is_ptr_aligned(cam) {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        let slots = cam as *const *mut std::ffi::c_void;
+        let devh = *slots.add(4);
+        let status_cb_obj = *slots.add(5);
+        if !is_ptr_aligned(devh) || !is_ptr_aligned(status_cb_obj) {
+            return std::ptr::null_mut();
+        }
+        if *(status_cb_obj as *const *mut std::ffi::c_void) != devh {
+            warn!("UVCCamera layout mismatch; skipping native UVC workaround");
+            return std::ptr::null_mut();
+        }
+        devh
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_disableUvcStatusCallback(
+    _env: JNIEnv,
+    _class: JClass,
+    native_ptr: jlong,
+) -> jboolean {
+    unsafe {
+        let devh = resolve_uvc_devh(native_ptr);
+        if devh.is_null() {
+            return 0;
+        }
+        let sym = loaded_sym(c"libuvc.so", c"uvc_set_status_callback");
+        if sym.is_null() {
+            warn!("uvc_set_status_callback symbol not found in libuvc.so");
+            return 0;
+        }
+        let set_status_cb: unsafe extern "C" fn(
+            *mut std::ffi::c_void,
+            *const std::ffi::c_void,
+            *mut std::ffi::c_void,
+        ) = std::mem::transmute(sym);
+        set_status_cb(devh, std::ptr::null(), std::ptr::null_mut());
+        info!("Cleared libuvc status callback to prevent JNI DetachCurrentThread abort");
+        1
+    }
+}
+
+// uvc_device_handle_t::streams in libuvc.so (AndroidUSBCamera 3.6.0), read by uvc_stop_streaming.
+#[cfg(target_pointer_width = "64")]
+const DEVH_STREAMS_OFF: usize = 0x98;
+#[cfg(target_pointer_width = "32")]
+const DEVH_STREAMS_OFF: usize = 0x4c;
+
+/// Stops the active libuvc stream and waits until libuvc's USB event thread has finished
+/// handling every cancelled transfer, so the stopPreview() that follows can destroy the stream
+/// without racing that thread (FORTIFY "pthread_mutex_lock called on a destroyed mutex").
+/// Must only be called once the stream is fully started (see UvcCameraWrapper.release()).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_quiesceUvcStream(
+    _env: JNIEnv,
+    _class: JClass,
+    native_ptr: jlong,
+) -> jboolean {
+    type StreamStopFn = unsafe extern "C" fn(*mut std::ffi::c_void) -> std::os::raw::c_int;
+    type GetUsbHandleFn = unsafe extern "C" fn(*mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    type ControlTransferFn = unsafe extern "C" fn(
+        *mut std::ffi::c_void,
+        u8,
+        u8,
+        u16,
+        u16,
+        *mut u8,
+        u16,
+        std::os::raw::c_uint,
+    ) -> std::os::raw::c_int;
+
+    unsafe {
+        let devh = resolve_uvc_devh(native_ptr);
+        if devh.is_null() {
+            return 0;
+        }
+        // Head of devh->streams; Olive only ever opens a single stream.
+        let strmh = *((devh as *const u8).add(DEVH_STREAMS_OFF) as *const *mut std::ffi::c_void);
+        if !is_ptr_aligned(strmh) {
+            return 0;
+        }
+        // strmh->devh is the stream's first field; refuse to proceed if the layout differs.
+        if *(strmh as *const *mut std::ffi::c_void) != devh {
+            warn!("uvc_stream_handle layout mismatch; skipping UVC stream quiesce");
+            return 0;
+        }
+
+        let stop = loaded_sym(c"libuvc.so", c"uvc_stream_stop");
+        let get_usb = loaded_sym(c"libuvc.so", c"uvc_get_libusb_handle");
+        let ctrl = loaded_sym(c"libusb100.so", c"libusb_control_transfer");
+        if stop.is_null() || get_usb.is_null() || ctrl.is_null() {
+            warn!("libuvc/libusb symbols not found; skipping UVC stream quiesce");
+            return 0;
+        }
+        let stop: StreamStopFn = std::mem::transmute(stop);
+        let get_usb: GetUsbHandleFn = std::mem::transmute(get_usb);
+        let ctrl: ControlTransferFn = std::mem::transmute(ctrl);
+
+        // 1. Stop the stream while strmh and its cb_mutex are still alive
+        //    (cancels transfers and joins libuvc's callback thread).
+        let stop_rc = stop(strmh);
+        if stop_rc != 0 {
+            return 0;
+        }
+
+        // 2. Barrier: a standard GET_STATUS request on the control endpoint is completed by the
+        //    same libuvc event thread, after every transfer that finished before it was submitted.
+        let usb = get_usb(devh);
+        if usb.is_null() {
+            return 0;
+        }
+        let mut status = [0u8; 2];
+        let barrier_rc = ctrl(usb, 0x80, 0x00, 0, 0, status.as_mut_ptr(), 2, 500);
+        info!("Quiesced UVC stream (stop_rc={stop_rc}, barrier_rc={barrier_rc})");
+        1
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getNativeCameraNoiseReduction(
     _env: JNIEnv,

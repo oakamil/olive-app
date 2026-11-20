@@ -2,6 +2,7 @@ package com.oakamil.olive
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -11,6 +12,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.location.Location
@@ -43,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.core.content.edit
 import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.location.LocationManagerCompat
@@ -70,19 +73,27 @@ import java.net.NetworkInterface
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Collections
+import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.math.round
 
 class MainActivity : ComponentActivity() {
-    private var usbMonitor: USBMonitor? = null
+    companion object {
+        private const val ACTION_USB_PERMISSION = "com.oakamil.olive.USB_PERMISSION"
+        private val BUILT_IN_WEBCAM_REGEX = Regex(
+            "integrated|built-?in|internal|front|user.?facing|truevision|wide.?vision|easycamera|bisoncam",
+            RegexOption.IGNORE_CASE
+        )
+    }
+
     private lateinit var settingsManager: SettingsManager
 
-    private var isCameraConnected by mutableStateOf(false)
+    private val isCameraConnected: Boolean get() = viewModel.externalCameras.isNotEmpty()
     private var activeCameraSelection by mutableStateOf("internal")
     private var isStopping by mutableStateOf(false)
     private var isStarting by mutableStateOf(false)
 
-    private var connectedDevice: UsbDevice? = null
+    private var connectedDevices: Map<String, UsbDevice>? = null
 
     private var currentScreen by mutableStateOf("main")
     private var isInPipMode by mutableStateOf(false)
@@ -154,6 +165,36 @@ class MainActivity : ComponentActivity() {
             if (intent?.action == OliveService.ACTION_ENGINE_TIMED_OUT) {
                 Log.w("OliveUI", "Received FGS timeout broadcast; syncing engine shutdown.")
                 handleExternalEngineStop()
+            }
+        }
+    }
+
+    private val usbReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (isFinishing || isDestroyed) return
+            when (intent?.action) {
+                UsbManager.ACTION_USB_DEVICE_ATTACHED -> checkForCameras(attachedUsbDevice(intent))
+                UsbManager.ACTION_USB_DEVICE_DETACHED -> checkForCameras()
+                ACTION_USB_PERMISSION -> {
+                    if (!isStarting || activeCameraSelection != "external") return
+                    val device = IntentCompat.getParcelableExtra(
+                        intent,
+                        UsbManager.EXTRA_DEVICE,
+                        UsbDevice::class.java
+                    )
+                    if (device != null && device.deviceName != viewModel.selectedExternalCameraId) return
+                    if (device != null && intent.getBooleanExtra(
+                            UsbManager.EXTRA_PERMISSION_GRANTED,
+                            false
+                        )
+                    ) {
+                        openAndStartUvcCamera(device)
+                    } else {
+                        startupTimeoutJob?.cancel()
+                        startupTimeoutJob = null
+                        isStarting = false
+                    }
+                }
             }
         }
     }
@@ -337,6 +378,16 @@ class MainActivity : ComponentActivity() {
             IntentFilter(OliveService.ACTION_ENGINE_TIMED_OUT),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        ContextCompat.registerReceiver(
+            this,
+            usbReceiver,
+            IntentFilter().apply {
+                addAction(ACTION_USB_PERMISSION)
+                addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+                addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         window.attributes.layoutInDisplayCutoutMode =
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         hideSystemUI()
@@ -364,12 +415,7 @@ class MainActivity : ComponentActivity() {
         }
 
 
-        initUsbMonitor()
-        checkForCameras()
-
-        if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED && isCameraConnected) {
-            updateCameraSelection("external")
-        }
+        checkForCameras(if (savedInstanceState == null) attachedUsbDevice(intent) else null)
 
         setContent {
             CompositionLocalProvider(
@@ -604,12 +650,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Bypass USBMonitor's broken polling loop by catching the OS intent directly
         if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
-            checkForCameras()
-            if (isCameraConnected) {
-                updateCameraSelection("external")
-            }
+            checkForCameras(attachedUsbDevice(intent))
         }
     }
 
@@ -670,6 +712,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemUI()
+        checkForCameras()
         if (settingsManager.locationMode == "Auto" && hasLocationPermission && !viewModel.hasValidLocation) {
             fetchLocation(isManualRefresh = false)
         }
@@ -686,6 +729,10 @@ class MainActivity : ComponentActivity() {
             unregisterReceiver(engineTimeoutReceiver)
         } catch (_: Exception) {
         }
+        try {
+            unregisterReceiver(usbReceiver)
+        } catch (_: Exception) {
+        }
         windowController.restoreScreenBrightness()
         if (isStarting || viewModel.isEngineRunning || viewModel.uvcWrapper != null) {
             val clearGoTo = viewModel.cancelAndResetForDestroy()
@@ -694,15 +741,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         stopBackgroundService()
-
-        try {
-            usbMonitor?.unregister()
-            usbMonitor?.destroy()
-        } catch (e: Exception) {
-            Log.w("OliveUI", "Error destroying USBMonitor in onDestroy", e)
-        } finally {
-            usbMonitor = null
-        }
         super.onDestroy()
     }
 
@@ -711,33 +749,74 @@ class MainActivity : ComponentActivity() {
         activeCameraSelection = selection
     }
 
-    private fun checkForCameras() {
-        if (isFinishing || isDestroyed) return
-        val usbManager = getSystemService(USB_SERVICE) as? UsbManager
-        val deviceList = usbManager?.deviceList?.values?.toList() ?: emptyList()
-        val camera = deviceList.firstOrNull { isUvcDevice(it) }
-        if (camera != null) {
-            isCameraConnected = true
-            connectedDevice = camera
-            if (!isStarting && !isStopping && !viewModel.isEngineRunning) {
-                updateCameraSelection("external")
-            }
+    private fun attachedUsbDevice(intent: Intent?): UsbDevice? =
+        if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+            IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
         } else {
-            isCameraConnected = false
-            connectedDevice = null
+            null
+        }
+
+    private fun checkForCameras(attachedDevice: UsbDevice? = null) {
+        if (isFinishing || isDestroyed) return
+        val devices = (getSystemService(USB_SERVICE) as? UsbManager)?.deviceList?.values
+            ?.filter { isUvcDevice(it) }
+            ?.sortedWith(
+                compareBy<UsbDevice> {
+                    BUILT_IN_WEBCAM_REGEX.containsMatchIn(
+                        "${it.productName.orEmpty()} ${it.manufacturerName.orEmpty()}"
+                    )
+                }.thenByDescending { it.deviceId }
+            )
+            .orEmpty()
+        val freshMap = devices.associateBy { it.deviceName }
+        val previousIds = connectedDevices?.keys
+        connectedDevices = freshMap
+
+        val isUvcBusy = !isStopping && (
+                viewModel.engineMode == MainViewModel.EngineMode.UVC ||
+                        (isStarting && activeCameraSelection == "external")
+                )
+        if ((isUvcBusy && viewModel.selectedExternalCameraId !in freshMap) || devices.isEmpty()) {
             handleUvcDisconnect()
+        }
+
+        val newlyAttachedId = attachedDevice?.deviceName?.takeIf { it in freshMap }
+            ?: previousIds?.let { prev -> devices.firstOrNull { it.deviceName !in prev }?.deviceName }
+
+        val baseNames = devices.map { d ->
+            d.productName?.trim()?.takeIf { it.isNotEmpty() }
+                ?: d.manufacturerName?.trim()?.takeIf { it.isNotEmpty() }
+                ?: String.format(Locale.US, "USB Camera (%04x:%04x)", d.vendorId, d.productId)
+        }
+        val items = devices.mapIndexed { i, d ->
+            val base = baseNames[i]
+            MainViewModel.ExternalCamera(
+                id = d.deviceName,
+                name = if (baseNames.count { it == base } > 1) "$base (${i + 1})" else base
+            )
+        }
+        viewModel.updateExternalCameras(
+            cameras = items,
+            preferredId = newlyAttachedId,
+            lockCurrentSelection = isUvcBusy
+        )
+
+        if (devices.isEmpty()) {
             val resolved = androidCapabilities.resolveCameraSelection(activeCameraSelection, false)
             if (resolved != activeCameraSelection) {
                 updateCameraSelection(resolved)
             }
+        } else if (!isStarting && !isStopping && !viewModel.isEngineRunning &&
+            (previousIds == null || newlyAttachedId != null)
+        ) {
+            updateCameraSelection("external")
         }
     }
 
     private fun isUvcDevice(device: UsbDevice): Boolean {
-        if (device.deviceClass == 14 || (device.deviceClass == 239 && device.deviceSubclass == 2)) return true
+        if (device.deviceClass == UsbConstants.USB_CLASS_VIDEO) return true
         for (i in 0 until device.interfaceCount) {
-            val intf = device.getInterface(i)
-            if (intf.interfaceClass == 14) return true
+            if (device.getInterface(i).interfaceClass == UsbConstants.USB_CLASS_VIDEO) return true
         }
         return false
     }
@@ -1021,6 +1100,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun executeStartEngine() {
+        checkForCameras()
         isStarting = true
         val prefs = getPreferences(MODE_PRIVATE)
         val hasPrompted = prefs.getBoolean("has_prompted_battery_opt", false)
@@ -1058,16 +1138,9 @@ class MainActivity : ComponentActivity() {
             var engineStarted = false
 
             if (selection == "external") {
-                checkForCameras() // Ensure connectedDevice is up to date
-                val device = connectedDevice
+                val device = viewModel.selectedExternalCameraId?.let { connectedDevices?.get(it) }
                 if (device != null) {
-                    if (usbMonitor == null || usbMonitor?.isRegistered != true) {
-                        initUsbMonitor()
-                    }
-                    // USBMonitor handles both requesting permission AND initiating connection if already granted.
-                    // Defer startup timeout until onConnect so slow user confirmation does not race startup.
-                    usbMonitor?.requestPermission(device)
-                    engineStarted = true // Pending permission or connection, keep isStarting true
+                    engineStarted = requestUsbPermission(device)
                 } else {
                     Log.e("OliveUI", "UVC camera selected but none connected!")
                     viewModel.stopEngine()
@@ -1094,34 +1167,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun requestUsbPermission(device: UsbDevice): Boolean {
+        val usbManager = getSystemService(USB_SERVICE) as? UsbManager ?: return false
+        if (usbManager.hasPermission(device)) {
+            openAndStartUvcCamera(device)
+            return true
+        }
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        val permissionIntent = PendingIntent.getBroadcast(
+            this,
+            0,
+            Intent(ACTION_USB_PERMISSION).setPackage(packageName),
+            flags
+        )
+        return try {
+            usbManager.requestPermission(device, permissionIntent)
+            true
+        } catch (e: Exception) {
+            Log.e("OliveUI", "Failed to request USB permission", e)
+            false
+        }
+    }
 
-    private fun initUsbMonitor() {
-        val monitor = USBMonitor.getInstance(applicationContext)
-        usbMonitor = monitor
-        monitor.setOnDeviceConnectListener(object : USBMonitor.OnDeviceConnectListener {
-            override fun onAttach(device: UsbDevice?) {
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) {
-                        checkForCameras()
-                    }
+    private fun openAndStartUvcCamera(device: UsbDevice) {
+        armStartupTimeout()
+        lifecycleScope.launch(Dispatchers.IO) {
+            var wrapper: UvcCameraWrapper? = null
+            var handedOffToEngine = false
+            try {
+                val monitor = USBMonitor.getInstance(applicationContext)
+                val ctrlBlock = runCatching { monitor.openDevice(device) }.getOrNull()
+                if (ctrlBlock == null || ctrlBlock.connection == null) {
+                    Log.e(
+                        "OliveUI",
+                        "Failed to open USB device connection for ${device.deviceName}"
+                    )
+                    runCatching { monitor.resetDevicePermission(device) }
+                    withContext(Dispatchers.Main) { handleStartupFailure() }
+                    return@launch
                 }
-            }
 
-            override fun onDetach(device: UsbDevice?) {
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) {
-                        checkForCameras()
-                    }
-                }
-            }
-
-            override fun onConnect(
-                device: UsbDevice?,
-                ctrlBlock: USBMonitor.UsbControlBlock?,
-                createNew: Boolean
-            ) {
-                if (device != null && ctrlBlock != null) {
-                    val parsed = try {
+                val parsed: List<UvcFormat>
+                val best: UvcFormat?
+                val initialized: Boolean
+                try {
+                    parsed = try {
                         val isUsb3 = UvcFormat.isUsb3Descriptors(ctrlBlock.rawDescriptors)
                         Log.i(
                             "OliveUI",
@@ -1135,7 +1229,7 @@ class MainActivity : ComponentActivity() {
                         Log.w("OliveUI", "Failed to parse UVC raw descriptors", e)
                         emptyList()
                     }
-                    val best = if (parsed.isNotEmpty()) {
+                    best = if (parsed.isNotEmpty()) {
                         UvcFormat.findBestFormatForFps(
                             viewModel.settingsManager.uvcFps,
                             parsed
@@ -1146,56 +1240,58 @@ class MainActivity : ComponentActivity() {
                     val fps = (best?.fps ?: viewModel.settingsManager.uvcFps).coerceAtLeast(1)
                     val format = best?.format ?: viewModel.settingsManager.uvcFormat
 
-                    val wrapper = UvcCameraWrapper()
-                    wrapper.initialize(ctrlBlock, width, height, fps, format)
+                    val candidate = UvcCameraWrapper()
+                    wrapper = candidate
+                    initialized = candidate.initialize(ctrlBlock, width, height, fps, format)
+                } finally {
+                    runCatching { ctrlBlock.close() }
+                }
 
-                    lifecycleScope.launch(Dispatchers.Main) {
-                        if (isFinishing || isDestroyed || !isStarting) {
-                            withContext(Dispatchers.IO) { wrapper.release() }
-                            return@launch
-                        }
-                        if (parsed.isNotEmpty()) {
-                            viewModel.availableUvcFormats = parsed
-                            if (best != null) {
-                                viewModel.settingsManager.uvcFps = best.fps
-                                viewModel.settingsManager.uvcWidth = best.width
-                                viewModel.settingsManager.uvcHeight = best.height
-                                viewModel.settingsManager.uvcFormat = best.format
-                            }
-                        }
+                if (!initialized) {
+                    wrapper = null
+                    withContext(Dispatchers.Main) { handleStartupFailure() }
+                    return@launch
+                }
 
-                        val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
-                        val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
-                        armStartupTimeout()
-                        viewModel.startUvcEngine(
-                            lat = lat,
-                            lon = lon,
-                            wrapper = wrapper,
-                            onFailed = { handleStartupFailure() }
-                        )
-                        startBackgroundService("UVC")
+                withContext(Dispatchers.Main) {
+                    if (isFinishing || isDestroyed || !isStarting) {
+                        return@withContext
                     }
+                    if (device.deviceName != viewModel.selectedExternalCameraId) {
+                        handleStartupFailure()
+                        return@withContext
+                    }
+                    if (parsed.isNotEmpty()) {
+                        viewModel.availableUvcFormats = parsed
+                        if (best != null) {
+                            viewModel.settingsManager.uvcFps = best.fps
+                            viewModel.settingsManager.uvcWidth = best.width
+                            viewModel.settingsManager.uvcHeight = best.height
+                            viewModel.settingsManager.uvcFormat = best.format
+                        }
+                    }
+
+                    val lat = viewModel.currentLat ?: MainViewModel.INVALID_COORD
+                    val lon = viewModel.currentLon ?: MainViewModel.INVALID_COORD
+                    handedOffToEngine = true
+                    viewModel.startUvcEngine(
+                        lat = lat,
+                        lon = lon,
+                        wrapper = wrapper,
+                        onFailed = { handleStartupFailure() }
+                    )
+                    startBackgroundService("UVC")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("OliveUI", "Error starting UVC camera", e)
+                withContext(Dispatchers.Main) { handleStartupFailure() }
+            } finally {
+                if (!handedOffToEngine) {
+                    wrapper?.release()
                 }
             }
-
-            override fun onDisconnect(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
-                runOnUiThread { handleUvcDisconnect() }
-            }
-
-            override fun onCancel(device: UsbDevice?) {
-                runOnUiThread {
-                    startupTimeoutJob?.cancel()
-                    startupTimeoutJob = null
-                    isStarting = false
-                }
-            }
-        })
-        try {
-            monitor.register()
-        } catch (e: Exception) {
-            Log.e("OliveUI", "Failed to register USBMonitor", e)
         }
     }
-
-
 }

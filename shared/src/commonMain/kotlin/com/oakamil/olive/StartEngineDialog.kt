@@ -168,7 +168,7 @@ fun StartEngineDialog(
         settingsManager.internalCameraId = internalCameraId
     }
 
-    LaunchedEffect(viewModel.availableUvcFormats) {
+    LaunchedEffect(viewModel.availableUvcFormats, viewModel.selectedExternalCameraId) {
         uvcFps = settingsManager.uvcFps
         uvcWidth = settingsManager.uvcWidth
         uvcHeight = settingsManager.uvcHeight
@@ -361,6 +361,79 @@ fun StartEngineDialog(
                                     label = stringResource(id = Res.string.btn_reset),
                                     onClick = { showResetCameraCalibrationDialog = true },
                                     enabled = hasCameraProfile
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            // External Camera Selector (only shown when > 1 external UVC camera is detected)
+            if (cameraSelection == "external" && viewModel.externalCameras.size > 1) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(id = Res.string.label_external_camera_section),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = { activeInfoDialog = "external_camera" },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(id = Res.string.cd_info),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
+                ) {
+                    var expandedExternalCamera by remember { mutableStateOf(false) }
+                    val selectedCameraName = viewModel.externalCameras
+                        .find { it.id == viewModel.selectedExternalCameraId }?.name
+                        ?: viewModel.externalCameras.firstOrNull()?.name
+                        ?: stringResource(id = Res.string.label_external_camera_section)
+                    Box(
+                        modifier = Modifier.border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline,
+                            shape = RoundedCornerShape(4.dp)
+                        )
+                    ) {
+                        TextButton(onClick = { expandedExternalCamera = true }) {
+                            Text(
+                                selectedCameraName,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = expandedExternalCamera,
+                            onDismissRequest = { expandedExternalCamera = false },
+                            modifier = Modifier.border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outline,
+                                shape = RoundedCornerShape(4.dp)
+                            )
+                        ) {
+                            viewModel.externalCameras.forEach { cam ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            cam.name,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    onClick = {
+                                        viewModel.selectExternalCamera(cam.id)
+                                        expandedExternalCamera = false
+                                    }
                                 )
                             }
                         }
@@ -913,6 +986,16 @@ fun StartEngineDialog(
             }
         ) {
             Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_camera_settings)))
+        }
+
+        "external_camera" -> InfoPopup(
+            title = stringResource(id = Res.string.label_external_camera_section),
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                activeInfoDialog = null
+            }
+        ) {
+            Text(AnnotatedString.fromHtml(stringResource(id = Res.string.info_external_camera)))
         }
 
         "camera_format" -> InfoPopup(

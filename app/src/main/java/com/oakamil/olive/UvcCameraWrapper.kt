@@ -38,17 +38,68 @@ class UvcCameraWrapper() : UvcCameraHandler {
         }
     }
 
+    private fun connectCamera(cam: UVCCamera, ctrlBlock: USBMonitor.UsbControlBlock) {
+        synchronized(cam) {
+            val ctrlBlockField = UVCCamera::class.java.getDeclaredField("mCtrlBlock")
+                .apply { isAccessible = true }
+            val getUsbfsName = UVCCamera::class.java.getDeclaredMethod(
+                "getUSBFSName",
+                USBMonitor.UsbControlBlock::class.java
+            ).apply { isAccessible = true }
+            val nativeConnect = UVCCamera::class.java.getDeclaredMethod(
+                "nativeConnect",
+                Long::class.java,
+                Int::class.java,
+                Int::class.java,
+                Int::class.java,
+                Int::class.java,
+                Int::class.java,
+                String::class.java
+            ).apply { isAccessible = true }
+
+            val cloned = ctrlBlock.clone()
+            val nativePtr = getNativePtr()
+            if (nativePtr == 0L) {
+                runCatching { cloned.close() }
+                throw IllegalStateException("UVCCamera native pointer is 0")
+            }
+            val res = try {
+                val usbfs = getUsbfsName.invoke(cam, cloned) as String
+                nativeConnect.invoke(
+                    cam,
+                    nativePtr,
+                    cloned.venderId,
+                    cloned.productId,
+                    cloned.fileDescriptor,
+                    cloned.busNum,
+                    cloned.devNum,
+                    usbfs
+                ) as Int
+            } catch (e: Exception) {
+                runCatching { cloned.close() }
+                throw e
+            }
+            if (res != 0) {
+                runCatching { cloned.close() }
+                throw UnsupportedOperationException("UVCCamera nativeConnect failed: result=$res")
+            }
+            ctrlBlockField.set(cam, cloned)
+            OliveEngine.disableUvcStatusCallback(nativePtr)
+        }
+    }
+
     fun initialize(
         ctrlBlock: USBMonitor.UsbControlBlock,
         targetWidth: Int = 1920,
         targetHeight: Int = 1080,
         fps: Int = 30,
         targetFormat: String = "MJPEG"
-    ) {
+    ): Boolean {
         currentFps = fps.coerceAtLeast(1)
-        uvcCameraInstance = UVCCamera()
-        try {
-            uvcCameraInstance?.open(ctrlBlock)
+        val cam = UVCCamera()
+        uvcCameraInstance = cam
+        return try {
+            connectCamera(cam, ctrlBlock)
 
             val isMjpeg = targetFormat.equals("MJPEG", ignoreCase = true)
             val requestedFormat =
@@ -179,8 +230,11 @@ class UvcCameraWrapper() : UvcCameraHandler {
 
             dummySurfaceTexture = SurfaceTexture(0)
             dummySurface = Surface(dummySurfaceTexture)
+            true
         } catch (e: Exception) {
             Log.e("UvcCameraWrapper", "Initialization error", e)
+            release()
+            false
         }
     }
 
@@ -409,11 +463,19 @@ class UvcCameraWrapper() : UvcCameraHandler {
     fun isAutoExposure(): Boolean = isAutoExposureActive
 
     override fun release() {
-        pipelineReady.set(false)
+        // pipelineReady is only set by primeThread >= ~500 ms after startPreview(), so libuvc has
+        // fully started the stream; stopping it directly any earlier could race stream setup.
+        val wasStreaming = pipelineReady.getAndSet(false)
         isPreviewRunning = false
         primeThread?.interrupt()
         primeThread = null
         synchronized(cameraLock) {
+            // libuvc's stopPreview() can destroy the stream lock while its USB thread is still
+            // cleaning up cancelled transfers. Stop the stream and wait for that cleanup first.
+            val nativePtr = getNativePtr()
+            if (wasStreaming && nativePtr != 0L) {
+                OliveEngine.quiesceUvcStream(nativePtr)
+            }
             try {
                 uvcCameraInstance?.stopPreview()
             } catch (e: Exception) {
