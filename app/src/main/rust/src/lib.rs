@@ -1789,10 +1789,8 @@ unsafe fn loaded_sym(lib: &std::ffi::CStr, name: &std::ffi::CStr) -> *mut std::f
 /// layout doesn't match libUVCCamera.so (AndroidUSBCamera 3.6.0) on arm64-v8a / armeabi-v7a:
 ///   slots[4] = mDeviceHandle, slots[5] = mStatusCallback (whose first word == mDeviceHandle)
 unsafe fn resolve_uvc_devh(native_ptr: jlong) -> *mut std::ffi::c_void {
-    let Ok(addr) = usize::try_from(native_ptr) else {
-        return std::ptr::null_mut();
-    };
-    let cam = addr as *const std::ffi::c_void;
+    // Bitcast via `as usize` (not `usize::try_from`): ARM64 TBI (`0xb4...`) and 32-bit sign-extension make valid `jlong` pointers negative.
+    let cam = native_ptr as usize as *const std::ffi::c_void;
     if !is_ptr_aligned(cam) {
         return std::ptr::null_mut();
     }
@@ -1820,6 +1818,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_disableUvcStatusCallba
     unsafe {
         let devh = resolve_uvc_devh(native_ptr);
         if devh.is_null() {
+            warn!("Could not resolve uvc_device_handle_t (native_ptr={native_ptr:#x})");
             return 0;
         }
         let sym = loaded_sym(c"libuvc.so", c"uvc_set_status_callback");
