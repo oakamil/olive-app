@@ -9,8 +9,8 @@ crate-type = ["staticlib"]
 
 [dependencies]
 olive-engine = { path = "../../../olive-engine" }
-olive-solve = { git = "https://github.com/oakamil/olive-solve.git", rev = "bc471d9b1a2081b5bdc1ffc2c4b8b105ed7ea365" }
-olive-imu = { git = "https://github.com/oakamil/olive-solve.git", rev = "bc471d9b1a2081b5bdc1ffc2c4b8b105ed7ea365" }
+olive-solve = { git = "https://github.com/oakamil/olive-solve.git" }
+olive-imu = { git = "https://github.com/oakamil/olive-solve.git" }
 tokio = { version = "1.37.0", features = ["rt-multi-thread", "sync"] }
 log = "0.4"
 nalgebra = "0.35.0"
