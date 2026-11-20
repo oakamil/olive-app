@@ -72,9 +72,42 @@ open class MainViewModel(
 
     private val activePreviewManagers = mutableSetOf<HiPSTileManager>()
 
+    data class ExternalCamera(val id: String, val name: String)
+
     @Volatile
     var uvcWrapper: UvcCameraHandler? = null
     var availableUvcFormats by mutableStateOf(UvcFormat.FALLBACK_FORMATS)
+    var externalCameras by mutableStateOf<List<ExternalCamera>>(emptyList())
+        private set
+    var selectedExternalCameraId by mutableStateOf<String?>(null)
+        private set
+
+    fun selectExternalCamera(id: String?) {
+        if (selectedExternalCameraId == id) return
+        selectedExternalCameraId = id
+        availableUvcFormats = UvcFormat.FALLBACK_FORMATS
+        val best = UvcFormat.findBestFormatForFps(settingsManager.uvcFps, availableUvcFormats)
+        settingsManager.uvcFps = best.fps
+        settingsManager.uvcWidth = best.width
+        settingsManager.uvcHeight = best.height
+        settingsManager.uvcFormat = best.format
+    }
+
+    fun updateExternalCameras(
+        cameras: List<ExternalCamera>,
+        preferredId: String? = null,
+        lockCurrentSelection: Boolean = false
+    ) {
+        externalCameras = cameras
+        val ids = cameras.mapTo(HashSet()) { it.id }
+        val nextId = when {
+            lockCurrentSelection && selectedExternalCameraId in ids -> selectedExternalCameraId
+            preferredId != null && preferredId in ids -> preferredId
+            selectedExternalCameraId in ids -> selectedExternalCameraId
+            else -> cameras.firstOrNull()?.id
+        }
+        selectExternalCamera(nextId)
+    }
 
     @Volatile
     private var lastLoggedMirrored: Boolean? = null

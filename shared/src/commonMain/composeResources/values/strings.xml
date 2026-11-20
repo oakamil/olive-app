@@ -220,6 +220,8 @@
     <string name="info_camera_format">Sets the target frame rate for the external USB camera. The app automatically chooses the optimal resolution and format for the selected frame rate.</string>
     <string name="info_internal_camera">Choose the phone camera to use for imaging.</string>
     <string name="label_internal_camera_section">Internal Camera</string>
+    <string name="info_external_camera">Choose which connected USB/UVC camera to use for imaging.</string>
+    <string name="label_external_camera_section">External Camera</string>
     <string name="value_auto">Auto</string>
     <string name="value_manual">Manual</string>
 

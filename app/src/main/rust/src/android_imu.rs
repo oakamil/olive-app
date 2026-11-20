@@ -30,12 +30,12 @@ impl AndroidImu {
             last_fused_quat: None,
         }
     }
-}
-
-impl ImuDevice for AndroidImu {
-    fn init(&mut self) -> Result<(), String> {
+    fn open_queue(&mut self) -> Result<(), String> {
+        if self.manager.is_null() || self.sensor.is_null() {
+            return Err("AndroidImu not initialized".to_string());
+        }
         unsafe {
-            // ALooper must be prepared on this thread.
+            // ALooper is thread-local: open the queue on the polling thread that owns and drops it.
             let mut looper = ALooper_forThread();
             if looper.is_null() {
                 looper = ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS as i32);
@@ -44,6 +44,44 @@ impl ImuDevice for AndroidImu {
                 return Err("Failed to get or prepare ALooper".to_string());
             }
 
+            self.queue =
+                ASensorManager_createEventQueue(self.manager, looper, 1, None, ptr::null_mut());
+            if self.queue.is_null() {
+                return Err("Failed to create ASensorEventQueue".to_string());
+            }
+
+            let status = ASensorEventQueue_enableSensor(self.queue, self.sensor);
+            if status < 0 {
+                self.close_queue();
+                return Err(format!("Failed to enable sensor: {}", status));
+            }
+
+            // Set rate to 10ms (10,000 microseconds)
+            let rate_status = ASensorEventQueue_setEventRate(self.queue, self.sensor, 10_000);
+            if rate_status < 0 {
+                warn!("Failed to set sensor event rate: {}", rate_status);
+            }
+        }
+        Ok(())
+    }
+
+    fn close_queue(&mut self) {
+        unsafe {
+            if !self.queue.is_null() {
+                if !self.sensor.is_null() {
+                    ASensorEventQueue_disableSensor(self.queue, self.sensor);
+                }
+                ASensorManager_destroyEventQueue(self.manager, self.queue);
+                self.queue = ptr::null_mut();
+            }
+        }
+    }
+}
+
+impl ImuDevice for AndroidImu {
+    fn init(&mut self) -> Result<(), String> {
+        self.close_queue();
+        unsafe {
             self.manager = ASensorManager_getInstance();
             if self.manager.is_null() {
                 return Err("Failed to get ASensorManager".to_string());
@@ -65,28 +103,14 @@ impl ImuDevice for AndroidImu {
             if self.sensor.is_null() {
                 return Err(format!("Failed to get sensor for mode {}", self.mode));
             }
-
-            self.queue =
-                ASensorManager_createEventQueue(self.manager, looper, 1, None, ptr::null_mut());
-            if self.queue.is_null() {
-                return Err("Failed to create ASensorEventQueue".to_string());
-            }
-
-            let status = ASensorEventQueue_enableSensor(self.queue, self.sensor);
-            if status < 0 {
-                return Err(format!("Failed to enable sensor: {}", status));
-            }
-
-            // Set rate to 10ms (10,000 microseconds)
-            let rate_status = ASensorEventQueue_setEventRate(self.queue, self.sensor, 10_000);
-            if rate_status < 0 {
-                warn!("Failed to set sensor event rate: {}", rate_status);
-            }
         }
         Ok(())
     }
 
     fn poll(&mut self) -> Result<Vec<SensorEvent>, String> {
+        if self.queue.is_null() {
+            self.open_queue()?;
+        }
         unsafe {
             let mut fd: i32 = 0;
             let mut events: i32 = 0;
@@ -209,19 +233,13 @@ impl ImuDevice for AndroidImu {
     }
 
     fn revive(&mut self) -> Result<(), String> {
-        self.init()
+        self.init()?;
+        self.open_queue()
     }
 }
 
 impl Drop for AndroidImu {
     fn drop(&mut self) {
-        unsafe {
-            if !self.queue.is_null() {
-                if !self.sensor.is_null() {
-                    ASensorEventQueue_disableSensor(self.queue, self.sensor);
-                }
-                ASensorManager_destroyEventQueue(self.manager, self.queue);
-            }
-        }
+        self.close_queue();
     }
 }

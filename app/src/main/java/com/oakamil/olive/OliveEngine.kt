@@ -44,6 +44,9 @@ object OliveEngine : EngineBridge {
         timestamp: Long
     )
 
+    external fun disableUvcStatusCallback(nativePtr: Long): Boolean
+    external fun quiesceUvcStream(nativePtr: Long): Boolean
+
     external override fun stopEngine()
     external override fun getEngineStats(): String
     external override fun setNativeCameraExposure(exposureUs: Int)
