@@ -272,7 +272,46 @@ fun SkyMapSettingsDialog(
                 }
             }
 
-            // 3. Show Map Position
+            // 3. Show Live Camera
+            Text(
+                text = stringResource(Res.string.label_show_live_camera),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                RadioButton(
+                    selected = viewModel.showLiveCamera,
+                    onClick = { viewModel.showLiveCamera = true },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+                Text(
+                    text = stringResource(Res.string.value_on),
+                    modifier = Modifier.padding(start = 4.dp, end = 20.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                RadioButton(
+                    selected = !viewModel.showLiveCamera,
+                    onClick = { viewModel.showLiveCamera = false },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+                Text(
+                    text = stringResource(Res.string.value_off),
+                    modifier = Modifier.padding(start = 4.dp, end = 20.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+
+            // 4. Show Map Position
             Text(
                 text = stringResource(Res.string.label_show_map_position),
                 style = MaterialTheme.typography.titleMedium,

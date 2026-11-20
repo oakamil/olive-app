@@ -1299,8 +1299,6 @@ fun SkyCatalogDialog(
         } else {
             null
         }
-        val isAbove = altAz == null || altAz.alt >= 0.0
-
         ObjectInfoPopup(
             coords = currentCatalogObj.ra to currentCatalogObj.dec,
             catalogObject = currentCatalogObj,
@@ -1311,41 +1309,10 @@ fun SkyCatalogDialog(
                 selectedCatalogObj = null
             },
             altAz = altAz,
-            bottomBar = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconBarItem(
-                        icon = Default.CenterFocusStrong,
-                        label = stringResource(Res.string.crop_center),
-                        onClick = {
-                            @Suppress("AssignedValueIsNeverRead")
-                            selectedCatalogObj = null
-                            onCenter(currentCatalogObj.ra, currentCatalogObj.dec)
-                        },
-                    )
-                    if (isAbove && viewModel.isEngineRunning) {
-                        IconBarItem(
-                            icon = Default.GpsFixed,
-                            label = stringResource(Res.string.btn_goto),
-                            iconTint = MaterialTheme.colorScheme.primary,
-                            labelColor = MaterialTheme.colorScheme.primary,
-                            onClick = {
-                                @Suppress("AssignedValueIsNeverRead")
-                                selectedCatalogObj = null
-                                onGoTo(currentCatalogObj.ra, currentCatalogObj.dec, 2000.0)
-                            },
-                        )
-                    } else if (!isAbove && viewModel.isEngineRunning) {
-                        Text(
-                            stringResource(Res.string.status_below_horizon),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                }
+            onCloseToMap = {
+                @Suppress("AssignedValueIsNeverRead")
+                selectedCatalogObj = null
+                onDismiss()
             },
         )
     }

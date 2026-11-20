@@ -1,6 +1,7 @@
 package com.oakamil.olive
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.atan
@@ -79,5 +80,40 @@ class ZoomFovTest {
         assertEquals(1.5f, effectiveMax, 1e-4f)
         val stepsCount = (round((effectiveMax - 1.0f) * 10f).toInt() - 1).coerceAtLeast(0)
         assertEquals(4, stepsCount) // 1.1, 1.2, 1.3, 1.4
+    }
+
+    @Test
+    fun testEngineStatsCameraViewAndTargetMatch() {
+        val solved = EngineStats(
+            ra = 100.0,
+            dec = 20.0,
+            centerRa = 100.0,
+            centerDec = 20.0,
+            fov = 10.0,
+            solvedCrop = "Full",
+            targetRa = 150.0,
+            targetDec = -10.0,
+        )
+        // Any object within fov * 0.75 (7.5°) is in camera view, even if not the GoTo target
+        assertTrue(solved.isCoordInCameraView(100.0, 25.0))
+        assertFalse(solved.isCoordInCameraView(100.0, 28.0))
+        assertFalse(solved.isTargetVisible)
+
+        // IMU estimate after solve remains active (uses ra/dec)
+        val imuTracking = solved.copy(isImuEstimate = true, solvedCrop = EngineStats.CROP_FAILED)
+        assertTrue(imuTracking.isCoordInCameraView(100.0, 25.0))
+
+        // Failed solve without IMU is stale -> not in camera view
+        val stale = solved.copy(isImuEstimate = false, solvedCrop = EngineStats.CROP_FAILED)
+        assertFalse(stale.isCoordInCameraView(100.0, 20.0))
+
+        // Before first solve (null ra/dec or null fov) -> not in camera view
+        assertFalse(EngineStats().isCoordInCameraView(100.0, 20.0))
+
+        // Target match threshold (< 0.05°)
+        assertTrue(solved.isTargetMatch(150.0, -10.0))
+        assertTrue(solved.isTargetMatch(150.02, -10.02))
+        assertFalse(solved.isTargetMatch(150.2, -10.0))
+        assertFalse(EngineStats().isTargetMatch(150.0, -10.0))
     }
 }

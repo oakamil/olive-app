@@ -34,11 +34,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.FilterCenterFocus
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.HourglassEmpty
@@ -312,7 +310,6 @@ fun SkyMapView(
     var showFullStats by remember { mutableStateOf(false) }
     var showTelescopeControlInfo by remember { mutableStateOf(false) }
     var showTargetPopup by remember { mutableStateOf(false) }
-    var showSyncDialog by remember { mutableStateOf(false) }
 
     var targetObject by remember(
         stats.targetRa,
@@ -325,7 +322,6 @@ fun SkyMapView(
             showTargetPopup = false
             showFullStats = false
             showTelescopeControlInfo = false
-            showSyncDialog = false
         }
     }
 
@@ -375,13 +371,11 @@ fun SkyMapView(
         } else {
             targetObject = null
             showTargetPopup = false
-            showSyncDialog = false
         }
     }
 
-    BackHandler(enabled = selectedObject != null || showTargetPopup || showFullStats || showTelescopeControlInfo || showSyncDialog) {
+    BackHandler(enabled = selectedObject != null || showTargetPopup || showFullStats || showTelescopeControlInfo) {
         when {
-            showSyncDialog -> showSyncDialog = false
             showTelescopeControlInfo -> showTelescopeControlInfo = false
             showFullStats -> showFullStats = false
             showTargetPopup -> showTargetPopup = false
@@ -1076,14 +1070,15 @@ fun SkyMapView(
             // 6. Camera FOV Box & Live Video Preview (rendered before stars/labels so overlays remain visible)
             val camRa = stats.ra
             val camDec = stats.dec
-            val cameraFrame = viewModel.latestFrame
+            val cameraFrame = if (viewModel.showLiveCamera) viewModel.latestFrame else null
 
             val isMirrored = stats.isMirrored == true
             val mirrorScaleX = if (isMirrored) -1f else 1f
 
             val baseFovRad = Math.toRadians(stats.fov ?: 8.0)
             val aspect =
-                cameraFrame?.let { it.width.toDouble() / it.height.toDouble() } ?: 1.333
+                cameraFrame?.let { it.width.toDouble() / it.height.toDouble() }
+                    ?: viewModel.latestFrameAspect
             val effectiveFovRad = if (aspect > 1.0) {
                 2.0 * atan(tan(baseFovRad / 2.0) / aspect)
             } else {
@@ -2079,43 +2074,19 @@ fun SkyMapView(
         // Selected Object Info Popup
         val obj = selectedObject
         if (obj != null) {
-            val altAz =
-                calculateOptionalAltAz(viewModel.hasValidLocation, obj.ra, obj.dec, lat, lst)
-            val isAbove = altAz == null || altAz.alt >= 0.0
             ObjectInfoPopup(
                 coords = obj.ra to obj.dec,
                 catalogObject = obj,
                 viewModel = viewModel,
                 timeMs = currentTimeMs,
                 onDismiss = { selectedObject = null },
-                altAz = altAz,
-                bottomBar = if (viewModel.isEngineRunning) {
-                    {
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (isAbove) {
-                                IconBarItem(
-                                    icon = Icons.Default.GpsFixed,
-                                    label = stringResource(Res.string.btn_goto),
-                                    iconTint = MaterialTheme.colorScheme.primary,
-                                    labelColor = MaterialTheme.colorScheme.primary,
-                                    onClick = {
-                                        viewModel.setGoToTarget(obj.ra, obj.dec)
-                                        selectedObject = null
-                                    },
-                                )
-                            } else {
-                                Text(
-                                    stringResource(Res.string.status_below_horizon),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
-                        }
-                    }
-                } else null,
+                altAz = calculateOptionalAltAz(
+                    viewModel.hasValidLocation,
+                    obj.ra,
+                    obj.dec,
+                    lat,
+                    lst
+                ),
             )
         }
 
@@ -2135,51 +2106,6 @@ fun SkyMapView(
                     lat,
                     lst
                 ),
-                bottomBar = {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconBarItem(
-                            icon = Icons.Default.Stop,
-                            label = stringResource(Res.string.btn_stop),
-                            iconTint = extColors.ctaStop,
-                            labelColor = extColors.ctaStop,
-                            onClick = {
-                                viewModel.clearGoToTarget()
-                                showTargetPopup = false
-                            },
-                        )
-                        val liveStats = viewModel.engineStats
-                        if (liveStats.isTargetVisible) {
-                            IconBarItem(
-                                icon = Icons.Default.FilterCenterFocus,
-                                label = stringResource(Res.string.btn_align),
-                                onClick = { showSyncDialog = true },
-                            )
-                        }
-                    }
-                },
-            )
-        }
-
-        // Align Confirmation Dialog
-        if (showSyncDialog && viewModel.isEngineRunning) {
-            OliveAlertDialog(
-                title = stringResource(Res.string.title_confirm_alignment),
-                text = stringResource(Res.string.msg_confirm_alignment),
-                confirmButtonText = stringResource(Res.string.btn_confirm),
-                onConfirm = {
-                    showSyncDialog = false
-                    showTargetPopup = false
-                    viewModel.syncTelescope(
-                        viewModel.engineStats.targetRa,
-                        viewModel.engineStats.targetDec
-                    )
-                },
-                dismissButtonText = stringResource(Res.string.btn_cancel),
-                onDismiss = { showSyncDialog = false }
             )
         }
 
