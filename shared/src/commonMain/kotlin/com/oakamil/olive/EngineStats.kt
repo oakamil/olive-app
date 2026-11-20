@@ -61,20 +61,21 @@ data class EngineStats(
     val hasValidSolve: Boolean
         get() = solvedCrop != null && solvedCrop != CROP_FAILED && !isImuEstimate
 
+    fun isCoordInCameraView(objRa: Double, objDec: Double): Boolean {
+        val isStale = solvedCrop == CROP_FAILED && !isImuEstimate
+        if (fov == null || isStale) return false
+        val projRa = if (isImuEstimate || centerRa == null) ra else centerRa
+        val projDec = if (isImuEstimate || centerDec == null) dec else centerDec
+        if (projRa == null || projDec == null) return false
+        return AstrometryUtils.angularDistance(projRa, projDec, objRa, objDec) < fov * 0.75
+    }
+
+    fun isTargetMatch(objRa: Double, objDec: Double): Boolean =
+        targetRa != null && targetDec != null &&
+                AstrometryUtils.angularDistance(objRa, objDec, targetRa, targetDec) < 0.05
+
     val isTargetVisible: Boolean
-        get() {
-            val isStale = solvedCrop == CROP_FAILED && !isImuEstimate
-            if (fov == null || isStale || targetRa == null || targetDec == null) return false
-            val projRa = if (isImuEstimate || centerRa == null) ra else centerRa
-            val projDec = if (isImuEstimate || centerDec == null) dec else centerDec
-            if (projRa == null || projDec == null) return false
-            return AstrometryUtils.angularDistance(
-                projRa,
-                projDec,
-                targetRa,
-                targetDec
-            ) < fov * 0.75
-        }
+        get() = targetRa != null && targetDec != null && isCoordInCameraView(targetRa, targetDec)
 
     companion object {
         const val CROP_FAILED = "Failed"

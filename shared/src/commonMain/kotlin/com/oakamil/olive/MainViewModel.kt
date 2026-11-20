@@ -155,6 +155,14 @@ open class MainViewModel(
             settingsManager.guidanceMode = value
         }
 
+    private val _showLiveCamera = mutableStateOf(settingsManager.showLiveCamera)
+    var showLiveCamera: Boolean
+        get() = _showLiveCamera.value
+        set(value) {
+            _showLiveCamera.value = value
+            settingsManager.showLiveCamera = value
+        }
+
     private val _showMapPosition = mutableStateOf(settingsManager.showMapPosition)
     var showMapPosition: Boolean
         get() = _showMapPosition.value
@@ -400,7 +408,6 @@ open class MainViewModel(
             isBulkCatalog = false,
             catalogTitle = null,
             missingKeys = missing,
-            cancelPriorSingleJob = true
         )
     }
 
@@ -430,7 +437,6 @@ open class MainViewModel(
             isBulkCatalog = true,
             catalogTitle = req.categoryTitle,
             missingKeys = req.missingKeys,
-            cancelPriorSingleJob = true
         )
     }
 
@@ -471,11 +477,9 @@ open class MainViewModel(
         targetId: String,
         isBulkCatalog: Boolean,
         catalogTitle: String?,
-        missingKeys: IntArray,
-        cancelPriorSingleJob: Boolean = false
+        missingKeys: IntArray
     ) {
         val priorJob = hqDownloadJob
-        if (priorJob?.isActive == true && !cancelPriorSingleJob) return
         val backend = hipsLocalBackend
         if (backend == null) {
             hqDownloadState = HiPSHqDownloadState.Failed(
@@ -745,6 +749,8 @@ open class MainViewModel(
     var uvcBrightnessMax by mutableIntStateOf(100)
     var currentUvcBrightness by mutableIntStateOf(50)
     var latestFrame by mutableStateOf<ImageBitmap?>(null)
+    var latestFrameAspect by mutableDoubleStateOf(DEFAULT_CAMERA_ASPECT)
+        private set
     var isCameraStuck by mutableStateOf(false)
 
     @Volatile
@@ -929,6 +935,11 @@ open class MainViewModel(
                             withContext(Dispatchers.Main) {
                                 if (isActive && isEngineRunning) {
                                     latestFrame = frame.imageBitmap
+                                    val fw = frame.imageBitmap.width
+                                    val fh = frame.imageBitmap.height
+                                    if (fw > 0 && fh > 0) {
+                                        latestFrameAspect = fw.toDouble() / fh.toDouble()
+                                    }
                                     lastFrameTimestamp = frame.timestamp
                                     lastFrameReceivedRealtime = getElapsedRealtimeMs()
                                     isCameraStuck = false
@@ -989,6 +1000,7 @@ open class MainViewModel(
         skyMapCameraLocked = true
         engineStats = EngineStats()
         latestFrame = null
+        latestFrameAspect = DEFAULT_CAMERA_ASPECT
         isCameraStuck = false
         lastFrameTimestamp = 0L
         lastCalibratedFocus = null
@@ -996,6 +1008,7 @@ open class MainViewModel(
 
     private fun prepareStartUiState(lat: Double, lon: Double, initialZoom: Float) {
         latestFrame = null
+        latestFrameAspect = DEFAULT_CAMERA_ASPECT
         lastFrameTimestamp = 0L
         isCameraStuck = false
         lastFrameReceivedRealtime = getElapsedRealtimeMs()
@@ -1673,6 +1686,7 @@ open class MainViewModel(
     companion object {
         const val ENABLE_AUTO_ZOOM = true
         const val INVALID_COORD = 200.0
+        const val DEFAULT_CAMERA_ASPECT = 4.0 / 3.0
         const val CAMERA_STUCK_TIMEOUT_MS = 15000L
         const val SCREEN_UPDATE_RATE_HZ = 10
         const val SCREEN_UPDATE_INTERVAL_MS = 1000L / SCREEN_UPDATE_RATE_HZ

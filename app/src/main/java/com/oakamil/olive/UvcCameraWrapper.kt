@@ -444,6 +444,7 @@ class UvcCameraWrapper() : UvcCameraHandler {
 
     // Used from native
     @Keep
+    @Suppress("unused")
     fun setBrightness(brightness: Int) {
         synchronized(cameraLock) {
             uvcCameraInstance?.updateCameraParams()
@@ -453,6 +454,7 @@ class UvcCameraWrapper() : UvcCameraHandler {
 
     // Used from native
     @Keep
+    @Suppress("unused")
     fun getBrightness(): Int {
         return getHardwareBrightness() ?: 50
     }

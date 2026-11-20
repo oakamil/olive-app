@@ -176,6 +176,10 @@ SettingsManager(
         get() = storage.getString("app_theme", "red") ?: "red"
         set(value) = storage.putString("app_theme", value)
 
+    var showLiveCamera: Boolean
+        get() = storage.getBoolean("show_live_camera", true)
+        set(value) = storage.putBoolean("show_live_camera", value)
+
     var showMapPosition: Boolean
         get() = storage.getBoolean("show_map_position", true)
         set(value) = storage.putBoolean("show_map_position", value)

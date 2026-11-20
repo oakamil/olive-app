@@ -23,10 +23,14 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterCenterFocus
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -476,8 +480,9 @@ fun ObjectInfoPopup(
     timeMs: Long,
     onDismiss: () -> Unit,
     altAz: AltAz? = null,
-    bottomBar: (@Composable () -> Unit)? = null,
+    onCloseToMap: () -> Unit = onDismiss,
 ) {
+    val extColors = LocalOliveExtendedColors.current
     var coLocated by remember(catalogObject) { mutableStateOf<List<CatalogObject>>(emptyList()) }
     var coLocatedReady by remember(catalogObject) {
         mutableStateOf(
@@ -487,6 +492,7 @@ fun ObjectInfoPopup(
         )
     }
     var notesExpanded by remember(catalogObject) { mutableStateOf(false) }
+    var showAlignConfirm by remember(coords, catalogObject) { mutableStateOf(false) }
     LaunchedEffect(catalogObject) {
         if (catalogObject != null && !CatalogDatabase.isDynamicObject(catalogObject)) {
             coLocated = withContext(Dispatchers.IO) {
@@ -502,11 +508,64 @@ fun ObjectInfoPopup(
         String.format("%.2f", coords.second),
     )
 
+    val stats = viewModel.engineStats
+    val isRunning = viewModel.isEngineRunning
+    val isAbove = altAz == null || altAz.alt >= 0.0
+    val isSelectedTarget = isRunning && stats.isTargetMatch(coords.first, coords.second)
+    val canGoTo = isAbove && isRunning && stats.ra != null && stats.dec != null && !isSelectedTarget
+    val canAlign = isAbove && isRunning && stats.isCoordInCameraView(coords.first, coords.second)
+
     InfoPopup(
         title = title,
         onDismiss = onDismiss,
         fillMaxWidth = true,
-        bottomBar = bottomBar,
+        bottomBar = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconBarItem(
+                    icon = Icons.Default.CenterFocusStrong,
+                    label = stringResource(Res.string.crop_center),
+                    onClick = {
+                        viewModel.skyMapCenterTarget = coords
+                        onCloseToMap()
+                    },
+                )
+                if (canGoTo) {
+                    IconBarItem(
+                        icon = Icons.Default.GpsFixed,
+                        label = stringResource(Res.string.btn_goto),
+                        iconTint = MaterialTheme.colorScheme.primary,
+                        labelColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            viewModel.setGoToTarget(coords.first, coords.second)
+                            onCloseToMap()
+                        },
+                    )
+                }
+                if (canAlign) {
+                    IconBarItem(
+                        icon = Icons.Default.FilterCenterFocus,
+                        label = stringResource(Res.string.btn_align),
+                        onClick = { showAlignConfirm = true },
+                    )
+                }
+                if (isSelectedTarget) {
+                    IconBarItem(
+                        icon = Icons.Default.Stop,
+                        label = stringResource(Res.string.btn_stop),
+                        iconTint = extColors.ctaStop,
+                        labelColor = extColors.ctaStop,
+                        onClick = {
+                            viewModel.clearGoToTarget()
+                            onDismiss()
+                        },
+                    )
+                }
+            }
+        },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val metadata = remember(catalogObject, coLocated) {
@@ -614,6 +673,25 @@ fun ObjectInfoPopup(
                 )
             }
         }
+    }
+
+    if (showAlignConfirm && isRunning) {
+        OliveAlertDialog(
+            title = stringResource(Res.string.title_confirm_alignment),
+            text = stringResource(Res.string.msg_confirm_alignment, title),
+            confirmButtonText = stringResource(Res.string.btn_confirm),
+            onConfirm = {
+                @Suppress("AssignedValueIsNeverRead")
+                showAlignConfirm = false
+                viewModel.syncTelescope(coords.first, coords.second)
+                onCloseToMap()
+            },
+            dismissButtonText = stringResource(Res.string.btn_cancel),
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showAlignConfirm = false
+            },
+        )
     }
 }
 
