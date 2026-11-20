@@ -153,13 +153,6 @@ fun SkyMapView(
 ) {
     val rawLat = viewModel.currentLat
     val rawLon = viewModel.currentLon
-    val windowController = LocalPlatformWindowController.current
-    val sensorOrientation =
-        if (viewModel.engineMode == MainViewModel.EngineMode.NATIVE) {
-            windowController.getCameraSensorOrientation(viewModel.settingsManager.internalCameraId)
-        } else {
-            0
-        }
     val hasValidLocation = viewModel.hasValidLocation
     val lat = if (hasValidLocation && rawLat != null) rawLat else 0.0
     val lon = if (hasValidLocation && rawLon != null) rawLon else 0.0
@@ -190,7 +183,7 @@ fun SkyMapView(
         val cameraFrame = viewModel.latestFrame
         val camCenterRa = stats.centerRa ?: stats.ra
         val camCenterDec = stats.centerDec ?: stats.dec
-        if (!stats.isImuEstimate && cameraFrame != null && stats.targetPixelX != null && stats.targetPixelY != null &&
+        if (cameraFrame != null && stats.targetPixelX != null && stats.targetPixelY != null &&
             camCenterRa != null && camCenterDec != null
         ) {
             val baseFovRad = Math.toRadians(stats.fov ?: 8.0)
@@ -199,9 +192,11 @@ fun SkyMapView(
                 if (aspect > 1.0) 2.0 * atan(tan(baseFovRad / 2.0) / aspect) else baseFovRad
             val camFov = Math.toDegrees(effectiveFovRad)
             val camRoll = stats.roll ?: 0.0
+            val pxX =
+                if (stats.isMirrored == true) cameraFrame.width.toDouble() - stats.targetPixelX else stats.targetPixelX
 
             return SkyMapProjection.unprojectCameraPixel(
-                pixelX = stats.targetPixelX,
+                pixelX = pxX,
                 pixelY = stats.targetPixelY,
                 imageWidth = cameraFrame.width.toDouble(),
                 imageHeight = cameraFrame.height.toDouble(),
@@ -242,6 +237,7 @@ fun SkyMapView(
         stats.roll,
         stats.targetPixelX,
         stats.targetPixelY,
+        stats.isMirrored,
         stats.isImuEstimate,
         viewModel.skyMapCameraLocked,
         lat,
@@ -1083,9 +1079,7 @@ fun SkyMapView(
             val cameraFrame = viewModel.latestFrame
 
             val isMirrored = stats.isMirrored == true
-            val isRotated90 = (sensorOrientation % 180 != 0)
-            val mirrorScaleX = if (isMirrored && isRotated90) -1f else 1f
-            val mirrorScaleY = if (isMirrored && !isRotated90) -1f else 1f
+            val mirrorScaleX = if (isMirrored) -1f else 1f
 
             val baseFovRad = Math.toRadians(stats.fov ?: 8.0)
             val aspect =
@@ -1098,29 +1092,8 @@ fun SkyMapView(
             val camFov = Math.toDegrees(effectiveFovRad)
             val camRoll = stats.roll ?: 0.0
 
-            val (camCenterRa, camCenterDec) = run {
-                if (stats.isImuEstimate) {
-                    if (stats.targetPixelX != null && stats.targetPixelY != null &&
-                        camRa != null && camDec != null && cameraFrame != null
-                    ) {
-                        SkyMapProjection.unprojectCameraPixel(
-                            pixelX = cameraFrame.width.toDouble() - stats.targetPixelX,
-                            pixelY = cameraFrame.height.toDouble() - stats.targetPixelY,
-                            imageWidth = cameraFrame.width.toDouble(),
-                            imageHeight = cameraFrame.height.toDouble(),
-                            centerRa = camRa,
-                            centerDec = camDec,
-                            fovDeg = camFov,
-                            rollDeg = camRoll,
-                            imageAspect = aspect
-                        )
-                    } else {
-                        Pair(camRa, camDec)
-                    }
-                } else {
-                    Pair(stats.centerRa ?: camRa, stats.centerDec ?: camDec)
-                }
-            }
+            val camCenterRa = stats.centerRa ?: camRa
+            val camCenterDec = stats.centerDec ?: camDec
 
             val dsoScale = when {
                 fov < 10.0 -> SkyMapTuning.DSO_SCALE_DEEP
@@ -1173,8 +1146,7 @@ fun SkyMapView(
                             p1 = p1,
                             p2 = p2,
                             p3 = p3,
-                            mirrorScaleX = mirrorScaleX,
-                            mirrorScaleY = mirrorScaleY
+                            mirrorScaleX = mirrorScaleX
                         )
                     } else null
                     matrix = mat
@@ -1258,7 +1230,6 @@ fun SkyMapView(
                 if (camBoxActive) camRoll else null,
                 if (camBoxActive) stats.distortion else null,
                 if (camBoxActive) mirrorScaleX else null,
-                if (camBoxActive) mirrorScaleY else null,
                 if (camBoxActive) cameraFrame.width else null,
                 if (camBoxActive) cameraFrame.height else null
             )
@@ -1304,9 +1275,7 @@ fun SkyMapView(
                         if (camPix != null && camPix.first in 0f..cameraFrame.width.toFloat() && camPix.second in 0f..cameraFrame.height.toFloat()) {
                             val px =
                                 if (mirrorScaleX < 0f) cameraFrame.width.toFloat() - camPix.first else camPix.first
-                            val py =
-                                if (mirrorScaleY < 0f) cameraFrame.height.toFloat() - camPix.second else camPix.second
-                            return matrix.map(Offset(px, py))
+                            return matrix.map(Offset(px, camPix.second))
                         }
                     }
                     return stdOffset
