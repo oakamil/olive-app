@@ -93,7 +93,7 @@ private enum class TunerInfoTopic {
 }
 
 @Composable
-fun TunerScreen(
+fun TunerDialog(
     viewModel: MainViewModel,
     settingsManager: SettingsManager,
     activeCameraSelection: String,

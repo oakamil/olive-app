@@ -444,7 +444,7 @@ fun MainScreen(
                 }
             }
             if (showCameraAlign && viewModel.isEngineRunning && !isStopping) {
-                TunerScreen(
+                TunerDialog(
                     viewModel = viewModel,
                     settingsManager = settingsManager,
                     activeCameraSelection = activeCameraSelection,
