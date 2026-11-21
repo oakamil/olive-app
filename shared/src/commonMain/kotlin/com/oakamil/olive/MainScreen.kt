@@ -77,7 +77,6 @@ fun MainScreen(
     isStarting: Boolean,
     detectedIpAddress: String,
     onCameraSelectionChanged: (String) -> Unit,
-    onNavigateToTuner: () -> Unit,
     onEnterPipMode: () -> Unit,
     onToggleEngine: () -> Unit,
     onRefreshLocation: () -> Unit = {}
@@ -88,7 +87,14 @@ fun MainScreen(
 
     var showStartEngineDialog by remember { mutableStateOf(false) }
     var showSkyMapSettings by remember { mutableStateOf(false) }
+    var showCameraAlign by remember { mutableStateOf(false) }
     var isEnteringPip by remember { mutableStateOf(false) }
+
+    LaunchedEffect(viewModel.isEngineRunning, isStopping) {
+        if (!viewModel.isEngineRunning || isStopping) {
+            showCameraAlign = false
+        }
+    }
 
     val isLowPowerMode = viewModel.isLowPowerMode
     val lowPowerTimeoutSeconds = settingsManager.lowPowerTimeoutSeconds
@@ -134,6 +140,7 @@ fun MainScreen(
                 if (remaining <= 0L) {
                     viewModel.showCatalog = false
                     showSkyMapSettings = false
+                    showCameraAlign = false
                     showStartEngineDialog = false
                     viewModel.isLowPowerMode = true
                     break
@@ -210,36 +217,7 @@ fun MainScreen(
                 icon = Icons.Outlined.PhotoCamera,
                 label = stringResource(id = Res.string.btn_camera_align),
                 enabled = viewModel.isEngineRunning && !isStarting && !isStopping,
-                onClick = {
-                    viewModel.setEnginePaused(true)
-                    if (viewModel.engineMode != MainViewModel.EngineMode.UVC) {
-                        val range = viewModel.engine.getNativeCameraGainRange()
-                        if (range != null && range.size >= 2) {
-                            viewModel.minAnalogGain = range[0]
-                            viewModel.maxAnalogGain =
-                                range[1].coerceAtLeast(viewModel.minAnalogGain + 1f)
-                        } else {
-                            viewModel.minAnalogGain = 100f
-                            viewModel.maxAnalogGain = 3200f
-                        }
-                        viewModel.currentExposure =
-                            viewModel.engine.getNativeCameraExposure().toFloat()
-                                .coerceIn(
-                                    capabilities.exposureRange.start,
-                                    capabilities.exposureRange.endInclusive
-                                )
-                        val bRange = viewModel.engine.getNativeCameraBrightnessRange()
-                        if (bRange != null && bRange.size >= 3) {
-                            viewModel.uvcBrightnessMin = bRange[0]
-                            viewModel.uvcBrightnessMax = bRange[1]
-                            viewModel.currentUvcBrightness = bRange[2]
-                        } else {
-                            viewModel.uvcBrightnessMin = 0
-                            viewModel.uvcBrightnessMax = 0
-                        }
-                    }
-                    onNavigateToTuner()
-                }
+                onClick = { showCameraAlign = true }
             )
 
             // 3. Picture in Picture (if supported)
@@ -352,10 +330,12 @@ fun MainScreen(
     var actionBarWidthDp by remember { mutableStateOf(0.dp) }
     var actionBarHeightDp by remember { mutableStateOf(0.dp) }
 
+    val onUserInteraction = remember {
+        { lastInteractionTimeMs[0] = Clock.System.now().toEpochMilliseconds() }
+    }
+
     CompositionLocalProvider(
-        LocalOnUserInteraction provides {
-            lastInteractionTimeMs[0] = Clock.System.now().toEpochMilliseconds()
-        }
+        LocalOnUserInteraction provides onUserInteraction
     ) {
         BoxWithConstraints(
             modifier = Modifier
@@ -462,6 +442,18 @@ fun MainScreen(
                         }
                     }
                 }
+            }
+            if (showCameraAlign && viewModel.isEngineRunning && !isStopping) {
+                TunerScreen(
+                    viewModel = viewModel,
+                    settingsManager = settingsManager,
+                    activeCameraSelection = activeCameraSelection,
+                    isLandscape = isWideLayout,
+                    onBack = {
+                        @Suppress("AssignedValueIsNeverRead")
+                        showCameraAlign = false
+                    }
+                )
             }
         }
 

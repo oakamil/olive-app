@@ -124,7 +124,7 @@ bool olive_ios_start_engine(
 void olive_ios_stop_engine(void);
 char *olive_ios_get_engine_stats(void);
 
-void olive_ios_set_engine_paused(bool paused);
+void olive_ios_set_hfr_enabled(bool enabled);
 void olive_ios_set_engine_sigma(float sigma);
 void olive_ios_set_engine_strict_match(bool strict);
 

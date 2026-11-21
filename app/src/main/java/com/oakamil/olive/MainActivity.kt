@@ -95,7 +95,6 @@ class MainActivity : ComponentActivity() {
 
     private var connectedDevices: Map<String, UsbDevice>? = null
 
-    private var currentScreen by mutableStateOf("main")
     private var isInPipMode by mutableStateOf(false)
 
     private val androidCapabilities: AndroidPlatformCapabilities by lazy {
@@ -587,29 +586,19 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         } else {
-                            when (currentScreen) {
-                                "main" -> MainScreen(
-                                    viewModel = viewModel,
-                                    settingsManager = settingsManager,
-                                    isCameraConnected = isCameraConnected,
-                                    activeCameraSelection = activeCameraSelection,
-                                    isStopping = isStopping,
-                                    isStarting = isStarting,
-                                    detectedIpAddress = detectedIpAddress,
-                                    onCameraSelectionChanged = { updateCameraSelection(it) },
-                                    onNavigateToTuner = { currentScreen = "tuner" },
-                                    onEnterPipMode = { enterPipMode() },
-                                    onToggleEngine = { toggleEngine() },
-                                    onRefreshLocation = { handleRefreshLocation() }
-                                )
-
-                                "tuner" -> TunerScreen(
-                                    viewModel = viewModel,
-                                    settingsManager = settingsManager,
-                                    activeCameraSelection = activeCameraSelection,
-                                    onBack = { currentScreen = "main" }
-                                )
-                            }
+                            MainScreen(
+                                viewModel = viewModel,
+                                settingsManager = settingsManager,
+                                isCameraConnected = isCameraConnected,
+                                activeCameraSelection = activeCameraSelection,
+                                isStopping = isStopping,
+                                isStarting = isStarting,
+                                detectedIpAddress = detectedIpAddress,
+                                onCameraSelectionChanged = { updateCameraSelection(it) },
+                                onEnterPipMode = { enterPipMode() },
+                                onToggleEngine = { toggleEngine() },
+                                onRefreshLocation = { handleRefreshLocation() }
+                            )
                         }
 
 
@@ -619,7 +608,7 @@ class MainActivity : ComponentActivity() {
                                 text = stringResource(Res.string.body_camera_stuck),
                                 confirmButtonText = stringResource(Res.string.btn_restart),
                                 onConfirm = {
-                                    stopEngineFromUi(updateScreen = false) {
+                                    stopEngineFromUi {
                                         val launchIntent =
                                             baseContext.packageManager.getLaunchIntentForPackage(
                                                 baseContext.packageName
@@ -961,14 +950,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun stopEngineFromUi(
-        updateScreen: Boolean = true,
         afterStop: (() -> Unit)? = null
     ) {
         if (isStopping) return
         isStopping = true
-        if (updateScreen) {
-            currentScreen = "main"
-        }
         lifecycleScope.launch {
             try {
                 stopEngineAndService()
@@ -1025,7 +1010,7 @@ class MainActivity : ComponentActivity() {
                 Log.w("OliveUI", "Engine startup timed out! Cleaning up.")
                 isStarting = false
                 startupTimeoutJob = null
-                stopEngineFromUi(updateScreen = false)
+                stopEngineFromUi()
             }
         }
     }

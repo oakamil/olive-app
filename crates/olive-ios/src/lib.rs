@@ -401,10 +401,10 @@ pub extern "C" fn olive_ios_get_engine_stats() -> *mut c_char {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn olive_ios_set_engine_paused(paused: bool) {
+pub extern "C" fn olive_ios_set_hfr_enabled(enabled: bool) {
     if let Some(state_arc) = ENGINE_STATE.lock().unwrap().as_ref() {
         if let Ok(mut state) = state_arc.write() {
-            state.paused = paused;
+            state.hfr_enabled = enabled;
         }
     }
 }

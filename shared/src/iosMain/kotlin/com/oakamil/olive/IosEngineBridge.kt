@@ -27,10 +27,10 @@ import com.oakamil.olive.cinterop.olive_ios_set_camera_focus
 import com.oakamil.olive.cinterop.olive_ios_set_camera_gain
 import com.oakamil.olive.cinterop.olive_ios_set_camera_stack_count
 import com.oakamil.olive.cinterop.olive_ios_set_camera_zoom
-import com.oakamil.olive.cinterop.olive_ios_set_engine_paused
 import com.oakamil.olive.cinterop.olive_ios_set_engine_sigma
 import com.oakamil.olive.cinterop.olive_ios_set_engine_strict_match
 import com.oakamil.olive.cinterop.olive_ios_set_goto_target
+import com.oakamil.olive.cinterop.olive_ios_set_hfr_enabled
 import com.oakamil.olive.cinterop.olive_ios_start_engine
 import com.oakamil.olive.cinterop.olive_ios_start_hardware_capture
 import com.oakamil.olive.cinterop.olive_ios_stop_engine
@@ -336,8 +336,8 @@ class IosEngineBridge : EngineBridge {
         }
     }
 
-    override fun setEnginePaused(paused: Boolean) {
-        olive_ios_set_engine_paused(paused)
+    override fun setHfrEnabled(enabled: Boolean) {
+        olive_ios_set_hfr_enabled(enabled)
     }
 
     override fun setEngineSigma(sigma: Float) {

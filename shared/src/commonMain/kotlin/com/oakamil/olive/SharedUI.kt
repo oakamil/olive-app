@@ -261,6 +261,47 @@ fun NightVisionDialog(
 )
 
 @Composable
+fun OliveDialogHeader(
+    title: String,
+    onDismiss: () -> Unit,
+    headerAction: (@Composable () -> Unit)? = null
+) {
+    val extColors = LocalOliveExtendedColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f, fill = false)
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            if (headerAction != null) {
+                Spacer(modifier = Modifier.width(4.dp))
+                headerAction()
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        IconButton(onClick = onDismiss) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = stringResource(id = Res.string.cd_close),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+    HorizontalDivider(color = extColors.dialogDivider)
+}
+
+@Composable
 fun InfoPopup(
     title: String,
     onDismiss: () -> Unit,
@@ -302,38 +343,11 @@ fun InfoPopup(
                     IntrinsicSize.Max
                 )
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f, fill = false)
-                    ) {
-                        Text(
-                            title,
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        if (headerAction != null) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            headerAction()
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = stringResource(id = Res.string.cd_close),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-                HorizontalDivider(color = extColors.dialogDivider)
+                OliveDialogHeader(
+                    title = title,
+                    onDismiss = onDismiss,
+                    headerAction = headerAction
+                )
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -732,6 +746,47 @@ fun LabeledValueRow(
 }
 
 @Composable
+fun solvedCropLabel(solvedCrop: String?): String = when (solvedCrop) {
+    "Center2x", "Center" -> stringResource(id = Res.string.crop_center_2x)
+    "Center2xHighSens", "CenterHighSens" -> stringResource(id = Res.string.crop_center_2x_hs)
+    "Center1_5x", "CenterWide" -> stringResource(id = Res.string.crop_center_1_5x)
+    "Center1_5xHighSens", "CenterWideHighSens" -> stringResource(id = Res.string.crop_center_1_5x_hs)
+    "Top" -> stringResource(id = Res.string.crop_top)
+    "Bottom" -> stringResource(id = Res.string.crop_bottom)
+    "Left" -> stringResource(id = Res.string.crop_left)
+    "Right" -> stringResource(id = Res.string.crop_right)
+    "Full" -> stringResource(id = Res.string.crop_full)
+    EngineStats.CROP_FAILED -> stringResource(id = Res.string.crop_failed)
+
+    "TopHighSens" -> stringResource(
+        id = Res.string.format_high_sens,
+        stringResource(id = Res.string.crop_top)
+    )
+
+    "BottomHighSens" -> stringResource(
+        id = Res.string.format_high_sens,
+        stringResource(id = Res.string.crop_bottom)
+    )
+
+    "LeftHighSens" -> stringResource(
+        id = Res.string.format_high_sens,
+        stringResource(id = Res.string.crop_left)
+    )
+
+    "RightHighSens" -> stringResource(
+        id = Res.string.format_high_sens,
+        stringResource(id = Res.string.crop_right)
+    )
+
+    "FullHighSens" -> stringResource(
+        id = Res.string.format_high_sens,
+        stringResource(id = Res.string.crop_full)
+    )
+
+    else -> solvedCrop ?: "-"
+}
+
+@Composable
 fun StatsDisplay(
     stats: EngineStats,
     detectedIpAddress: String = "",
@@ -825,48 +880,9 @@ fun StatsDisplay(
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        val cropString = when (stats.solvedCrop) {
-            "Center2x", "Center" -> stringResource(id = Res.string.crop_center_2x)
-            "Center2xHighSens", "CenterHighSens" -> stringResource(id = Res.string.crop_center_2x_hs)
-            "Center1_5x", "CenterWide" -> stringResource(id = Res.string.crop_center_1_5x)
-            "Center1_5xHighSens", "CenterWideHighSens" -> stringResource(id = Res.string.crop_center_1_5x_hs)
-            "Top" -> stringResource(id = Res.string.crop_top)
-            "Bottom" -> stringResource(id = Res.string.crop_bottom)
-            "Left" -> stringResource(id = Res.string.crop_left)
-            "Right" -> stringResource(id = Res.string.crop_right)
-            "Full" -> stringResource(id = Res.string.crop_full)
-            EngineStats.CROP_FAILED -> stringResource(id = Res.string.crop_failed)
-
-            "TopHighSens" -> stringResource(
-                id = Res.string.format_high_sens,
-                stringResource(id = Res.string.crop_top)
-            )
-
-            "BottomHighSens" -> stringResource(
-                id = Res.string.format_high_sens,
-                stringResource(id = Res.string.crop_bottom)
-            )
-
-            "LeftHighSens" -> stringResource(
-                id = Res.string.format_high_sens,
-                stringResource(id = Res.string.crop_left)
-            )
-
-            "RightHighSens" -> stringResource(
-                id = Res.string.format_high_sens,
-                stringResource(id = Res.string.crop_right)
-            )
-
-            "FullHighSens" -> stringResource(
-                id = Res.string.format_high_sens,
-                stringResource(id = Res.string.crop_full)
-            )
-
-            else -> stats.solvedCrop ?: "-"
-        }
         LabeledValueRow(
             label = stringResource(id = Res.string.stat_last_solve),
-            value = cropString
+            value = solvedCropLabel(stats.solvedCrop)
         )
 
         if (detectedIpAddress.isNotEmpty()) {
