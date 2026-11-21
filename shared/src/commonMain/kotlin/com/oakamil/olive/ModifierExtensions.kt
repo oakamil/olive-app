@@ -35,7 +35,7 @@ fun Modifier.simpleVerticalScrollbar(
 
         if (state.maxValue > 0) {
             val visibleHeight = size.height
-            val scrollbarHeight = 40.dp.toPx()
+            val scrollbarHeight = 40.dp.toPx().coerceAtMost(visibleHeight)
 
             // Draw background track
             drawRect(
@@ -64,5 +64,5 @@ fun Modifier.verticalScrollWithScrollbar(
     scrollbarWidth: Dp = 4.dp,
     scrollbarColor: Color? = null
 ): Modifier = this
-    .verticalScroll(state, enabled, flingBehavior, reverseScrolling)
     .simpleVerticalScrollbar(state, scrollbarWidth, scrollbarColor)
+    .verticalScroll(state, enabled, flingBehavior, reverseScrolling)

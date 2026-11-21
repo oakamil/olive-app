@@ -711,14 +711,14 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getLatestFrameInto(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEnginePaused(
+pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setHfrEnabled(
     _env: JNIEnv,
     _class: JClass,
-    paused: jboolean,
+    enabled: jboolean,
 ) {
     if let Some(state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").as_ref() {
         if let Ok(mut state) = state_arc.write() {
-            state.paused = paused != 0;
+            state.hfr_enabled = enabled != 0;
         }
     }
 }

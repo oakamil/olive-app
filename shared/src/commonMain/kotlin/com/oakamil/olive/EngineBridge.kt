@@ -55,7 +55,7 @@ interface EngineBridge {
     fun getAvailableInternalCameras(): String
     fun getAvailableExternalCameraFormats(): String = ""
     fun getLatestFrame(lastTimestamp: Long): LatestFrame?
-    fun setEnginePaused(paused: Boolean)
+    fun setHfrEnabled(enabled: Boolean)
     fun setEngineSigma(sigma: Float)
     fun setEngineStrictMatch(strict: Boolean)
     fun updateUvcStacking(frames: Int)

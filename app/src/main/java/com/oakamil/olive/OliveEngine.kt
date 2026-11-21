@@ -93,7 +93,7 @@ object OliveEngine : EngineBridge {
         return LatestFrame(ts, bitmap.asImageBitmap())
     }
 
-    external override fun setEnginePaused(paused: Boolean)
+    external override fun setHfrEnabled(enabled: Boolean)
     external override fun setEngineSigma(sigma: Float)
     external override fun setEngineStrictMatch(strict: Boolean)
     external override fun updateUvcStacking(frames: Int)

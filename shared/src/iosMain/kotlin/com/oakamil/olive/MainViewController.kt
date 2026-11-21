@@ -172,7 +172,6 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         }
     }
 
-    var currentScreen by remember { mutableStateOf("main") }
     var isCameraConnected by remember { mutableStateOf(false) }
     var initialDiscoveryCompleted by remember { mutableStateOf(false) }
     var userSelectedCamera by remember { mutableStateOf(false) }
@@ -211,6 +210,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         try {
             viewModel.stopEngine()
         } finally {
+            @Suppress("AssignedValueIsNeverRead")
             activeStopCount--
         }
     }
@@ -307,7 +307,6 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                         viewModel.engineMode == MainViewModel.EngineMode.UVC ||
                                 (isStarting && activeCameraSelection == "external")
                     if (shouldStopExternal) {
-                        currentScreen = "main"
                         stopEngineUi()
                     }
                     if (!isCameraConnected) {
@@ -464,105 +463,91 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
             ) {
-                when (currentScreen) {
-                    "main" -> MainScreen(
-                        viewModel = viewModel,
-                        settingsManager = settingsManager,
-                        isCameraConnected = isCameraConnected,
-                        activeCameraSelection = activeCameraSelection,
-                        isStopping = isStopping,
-                        isStarting = isStarting,
-                        detectedIpAddress = detectedIpAddress,
-                        onCameraSelectionChanged = {
+                MainScreen(
+                    viewModel = viewModel,
+                    settingsManager = settingsManager,
+                    isCameraConnected = isCameraConnected,
+                    activeCameraSelection = activeCameraSelection,
+                    isStopping = isStopping,
+                    isStarting = isStarting,
+                    detectedIpAddress = detectedIpAddress,
+                    onCameraSelectionChanged = {
+                        userSelectedCamera = true
+                        activeCameraSelection = it
+                    },
+                    onEnterPipMode = { },
+                    onToggleEngine = {
+                        if (isStarting || isStopping || isResolvingToggle) return@MainScreen
+
+                        if (viewModel.isEngineRunning) {
+                            coroutineScope.launch { stopEngineUi() }
+                        } else {
                             userSelectedCamera = true
-                            activeCameraSelection = it
-                        },
-                        onNavigateToTuner = {
                             @Suppress("AssignedValueIsNeverRead")
-                            currentScreen = "tuner"
-                        },
-                        onEnterPipMode = { },
-                        onToggleEngine = {
-                            if (isStarting || isStopping || isResolvingToggle) return@MainScreen
-
-                            if (viewModel.isEngineRunning) {
-                                coroutineScope.launch { stopEngineUi() }
-                            } else {
-                                userSelectedCamera = true
-                                isResolvingToggle = true
-                                coroutineScope.launch {
-                                    try {
-                                        val caps = resolvedCapabilities()
-                                        if (isStarting || isStopping || viewModel.isEngineRunning) {
-                                            return@launch
-                                        }
-                                        updateCameraSelection(
-                                            caps.resolveCameraSelection(
-                                                activeCameraSelection,
-                                                isCameraConnected
-                                            )
+                            isResolvingToggle = true
+                            coroutineScope.launch {
+                                try {
+                                    val caps = resolvedCapabilities()
+                                    if (isStarting || isStopping || viewModel.isEngineRunning) {
+                                        return@launch
+                                    }
+                                    updateCameraSelection(
+                                        caps.resolveCameraSelection(
+                                            activeCameraSelection,
+                                            isCameraConnected
                                         )
-                                        if (!viewModel.hasValidLocation && activeCameraSelection != "demo") {
-                                            showLocationRequiredDialog = true
-                                            return@launch
-                                        }
-                                        if (activeCameraSelection != "demo") {
-                                            val authStatus =
-                                                AVCaptureDevice.authorizationStatusForMediaType(
-                                                    AVMediaTypeVideo
-                                                )
-                                            when (authStatus) {
-                                                AVAuthorizationStatusAuthorized -> {
-                                                    startEngineAction()
-                                                }
+                                    )
+                                    if (!viewModel.hasValidLocation && activeCameraSelection != "demo") {
+                                        showLocationRequiredDialog = true
+                                        return@launch
+                                    }
+                                    if (activeCameraSelection != "demo") {
+                                        val authStatus =
+                                            AVCaptureDevice.authorizationStatusForMediaType(
+                                                AVMediaTypeVideo
+                                            )
+                                        when (authStatus) {
+                                            AVAuthorizationStatusAuthorized -> {
+                                                startEngineAction()
+                                            }
 
-                                                AVAuthorizationStatusNotDetermined -> {
-                                                    AVCaptureDevice.requestAccessForMediaType(
-                                                        AVMediaTypeVideo
-                                                    ) { granted ->
-                                                        coroutineScope.launch {
-                                                            if (granted) {
-                                                                startEngineAction()
-                                                            } else {
-                                                                showCameraPermissionDialog = true
-                                                            }
+                                            AVAuthorizationStatusNotDetermined -> {
+                                                AVCaptureDevice.requestAccessForMediaType(
+                                                    AVMediaTypeVideo
+                                                ) { granted ->
+                                                    coroutineScope.launch {
+                                                        if (granted) {
+                                                            startEngineAction()
+                                                        } else {
+                                                            showCameraPermissionDialog = true
                                                         }
                                                     }
                                                 }
-
-                                                else -> {
-                                                    showCameraPermissionDialog = true
-                                                }
                                             }
-                                        } else {
-                                            startEngineAction()
+
+                                            else -> {
+                                                showCameraPermissionDialog = true
+                                            }
                                         }
-                                    } finally {
-                                        isResolvingToggle = false
+                                    } else {
+                                        startEngineAction()
                                     }
+                                } finally {
+                                    @Suppress("AssignedValueIsNeverRead")
+                                    isResolvingToggle = false
                                 }
                             }
-                        },
-                        onRefreshLocation = {
-                            if (viewModel.locationRefreshStatus == MainViewModel.LocationRefreshStatus.IDLE) {
-                                pendingLocationRefresh = true
-                                viewModel.locationRefreshStatus =
-                                    MainViewModel.LocationRefreshStatus.REFRESHING
-                                locationProvider.requestLocation()
-                            }
                         }
-                    )
-
-                    "tuner" -> TunerScreen(
-                        viewModel = viewModel,
-                        settingsManager = settingsManager,
-                        activeCameraSelection = activeCameraSelection,
-                        onBack = {
-                            @Suppress("AssignedValueIsNeverRead")
-                            currentScreen = "main"
+                    },
+                    onRefreshLocation = {
+                        if (viewModel.locationRefreshStatus == MainViewModel.LocationRefreshStatus.IDLE) {
+                            pendingLocationRefresh = true
+                            viewModel.locationRefreshStatus =
+                                MainViewModel.LocationRefreshStatus.REFRESHING
+                            locationProvider.requestLocation()
                         }
-                    )
-                }
+                    }
+                )
 
                 if (showLocationRequiredDialog) {
                     InfoPopup(

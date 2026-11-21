@@ -120,6 +120,10 @@ open class MainViewModel(
     var engineMode by mutableStateOf(EngineMode.STOPPED)
         private set
 
+    @Volatile
+    var isAutoEngineSession: Boolean = false
+        private set
+
     val isEngineRunning: Boolean
         get() = engineMode != EngineMode.STOPPED
 
@@ -863,13 +867,13 @@ open class MainViewModel(
             if (calibratedFocus != lastCalibratedFocus) {
                 lastCalibratedFocus = calibratedFocus
                 currentFocus = calibratedFocus
-                if (settingsManager.cameraSettingsMode == "Auto") {
+                if (isAutoEngineSession) {
                     settingsManager.manualFocus = calibratedFocus
                 }
             }
         }
         snapshot.currentSigma?.let { currentSigmaVal ->
-            if (settingsManager.cameraSettingsMode == "Auto") {
+            if (isAutoEngineSession) {
                 starSensitivity = 100f * (5.0f - currentSigmaVal) / 3.0f
             }
         }
@@ -897,7 +901,7 @@ open class MainViewModel(
                     val statsSnapshot = readStatsSnapshot()
                     val settingsSnapshot = readRealtimeSettings(
                         mode = activeMode,
-                        isAuto = settingsManager.cameraSettingsMode == "Auto",
+                        isAuto = isAutoEngineSession,
                         wrapper = uvcWrapper
                     )
                     withContext(Dispatchers.Main) {
@@ -995,6 +999,7 @@ open class MainViewModel(
 
     private fun resetEngineUiState() {
         engineMode = EngineMode.STOPPED
+        isAutoEngineSession = false
         isLowPowerMode = false
         currentZoom = 1.0f
         skyMapCameraLocked = true
@@ -1029,7 +1034,7 @@ open class MainViewModel(
             if (isDemo) false else settingsManager.cameraSettingsMode == "Auto"
         val initialZoom = if (isDemo) 1.0f else {
             if (isAutoSettings) {
-                if (ENABLE_AUTO_ZOOM) settingsManager.autoZoomRatio.coerceIn(1.0f, 2.0f) else 1.0f
+                settingsManager.autoZoomRatio.coerceIn(1.0f, 2.0f)
             } else {
                 settingsManager.manualZoomRatio.coerceAtLeast(1.0f)
             }
@@ -1093,6 +1098,7 @@ open class MainViewModel(
                 }
 
                 isLowPowerMode = false
+                isAutoEngineSession = isAutoSettings
                 engineMode = EngineMode.NATIVE
                 skyMapCameraLocked = true
 
@@ -1211,6 +1217,7 @@ open class MainViewModel(
                         return@withLock
                     }
 
+                    isAutoEngineSession = isAutoSettings
                     engineMode = EngineMode.UVC
                     skyMapCameraLocked = true
 
@@ -1298,18 +1305,20 @@ open class MainViewModel(
                 var gain: Float? = null
                 var exposure: Float? = null
                 var noiseReduction: Int? = null
+                var hotPixel: Int? = null
                 if (isAuto) {
                     val g = engine.getNativeCameraGain()
                     if (!g.isNaN() && g > 0) gain = g
                     val exp = engine.getNativeCameraExposure()
                     if (exp > 0) exposure = exp.toFloat()
                     noiseReduction = engine.getNativeCameraNoiseReduction()
+                    hotPixel = engine.getNativeCameraHotPixelMode()
                 }
                 RealtimeSettingsSnapshot(
                     gain = gain,
                     exposure = exposure,
                     noiseReduction = noiseReduction,
-                    hotPixelMode = engine.getNativeCameraHotPixelMode()
+                    hotPixelMode = hotPixel
                 )
             }
 
@@ -1341,17 +1350,36 @@ open class MainViewModel(
     suspend fun fetchRealtimeSettings() {
         val mode = engineMode
         if (mode == EngineMode.STOPPED) return
-        val snapshot = withContext(Dispatchers.IO) {
-            readRealtimeSettings(
+        val isAuto = isAutoEngineSession
+        val wrapper = uvcWrapper
+        val (snapshot, gainAndExp) = withContext(Dispatchers.IO) {
+            val realtime = readRealtimeSettings(
                 mode = mode,
-                isAuto = settingsManager.cameraSettingsMode == "Auto",
-                wrapper = uvcWrapper
+                isAuto = isAuto,
+                wrapper = wrapper
             )
-        }
-        withContext(Dispatchers.Main) {
-            if (isEngineRunning && engineMode == mode) {
-                applyRealtimeSettings(snapshot)
+            val nativeRanges = if (mode != EngineMode.UVC) {
+                engine.getNativeCameraGainRange() to engine.getNativeCameraExposure()
+            } else {
+                null
             }
+            realtime to nativeRanges
+        }
+        if (isEngineRunning && engineMode == mode) {
+            if (gainAndExp != null) {
+                val (range, exposureUs) = gainAndExp
+                if (range != null && range.size >= 2) {
+                    minAnalogGain = range[0]
+                    maxAnalogGain = range[1].coerceAtLeast(minAnalogGain + 1f)
+                } else {
+                    minAnalogGain = 100f
+                    maxAnalogGain = 3200f
+                }
+                if (exposureUs > 0) {
+                    currentExposure = exposureUs.toFloat().coerceIn(capabilities.exposureRange)
+                }
+            }
+            applyRealtimeSettings(snapshot)
         }
     }
 
@@ -1422,12 +1450,8 @@ open class MainViewModel(
         }
     }
 
-    fun setEnginePaused(paused: Boolean) {
-        if (!paused) {
-            lastFrameReceivedRealtime = getElapsedRealtimeMs()
-            isCameraStuck = false
-        }
-        engine.setEnginePaused(paused)
+    fun setHfrEnabled(enabled: Boolean) {
+        engine.setHfrEnabled(enabled)
     }
 
     fun updateUvcStacking(frames: Int) {
@@ -1684,7 +1708,6 @@ open class MainViewModel(
     }
 
     companion object {
-        const val ENABLE_AUTO_ZOOM = true
         const val INVALID_COORD = 200.0
         const val DEFAULT_CAMERA_ASPECT = 4.0 / 3.0
         const val CAMERA_STUCK_TIMEOUT_MS = 15000L

@@ -10,6 +10,7 @@ import android.provider.Settings
 import android.view.Surface
 import android.view.WindowManager
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
@@ -19,8 +20,11 @@ class AndroidWindowController(private val activity: Activity) : PlatformWindowCo
     )
         internal set
 
+    private var rotationDegrees: Int by mutableIntStateOf(readDisplayRotationDegrees())
+
     fun updateConfiguration(configuration: Configuration) {
         isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        rotationDegrees = readDisplayRotationDegrees()
     }
 
     override fun getScreenBrightness(): Float {
@@ -64,7 +68,10 @@ class AndroidWindowController(private val activity: Activity) : PlatformWindowCo
         }
     }
 
-    override fun getDisplayRotationDegrees(): Int {
+    override fun getDisplayRotationDegrees(): Int =
+        rotationDegrees.let { readDisplayRotationDegrees() }
+
+    private fun readDisplayRotationDegrees(): Int {
         val rotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             activity.display?.rotation ?: Surface.ROTATION_0
         } else {

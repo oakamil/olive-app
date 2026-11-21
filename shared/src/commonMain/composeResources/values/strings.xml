@@ -35,9 +35,11 @@
     <string name="label_dec">Declination</string>
 
     <!-- Camera Mode Labels -->
-    <string name="info_detected_stars">Detected Stars</string>
     <string name="info_hfr_label">HFR</string>
     <string name="status_waiting_for_frame">Waiting for frame …</string>
+    <string name="hint_tap_image_to_align">Tap on the image to align</string>
+    <string name="hint_confirm_align">Tap Align to confirm</string>
+    <string name="status_imu">IMU</string>
 
     <!-- Buttons -->
     <string name="btn_camera_mode">Camera Mode</string>
