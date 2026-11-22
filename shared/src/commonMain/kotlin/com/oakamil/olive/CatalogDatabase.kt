@@ -24,11 +24,7 @@ data class CatalogObject(
     val copyright: String?,
     val distance: String? = null
 ) {
-    val designation: String = when (catalogLabel) {
-        "Str", "Planet", "Solar System" -> catalogEntry
-        in COMPACT_CATALOG_LABELS -> catalogLabel + catalogEntry
-        else -> "$catalogLabel $catalogEntry"
-    }
+    val designation: String = formatDesignation(catalogLabel, catalogEntry)
 
     val isFakeCommonName: Boolean = commonName != null && (
             commonName.equals("none", ignoreCase = true) ||
@@ -46,6 +42,14 @@ data class CatalogObject(
 
     companion object {
         private val COMPACT_CATALOG_LABELS = setOf("M", "NGC", "IC", "C", "Col")
+
+        fun formatDesignation(catalogLabel: String, catalogEntry: String): String =
+            when (catalogLabel) {
+                "Str", "Planet", "Solar System" -> catalogEntry
+                in COMPACT_CATALOG_LABELS -> catalogLabel + catalogEntry
+                else -> "$catalogLabel $catalogEntry"
+            }
+
         private val FAKE_COMMON_NAME_REGEX = Regex("^[a-zA-Z0-9]+\\s+([IVX]+\\s+)?\\d+[a-zA-Z]?$")
         private val SLASH_OR_EQUALS_REGEX = Regex("\\s+[/=]\\s+")
         private val BAYER_DESIGNATION_REGEX = Regex(
@@ -100,8 +104,10 @@ interface CatalogDatabase {
                     "description, copyright, distance"
 
         private const val DEG_TO_RAD = PI / 180.0
-        private val DYNAMIC_CATALOG_LABELS = setOf("Solar System", "Planet", "Asteroid", "Comet")
+        internal val DYNAMIC_CATALOG_LABELS = setOf("Solar System", "Planet", "Asteroid", "Comet")
         private val SEARCH_QUERY_PREFIX_REGEX = Regex("^(sh2|ta2|[a-z]+)\\s*(\\d+)?$")
+        private val COMPACT_DESIGNATION_REGEX =
+            Regex("^(sh2|ta2|[a-z]+)-?(\\d[a-z0-9-]*)$", RegexOption.IGNORE_CASE)
         private val COMET_LINE_WHITESPACE_REGEX = Regex("\\s+")
         private val SEARCH_CATALOG_ALIASES = mapOf(
             "messier" to "M", "m" to "M",
@@ -122,6 +128,51 @@ interface CatalogDatabase {
             "rds" to "RDS",
             "egc" to "EGC",
         )
+        private val EXTRA_DESIGNATION_LABELS = mapOf(
+            "str" to "Str",
+            "planet" to "Planet",
+            "asteroid" to "Asteroid",
+            "comet" to "Comet",
+        )
+
+        private fun normalizeCatalogEntry(rawEntry: String): String =
+            if (rawEntry.all { it.isDigit() }) rawEntry.trimStart('0').ifEmpty { "0" } else rawEntry
+
+        /**
+         * Splits a catalog designation (compact like `M31`/`NGC224`/`Col399`/`Sh2-155` or spaced
+         * like `Sh2 155`/`B 33`/`RDS STF 738`/`Comet 1P/Halley`) into `(catalogLabel, catalogEntry)`.
+         * Returns `null` for unprefixed names (e.g. `Jupiter`, `Sirius`) or blank input.
+         */
+        fun parseCatalogDesignation(raw: String): Pair<String, String>? {
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty()) return null
+
+            if (trimmed.startsWith("Solar System ", ignoreCase = true)) {
+                val entry = trimmed.substring("Solar System ".length).trim()
+                return if (entry.isNotEmpty()) "Solar System" to entry else null
+            }
+
+            val spaceIdx = trimmed.indexOf(' ')
+            if (spaceIdx > 0) {
+                val prefix = trimmed.take(spaceIdx).lowercase()
+                val rawEntry = trimmed.substring(spaceIdx + 1).trim()
+                val label = SEARCH_CATALOG_ALIASES[prefix] ?: EXTRA_DESIGNATION_LABELS[prefix]
+                if (label != null && rawEntry.isNotEmpty()) {
+                    return label to normalizeCatalogEntry(rawEntry)
+                }
+            }
+
+            val compact = COMPACT_DESIGNATION_REGEX.matchEntire(trimmed)
+            if (compact != null) {
+                val label = SEARCH_CATALOG_ALIASES[compact.groupValues[1].lowercase()]
+                val rawEntry = compact.groupValues[2]
+                if (label != null && rawEntry.isNotEmpty()) {
+                    return label to normalizeCatalogEntry(rawEntry)
+                }
+            }
+
+            return null
+        }
 
         fun isDynamicObject(obj: CatalogObject): Boolean =
             obj.id <= 0 || obj.catalogLabel in DYNAMIC_CATALOG_LABELS
@@ -131,6 +182,13 @@ interface CatalogDatabase {
             "SELECT $CATALOG_OBJECT_COLUMNS_SQL FROM catalog " +
                     "WHERE ra = ? AND dec = ? AND object_type = ? AND id != ? " +
                     "ORDER BY ${buildPriorityCaseSql()} ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC;"
+
+        fun buildDesignationsQuerySql(pairCount: Int): String {
+            require(pairCount > 0) { "pairCount must be positive" }
+            val clauses = List(pairCount) { "(catalog_label = ? AND catalog_entry = ?)" }
+                .joinToString(" OR ")
+            return "SELECT $CATALOG_OBJECT_COLUMNS_SQL FROM catalog WHERE $clauses;"
+        }
 
         /** Builds the SQLite WHERE clause and bound parameters for [searchObjects]. */
         fun buildSearchSelectionSql(
@@ -283,10 +341,9 @@ interface CatalogDatabase {
                 val rawNum = match.groupValues[2]
                 if (label != null) {
                     if (rawNum.isNotEmpty()) {
-                        val normalizedNum = rawNum.trimStart('0').ifEmpty { "0" }
                         clause = "($clause OR (catalog_label = ? AND catalog_entry = ?))"
                         args.add(label)
-                        args.add(normalizedNum)
+                        args.add(normalizeCatalogEntry(rawNum))
                     } else {
                         clause = "($clause OR catalog_label = ?)"
                         args.add(label)
@@ -504,6 +561,9 @@ interface CatalogDatabase {
     fun getCatalogDescriptions(): Map<String, String>
 
     fun getCoLocatedObjects(obj: CatalogObject): List<CatalogObject> = emptyList()
+
+    fun getObjectsByDesignations(keys: Collection<Pair<String, String>>): List<CatalogObject> =
+        emptyList()
 
     fun searchObjects(
         searchQuery: String = "",

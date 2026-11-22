@@ -58,18 +58,29 @@ import platform.darwin.dispatch_semaphore_create
 import platform.darwin.dispatch_semaphore_signal
 import platform.darwin.dispatch_semaphore_wait
 import platform.darwin.dispatch_time
+import platform.posix.PTHREAD_MUTEX_RECURSIVE
 import platform.posix.pthread_mutex_init
 import platform.posix.pthread_mutex_lock
 import platform.posix.pthread_mutex_t
 import platform.posix.pthread_mutex_unlock
+import platform.posix.pthread_mutexattr_destroy
+import platform.posix.pthread_mutexattr_init
+import platform.posix.pthread_mutexattr_settype
+import platform.posix.pthread_mutexattr_t
 
 @OptIn(ExperimentalForeignApi::class)
-private class NativeMutex {
+internal class NativeMutex {
     private val arena = Arena()
     private val mutexPtr = arena.alloc<pthread_mutex_t>()
 
     init {
-        pthread_mutex_init(mutexPtr.ptr, null)
+        memScoped {
+            val attr = alloc<pthread_mutexattr_t>()
+            pthread_mutexattr_init(attr.ptr)
+            pthread_mutexattr_settype(attr.ptr, PTHREAD_MUTEX_RECURSIVE)
+            pthread_mutex_init(mutexPtr.ptr, attr.ptr)
+            pthread_mutexattr_destroy(attr.ptr)
+        }
     }
 
     inline fun <T> withLock(block: () -> T): T {
@@ -343,6 +354,26 @@ class IosCatalogDatabase(
             olive_sqlite3_bind_text(stmt, 3, obj.objectType)
             sqlite3_bind_int(stmt, 4, obj.id)
         }
+    }
+
+    override fun getObjectsByDesignations(
+        keys: Collection<Pair<String, String>>
+    ): List<CatalogObject> = mutex.withLock {
+        if (keys.isEmpty()) return@withLock emptyList()
+        val database = openDatabase() ?: return@withLock emptyList()
+        val results = mutableListOf<CatalogObject>()
+        for (chunk in keys.distinct().chunked(200)) {
+            val sql = CatalogDatabase.buildDesignationsQuerySql(chunk.size)
+            results.addAll(
+                executeCatalogQuery(database, sql) { stmt ->
+                    chunk.forEachIndexed { idx, (label, entry) ->
+                        olive_sqlite3_bind_text(stmt, idx * 2 + 1, label)
+                        olive_sqlite3_bind_text(stmt, idx * 2 + 2, entry)
+                    }
+                }
+            )
+        }
+        results
     }
 
     private fun executeCatalogQuery(

@@ -29,12 +29,22 @@ import kotlinx.datetime.Clock
 import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
 
+data class ResolvedListEntry(
+    val catalogObject: CatalogObject,
+    val listItemId: Long? = null,
+    val observationTimeMs: Long? = null,
+    val observationNotePreview: String? = null,
+    val observationCount: Int = 0,
+    val observationIds: List<Long> = emptyList()
+)
+
 open class MainViewModel(
     val storage: KeyValueStorage,
     val capabilities: PlatformCapabilities,
     var engine: EngineBridge,
     val catalogDb: CatalogDatabase,
-    private val hipsLocalBackend: HiPSLocalBackend? = null
+    private val hipsLocalBackend: HiPSLocalBackend? = null,
+    val userDb: UserDatabase = NoOpUserDatabase
 ) : ViewModel() {
     var hipsTileManager by mutableStateOf<HiPSTileManager?>(null)
         private set
@@ -51,7 +61,7 @@ open class MainViewModel(
 
     class HqCatalogConfirmRequest(
         val categoryTitle: String,
-        val shortCode: String,
+        val targetId: String,
         val missingKeys: IntArray
     )
 
@@ -157,6 +167,15 @@ open class MainViewModel(
         set(value) {
             _guidanceMode.value = value
             settingsManager.guidanceMode = value
+        }
+
+    private val _lowPowerTimeoutSeconds = mutableIntStateOf(settingsManager.lowPowerTimeoutSeconds)
+    var lowPowerTimeoutSeconds: Int
+        get() = _lowPowerTimeoutSeconds.intValue
+        set(value) {
+            if (_lowPowerTimeoutSeconds.intValue == value) return
+            _lowPowerTimeoutSeconds.intValue = value
+            settingsManager.lowPowerTimeoutSeconds = value
         }
 
     private val _showLiveCamera = mutableStateOf(settingsManager.showLiveCamera)
@@ -366,18 +385,14 @@ open class MainViewModel(
     fun objectHqTargetId(obj: CatalogObject): String =
         "obj_${obj.catalogLabel}_${obj.catalogEntry}_${obj.id}"
 
-    /** Computes missing HQ tile keys for [shortCode], including cross-catalog co-located sizes. */
-    suspend fun planCatalogMissingHqKeys(shortCode: String): IntArray {
+    /** Computes missing HQ tile keys for [objects], including cross-catalog co-located sizes. */
+    suspend fun planObjectsMissingHqKeys(objects: List<CatalogObject>): IntArray {
+        if (objects.isEmpty()) return IntArray(0)
         hipsCleanupJob?.join()
         hqCleanupJob?.join()
         val skyPackReady = isSkyPackDownloaded
         val hqSnap = hqIndex
         return withContext(Dispatchers.IO) {
-            val objects = catalogDb.searchObjects(
-                catalogFilter = shortCode,
-                limit = Int.MAX_VALUE,
-                offset = 0
-            )
             HiPSObjectPlanner.planMissingForCatalog(
                 objects = objects,
                 isBasePackAvailable = skyPackReady,
@@ -385,6 +400,18 @@ open class MainViewModel(
                 coLocatedLookup = { catalogDb.getCoLocatedObjects(it) }
             )
         }
+    }
+
+    /** Computes missing HQ tile keys for [shortCode], including cross-catalog co-located sizes. */
+    suspend fun planCatalogMissingHqKeys(shortCode: String): IntArray {
+        val objects = withContext(Dispatchers.IO) {
+            catalogDb.searchObjects(
+                catalogFilter = shortCode,
+                limit = Int.MAX_VALUE,
+                offset = 0
+            )
+        }
+        return planObjectsMissingHqKeys(objects)
     }
 
     fun downloadObjectHqImage(obj: CatalogObject, coLocated: List<CatalogObject>) {
@@ -419,6 +446,26 @@ open class MainViewModel(
         categoryTitle: String,
         shortCode: String,
         missingKeys: IntArray
+    ) = requestBulkHqDownload(
+        title = categoryTitle,
+        targetId = "cat_$shortCode",
+        missingKeys = missingKeys
+    )
+
+    fun requestListHqDownload(
+        listId: Long,
+        listTitle: String,
+        missingKeys: IntArray
+    ) = requestBulkHqDownload(
+        title = listTitle,
+        targetId = "list_$listId",
+        missingKeys = missingKeys
+    )
+
+    private fun requestBulkHqDownload(
+        title: String,
+        targetId: String,
+        missingKeys: IntArray
     ) {
         val activeState = hqDownloadState
         if (hqDownloadJob?.isActive == true &&
@@ -429,7 +476,7 @@ open class MainViewModel(
             return
         }
         if (missingKeys.isEmpty()) return
-        pendingHqCatalogConfirm = HqCatalogConfirmRequest(categoryTitle, shortCode, missingKeys)
+        pendingHqCatalogConfirm = HqCatalogConfirmRequest(title, targetId, missingKeys)
     }
 
     fun confirmCatalogHqDownload() {
@@ -437,7 +484,7 @@ open class MainViewModel(
         pendingHqCatalogConfirm = null
         showHqDownloadProgress = true
         startHqDownloadInternal(
-            targetId = "cat_${req.shortCode}",
+            targetId = req.targetId,
             isBulkCatalog = true,
             catalogTitle = req.categoryTitle,
             missingKeys = req.missingKeys,
@@ -447,8 +494,9 @@ open class MainViewModel(
     fun retryFailedHqDownload() {
         val failed = hqDownloadState as? HiPSHqDownloadState.Failed ?: return
         if (hqDownloadJob?.isActive == true) return
-        if (failed.isBulkCatalog && failed.targetId.startsWith("cat_")) {
-            val shortCode = failed.targetId.removePrefix("cat_")
+        val isCat = failed.isBulkCatalog && failed.targetId.startsWith("cat_")
+        val isList = failed.isBulkCatalog && failed.targetId.startsWith("list_")
+        if (isCat || isList) {
             hqDownloadState = HiPSHqDownloadState.Downloading(
                 targetId = failed.targetId,
                 isBulkCatalog = true,
@@ -459,7 +507,17 @@ open class MainViewModel(
             )
             showHqDownloadProgress = true
             hqDownloadJob = viewModelScope.launch {
-                val missing = planCatalogMissingHqKeys(shortCode)
+                val missing = if (isCat) {
+                    planCatalogMissingHqKeys(failed.targetId.removePrefix("cat_"))
+                } else {
+                    val listId = failed.targetId.removePrefix("list_").toLongOrNull()
+                    if (listId != null) {
+                        val entries = resolveManualListEntries(listId, currentLat, currentLon)
+                        planObjectsMissingHqKeys(entries.map { it.catalogObject })
+                    } else {
+                        IntArray(0)
+                    }
+                }
                 if (missing.isEmpty()) {
                     hqDownloadState = HiPSHqDownloadState.Idle
                     showHqDownloadProgress = false
@@ -736,6 +794,755 @@ open class MainViewModel(
             _landscapeKeyboardOnRight.value = value
             settingsManager.landscapeKeyboardOnRight = value
         }
+
+    // Observing Lists & Observation Logs State
+    var showObservingLists by mutableStateOf(false)
+    var pendingOpenManualListId by mutableStateOf<Long?>(null)
+        private set
+    var pendingOpenNightSession by mutableStateOf<String?>(null)
+        private set
+    var manualLists by mutableStateOf<List<ObservingListSummary>>(emptyList())
+        private set
+    var nightSessions by mutableStateOf<List<NightSessionSummary>>(emptyList())
+        private set
+    var observedKeys by mutableStateOf<Set<String>>(emptySet())
+        private set
+    var observedStaticCoLocatedKeys by mutableStateOf<Set<StaticCoLocatedKey>>(emptySet())
+        private set
+    var userDataVersion by mutableIntStateOf(0)
+        private set
+
+    private val _lastSelectedObservingListId =
+        mutableLongStateOf(settingsManager.lastSelectedObservingListId)
+    var lastSelectedObservingListId: Long
+        get() = _lastSelectedObservingListId.longValue
+        set(value) {
+            _lastSelectedObservingListId.longValue = value
+            settingsManager.lastSelectedObservingListId = value
+        }
+
+    private val _listsSortBy = mutableStateOf(settingsManager.listsSortBy)
+    var listsSortBy: String
+        get() = _listsSortBy.value
+        set(value) {
+            _listsSortBy.value = value
+            settingsManager.listsSortBy = value
+        }
+
+    private val _listsVisibilityFilter = mutableStateOf(settingsManager.listsVisibilityFilter)
+    var listsVisibilityFilter: String
+        get() = _listsVisibilityFilter.value
+        set(value) {
+            _listsVisibilityFilter.value = value
+            settingsManager.listsVisibilityFilter = value
+        }
+
+    private val _listsObservedFilter = mutableStateOf(settingsManager.listsObservedFilter)
+    var listsObservedFilter: String
+        get() = _listsObservedFilter.value
+        set(value) {
+            _listsObservedFilter.value = value
+            settingsManager.listsObservedFilter = value
+        }
+
+    fun isObjectObserved(obj: CatalogObject): Boolean =
+        UserDatabase.matchesObservedSet(obj, observedKeys, observedStaticCoLocatedKeys)
+
+    fun openManualList(listId: Long) {
+        pendingOpenManualListId = listId
+        pendingOpenNightSession = null
+        lastSelectedObservingListId = listId
+        showCatalog = false
+        showObservingLists = true
+    }
+
+    fun openNightSession(observingNight: String) {
+        pendingOpenNightSession = observingNight
+        pendingOpenManualListId = null
+        showCatalog = false
+        showObservingLists = true
+    }
+
+    fun consumePendingObservingListNavigation() {
+        pendingOpenManualListId = null
+        pendingOpenNightSession = null
+    }
+
+    private val userDbMutex = Mutex()
+
+    @Volatile
+    private var isUserDbDisposed = false
+
+    init {
+        refreshUserDataAsync()
+    }
+
+    private suspend fun <T> runUserDbWrite(block: suspend () -> T): T =
+        withContext(NonCancellable) {
+            userDbMutex.withLock {
+                block()
+            }
+        }
+
+    fun refreshUserDataAsync() {
+        viewModelScope.launch {
+            refreshUserData()
+        }
+    }
+
+    suspend fun refreshUserData() {
+        userDbMutex.withLock {
+            refreshUserDataLocked()
+        }
+    }
+
+    private suspend fun refreshUserDataLocked() {
+        if (isUserDbDisposed) return
+        val (lists, sessions, allObs) = withContext(Dispatchers.IO) {
+            Triple(
+                userDb.getManualLists(),
+                userDb.getNightSessions(),
+                userDb.getAllObservations()
+            )
+        }
+        manualLists = lists
+        nightSessions = sessions
+        val keys = HashSet<String>(allObs.size)
+        val staticKeys = HashSet<StaticCoLocatedKey>(allObs.size)
+        for (obs in allObs) {
+            keys.add(obs.objectKey)
+            if (obs.catalogLabel !in CatalogDatabase.DYNAMIC_CATALOG_LABELS) {
+                staticKeys.add(StaticCoLocatedKey(obs.raDeg, obs.decDeg, obs.objectType))
+            }
+        }
+        observedKeys = keys
+        observedStaticCoLocatedKeys = staticKeys
+        if (lists.none { it.id == lastSelectedObservingListId }) {
+            lastSelectedObservingListId = lists.firstOrNull()?.id ?: -1L
+        }
+        userDataVersion++
+    }
+
+    suspend fun createManualList(name: String): Long = runUserDbWrite {
+        val id = withContext(Dispatchers.IO) {
+            userDb.createManualList(name)
+        }
+        if (id > 0L) {
+            lastSelectedObservingListId = id
+            refreshUserDataLocked()
+        }
+        id
+    }
+
+    suspend fun renameManualList(listId: Long, newName: String) {
+        runUserDbWrite {
+            withContext(Dispatchers.IO) {
+                userDb.renameManualList(listId, newName)
+            }
+            refreshUserDataLocked()
+        }
+    }
+
+    suspend fun deleteManualList(listId: Long) {
+        runUserDbWrite {
+            withContext(Dispatchers.IO) {
+                userDb.deleteManualList(listId)
+            }
+            if (lastSelectedObservingListId == listId) {
+                lastSelectedObservingListId = -1L
+            }
+            refreshUserDataLocked()
+        }
+    }
+
+    fun reorderManualListsInMemory(reordered: List<ObservingListSummary>) {
+        manualLists = reordered.mapIndexed { idx, list -> list.copy(sortOrder = idx) }
+    }
+
+    fun persistManualListOrderAsync(orderedListIds: List<Long>) {
+        viewModelScope.launch {
+            runUserDbWrite {
+                withContext(Dispatchers.IO) {
+                    userDb.reorderManualLists(orderedListIds)
+                }
+            }
+        }
+    }
+
+    suspend fun addObjectToList(listId: Long, target: TargetRef): Boolean = runUserDbWrite {
+        val added = withContext(Dispatchers.IO) {
+            userDb.addObjectToList(listId, target)
+        }
+        lastSelectedObservingListId = listId
+        refreshUserDataLocked()
+        added
+    }
+
+    suspend fun removeObjectFromList(listId: Long, catalogLabel: String, catalogEntry: String) {
+        runUserDbWrite {
+            withContext(Dispatchers.IO) {
+                userDb.removeObjectFromList(listId, catalogLabel, catalogEntry)
+            }
+            refreshUserDataLocked()
+        }
+    }
+
+    fun reorderListItemsAsync(listId: Long, orderedItemIds: List<Long>) {
+        viewModelScope.launch {
+            runUserDbWrite {
+                withContext(Dispatchers.IO) {
+                    userDb.reorderListItems(listId, orderedItemIds)
+                }
+            }
+        }
+    }
+
+    suspend fun getListIdsContainingObject(target: TargetRef): Set<Long> =
+        userDbMutex.withLock {
+            withContext(Dispatchers.IO) {
+                userDb.getListIdsContainingObject(target.catalogLabel, target.catalogEntry)
+            }
+        }
+
+    suspend fun getObservationsForNight(observingNight: String): List<ObservationRecord> =
+        userDbMutex.withLock {
+            withContext(Dispatchers.IO) {
+                userDb.getObservationsForNight(observingNight)
+            }
+        }
+
+    suspend fun getAllObservationsForExport(): List<ObservationRecord> =
+        userDbMutex.withLock {
+            withContext(Dispatchers.IO) {
+                userDb.getAllObservations()
+                    .sortedWith(compareBy<ObservationRecord> { it.observedAtMs }.thenBy { it.id })
+            }
+        }
+
+    suspend fun getObservationsForTarget(
+        target: TargetRef,
+        coLocated: List<CatalogObject>
+    ): List<ObservationRecord> = userDbMutex.withLock {
+        withContext(Dispatchers.IO) {
+            UserDatabase.filterObservationsForTarget(
+                allObservations = userDb.getAllObservations(),
+                target = target,
+                coLocated = coLocated
+            )
+        }
+    }
+
+    suspend fun logObservation(
+        target: TargetRef,
+        observedAtMs: Long,
+        latDeg: Double?,
+        lonDeg: Double?,
+        altDeg: Double?,
+        azDeg: Double?,
+        notes: String
+    ): Long = runUserDbWrite {
+        val nightKey = UserDatabase.computeObservingNightKey(observedAtMs)
+        val id = withContext(Dispatchers.IO) {
+            userDb.insertObservation(
+                target = target,
+                observedAtMs = observedAtMs,
+                observingNight = nightKey,
+                latDeg = latDeg,
+                lonDeg = lonDeg,
+                altDeg = altDeg,
+                azDeg = azDeg,
+                notes = notes.trim()
+            )
+        }
+        refreshUserDataLocked()
+        id
+    }
+
+    suspend fun updateObservationNotes(observationId: Long, notes: String) {
+        runUserDbWrite {
+            withContext(Dispatchers.IO) {
+                userDb.updateObservationNotes(observationId, notes.trim())
+            }
+            refreshUserDataLocked()
+        }
+    }
+
+    suspend fun deleteObservation(observationId: Long) {
+        runUserDbWrite {
+            withContext(Dispatchers.IO) {
+                userDb.deleteObservation(observationId)
+            }
+            refreshUserDataLocked()
+        }
+    }
+
+    suspend fun deleteObservations(observationIds: List<Long>) {
+        if (observationIds.isEmpty()) return
+        runUserDbWrite {
+            withContext(Dispatchers.IO) {
+                userDb.runInTransaction {
+                    for (id in observationIds) {
+                        userDb.deleteObservation(id)
+                    }
+                }
+            }
+            refreshUserDataLocked()
+        }
+    }
+
+    data class CsvImportResult(
+        val format: CsvImportFormat,
+        val primaryListId: Long?,
+        val latestImportedNight: String?,
+        val listsTouched: Int,
+        val objectsAdded: Int,
+        val duplicateObjectsSkipped: Int,
+        val observationsAdded: Int,
+        val duplicateObservationsSkipped: Int
+    )
+
+    private fun epochSeconds(ms: Long): Long =
+        if (ms >= 0L) ms / 1000L else (ms - 999L) / 1000L
+
+    private fun addTargetsToList(listId: Long, refs: List<TargetRef>): Pair<Int, Int> {
+        var added = 0
+        var duplicates = 0
+        for (ref in refs) {
+            if (userDb.addObjectToList(listId, ref)) {
+                added++
+            } else {
+                duplicates++
+            }
+        }
+        return added to duplicates
+    }
+
+    suspend fun importParsedCsv(
+        parsed: ParsedCsvImport,
+        singleListName: String,
+        lat: Double?,
+        lon: Double?
+    ): CsvImportResult = runUserDbWrite {
+        val result = withContext(Dispatchers.IO) {
+            val resolvedRows = resolveImportedRows(parsed.rows, lat, lon)
+            var primaryListId: Long? = null
+            var latestNight: String? = null
+            var listsTouched = 0
+            var objectsAdded = 0
+            var duplicateObjectsSkipped = 0
+            var observationsAdded = 0
+            var duplicateObservationsSkipped = 0
+
+            userDb.runInTransaction {
+                when (parsed.format) {
+                    CsvImportFormat.SINGLE_LIST -> {
+                        val validRefs = resolvedRows.mapNotNull { it.second }
+                        if (validRefs.isNotEmpty()) {
+                            val listId = userDb.createManualList(singleListName)
+                            if (listId > 0L) {
+                                primaryListId = listId
+                                listsTouched = 1
+                                val (added, dups) = addTargetsToList(listId, validRefs)
+                                objectsAdded += added
+                                duplicateObjectsSkipped += dups
+                            }
+                        }
+                    }
+
+                    CsvImportFormat.FULL_LISTS -> {
+                        val grouped = LinkedHashMap<String, MutableList<TargetRef>>()
+                        for ((row, ref) in resolvedRows) {
+                            val listName = row.listName?.trim().orEmpty()
+                            if (listName.isNotEmpty() && ref != null) {
+                                grouped.getOrPut(listName) { mutableListOf() }.add(ref)
+                            }
+                        }
+                        val existingByName =
+                            userDb.getManualLists().associateBy { it.name }.toMutableMap()
+                        for ((listName, refs) in grouped) {
+                            val existingId = existingByName[listName]?.id
+                            val wasNewList = existingId == null
+                            val listId = existingId
+                                ?: userDb.createManualList(listName).also { newId ->
+                                    if (newId > 0L) {
+                                        existingByName[listName] = ObservingListSummary(
+                                            id = newId,
+                                            name = listName,
+                                            itemCount = 0,
+                                            sortOrder = existingByName.size
+                                        )
+                                    }
+                                }
+                            if (listId <= 0L) continue
+                            val (added, dups) = addTargetsToList(listId, refs)
+                            objectsAdded += added
+                            duplicateObjectsSkipped += dups
+                            if (wasNewList || added > 0) {
+                                if (primaryListId == null) primaryListId = listId
+                                listsTouched++
+                            }
+                        }
+                    }
+
+                    CsvImportFormat.OBSERVATIONS -> {
+                        val seenKeys = userDb.getAllObservations()
+                            .mapTo(HashSet()) {
+                                Triple(it.objectKey, epochSeconds(it.observedAtMs), it.notes.trim())
+                            }
+                        for ((row, ref) in resolvedRows) {
+                            val ts = row.observedAtMs ?: continue
+                            if (ref == null) continue
+                            val trimmedNotes = row.notes.trim()
+                            val dedupKey = Triple(ref.objectKey, epochSeconds(ts), trimmedNotes)
+                            if (!seenKeys.add(dedupKey)) {
+                                duplicateObservationsSkipped++
+                                continue
+                            }
+                            val nightKey =
+                                row.observingNight ?: UserDatabase.computeObservingNightKey(ts)
+                            val insertedId = userDb.insertObservation(
+                                target = ref,
+                                observedAtMs = ts,
+                                observingNight = nightKey,
+                                latDeg = row.latDeg,
+                                lonDeg = row.lonDeg,
+                                altDeg = row.altDeg,
+                                azDeg = row.azDeg,
+                                notes = trimmedNotes
+                            )
+                            if (insertedId > 0L) {
+                                observationsAdded++
+                                val prevNight = latestNight
+                                if (prevNight == null || nightKey > prevNight) {
+                                    latestNight = nightKey
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            CsvImportResult(
+                format = parsed.format,
+                primaryListId = primaryListId,
+                latestImportedNight = latestNight,
+                listsTouched = listsTouched,
+                objectsAdded = objectsAdded,
+                duplicateObjectsSkipped = duplicateObjectsSkipped,
+                observationsAdded = observationsAdded,
+                duplicateObservationsSkipped = duplicateObservationsSkipped
+            )
+        }
+        if (result.primaryListId != null) {
+            lastSelectedObservingListId = result.primaryListId
+        }
+        if (result.listsTouched > 0 || result.observationsAdded > 0) {
+            refreshUserDataLocked()
+        }
+        result
+    }
+
+    private fun resolveImportedRows(
+        rows: List<ParsedCsvRow>,
+        lat: Double?,
+        lon: Double?
+    ): List<Pair<ParsedCsvRow, TargetRef?>> {
+        if (rows.isEmpty()) return emptyList()
+        val parsedPairs = rows.map { row ->
+            if (row.designation.isNotBlank()) {
+                CatalogDatabase.parseCatalogDesignation(row.designation)
+            } else {
+                CatalogDatabase.parseCatalogDesignation(row.name)
+            }
+        }
+
+        val staticQueryPairs = LinkedHashSet<Pair<String, String>>()
+        var needsDynamic = false
+
+        rows.forEachIndexed { idx, row ->
+            val pair = parsedPairs[idx]
+            if (pair != null) {
+                if (pair.first in CatalogDatabase.DYNAMIC_CATALOG_LABELS) {
+                    needsDynamic = true
+                } else {
+                    staticQueryPairs.add(pair)
+                }
+            } else {
+                if (row.designation.isNotBlank()) {
+                    staticQueryPairs.add("Str" to row.designation)
+                    needsDynamic = true
+                }
+                if (row.name.isNotBlank()) {
+                    staticQueryPairs.add("Str" to row.name)
+                    needsDynamic = true
+                }
+            }
+        }
+
+        val staticByKey = HashMap<String, CatalogObject>()
+        if (staticQueryPairs.isNotEmpty()) {
+            for (obj in catalogDb.getObjectsByDesignations(staticQueryPairs.toList())) {
+                staticByKey[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
+            }
+        }
+
+        val dynamicByKey = HashMap<String, CatalogObject>()
+        val dynamicByNameLower = HashMap<String, CatalogObject>()
+        if (needsDynamic) {
+            val sun = AstrometryUtils.getSun(Clock.System.now().toEpochMilliseconds())
+            val allDynamic =
+                listOf(sun) + getPlanets(lat, lon) + getAsteroids(lat, lon) + getComets(lat, lon)
+            for (obj in allDynamic) {
+                dynamicByKey[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
+                dynamicByNameLower.getOrPut(obj.catalogEntry.lowercase()) { obj }
+                dynamicByNameLower.getOrPut(obj.displayName.lowercase()) { obj }
+            }
+        }
+
+        return rows.mapIndexed { idx, row ->
+            val pair = parsedPairs[idx]
+            val matchedObj = when {
+                pair != null -> {
+                    val key = UserDatabase.objectKey(pair.first, pair.second)
+                    staticByKey[key]
+                        ?: dynamicByKey[key]
+                        ?: if (pair.first in CatalogDatabase.DYNAMIC_CATALOG_LABELS) {
+                            dynamicByNameLower[pair.second.lowercase()]
+                        } else {
+                            null
+                        }
+                }
+
+                else -> {
+                    val desLower = row.designation.lowercase()
+                    val nameLower = row.name.lowercase()
+                    dynamicByNameLower[desLower]
+                        ?: dynamicByNameLower[nameLower]
+                        ?: staticByKey[UserDatabase.objectKey("Str", row.designation)]
+                        ?: staticByKey[UserDatabase.objectKey("Str", row.name)]
+                }
+            }
+
+            val ref = when {
+                matchedObj != null -> UserDatabase.targetRefFrom(
+                    catalogObject = matchedObj,
+                    coords = matchedObj.ra to matchedObj.dec,
+                    fallbackTitle = matchedObj.displayName
+                )
+
+                row.raDeg != null && row.decDeg != null -> {
+                    val fallbackTitle = row.name.ifBlank {
+                        row.designation.ifBlank {
+                            "${pureFormat("%.4f", row.raDeg)}, ${pureFormat("%.4f", row.decDeg)}"
+                        }
+                    }
+                    val preservedDynamicLabel = when (row.objectType) {
+                        "Sun" -> "Solar System"
+                        "Planet", "Moon" -> "Planet"
+                        "Asteroid", "Comet" -> row.objectType
+                        else -> null
+                    }
+                    when {
+                        pair != null -> TargetRef(
+                            catalogLabel = pair.first,
+                            catalogEntry = pair.second,
+                            name = fallbackTitle,
+                            objectType = row.objectType.ifBlank { pair.first },
+                            raDeg = row.raDeg,
+                            decDeg = row.decDeg
+                        )
+
+                        preservedDynamicLabel != null &&
+                                (row.designation.isNotBlank() || row.name.isNotBlank()) -> TargetRef(
+                            catalogLabel = preservedDynamicLabel,
+                            catalogEntry = row.designation.ifBlank { row.name },
+                            name = fallbackTitle,
+                            objectType = row.objectType,
+                            raDeg = row.raDeg,
+                            decDeg = row.decDeg
+                        )
+
+                        else -> UserDatabase.targetRefFrom(
+                            catalogObject = null,
+                            coords = row.raDeg to row.decDeg,
+                            fallbackTitle = fallbackTitle
+                        )
+                    }
+                }
+
+                else -> null
+            }
+            row to ref
+        }
+    }
+
+    private fun toResolvedListEntry(
+        item: ObservingListItemRecord,
+        resolvedMap: Map<String, CatalogObject>
+    ): ResolvedListEntry {
+        val obj = resolvedMap[item.objectKey] ?: syntheticCatalogObject(
+            id = -item.id.toInt().coerceAtLeast(1),
+            catalogLabel = item.catalogLabel,
+            catalogEntry = item.catalogEntry,
+            name = item.fallbackName,
+            objectType = item.objectType,
+            raDeg = item.raDeg,
+            decDeg = item.decDeg
+        )
+        return ResolvedListEntry(
+            catalogObject = obj,
+            listItemId = item.id
+        )
+    }
+
+    suspend fun resolveManualListEntries(
+        listId: Long,
+        lat: Double?,
+        lon: Double?
+    ): List<ResolvedListEntry> = userDbMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val rawItems = userDb.getListItems(listId)
+            if (rawItems.isEmpty()) return@withContext emptyList()
+            val resolvedMap = resolveCatalogObjectsMap(
+                refs = rawItems.map { it.catalogLabel to it.catalogEntry },
+                lat = lat,
+                lon = lon
+            )
+            rawItems.map { toResolvedListEntry(it, resolvedMap) }
+        }
+    }
+
+    suspend fun resolveAllManualListsForExport(
+        lat: Double?,
+        lon: Double?
+    ): List<Pair<String, List<ResolvedListEntry>>> = userDbMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val lists = userDb.getManualLists()
+            if (lists.isEmpty()) return@withContext emptyList()
+            val itemsByList = lists.map { list -> list.name to userDb.getListItems(list.id) }
+            val allRefs = itemsByList.flatMap { (_, items) ->
+                items.map { it.catalogLabel to it.catalogEntry }
+            }
+            if (allRefs.isEmpty()) return@withContext emptyList()
+            val resolvedMap = resolveCatalogObjectsMap(allRefs, lat, lon)
+            itemsByList.mapNotNull { (listName, items) ->
+                if (items.isEmpty()) {
+                    null
+                } else {
+                    listName to items.map { toResolvedListEntry(it, resolvedMap) }
+                }
+            }
+        }
+    }
+
+    suspend fun resolveNightSessionEntries(
+        observingNight: String,
+        lat: Double?,
+        lon: Double?
+    ): List<ResolvedListEntry> = userDbMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val obs = userDb.getObservationsForNight(observingNight)
+            if (obs.isEmpty()) return@withContext emptyList()
+            val grouped = LinkedHashMap<String, MutableList<ObservationRecord>>()
+            for (record in obs) {
+                grouped.getOrPut(record.objectKey) { mutableListOf() }.add(record)
+            }
+            val refs = grouped.values.map { list ->
+                val first = list.first()
+                first.catalogLabel to first.catalogEntry
+            }
+            val resolvedMap = resolveCatalogObjectsMap(refs, lat, lon)
+            grouped.entries.map { (key, records) ->
+                val latest = records.last()
+                val preview = records.lastOrNull { it.notes.isNotBlank() }?.notes
+                val obj = resolvedMap[key] ?: syntheticCatalogObject(
+                    id = -latest.id.toInt().coerceAtLeast(1),
+                    catalogLabel = latest.catalogLabel,
+                    catalogEntry = latest.catalogEntry,
+                    name = latest.targetName,
+                    objectType = latest.objectType,
+                    raDeg = latest.raDeg,
+                    decDeg = latest.decDeg
+                )
+                ResolvedListEntry(
+                    catalogObject = obj,
+                    observationTimeMs = latest.observedAtMs,
+                    observationNotePreview = preview,
+                    observationCount = records.size,
+                    observationIds = records.map { it.id }
+                )
+            }.sortedBy { it.observationTimeMs ?: 0L }
+        }
+    }
+
+    private fun resolveCatalogObjectsMap(
+        refs: List<Pair<String, String>>,
+        lat: Double?,
+        lon: Double?
+    ): Map<String, CatalogObject> {
+        val result = HashMap<String, CatalogObject>(refs.size)
+        val staticPairs = mutableListOf<Pair<String, String>>()
+        var needsPlanets = false
+        var needsAsteroids = false
+        var needsComets = false
+        for ((label, entry) in refs) {
+            when (label) {
+                "Planet", "Solar System" -> needsPlanets = true
+                "Asteroid" -> needsAsteroids = true
+                "Comet" -> needsComets = true
+                UserDatabase.CUSTOM_CATALOG_LABEL -> {}
+                else -> staticPairs.add(label to entry)
+            }
+        }
+        if (staticPairs.isNotEmpty()) {
+            for (obj in catalogDb.getObjectsByDesignations(staticPairs)) {
+                result[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
+            }
+        }
+        if (needsPlanets) {
+            val sun = AstrometryUtils.getSun(Clock.System.now().toEpochMilliseconds())
+            result[UserDatabase.objectKey(sun.catalogLabel, sun.catalogEntry)] = sun
+            for (obj in getPlanets(lat, lon)) {
+                result[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
+            }
+        }
+        if (needsAsteroids) {
+            for (obj in getAsteroids(lat, lon)) {
+                result[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
+            }
+        }
+        if (needsComets) {
+            for (obj in getComets(lat, lon)) {
+                result[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
+            }
+        }
+        return result
+    }
+
+    private fun syntheticCatalogObject(
+        id: Int,
+        catalogLabel: String,
+        catalogEntry: String,
+        name: String,
+        objectType: String,
+        raDeg: Double,
+        decDeg: Double
+    ): CatalogObject = CatalogObject(
+        id = id,
+        catalogLabel = catalogLabel,
+        catalogEntry = catalogEntry,
+        ra = raDeg,
+        dec = decDeg,
+        constellation = null,
+        objectType = objectType,
+        broadCategory = objectType,
+        magnitude = null,
+        surfaceBrightness = null,
+        angularSize = null,
+        commonName = name,
+        description = null,
+        copyright = null
+    )
 
     // Camera Tuning Parameters
     var currentExposure by mutableFloatStateOf(33000f)
@@ -1697,8 +2504,12 @@ open class MainViewModel(
         hipsTileManager = null
         activePreviewManagers.forEach { it.close() }
         activePreviewManagers.clear()
+        isUserDbDisposed = true
         CoroutineScope(Dispatchers.IO).launch {
             catalogDb.closeDatabase()
+            userDbMutex.withLock {
+                userDb.close()
+            }
         }
     }
 

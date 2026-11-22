@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +24,9 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAddCheck
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterCenterFocus
@@ -31,6 +35,11 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,16 +57,21 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift.Companion.Superscript
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,10 +79,24 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.Clock
 import org.jetbrains.compose.resources.StringResource
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 val LocalOnUserInteraction = compositionLocalOf { {} }
+
+fun Modifier.notifyUserInteraction(onUserInteraction: () -> Unit): Modifier =
+    pointerInput(onUserInteraction) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent(PointerEventPass.Initial)
+                onUserInteraction()
+            }
+        }
+    }
 
 @Composable
 fun IconBarItem(
@@ -168,14 +196,7 @@ fun OliveAlertDialog(
                     extColors.subtleBorder,
                     RoundedCornerShape(16.dp)
                 )
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitPointerEvent(PointerEventPass.Initial)
-                            onUserInteraction()
-                        }
-                    }
-                }
+                .notifyUserInteraction(onUserInteraction)
         ) {
             Column(
                 modifier = Modifier
@@ -312,6 +333,20 @@ fun InfoPopup(
 ) {
     val onUserInteraction = LocalOnUserInteraction.current
     val extColors = LocalOliveExtendedColors.current
+    val windowController = LocalPlatformWindowController.current
+    val windowSize = LocalWindowInfo.current.containerSize
+    val dialogPadding = 24.dp
+    val verticalInsetPx = remember(windowSize, windowController) {
+        windowController.getSystemBarsVerticalInsetPx()
+    }
+    val maxCardHeight = if (windowSize.height > 0) {
+        val availableHeightPx = (windowSize.height - verticalInsetPx).coerceAtLeast(0)
+        with(LocalDensity.current) {
+            (availableHeightPx.toDp() - (dialogPadding * 2 + 1.dp)).coerceAtLeast(160.dp)
+        }
+    } else {
+        Dp.Unspecified
+    }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -321,22 +356,16 @@ fun InfoPopup(
             color = MaterialTheme.colorScheme.surfaceContainer,
             contentColor = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
-                .padding(24.dp)
+                .padding(dialogPadding)
                 .widthIn(min = 200.dp, max = 440.dp)
+                .heightIn(max = maxCardHeight)
                 .then(if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier)
                 .border(
                     1.dp,
                     extColors.subtleBorder,
                     RoundedCornerShape(16.dp)
                 )
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitPointerEvent(PointerEventPass.Initial)
-                            onUserInteraction()
-                        }
-                    }
-                }
+                .notifyUserInteraction(onUserInteraction)
         ) {
             Column(
                 modifier = if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier.width(
@@ -399,18 +428,20 @@ fun CoordinateBox(
             color = if (value.isEmpty()) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.alignByBaseline()
         )
-        Text(
-            text = suffix,
-            style = if (isDeclination) {
-                MaterialTheme.typography.bodyLarge.copy(baselineShift = Superscript)
-            } else {
-                MaterialTheme.typography.labelSmall
-            },
-            color = extColors.secondaryText,
-            modifier = Modifier
-                .padding(start = 2.dp)
-                .alignByBaseline()
-        )
+        if (suffix.isNotEmpty()) {
+            Text(
+                text = suffix,
+                style = if (isDeclination) {
+                    MaterialTheme.typography.bodyLarge.copy(baselineShift = Superscript)
+                } else {
+                    MaterialTheme.typography.labelSmall
+                },
+                color = extColors.secondaryText,
+                modifier = Modifier
+                    .padding(start = 2.dp)
+                    .alignByBaseline()
+            )
+        }
     }
 }
 
@@ -495,8 +526,10 @@ fun ObjectInfoPopup(
     onDismiss: () -> Unit,
     altAz: AltAz? = null,
     onCloseToMap: () -> Unit = onDismiss,
+    initialObservationsExpanded: Boolean = false,
 ) {
     val extColors = LocalOliveExtendedColors.current
+    val coroutineScope = rememberCoroutineScope()
     var coLocated by remember(catalogObject) { mutableStateOf<List<CatalogObject>>(emptyList()) }
     var coLocatedReady by remember(catalogObject) {
         mutableStateOf(
@@ -506,7 +539,21 @@ fun ObjectInfoPopup(
         )
     }
     var notesExpanded by remember(catalogObject) { mutableStateOf(false) }
+    var listsExpanded by remember(catalogObject) { mutableStateOf(false) }
+    var observationsExpanded by remember(catalogObject, initialObservationsExpanded) {
+        mutableStateOf(initialObservationsExpanded)
+    }
     var showAlignConfirm by remember(coords, catalogObject) { mutableStateOf(false) }
+    var showListPicker by remember { mutableStateOf(false) }
+    var showCreateListPrompt by remember { mutableStateOf(false) }
+    var showLogObservationDialog by remember { mutableStateOf(false) }
+    var editingObservation by remember { mutableStateOf<ObservationRecord?>(null) }
+    var deletingObservation by remember { mutableStateOf<ObservationRecord?>(null) }
+    var memberListIds by remember(coords, catalogObject) { mutableStateOf<Set<Long>>(emptySet()) }
+    var targetObservations by remember(coords, catalogObject) {
+        mutableStateOf<List<ObservationRecord>>(emptyList())
+    }
+
     LaunchedEffect(catalogObject) {
         if (catalogObject != null && !CatalogDatabase.isDynamicObject(catalogObject)) {
             coLocated = withContext(Dispatchers.IO) {
@@ -521,6 +568,21 @@ fun ObjectInfoPopup(
         String.format("%.2f", coords.first),
         String.format("%.2f", coords.second),
     )
+
+    val targetRef = remember(catalogObject, coords, title) {
+        UserDatabase.targetRefFrom(catalogObject, coords, title)
+    }
+
+    LaunchedEffect(targetRef, coLocatedReady, coLocated, viewModel.userDataVersion) {
+        memberListIds = viewModel.getListIdsContainingObject(targetRef)
+        if (coLocatedReady) {
+            targetObservations = viewModel.getObservationsForTarget(targetRef, coLocated)
+        }
+    }
+
+    val manualLists = viewModel.manualLists
+    val inAnyManualList = memberListIds.isNotEmpty()
+    val hasObservations = targetObservations.isNotEmpty()
 
     val stats = viewModel.engineStats
     val isRunning = viewModel.isEngineRunning
@@ -539,9 +601,12 @@ fun ObjectInfoPopup(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val itemModifier = Modifier.weight(1f)
                 IconBarItem(
+                    modifier = itemModifier,
                     icon = Icons.Default.CenterFocusStrong,
                     label = stringResource(Res.string.crop_center),
+                    iconSize = 24.dp,
                     onClick = {
                         viewModel.skyMapCenterTarget = coords
                         onCloseToMap()
@@ -549,8 +614,10 @@ fun ObjectInfoPopup(
                 )
                 if (canGoTo) {
                     IconBarItem(
+                        modifier = itemModifier,
                         icon = Icons.Default.GpsFixed,
                         label = stringResource(Res.string.btn_goto),
+                        iconSize = 24.dp,
                         iconTint = MaterialTheme.colorScheme.primary,
                         labelColor = MaterialTheme.colorScheme.primary,
                         onClick = {
@@ -561,15 +628,19 @@ fun ObjectInfoPopup(
                 }
                 if (canAlign) {
                     IconBarItem(
+                        modifier = itemModifier,
                         icon = Icons.Default.FilterCenterFocus,
                         label = stringResource(Res.string.btn_align),
+                        iconSize = 24.dp,
                         onClick = { showAlignConfirm = true },
                     )
                 }
                 if (isSelectedTarget) {
                     IconBarItem(
+                        modifier = itemModifier,
                         icon = Icons.Default.Stop,
                         label = stringResource(Res.string.btn_stop),
+                        iconSize = 24.dp,
                         iconTint = extColors.ctaStop,
                         labelColor = extColors.ctaStop,
                         onClick = {
@@ -578,6 +649,50 @@ fun ObjectInfoPopup(
                         },
                     )
                 }
+                IconBarItem(
+                    modifier = itemModifier,
+                    icon = if (inAnyManualList) {
+                        Icons.AutoMirrored.Outlined.PlaylistAddCheck
+                    } else {
+                        Icons.AutoMirrored.Outlined.PlaylistAdd
+                    },
+                    label = stringResource(Res.string.btn_lists),
+                    iconSize = 24.dp,
+                    iconTint = if (inAnyManualList) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    labelColor = if (inAnyManualList) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    onClick = {
+                        if (manualLists.isEmpty()) {
+                            showCreateListPrompt = true
+                        } else {
+                            showListPicker = true
+                        }
+                    },
+                )
+                IconBarItem(
+                    modifier = itemModifier,
+                    icon = Icons.Outlined.EditNote,
+                    label = stringResource(Res.string.btn_log),
+                    iconSize = 24.dp,
+                    iconTint = if (hasObservations) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    labelColor = if (hasObservations) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    onClick = { showLogObservationDialog = true },
+                )
             }
         },
     ) {
@@ -633,12 +748,7 @@ fun ObjectInfoPopup(
             altAz?.let {
                 LabeledValueRow(
                     infoLabel(Res.string.label_alt_az),
-                    stringResource(
-                        Res.string.format_alt_az,
-                        String.format("%.1f", it.alt),
-                        String.format("%.1f", it.az),
-                        localizedCompassDirection(it.az),
-                    ),
+                    formatAltAz(it.alt, it.az),
                 )
             }
             metadata?.notes?.let { notes ->
@@ -677,6 +787,186 @@ fun ObjectInfoPopup(
                     )
                 }
             }
+            val containingManualLists = manualLists.filter { it.id in memberListIds }
+            val containingNightSessions = remember(targetObservations) {
+                targetObservations.map { it.observingNight }.distinct()
+            }
+            val totalListCount = containingManualLists.size + containingNightSessions.size
+            if (totalListCount > 0) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { listsExpanded = !listsExpanded }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(
+                            Res.string.format_in_lists_header,
+                            totalListCount
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = if (listsExpanded) {
+                            Icons.Default.KeyboardArrowUp
+                        } else {
+                            Icons.Default.KeyboardArrowDown
+                        },
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                if (listsExpanded) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        containingManualLists.forEach { list ->
+                            ObservingListLinkRow(
+                                icon = Icons.Outlined.Checklist,
+                                iconTint = MaterialTheme.colorScheme.primary,
+                                label = list.name,
+                                onClick = {
+                                    onDismiss()
+                                    viewModel.openManualList(list.id)
+                                }
+                            )
+                        }
+                        containingNightSessions.forEach { nightKey ->
+                            ObservingListLinkRow(
+                                icon = Icons.Outlined.History,
+                                iconTint = extColors.secondaryText,
+                                label = nightKey,
+                                onClick = {
+                                    onDismiss()
+                                    viewModel.openNightSession(nightKey)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            if (targetObservations.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { observationsExpanded = !observationsExpanded }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(
+                            Res.string.format_observations_header,
+                            targetObservations.size
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = if (observationsExpanded) {
+                            Icons.Default.KeyboardArrowUp
+                        } else {
+                            Icons.Default.KeyboardArrowDown
+                        },
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                if (observationsExpanded) {
+                    val is24Hour = is24HourFormat()
+                    val amLabel = stringResource(Res.string.label_am)
+                    val pmLabel = stringResource(Res.string.label_pm)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        targetObservations.forEach { obs ->
+                            val cardShape = RoundedCornerShape(8.dp)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        cardShape
+                                    )
+                                    .border(1.dp, extColors.subtleBorder, cardShape)
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = UserDatabase.formatObservationTimestamp(
+                                            obs.observedAtMs,
+                                            is24Hour = is24Hour,
+                                            amLabel = amLabel,
+                                            pmLabel = pmLabel
+                                        ),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        IconButton(
+                                            onClick = { editingObservation = obs },
+                                            modifier = Modifier.size(44.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Edit,
+                                                contentDescription = stringResource(Res.string.btn_edit),
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { deletingObservation = obs },
+                                            modifier = Modifier.size(44.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Delete,
+                                                contentDescription = stringResource(Res.string.cd_delete),
+                                                tint = extColors.ctaStop,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                if (obs.latDeg != null && obs.lonDeg != null &&
+                                    MainViewModel.isValidCoordinate(obs.latDeg, obs.lonDeg)
+                                ) {
+                                    val locText = formatObserverCoordinate(obs.latDeg, obs.lonDeg)
+                                    val altAzSuffix = if (obs.altDeg != null && obs.azDeg != null) {
+                                        " · " + formatAltAz(obs.altDeg, obs.azDeg)
+                                    } else {
+                                        ""
+                                    }
+                                    Text(
+                                        text = locText + altAzSuffix,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = extColors.secondaryText
+                                    )
+                                }
+                                Text(
+                                    text = obs.notes.ifBlank {
+                                        stringResource(Res.string.status_logged_without_notes)
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (obs.notes.isBlank()) {
+                                        extColors.secondaryText
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             if (catalogObject != null && coLocatedReady) {
                 ObjectHiPSPreview(
                     catalogObject = catalogObject,
@@ -707,6 +997,264 @@ fun ObjectInfoPopup(
             },
         )
     }
+
+    if (showListPicker) {
+        ObservingListPickerDialog(
+            lists = manualLists,
+            memberListIds = memberListIds,
+            lastSelectedListId = viewModel.lastSelectedObservingListId,
+            onToggleList = { listId, currentlyMember ->
+                memberListIds = if (currentlyMember) {
+                    memberListIds - listId
+                } else {
+                    memberListIds + listId
+                }
+                viewModel.lastSelectedObservingListId = listId
+                coroutineScope.launch {
+                    if (currentlyMember) {
+                        viewModel.removeObjectFromList(
+                            listId,
+                            targetRef.catalogLabel,
+                            targetRef.catalogEntry
+                        )
+                    } else {
+                        viewModel.addObjectToList(listId, targetRef)
+                    }
+                }
+            },
+            onCreateNewList = {
+                @Suppress("AssignedValueIsNeverRead")
+                showListPicker = false
+                showCreateListPrompt = true
+            },
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showListPicker = false
+            }
+        )
+    }
+
+    if (showCreateListPrompt) {
+        ListNameDialog(
+            title = stringResource(Res.string.title_new_list),
+            initialName = "",
+            viewModel = viewModel,
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showCreateListPrompt = false
+            },
+            onConfirm = { name ->
+                @Suppress("AssignedValueIsNeverRead")
+                showCreateListPrompt = false
+                coroutineScope.launch {
+                    val newId = viewModel.createManualList(name)
+                    if (newId > 0L) {
+                        viewModel.addObjectToList(newId, targetRef)
+                    }
+                }
+            }
+        )
+    }
+
+    if (showLogObservationDialog) {
+        val logTimeMs = remember { Clock.System.now().toEpochMilliseconds() }
+        val logLat = viewModel.currentLat
+        val logLon = viewModel.currentLon
+        val logAltAz = remember(logTimeMs, logLat, logLon, coords) {
+            if (viewModel.hasValidLocation && logLat != null && logLon != null) {
+                AstrometryUtils.calculateAltAz(
+                    coords.first,
+                    coords.second,
+                    logLat,
+                    logLon,
+                    logTimeMs
+                )
+            } else {
+                altAz
+            }
+        }
+        LogObservationDialog(
+            targetName = title,
+            targetRaDeg = coords.first,
+            targetDecDeg = coords.second,
+            observedAtMs = logTimeMs,
+            latDeg = logLat,
+            lonDeg = logLon,
+            altDeg = logAltAz?.alt,
+            azDeg = logAltAz?.az,
+            viewModel = viewModel,
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showLogObservationDialog = false
+            },
+            onSave = { savedTimeMs, savedLat, savedLon, savedAlt, savedAz, notes ->
+                @Suppress("AssignedValueIsNeverRead")
+                showLogObservationDialog = false
+                observationsExpanded = true
+                coroutineScope.launch {
+                    viewModel.logObservation(
+                        target = targetRef,
+                        observedAtMs = savedTimeMs,
+                        latDeg = savedLat,
+                        lonDeg = savedLon,
+                        altDeg = savedAlt,
+                        azDeg = savedAz,
+                        notes = notes
+                    )
+                }
+            }
+        )
+    }
+
+    val obsToEdit = editingObservation
+    if (obsToEdit != null) {
+        LogObservationDialog(
+            targetName = title,
+            targetRaDeg = obsToEdit.raDeg,
+            targetDecDeg = obsToEdit.decDeg,
+            observedAtMs = obsToEdit.observedAtMs,
+            latDeg = obsToEdit.latDeg,
+            lonDeg = obsToEdit.lonDeg,
+            altDeg = obsToEdit.altDeg,
+            azDeg = obsToEdit.azDeg,
+            initialNotes = obsToEdit.notes,
+            isEditing = true,
+            viewModel = viewModel,
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                editingObservation = null
+            },
+            onSave = { _, _, _, _, _, updatedNotes ->
+                val obsId = obsToEdit.id
+                @Suppress("AssignedValueIsNeverRead")
+                editingObservation = null
+                coroutineScope.launch {
+                    viewModel.updateObservationNotes(obsId, updatedNotes)
+                }
+            }
+        )
+    }
+
+    val obsToDelete = deletingObservation
+    if (obsToDelete != null) {
+        OliveAlertDialog(
+            title = stringResource(Res.string.title_delete_observation),
+            text = stringResource(Res.string.msg_delete_observation),
+            confirmButtonText = stringResource(Res.string.btn_delete),
+            onConfirm = {
+                val obsId = obsToDelete.id
+                @Suppress("AssignedValueIsNeverRead")
+                deletingObservation = null
+                coroutineScope.launch {
+                    viewModel.deleteObservation(obsId)
+                }
+            },
+            dismissButtonText = stringResource(Res.string.btn_cancel),
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                deletingObservation = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun ObservingListLinkRow(
+    icon: ImageVector,
+    iconTint: Color,
+    label: String,
+    onClick: () -> Unit
+) {
+    val extColors = LocalOliveExtendedColors.current
+    val rowShape = RoundedCornerShape(8.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(rowShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, rowShape)
+            .border(1.dp, extColors.subtleBorder, rowShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = stringResource(Res.string.cd_open_list),
+            tint = extColors.secondaryText,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+@Composable
+fun formatAltAz(altDeg: Double, azDeg: Double): String =
+    stringResource(
+        Res.string.format_alt_az,
+        String.format("%.1f", altDeg),
+        String.format("%.1f", azDeg),
+        localizedCompassDirection(azDeg)
+    )
+
+data class SplitDegreeCoord(
+    val isPositive: Boolean,
+    val wholeDeg: String,
+    val fracDeg: String
+)
+
+fun splitDecimalDegrees(value: Double?): SplitDegreeCoord {
+    if (value == null) return SplitDegreeCoord(isPositive = true, wholeDeg = "", fracDeg = "")
+    val hundredths = (abs(value) * 100.0).roundToInt()
+    return SplitDegreeCoord(
+        isPositive = value >= 0.0,
+        wholeDeg = (hundredths / 100).toString(),
+        fracDeg = (hundredths % 100).toString().padStart(2, '0')
+    )
+}
+
+fun combineDecimalDegrees(
+    wholeStr: String,
+    fracStr: String,
+    isPositive: Boolean,
+    maxWhole: Int
+): Double {
+    val whole = (wholeStr.toIntOrNull() ?: 0).coerceIn(0, maxWhole)
+    val frac = if (whole == maxWhole) {
+        0
+    } else {
+        (fracStr.padEnd(2, '0').toIntOrNull() ?: 0).coerceIn(0, 99)
+    }
+    val magnitude = whole + frac / 100.0
+    return if (isPositive) magnitude else -magnitude
+}
+
+@Composable
+fun formatObserverCoordinate(latDeg: Double, lonDeg: Double): String {
+    val latDir =
+        if (latDeg >= 0) stringResource(Res.string.dir_north) else stringResource(Res.string.dir_south)
+    val lonDir =
+        if (lonDeg >= 0) stringResource(Res.string.dir_east) else stringResource(Res.string.dir_west)
+    return stringResource(
+        Res.string.format_coordinate,
+        abs(latDeg),
+        latDir,
+        abs(lonDeg),
+        lonDir
+    )
 }
 
 @Composable

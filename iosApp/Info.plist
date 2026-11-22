@@ -36,8 +36,12 @@
 	<string>Olive Finder provides telescope control and server networking for planetarium apps like SkySafari and Stellarium.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Olive Finder needs location access to calculate astronomical ephemeris and telescope alignment.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Olive Finder uses the microphone for optional voice-to-text dictation in observation logs.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Olive Finder needs motion sensor access to track telescope orientation.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Olive Finder uses speech recognition for optional voice-to-text dictation in observation logs.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

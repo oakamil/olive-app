@@ -161,8 +161,9 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     val engine = remember { IosEngineBridge() }
     val catalogDb = remember { IosCatalogDatabase(storage) }
     val hipsBackend = remember { IosHiPSLocalBackend() }
+    val userDb = remember { IosUserDatabase() }
     val viewModel =
-        remember { MainViewModel(storage, capabilities, engine, catalogDb, hipsBackend) }
+        remember { MainViewModel(storage, capabilities, engine, catalogDb, hipsBackend, userDb) }
     val settingsManager = viewModel.settingsManager
     val windowController = remember { AppleWindowController() }
     DisposableEffect(windowController, viewModel) {
