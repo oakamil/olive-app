@@ -232,6 +232,7 @@ fun getLocalizedObjectType(type: String): String = when (type) {
     "Planetary Nebula" -> stringResource(Res.string.type_planetary_nebula)
     "Asteroid" -> stringResource(Res.string.type_asteroid)
     "Comet" -> stringResource(Res.string.type_comet)
+    UserDatabase.CUSTOM_CATALOG_LABEL -> stringResource(Res.string.type_custom)
     else -> type
 }
 

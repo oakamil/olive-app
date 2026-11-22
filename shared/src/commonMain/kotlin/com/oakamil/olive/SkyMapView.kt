@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -57,6 +58,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -100,6 +102,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
@@ -147,8 +150,11 @@ fun SkyMapView(
     isStopping: Boolean = false,
     detectedIpAddress: String = "",
     bottomOverlayInset: Dp = 0.dp,
-    endOverlayInset: Dp = 0.dp
+    endOverlayInset: Dp = 0.dp,
+    onEnterPipMode: (() -> Unit)? = null
 ) {
+    val coroutineScope = rememberCoroutineScope()
+    var isEnteringPip by remember { mutableStateOf(false) }
     val rawLat = viewModel.currentLat
     val rawLon = viewModel.currentLon
     val hasValidLocation = viewModel.hasValidLocation
@@ -1845,8 +1851,8 @@ fun SkyMapView(
             }
         }
 
-        // Overlay Top Action buttons ("Center Scope", "Center Target")
-        Row(
+        // Overlay Top Action buttons ("Center Target", "Center Scope", and Android PiP when running)
+        Column(
             modifier = Modifier
                 .align(if (isReversed) Alignment.TopStart else Alignment.TopEnd)
                 .padding(
@@ -1854,91 +1860,128 @@ fun SkyMapView(
                     start = if (isReversed) safeStart else 0.dp,
                     end = if (isReversed) 0.dp else hudEnd
                 ),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalAlignment = if (isReversed) Alignment.Start else Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
-                val canCenterTarget = !isStarting && !isStopping
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (viewModel.isEngineRunning && stats.targetRa != null && stats.targetDec != null) {
+                    val canCenterTarget = !isStarting && !isStopping
+                    OutlinedIconButton(
+                        onClick = {
+                            viewModel.skyMapCameraLocked = false
+                            val (tAz, tAlt) = AstrometryUtils.raDecToAltAz(
+                                stats.targetRa,
+                                stats.targetDec,
+                                lat,
+                                lst
+                            )
+                            viewModel.skyMapCenterAz = tAz
+                            viewModel.skyMapCenterAlt = tAlt
+                        },
+                        enabled = canCenterTarget,
+                        border = BorderStroke(
+                            1.dp,
+                            if (canCenterTarget) MaterialTheme.colorScheme.primary else extColors.mapButtonDisabledBorder
+                        ),
+                        colors = IconButtonDefaults.outlinedIconButtonColors(
+                            containerColor = if (canCenterTarget) extColors.mapOverlaySurface else extColors.mapButtonDisabledSurface,
+                            disabledContainerColor = extColors.mapButtonDisabledSurface
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.GpsFixed,
+                            contentDescription = stringResource(Res.string.btn_center_target),
+                            tint = if (canCenterTarget) MaterialTheme.colorScheme.primary else extColors.mapButtonDisabledIcon,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                val hasSolve =
+                    viewModel.isEngineRunning && !isStarting && !isStopping && stats.ra != null && stats.dec != null
+                val scopeActiveColor =
+                    if (isCameraLocked) MaterialTheme.colorScheme.primary else extColors.telemetryAccent
                 OutlinedIconButton(
                     onClick = {
-                        viewModel.skyMapCameraLocked = false
-                        val (tAz, tAlt) = AstrometryUtils.raDecToAltAz(
-                            stats.targetRa,
-                            stats.targetDec,
-                            lat,
-                            lst
-                        )
-                        viewModel.skyMapCenterAz = tAz
-                        viewModel.skyMapCenterAlt = tAlt
+                        viewModel.skyMapCameraLocked = true
+                        val alignCoord = getAlignmentPointRaDec()
+                        if (alignCoord != null) {
+                            val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
+                                alignCoord.first,
+                                alignCoord.second,
+                                lat,
+                                lst
+                            )
+                            viewModel.skyMapCenterAz = cAz
+                            viewModel.skyMapCenterAlt = cAlt
+                        } else if (stats.ra != null && stats.dec != null) {
+                            val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
+                                stats.ra,
+                                stats.dec,
+                                lat,
+                                lst
+                            )
+                            viewModel.skyMapCenterAz = cAz
+                            viewModel.skyMapCenterAlt = cAlt
+                        }
                     },
-                    enabled = canCenterTarget,
+                    enabled = hasSolve,
                     border = BorderStroke(
                         1.dp,
-                        if (canCenterTarget) MaterialTheme.colorScheme.primary else extColors.mapButtonDisabledBorder
+                        if (hasSolve) scopeActiveColor else extColors.mapButtonDisabledBorder
                     ),
                     colors = IconButtonDefaults.outlinedIconButtonColors(
-                        containerColor = if (canCenterTarget) extColors.mapOverlaySurface else extColors.mapButtonDisabledSurface,
+                        containerColor = if (hasSolve && isCameraLocked) extColors.mapButtonActiveSurface
+                        else if (hasSolve) extColors.mapOverlaySurface
+                        else extColors.mapButtonDisabledSurface,
                         disabledContainerColor = extColors.mapButtonDisabledSurface
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.GpsFixed,
-                        contentDescription = stringResource(Res.string.btn_center_target),
-                        tint = if (canCenterTarget) MaterialTheme.colorScheme.primary else extColors.mapButtonDisabledIcon,
+                        imageVector = Icons.Default.CenterFocusStrong,
+                        contentDescription = stringResource(Res.string.btn_center_telescope),
+                        tint = if (hasSolve) scopeActiveColor else extColors.mapButtonDisabledIcon,
                         modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            val hasSolve =
-                viewModel.isEngineRunning && !isStarting && !isStopping && stats.ra != null && stats.dec != null
-            val scopeActiveColor =
-                if (isCameraLocked) MaterialTheme.colorScheme.primary else extColors.telemetryAccent
-            OutlinedIconButton(
-                onClick = {
-                    viewModel.skyMapCameraLocked = true
-                    val alignCoord = getAlignmentPointRaDec()
-                    if (alignCoord != null) {
-                        val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
-                            alignCoord.first,
-                            alignCoord.second,
-                            lat,
-                            lst
-                        )
-                        viewModel.skyMapCenterAz = cAz
-                        viewModel.skyMapCenterAlt = cAlt
-                    } else if (stats.ra != null && stats.dec != null) {
-                        val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
-                            stats.ra,
-                            stats.dec,
-                            lat,
-                            lst
-                        )
-                        viewModel.skyMapCenterAz = cAz
-                        viewModel.skyMapCenterAlt = cAlt
-                    }
-                },
-                enabled = hasSolve,
-                border = BorderStroke(
-                    1.dp,
-                    if (hasSolve) scopeActiveColor else extColors.mapButtonDisabledBorder
-                ),
-                colors = IconButtonDefaults.outlinedIconButtonColors(
-                    containerColor = if (hasSolve && isCameraLocked) extColors.mapButtonActiveSurface
-                    else if (hasSolve) extColors.mapOverlaySurface
-                    else extColors.mapButtonDisabledSurface,
-                    disabledContainerColor = extColors.mapButtonDisabledSurface
-                ),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CenterFocusStrong,
-                    contentDescription = stringResource(Res.string.btn_center_telescope),
-                    tint = if (hasSolve) scopeActiveColor else extColors.mapButtonDisabledIcon,
-                    modifier = Modifier.size(20.dp)
-                )
+            if (onEnterPipMode != null && viewModel.isEngineRunning) {
+                val canEnterPip = !isStarting && !isStopping && !isEnteringPip
+                OutlinedIconButton(
+                    onClick = {
+                        isEnteringPip = true
+                        onEnterPipMode()
+                        coroutineScope.launch {
+                            delay(1000)
+                            isEnteringPip = false
+                        }
+                    },
+                    enabled = canEnterPip,
+                    border = BorderStroke(
+                        1.dp,
+                        if (canEnterPip) extColors.telemetryAccent else extColors.mapButtonDisabledBorder
+                    ),
+                    colors = IconButtonDefaults.outlinedIconButtonColors(
+                        containerColor = if (canEnterPip) extColors.mapOverlaySurface else extColors.mapButtonDisabledSurface,
+                        disabledContainerColor = extColors.mapButtonDisabledSurface
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PictureInPicture,
+                        contentDescription = stringResource(Res.string.btn_pip),
+                        tint = if (canEnterPip) extColors.telemetryAccent else extColors.mapButtonDisabledIcon,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
 

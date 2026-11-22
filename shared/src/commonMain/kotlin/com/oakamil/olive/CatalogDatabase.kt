@@ -24,11 +24,7 @@ data class CatalogObject(
     val copyright: String?,
     val distance: String? = null
 ) {
-    val designation: String = when (catalogLabel) {
-        "Str", "Planet", "Solar System" -> catalogEntry
-        in COMPACT_CATALOG_LABELS -> catalogLabel + catalogEntry
-        else -> "$catalogLabel $catalogEntry"
-    }
+    val designation: String = formatDesignation(catalogLabel, catalogEntry)
 
     val isFakeCommonName: Boolean = commonName != null && (
             commonName.equals("none", ignoreCase = true) ||
@@ -46,6 +42,14 @@ data class CatalogObject(
 
     companion object {
         private val COMPACT_CATALOG_LABELS = setOf("M", "NGC", "IC", "C", "Col")
+
+        fun formatDesignation(catalogLabel: String, catalogEntry: String): String =
+            when (catalogLabel) {
+                "Str", "Planet", "Solar System" -> catalogEntry
+                in COMPACT_CATALOG_LABELS -> catalogLabel + catalogEntry
+                else -> "$catalogLabel $catalogEntry"
+            }
+
         private val FAKE_COMMON_NAME_REGEX = Regex("^[a-zA-Z0-9]+\\s+([IVX]+\\s+)?\\d+[a-zA-Z]?$")
         private val SLASH_OR_EQUALS_REGEX = Regex("\\s+[/=]\\s+")
         private val BAYER_DESIGNATION_REGEX = Regex(
@@ -100,7 +104,7 @@ interface CatalogDatabase {
                     "description, copyright, distance"
 
         private const val DEG_TO_RAD = PI / 180.0
-        private val DYNAMIC_CATALOG_LABELS = setOf("Solar System", "Planet", "Asteroid", "Comet")
+        internal val DYNAMIC_CATALOG_LABELS = setOf("Solar System", "Planet", "Asteroid", "Comet")
         private val SEARCH_QUERY_PREFIX_REGEX = Regex("^(sh2|ta2|[a-z]+)\\s*(\\d+)?$")
         private val COMET_LINE_WHITESPACE_REGEX = Regex("\\s+")
         private val SEARCH_CATALOG_ALIASES = mapOf(
@@ -131,6 +135,13 @@ interface CatalogDatabase {
             "SELECT $CATALOG_OBJECT_COLUMNS_SQL FROM catalog " +
                     "WHERE ra = ? AND dec = ? AND object_type = ? AND id != ? " +
                     "ORDER BY ${buildPriorityCaseSql()} ASC, CAST(catalog_entry AS INTEGER) ASC, catalog_entry ASC;"
+
+        fun buildDesignationsQuerySql(pairCount: Int): String {
+            require(pairCount > 0) { "pairCount must be positive" }
+            val clauses = List(pairCount) { "(catalog_label = ? AND catalog_entry = ?)" }
+                .joinToString(" OR ")
+            return "SELECT $CATALOG_OBJECT_COLUMNS_SQL FROM catalog WHERE $clauses;"
+        }
 
         /** Builds the SQLite WHERE clause and bound parameters for [searchObjects]. */
         fun buildSearchSelectionSql(
@@ -504,6 +515,9 @@ interface CatalogDatabase {
     fun getCatalogDescriptions(): Map<String, String>
 
     fun getCoLocatedObjects(obj: CatalogObject): List<CatalogObject> = emptyList()
+
+    fun getObjectsByDesignations(keys: Collection<Pair<String, String>>): List<CatalogObject> =
+        emptyList()
 
     fun searchObjects(
         searchQuery: String = "",

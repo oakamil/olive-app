@@ -64,7 +64,7 @@ import platform.posix.pthread_mutex_t
 import platform.posix.pthread_mutex_unlock
 
 @OptIn(ExperimentalForeignApi::class)
-private class NativeMutex {
+internal class NativeMutex {
     private val arena = Arena()
     private val mutexPtr = arena.alloc<pthread_mutex_t>()
 
@@ -343,6 +343,26 @@ class IosCatalogDatabase(
             olive_sqlite3_bind_text(stmt, 3, obj.objectType)
             sqlite3_bind_int(stmt, 4, obj.id)
         }
+    }
+
+    override fun getObjectsByDesignations(
+        keys: Collection<Pair<String, String>>
+    ): List<CatalogObject> = mutex.withLock {
+        if (keys.isEmpty()) return@withLock emptyList()
+        val database = openDatabase() ?: return@withLock emptyList()
+        val results = mutableListOf<CatalogObject>()
+        for (chunk in keys.distinct().chunked(200)) {
+            val sql = CatalogDatabase.buildDesignationsQuerySql(chunk.size)
+            results.addAll(
+                executeCatalogQuery(database, sql) { stmt ->
+                    chunk.forEachIndexed { idx, (label, entry) ->
+                        olive_sqlite3_bind_text(stmt, idx * 2 + 1, label)
+                        olive_sqlite3_bind_text(stmt, idx * 2 + 2, entry)
+                    }
+                }
+            )
+        }
+        results
     }
 
     private fun executeCatalogQuery(

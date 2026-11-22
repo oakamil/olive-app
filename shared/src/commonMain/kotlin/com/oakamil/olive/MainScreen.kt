@@ -25,10 +25,12 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Settings
@@ -45,7 +47,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,7 +63,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -83,12 +83,10 @@ fun MainScreen(
 ) {
     val windowController = LocalPlatformWindowController.current
     val capabilities = LocalPlatformCapabilities.current
-    val coroutineScope = rememberCoroutineScope()
 
     var showStartEngineDialog by remember { mutableStateOf(false) }
     var showSkyMapSettings by remember { mutableStateOf(false) }
     var showCameraAlign by remember { mutableStateOf(false) }
-    var isEnteringPip by remember { mutableStateOf(false) }
 
     LaunchedEffect(viewModel.isEngineRunning, isStopping) {
         if (!viewModel.isEngineRunning || isStopping) {
@@ -139,6 +137,7 @@ fun MainScreen(
                 val remaining = timeoutMs - (now - lastInteractionTimeMs[0])
                 if (remaining <= 0L) {
                     viewModel.showCatalog = false
+                    viewModel.showObservingLists = false
                     showSkyMapSettings = false
                     showCameraAlign = false
                     showStartEngineDialog = false
@@ -211,7 +210,15 @@ fun MainScreen(
                 onClick = { viewModel.showCatalog = true }
             )
 
-            // 2. Camera / Align
+            // 2. Lists
+            IconBarItem(
+                modifier = itemModifier,
+                icon = Icons.Outlined.Checklist,
+                label = stringResource(Res.string.btn_lists),
+                onClick = { viewModel.showObservingLists = true }
+            )
+
+            // 3. Camera / Align
             IconBarItem(
                 modifier = itemModifier,
                 icon = Icons.Outlined.PhotoCamera,
@@ -219,28 +226,6 @@ fun MainScreen(
                 enabled = viewModel.isEngineRunning && !isStarting && !isStopping,
                 onClick = { showCameraAlign = true }
             )
-
-            // 3. Picture in Picture (if supported)
-            if (capabilities.supportsPip) {
-                IconBarItem(
-                    modifier = itemModifier,
-                    icon = Icons.Default.PictureInPicture,
-                    label = if (isEnteringPip) stringResource(id = Res.string.btn_entering_pip) else stringResource(
-                        id = Res.string.btn_pip
-                    ),
-                    enabled = viewModel.isEngineRunning && !isStarting && !isStopping && !isEnteringPip,
-                    onClick = {
-                        @Suppress("AssignedValueIsNeverRead")
-                        isEnteringPip = true
-                        onEnterPipMode()
-                        coroutineScope.launch {
-                            delay(1000)
-                            @Suppress("AssignedValueIsNeverRead")
-                            isEnteringPip = false
-                        }
-                    }
-                )
-            }
 
             // 4. Settings
             IconBarItem(
@@ -298,6 +283,7 @@ fun MainScreen(
                     modifier = Modifier
                         .fillMaxHeight()
                         .width(76.dp)
+                        .verticalScroll(rememberScrollState())
                         .padding(vertical = 8.dp),
                     verticalArrangement = Arrangement.SpaceEvenly,
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -368,7 +354,8 @@ fun MainScreen(
                     isStopping = isStopping,
                     detectedIpAddress = detectedIpAddress,
                     bottomOverlayInset = if (isWideLayout) 0.dp else actionBarHeightDp,
-                    endOverlayInset = if (isWideLayout) actionBarWidthDp else 0.dp
+                    endOverlayInset = if (isWideLayout) actionBarWidthDp else 0.dp,
+                    onEnterPipMode = if (capabilities.supportsPip) onEnterPipMode else null
                 )
                 ActionButtons(
                     isVertical = isWideLayout,
@@ -468,6 +455,21 @@ fun MainScreen(
                 onCenter = { ra, dec ->
                     viewModel.skyMapCenterTarget = Pair(ra, dec)
                     viewModel.showCatalog = false
+                }
+            )
+        }
+
+        if (viewModel.showObservingLists) {
+            ObservingListsDialog(
+                viewModel = viewModel,
+                onDismiss = { viewModel.showObservingLists = false },
+                onGoTo = { ra, dec, epoch ->
+                    viewModel.setGoToTarget(ra, dec, epoch)
+                    viewModel.showObservingLists = false
+                },
+                onCenter = { ra, dec ->
+                    viewModel.skyMapCenterTarget = Pair(ra, dec)
+                    viewModel.showObservingLists = false
                 }
             )
         }

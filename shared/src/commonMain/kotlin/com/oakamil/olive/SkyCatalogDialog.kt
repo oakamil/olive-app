@@ -4,16 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,37 +21,23 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons.AutoMirrored.Filled
 import androidx.compose.material.icons.Icons.Default
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -71,13 +52,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -112,21 +89,7 @@ fun SkyCatalogDialog(
     var typeFilters by viewModel::catalogTypeFilters
     var visibilityFilter by viewModel::catalogVisibilityFilter
 
-    val catalogTypeOptions = listOf(
-        "Asterism",
-        "Asteroid",
-        "Cluster + Nebula",
-        "Comet",
-        "Dark Nebula",
-        "Galaxy",
-        "Globular Cluster",
-        "Multiple Star",
-        "Nebula",
-        "Open Cluster",
-        "Planet",
-        "Planetary Nebula",
-        "Star"
-    )
+    val catalogTypeOptions = CATALOG_TYPE_OPTIONS
 
     var showSettingsMenu by remember { mutableStateOf(false) }
     var isRefreshingComets by remember { mutableStateOf(false) }
@@ -484,14 +447,7 @@ fun SkyCatalogDialog(
         Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitPointerEvent(PointerEventPass.Initial)
-                            onUserInteraction()
-                        }
-                    }
-                },
+                .notifyUserInteraction(onUserInteraction),
             color = MaterialTheme.colorScheme.background
         ) {
             val drawerState =
@@ -584,175 +540,34 @@ fun SkyCatalogDialog(
                         },
                         actions = {
                             Box {
+                                val hasActiveFilters = visibilityFilter != "All Objects" ||
+                                        magLimit != null ||
+                                        typeFilters.size < CATALOG_TYPE_OPTIONS.size
                                 IconButton(onClick = { showSettingsMenu = true }) {
-                                    Icon(
-                                        Default.Settings,
+                                    FilterSettingsIcon(
+                                        hasActiveFilters = hasActiveFilters,
                                         contentDescription = stringResource(Res.string.cd_settings)
                                     )
                                 }
-                                DropdownMenu(
+                                val sortOptions = listOf(
+                                    "catalog ID" to Res.string.sort_catalog_id,
+                                    "name" to Res.string.sort_name,
+                                    "brightness" to Res.string.sort_brightness,
+                                    "distance" to Res.string.sort_distance
+                                )
+                                CatalogFilterSortDropdown(
                                     expanded = showSettingsMenu,
-                                    onDismissRequest = { showSettingsMenu = false }
-                                ) {
-                                    Text(
-                                        text = stringResource(Res.string.filter_sort_by),
-                                        modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    val sortOptions = listOf(
-                                        "catalog ID" to Res.string.sort_catalog_id,
-                                        "name" to Res.string.sort_name,
-                                        "brightness" to Res.string.sort_brightness,
-                                        "distance" to Res.string.sort_distance
-                                    )
-                                    sortOptions.forEach { (key, labelRes) ->
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(labelRes)) },
-                                            onClick = {
-                                                sortBy = key
-                                            },
-                                            trailingIcon = {
-                                                if (sortBy == key) {
-                                                    Icon(
-                                                        Default.RadioButtonChecked,
-                                                        contentDescription = stringResource(Res.string.cd_selected),
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                        )
-                                    }
-                                    HorizontalDivider()
-                                    Text(
-                                        text = stringResource(Res.string.filter_visibility),
-                                        modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    val visibilityOptions = listOf(
-                                        "Above Horizon" to Res.string.filter_visibility_above_horizon,
-                                        "All Objects" to Res.string.cat_all_objects
-                                    )
-                                    visibilityOptions.forEach { (key, labelRes) ->
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(labelRes)) },
-                                            onClick = {
-                                                visibilityFilter = key
-                                            },
-                                            trailingIcon = {
-                                                if (visibilityFilter == key) {
-                                                    Icon(
-                                                        Default.RadioButtonChecked,
-                                                        contentDescription = stringResource(Res.string.cd_selected),
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                        )
-                                    }
-                                    HorizontalDivider()
-                                    Text(
-                                        text = stringResource(Res.string.filter_magnitude_limit),
-                                        modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    val magOptions = listOf(
-                                        Res.string.mag_no_limit to null,
-                                        Res.string.mag_naked_eye to 6.0,
-                                        Res.string.mag_binoculars to 9.0,
-                                        Res.string.mag_small_scope to 12.0,
-                                        Res.string.mag_large_scope to 15.0
-                                    )
-                                    magOptions.forEach { (labelRes, value) ->
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(labelRes)) },
-                                            onClick = {
-                                                magLimit = value
-                                            },
-                                            trailingIcon = {
-                                                if (magLimit == value) {
-                                                    Icon(
-                                                        Default.RadioButtonChecked,
-                                                        contentDescription = stringResource(Res.string.cd_selected),
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                        )
-                                    }
-                                    HorizontalDivider()
-                                    Text(
-                                        text = stringResource(Res.string.filter_object_type),
-                                        modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    val allTypesSelected =
-                                        typeFilters.size >= catalogTypeOptions.size
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(Res.string.type_all_types)) },
-                                        leadingIcon = {
-                                            Icon(
-                                                CustomIcons.Checklist,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
-                                        },
-                                        onClick = {
-                                            typeFilters = if (allTypesSelected) {
-                                                emptySet()
-                                            } else {
-                                                catalogTypeOptions.toSet()
-                                            }
-                                        },
-                                        trailingIcon = {
-                                            if (allTypesSelected) {
-                                                Icon(
-                                                    Default.Check,
-                                                    contentDescription = stringResource(Res.string.cd_selected),
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                    )
-                                    catalogTypeOptions.forEach { type ->
-                                        val isSelected = type in typeFilters
-                                        DropdownMenuItem(
-                                            leadingIcon = {
-                                                val (iVec, iCol) = getIconAndColorForType(
-                                                    type,
-                                                    extColors
-                                                )
-                                                Icon(
-                                                    iVec,
-                                                    contentDescription = null,
-                                                    tint = iCol
-                                                )
-                                            },
-                                            text = {
-                                                Text(getLocalizedObjectType(type))
-                                            },
-                                            onClick = {
-                                                typeFilters = if (isSelected) {
-                                                    typeFilters - type
-                                                } else {
-                                                    typeFilters + type
-                                                }
-                                            },
-                                            trailingIcon = {
-                                                if (isSelected) {
-                                                    Icon(
-                                                        Default.Check,
-                                                        contentDescription = stringResource(Res.string.cd_selected),
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
+                                    onDismissRequest = { showSettingsMenu = false },
+                                    sortOptions = sortOptions,
+                                    sortBy = sortBy,
+                                    onSortByChange = { sortBy = it },
+                                    visibilityFilter = visibilityFilter,
+                                    onVisibilityFilterChange = { visibilityFilter = it },
+                                    magLimit = magLimit,
+                                    onMagLimitChange = { magLimit = it },
+                                    typeFilters = typeFilters,
+                                    onTypeFiltersChange = { typeFilters = it }
+                                )
                             }
                             IconButton(onClick = onDismiss) {
                                 Icon(
@@ -769,49 +584,13 @@ fun SkyCatalogDialog(
                             .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
+                        NightVisionSearchBar(
+                            query = searchQuery,
+                            placeholder = stringResource(Res.string.placeholder_search),
+                            onTap = { showKeyboard = true },
+                            onClear = { searchQuery = "" },
                             modifier = Modifier.weight(1f)
-                        ) {
-                            OutlinedTextField(
-                                value = searchQuery,
-                                onValueChange = {},
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text(stringResource(Res.string.placeholder_search)) },
-                                leadingIcon = {
-                                    Icon(
-                                        Default.Search,
-                                        contentDescription = null
-                                    )
-                                },
-                                singleLine = true,
-                                readOnly = true
-                            )
-                            Spacer(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .padding(end = 48.dp)
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
-                                    ) {
-                                        showKeyboard = true
-                                    }
-                            )
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(
-                                    onClick = { searchQuery = "" },
-                                    modifier = Modifier
-                                        .align(Alignment.CenterEnd)
-                                        .padding(end = 4.dp)
-                                ) {
-                                    Icon(
-                                        Default.Close,
-                                        contentDescription = stringResource(Res.string.cd_clear_search),
-                                        tint = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-                        }
+                        )
 
                         if (viewModel.isEngineRunning) {
                             Spacer(modifier = Modifier.width(8.dp))
@@ -848,65 +627,21 @@ fun SkyCatalogDialog(
                                 if (isThisCatDownloading || (missingHq != null && missingHq.isNotEmpty())) {
                                     item(key = "hq_bulk_header_$currentShortCode") {
                                         val catTitle = localizedCatalogCategory(currentCategory)
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isThisCatDownloading) {
-                                                val pct = ((hqState.completedTiles * 100) /
-                                                        hqState.totalTiles.coerceAtLeast(1)).coerceIn(
-                                                    0,
-                                                    100
+                                        HqBulkDownloadHeader(
+                                            isDownloading = isThisCatDownloading,
+                                            hqState = hqState,
+                                            missingKeys = missingHq,
+                                            onShowProgress = {
+                                                viewModel.showHqDownloadProgress = true
+                                            },
+                                            onRequestDownload = { keys ->
+                                                viewModel.requestCatalogHqDownload(
+                                                    categoryTitle = catTitle,
+                                                    shortCode = currentShortCode,
+                                                    missingKeys = keys
                                                 )
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    CircularProgressIndicator(
-                                                        color = MaterialTheme.colorScheme.primary,
-                                                        modifier = Modifier.size(20.dp),
-                                                        strokeWidth = 2.dp
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text(
-                                                        text = stringResource(
-                                                            Res.string.hips_downloading_inline,
-                                                            pct
-                                                        ),
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        color = MaterialTheme.colorScheme.primary
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    ListHeaderTextButton(
-                                                        label = stringResource(Res.string.hips_action_show),
-                                                        onClick = {
-                                                            viewModel.showHqDownloadProgress = true
-                                                        }
-                                                    )
-                                                }
-                                            } else if (missingHq != null) {
-                                                val estMb = HiPSDownloadManager.formatMbValue(
-                                                    HiPSDownloadManager.estimatedTilesBytes(
-                                                        missingHq
-                                                    )
-                                                )
-                                                Button(
-                                                    onClick = {
-                                                        viewModel.requestCatalogHqDownload(
-                                                            categoryTitle = catTitle,
-                                                            shortCode = currentShortCode,
-                                                            missingKeys = missingHq
-                                                        )
-                                                    }
-                                                ) {
-                                                    Text(
-                                                        stringResource(
-                                                            Res.string.btn_download_catalog_images,
-                                                            estMb
-                                                        )
-                                                    )
-                                                }
                                             }
-                                        }
+                                        )
                                     }
                                 }
                             }
@@ -974,150 +709,20 @@ fun SkyCatalogDialog(
                                     }
                                 }
 
-                                ListItem(
-                                    modifier = Modifier.clickable { selectedCatalogObj = obj },
-                                    colors = if (isBelowHorizon) ListItemDefaults.colors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                    ) else ListItemDefaults.colors(),
-                                    headlineContent = { Text(obj.displayName) },
-                                    supportingContent = {
-                                        val localizedType =
-                                            getLocalizedObjectType(obj.objectType)
-                                        val magText = when {
-                                            obj.magnitude != null -> stringResource(
-                                                Res.string.format_mag,
-                                                String.format("%.1f", obj.magnitude)
-                                            )
-
-                                            obj.catalogLabel == "Planet" -> ""
-                                            else -> stringResource(
-                                                Res.string.format_mag,
-                                                stringResource(Res.string.value_not_available)
-                                            )
-                                        }
-                                        @OptIn(ExperimentalLayoutApi::class)
-                                        FlowRow(
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                val (iVec, iCol) = obj.getIconAndColor(extColors)
-                                                Icon(
-                                                    imageVector = iVec,
-                                                    contentDescription = null,
-                                                    tint = iCol,
-                                                    modifier = Modifier
-                                                        .size(16.dp)
-                                                        .padding(end = 4.dp)
-                                                )
-                                                Text(
-                                                    text = localizedType,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                            if (obj.designation.isNotBlank() && obj.displayName != obj.designation) {
-                                                Text(
-                                                    text = obj.designation,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                            if (magText.isNotBlank()) {
-                                                Text(
-                                                    text = magText,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                        }
-                                    },
-                                    trailingContent = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (isBelowHorizon) {
-                                                Text(
-                                                    stringResource(Res.string.status_below_horizon),
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier
-                                                        .padding(end = 8.dp, start = 4.dp)
-                                                )
-                                            } else {
-                                                val hasSolve =
-                                                    viewModel.isEngineRunning && telescopeAltAz != null && currentRa != null && currentDec != null && lat != null && lon != null
-                                                if (hasSolve) {
-                                                    val objAltAz =
-                                                        AstrometryUtils.calculateAltAz(
-                                                            obj.ra,
-                                                            obj.dec,
-                                                            lat,
-                                                            lon,
-                                                            currentTimeMs
-                                                        )
-
-                                                    val distance = AstrometryUtils.angularDistance(
-                                                        currentRa,
-                                                        currentDec, obj.ra, obj.dec
-                                                    )
-                                                    val bearing = targetBearingAltAz(
-                                                        telescopeAltAz.az,
-                                                        telescopeAltAz.alt,
-                                                        objAltAz.az,
-                                                        objAltAz.alt
-                                                    )
-
-                                                    Column(
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        modifier = Modifier.padding(
-                                                            start = 4.dp,
-                                                            top = 4.dp,
-                                                            end = 12.dp,
-                                                            bottom = 4.dp,
-                                                        )
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Default.ArrowUpward,
-                                                            contentDescription = stringResource(
-                                                                Res.string.cd_direction
-                                                            ),
-                                                            modifier = Modifier
-                                                                .rotate(bearing.toFloat())
-                                                                .size(24.dp)
-                                                        )
-                                                        Text(
-                                                            text = stringResource(
-                                                                Res.string.format_degree,
-                                                                String.format("%.1f", distance),
-                                                            ),
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            IconBarItem(
-                                                icon = Default.CenterFocusStrong,
-                                                label = stringResource(Res.string.crop_center),
-                                                onClick = {
-                                                    onCenter(obj.ra, obj.dec)
-                                                }
-                                            )
-
-                                            if (!isBelowHorizon && viewModel.isEngineRunning) {
-                                                IconBarItem(
-                                                    icon = Default.GpsFixed,
-                                                    label = stringResource(Res.string.btn_goto),
-                                                    onClick = {
-                                                        onGoTo(
-                                                            obj.ra,
-                                                            obj.dec,
-                                                            2000.0
-                                                        )
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
+                                CatalogObjectListRow(
+                                    obj = obj,
+                                    isBelowHorizon = isBelowHorizon,
+                                    isEngineRunning = viewModel.isEngineRunning,
+                                    isObserved = viewModel.isObjectObserved(obj),
+                                    telescopeAltAz = telescopeAltAz,
+                                    currentRa = currentRa,
+                                    currentDec = currentDec,
+                                    lat = lat,
+                                    lon = lon,
+                                    currentTimeMs = currentTimeMs,
+                                    onClick = { selectedCatalogObj = obj },
+                                    onCenter = { onCenter(obj.ra, obj.dec) },
+                                    onGoTo = { onGoTo(obj.ra, obj.dec, 2000.0) }
                                 )
                                 HorizontalDivider()
                             }
@@ -1168,101 +773,26 @@ fun SkyCatalogDialog(
 
 
                     val keyboardContent: @Composable (Modifier) -> Unit = { modifier ->
-                        val sideButtons = @Composable {
-                            Column(
-                                modifier = Modifier.fillMaxHeight(),
-                                verticalArrangement = Arrangement.SpaceBetween,
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                IconButton(onClick = {
-                                    showKeyboard = false
-                                    focusManager.clearFocus()
-                                }) {
-                                    Icon(
-                                        Default.Close,
-                                        contentDescription = stringResource(Res.string.cd_close_keyboard),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                IconButton(onClick = {
-                                    viewModel.landscapeKeyboardOnRight =
-                                        !viewModel.landscapeKeyboardOnRight
-                                }) {
-                                    Icon(
-                                        imageVector = if (viewModel.landscapeKeyboardOnRight) Filled.KeyboardArrowLeft else Filled.KeyboardArrowRight,
-                                        contentDescription = stringResource(Res.string.cd_swap_keyboard_side),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        }
-
-                        if (isLandscape) {
-                            Row(modifier = modifier) {
-                                if (viewModel.landscapeKeyboardOnRight) {
-                                    sideButtons()
-                                }
-                                NightVisionKeyboard(
-                                    isLandscape = true,
-                                    modifier = Modifier.weight(1f),
-                                    onKeyClick = { char -> searchQuery += char },
-                                    onSpace = { searchQuery += " " },
-                                    onBackspace = {
-                                        if (searchQuery.isNotEmpty()) searchQuery =
-                                            searchQuery.dropLast(1)
-                                    },
-                                )
-                                if (!viewModel.landscapeKeyboardOnRight) {
-                                    sideButtons()
-                                }
-                            }
-                        } else {
-                            Column(modifier = modifier) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End
-                                ) {
-                                    IconButton(onClick = {
-                                        showKeyboard = false
-                                        focusManager.clearFocus()
-                                    }) {
-                                        Icon(
-                                            Default.Close,
-                                            contentDescription = stringResource(Res.string.cd_close_keyboard),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                                NightVisionKeyboard(
-                                    isLandscape = false,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    onKeyClick = { char -> searchQuery += char },
-                                    onSpace = { searchQuery += " " },
-                                    onBackspace = {
-                                        if (searchQuery.isNotEmpty()) searchQuery =
-                                            searchQuery.dropLast(1)
-                                    },
-                                )
-                            }
-                        }
+                        SearchKeyboardDock(
+                            isLandscape = isLandscape,
+                            viewModel = viewModel,
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            onClose = {
+                                showKeyboard = false
+                                focusManager.clearFocus()
+                            },
+                            modifier = modifier
+                        )
                     }
 
-                    if (isLandscape && showKeyboard) {
-                        Row(modifier = Modifier.weight(1f)) {
-                            if (viewModel.landscapeKeyboardOnRight) {
-                                listContent(Modifier.weight(1f))
-                                keyboardContent(Modifier.weight(1f))
-                            } else {
-                                keyboardContent(Modifier.weight(1f))
-                                listContent(Modifier.weight(1f))
-                            }
-                        }
-                    } else {
-                        listContent(Modifier.weight(1f))
-                        if (showKeyboard) {
-                            keyboardContent(Modifier.fillMaxWidth())
-                        }
-                    }
+                    NightVisionKeyboardSplitLayout(
+                        isLandscape = isLandscape,
+                        showKeyboard = showKeyboard,
+                        landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
+                        content = listContent,
+                        keyboard = keyboardContent
+                    )
                 }
             }
         }
@@ -1368,21 +898,6 @@ private fun localizedCatalogCategory(category: String): String = when (category)
     else -> category
 }
 
-@Composable
-private fun ListHeaderTextButton(label: String, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary
-        )
-    }
-}
-
 fun targetBearingAltAz(az1: Double, alt1: Double, az2: Double, alt2: Double): Double {
     var dAz = az2 - az1
     while (dAz > 180.0) dAz -= 360.0
@@ -1395,103 +910,6 @@ fun targetBearingAltAz(az1: Double, alt1: Double, az2: Double, alt2: Double): Do
     if (bearing < 0) bearing += 360.0
     return bearing
 }
-
-@Composable
-fun NightVisionKeyboard(
-    modifier: Modifier = Modifier,
-    isLandscape: Boolean = false,
-    onKeyClick: (Char) -> Unit,
-    onSpace: () -> Unit,
-    onBackspace: () -> Unit,
-) {
-    val keys = listOf(
-        listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
-        listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"),
-        listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"),
-        listOf("␣", "z", "x", "c", "v", "b", "n", "m", "⌫")
-    )
-
-    Column(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(2.dp)
-            .pointerInput(Unit) {
-                // Consume taps inside keyboard so they don't propagate to the parent and dismiss it
-                detectTapGestures { }
-            }
-    ) {
-        keys.forEach { row ->
-            val rowModifier = if (isLandscape) Modifier
-                .fillMaxWidth()
-                .padding(vertical = 2.dp)
-                .weight(1f) else Modifier
-                .fillMaxWidth()
-                .padding(vertical = 2.dp)
-            Row(
-                modifier = rowModifier,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                val paddingWeight = (10 - row.size) / 2f
-                if (paddingWeight > 0f) {
-                    Spacer(modifier = Modifier.weight(paddingWeight))
-                }
-
-                row.forEach { key ->
-                    NightVisionKey(
-                        text = key,
-                        isLandscape = isLandscape,
-                        onClick = {
-                            when (key) {
-                                "␣" -> onSpace()
-                                "⌫" -> onBackspace()
-                                else -> onKeyClick(key[0])
-                            }
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 2.dp)
-                    )
-                }
-
-                if (paddingWeight > 0f) {
-                    Spacer(modifier = Modifier.weight(paddingWeight))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun NightVisionKey(
-    modifier: Modifier = Modifier,
-    text: String,
-    isLandscape: Boolean = false,
-    onClick: () -> Unit,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressedState by interactionSource.collectIsPressedAsState()
-
-    val bgColor =
-        if (isPressedState) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer
-    val textColor =
-        if (isPressedState) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-
-    val boxModifier = if (isLandscape) modifier.fillMaxHeight() else modifier.height(36.dp)
-    Box(
-        modifier = boxModifier
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
-            .background(bgColor, RoundedCornerShape(4.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text = text, color = textColor, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
 
 enum class CoordinateField {
     RA_H, RA_M, RA_S, DEC_D, DEC_M, DEC_S
