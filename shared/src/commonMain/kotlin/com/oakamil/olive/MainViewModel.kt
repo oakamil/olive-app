@@ -1002,6 +1002,14 @@ open class MainViewModel(
             }
         }
 
+    suspend fun getAllObservationsForExport(): List<ObservationRecord> =
+        userDbMutex.withLock {
+            withContext(Dispatchers.IO) {
+                userDb.getAllObservations()
+                    .sortedWith(compareBy<ObservationRecord> { it.observedAtMs }.thenBy { it.id })
+            }
+        }
+
     suspend fun getObservationsForTarget(
         target: TargetRef,
         coLocated: List<CatalogObject>
@@ -1071,6 +1079,25 @@ open class MainViewModel(
         }
     }
 
+    private fun toResolvedListEntry(
+        item: ObservingListItemRecord,
+        resolvedMap: Map<String, CatalogObject>
+    ): ResolvedListEntry {
+        val obj = resolvedMap[item.objectKey] ?: syntheticCatalogObject(
+            id = -item.id.toInt().coerceAtLeast(1),
+            catalogLabel = item.catalogLabel,
+            catalogEntry = item.catalogEntry,
+            name = item.fallbackName,
+            objectType = item.objectType,
+            raDeg = item.raDeg,
+            decDeg = item.decDeg
+        )
+        return ResolvedListEntry(
+            catalogObject = obj,
+            listItemId = item.id
+        )
+    }
+
     suspend fun resolveManualListEntries(
         listId: Long,
         lat: Double?,
@@ -1084,20 +1111,29 @@ open class MainViewModel(
                 lat = lat,
                 lon = lon
             )
-            rawItems.map { item ->
-                val obj = resolvedMap[item.objectKey] ?: syntheticCatalogObject(
-                    id = -item.id.toInt().coerceAtLeast(1),
-                    catalogLabel = item.catalogLabel,
-                    catalogEntry = item.catalogEntry,
-                    name = item.fallbackName,
-                    objectType = item.objectType,
-                    raDeg = item.raDeg,
-                    decDeg = item.decDeg
-                )
-                ResolvedListEntry(
-                    catalogObject = obj,
-                    listItemId = item.id
-                )
+            rawItems.map { toResolvedListEntry(it, resolvedMap) }
+        }
+    }
+
+    suspend fun resolveAllManualListsForExport(
+        lat: Double?,
+        lon: Double?
+    ): List<Pair<String, List<ResolvedListEntry>>> = userDbMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val lists = userDb.getManualLists()
+            if (lists.isEmpty()) return@withContext emptyList()
+            val itemsByList = lists.map { list -> list.name to userDb.getListItems(list.id) }
+            val allRefs = itemsByList.flatMap { (_, items) ->
+                items.map { it.catalogLabel to it.catalogEntry }
+            }
+            if (allRefs.isEmpty()) return@withContext emptyList()
+            val resolvedMap = resolveCatalogObjectsMap(allRefs, lat, lon)
+            itemsByList.mapNotNull { (listName, items) ->
+                if (items.isEmpty()) {
+                    null
+                } else {
+                    listName to items.map { toResolvedListEntry(it, resolvedMap) }
+                }
             }
         }
     }

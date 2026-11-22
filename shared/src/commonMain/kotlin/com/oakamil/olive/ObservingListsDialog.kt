@@ -28,11 +28,11 @@ import androidx.compose.material.icons.Icons.Outlined
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -67,8 +67,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlin.math.cos
 import kotlin.math.sin
@@ -101,6 +104,19 @@ fun ObservingListsDialog(
     val nightSessions = viewModel.nightSessions
 
     var showAddObjectsDialog by remember { mutableStateOf(false) }
+    var isExporting by remember { mutableStateOf(false) }
+    val runExport: (suspend () -> Unit) -> Unit = { block ->
+        if (!isExporting) {
+            isExporting = true
+            coroutineScope.launch {
+                try {
+                    block()
+                } finally {
+                    isExporting = false
+                }
+            }
+        }
+    }
 
     var selectedView by remember {
         mutableStateOf(
@@ -208,6 +224,7 @@ fun ObservingListsDialog(
     }
 
     var rawEntries by remember { mutableStateOf<List<ResolvedListEntry>>(emptyList()) }
+    var loadedView by remember { mutableStateOf<SelectedObservingView?>(null) }
     var isLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(
@@ -220,8 +237,12 @@ fun ObservingListsDialog(
         val current = selectedView
         if (current == null) {
             rawEntries = emptyList()
+            loadedView = null
             isLoading = false
             return@LaunchedEffect
+        }
+        if (loadedView != current) {
+            rawEntries = emptyList()
         }
         isLoading = true
         rawEntries = when (current) {
@@ -239,6 +260,7 @@ fun ObservingListsDialog(
                     lon = viewModel.currentLon
                 )
         }
+        loadedView = current
         isLoading = false
     }
 
@@ -498,15 +520,39 @@ fun ObservingListsDialog(
                             modifier = Modifier.fillMaxSize()
                         ) {
                             item(key = "section_manual") {
-                                Text(
-                                    text = stringResource(Res.string.section_manual_lists),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = extColors.secondaryText,
-                                    modifier = Modifier.padding(
-                                        horizontal = 16.dp,
-                                        vertical = 10.dp
-                                    )
+                                val canExportAllLists =
+                                    !isEditingDrawerLists && manualLists.any { it.itemCount > 0 }
+                                DrawerSectionHeader(
+                                    title = stringResource(Res.string.section_manual_lists),
+                                    exportContentDescription = if (canExportAllLists) {
+                                        stringResource(Res.string.cd_export_all_lists)
+                                    } else {
+                                        null
+                                    },
+                                    exportEnabled = !isExporting,
+                                    onExport = if (canExportAllLists) {
+                                        {
+                                            runExport {
+                                                val lists =
+                                                    viewModel.resolveAllManualListsForExport(
+                                                        lat = lat,
+                                                        lon = lon
+                                                    )
+                                                if (lists.isNotEmpty()) {
+                                                    val csv = withContext(Dispatchers.IO) {
+                                                        UserDatabase.buildAllManualListsCsv(lists)
+                                                    }
+                                                    shareFile(
+                                                        "all_observing_lists.csv",
+                                                        "text/csv",
+                                                        csv
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        null
+                                    }
                                 )
                             }
 
@@ -627,15 +673,26 @@ fun ObservingListsDialog(
                                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                 }
                                 item(key = "section_sessions") {
-                                    Text(
-                                        text = stringResource(Res.string.section_past_sessions),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = extColors.secondaryText,
-                                        modifier = Modifier.padding(
-                                            horizontal = 16.dp,
-                                            vertical = 6.dp
-                                        )
+                                    DrawerSectionHeader(
+                                        title = stringResource(Res.string.section_past_sessions),
+                                        exportContentDescription = stringResource(Res.string.cd_export_all_observations),
+                                        exportEnabled = !isExporting,
+                                        onExport = {
+                                            runExport {
+                                                val allObs =
+                                                    viewModel.getAllObservationsForExport()
+                                                if (allObs.isNotEmpty()) {
+                                                    val csv = withContext(Dispatchers.IO) {
+                                                        UserDatabase.buildObservationsCsv(allObs)
+                                                    }
+                                                    shareFile(
+                                                        "all_observations.csv",
+                                                        "text/csv",
+                                                        csv
+                                                    )
+                                                }
+                                            }
+                                        }
                                     )
                                 }
                                 items(
@@ -723,39 +780,51 @@ fun ObservingListsDialog(
                                 }
                             },
                             actions = {
-                                if (selectedView != null && rawEntries.isNotEmpty() && !isEditingItems) {
+                                if (selectedView != null && loadedView == selectedView && !isLoading && rawEntries.isNotEmpty() && !isEditingItems) {
                                     IconButton(
+                                        enabled = !isExporting,
                                         onClick = {
                                             if (activeManualList != null) {
-                                                val csv =
-                                                    UserDatabase.buildManualListCsv(rawEntries)
-                                                val fileName =
-                                                    "${
-                                                        UserDatabase.sanitizeExportFileName(
-                                                            activeManualList.name
+                                                val listName = activeManualList.name
+                                                val entriesSnapshot = rawEntries.toList()
+                                                runExport {
+                                                    val csv = withContext(Dispatchers.IO) {
+                                                        UserDatabase.buildManualListCsv(
+                                                            entriesSnapshot
                                                         )
-                                                    }.csv"
-                                                shareFile(fileName, "text/csv", csv)
+                                                    }
+                                                    val fileName =
+                                                        "${
+                                                            UserDatabase.sanitizeExportFileName(
+                                                                listName
+                                                            )
+                                                        }.csv"
+                                                    shareFile(fileName, "text/csv", csv)
+                                                }
                                             } else if (activeNightKey != null) {
-                                                coroutineScope.launch {
+                                                runExport {
                                                     val obs =
                                                         viewModel.getObservationsForNight(
                                                             activeNightKey
                                                         )
-                                                    val csv =
-                                                        UserDatabase.buildNightObservationsCsv(obs)
-                                                    shareFile(
-                                                        "observations_$activeNightKey.csv",
-                                                        "text/csv",
-                                                        csv
-                                                    )
+                                                    if (obs.isNotEmpty()) {
+                                                        val csv = withContext(Dispatchers.IO) {
+                                                            UserDatabase.buildObservationsCsv(obs)
+                                                        }
+                                                        shareFile(
+                                                            "observations_$activeNightKey.csv",
+                                                            "text/csv",
+                                                            csv
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
                                     ) {
                                         Icon(
-                                            imageVector = Outlined.Share,
-                                            contentDescription = stringResource(Res.string.cd_export_csv)
+                                            imageVector = Default.Download,
+                                            contentDescription = stringResource(Res.string.cd_export_csv),
+                                            modifier = Modifier.size(26.dp)
                                         )
                                     }
                                 }
@@ -1363,6 +1432,51 @@ fun ObservingListsDialog(
             },
             initialObservationsExpanded = selectedFromNightSession
         )
+    }
+}
+
+@Composable
+private fun DrawerSectionHeader(
+    title: String,
+    exportContentDescription: String? = null,
+    exportEnabled: Boolean = true,
+    onExport: (() -> Unit)? = null
+) {
+    val extColors = LocalOliveExtendedColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = extColors.secondaryText,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(vertical = 6.dp)
+        )
+        if (onExport != null && exportContentDescription != null) {
+            IconButton(
+                onClick = onExport,
+                enabled = exportEnabled,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    imageVector = Default.Download,
+                    contentDescription = exportContentDescription,
+                    tint = MaterialTheme.colorScheme.primary.copy(
+                        alpha = if (exportEnabled) 1f else 0.38f
+                    ),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
     }
 }
 

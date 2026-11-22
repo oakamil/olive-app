@@ -204,7 +204,7 @@ class UserDatabaseTest {
             azDeg = 160.0,
             notes = "GRS visible"
         )
-        val csv = UserDatabase.buildNightObservationsCsv(listOf(obs, obsJupiter))
+        val csv = UserDatabase.buildObservationsCsv(listOf(obs, obsJupiter))
         assertTrue(csv.contains("Timestamp (UTC),Observing Night,Object,Designation,Type,RA (J2000 deg),Dec (J2000 deg)"))
         assertTrue(csv.contains("2026-11-20T22:30:00Z,2026-11-20,Orion Nebula,M42,Nebula"))
         assertTrue(csv.contains("2026-11-20T23:00:00Z,2026-11-20,Jupiter,Jupiter,Planet"))
@@ -235,6 +235,12 @@ class UserDatabaseTest {
         assertTrue(listCsv.contains("Orion Nebula,M42,Nebula,83.82210,-5.39110,4.00"))
         assertEquals("observing_list", UserDatabase.sanitizeExportFileName("."))
         assertEquals("observing_list", UserDatabase.sanitizeExportFileName(".."))
+        assertTrue(UserDatabase.sanitizeExportFileName("A".repeat(250)).length <= 100)
+        assertEquals("'- faint core", UserDatabase.escapeCsvField("- faint core"))
+        assertEquals("'=1+1", UserDatabase.escapeCsvField("=1+1"))
+        assertEquals("'+SUM(A1)", UserDatabase.escapeCsvField("+SUM(A1)"))
+        assertEquals("'@cmd", UserDatabase.escapeCsvField("@cmd"))
+        assertEquals("-5.39110", UserDatabase.escapeCsvField("-5.39110"))
     }
 
     @Test
@@ -285,5 +291,69 @@ class UserDatabaseTest {
             "2026-11-21 12:05 AM",
             UserDatabase.formatObservationTimestamp(midnightMs, is24Hour = false, timeZone = tz)
         )
+    }
+
+    @Test
+    fun allManualListsCsvIncludesListNameSkipsEmptyListsAndIsLocaleInvariant() {
+        val prevLocale = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.FRANCE)
+            val m42 = CatalogObject(
+                id = 42,
+                catalogLabel = "M",
+                catalogEntry = "42",
+                ra = 83.8221,
+                dec = -5.3911,
+                constellation = "Ori",
+                objectType = "Nebula",
+                broadCategory = "Nebula",
+                magnitude = 4.0,
+                surfaceBrightness = null,
+                angularSize = "85' × 60'",
+                commonName = "Orion Nebula",
+                description = null,
+                copyright = null
+            )
+            val customSpot = CatalogObject(
+                id = -1,
+                catalogLabel = UserDatabase.CUSTOM_CATALOG_LABEL,
+                catalogEntry = "10.6847,41.2687",
+                ra = 10.6847,
+                dec = 41.2687,
+                constellation = null,
+                objectType = UserDatabase.CUSTOM_CATALOG_LABEL,
+                broadCategory = UserDatabase.CUSTOM_CATALOG_LABEL,
+                magnitude = null,
+                surfaceBrightness = null,
+                angularSize = null,
+                commonName = "Dark Patch",
+                description = null,
+                copyright = null
+            )
+
+            val csv = UserDatabase.buildAllManualListsCsv(
+                listOf(
+                    "Winter, \"Favorites\"" to listOf(ResolvedListEntry(m42)),
+                    "Empty List" to emptyList(),
+                    "Custom Targets" to listOf(ResolvedListEntry(customSpot))
+                )
+            )
+            val lines = csv.trimEnd().lines()
+            assertEquals(3, lines.size)
+            assertEquals(
+                "List Name,Name,Designation,Type,RA (J2000 deg),Dec (J2000 deg),Magnitude,Angular Size,Constellation",
+                lines[0]
+            )
+            assertEquals(
+                "\"Winter, \"\"Favorites\"\"\",Orion Nebula,M42,Nebula,83.82210,-5.39110,4.00,85' × 60',Ori",
+                lines[1]
+            )
+            assertEquals(
+                "Custom Targets,Dark Patch,,Custom,10.68470,41.26870,,,",
+                lines[2]
+            )
+        } finally {
+            Locale.setDefault(prevLocale)
+        }
     }
 }
