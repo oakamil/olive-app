@@ -5,13 +5,20 @@ package com.oakamil.olive
 
 import android.content.ClipData
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 
@@ -62,6 +69,75 @@ actual fun rememberFileSharer(): suspend (fileName: String, mimeType: String, co
             } catch (e: Exception) {
                 runDir?.deleteRecursively()
                 Log.e("AndroidPlatformShare", "Failed to share $safeName: ${e.message}")
+            }
+        }
+    }
+}
+
+@Composable
+actual fun rememberCsvFilePicker(
+    onFilePicked: (String) -> Unit,
+    onError: (FilePickError) -> Unit
+): () -> Unit {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val currentOnFilePicked by rememberUpdatedState(onFilePicked)
+    val currentOnError by rememberUpdatedState(onError)
+
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openInputStream(uri)
+                        ?: return@withContext null
+                    stream.use { input ->
+                        val buffer = ByteArray(8192)
+                        val out = ByteArrayOutputStream()
+                        var total = 0
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            total += read
+                            if (total > MAX_CSV_IMPORT_BYTES) {
+                                return@withContext FilePickError.TOO_LARGE
+                            }
+                            out.write(buffer, 0, read)
+                        }
+                        out.toString(Charsets.UTF_8.name())
+                    }
+                }
+                when (result) {
+                    is String -> currentOnFilePicked(result)
+                    is FilePickError -> currentOnError(result)
+                    else -> currentOnError(FilePickError.READ_FAILED)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("AndroidPlatformShare", "Failed to read imported CSV: ${e.message}")
+                currentOnError(FilePickError.READ_FAILED)
+            }
+        }
+    }
+
+    return remember(launcher) {
+        {
+            try {
+                launcher.launch(
+                    arrayOf(
+                        "text/csv",
+                        "text/comma-separated-values",
+                        "text/plain",
+                        "application/csv",
+                        "*/*"
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e("AndroidPlatformShare", "Failed to launch CSV picker: ${e.message}")
+                currentOnError(FilePickError.READ_FAILED)
             }
         }
     }

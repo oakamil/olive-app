@@ -58,10 +58,15 @@ import platform.darwin.dispatch_semaphore_create
 import platform.darwin.dispatch_semaphore_signal
 import platform.darwin.dispatch_semaphore_wait
 import platform.darwin.dispatch_time
+import platform.posix.PTHREAD_MUTEX_RECURSIVE
 import platform.posix.pthread_mutex_init
 import platform.posix.pthread_mutex_lock
 import platform.posix.pthread_mutex_t
 import platform.posix.pthread_mutex_unlock
+import platform.posix.pthread_mutexattr_destroy
+import platform.posix.pthread_mutexattr_init
+import platform.posix.pthread_mutexattr_settype
+import platform.posix.pthread_mutexattr_t
 
 @OptIn(ExperimentalForeignApi::class)
 internal class NativeMutex {
@@ -69,7 +74,13 @@ internal class NativeMutex {
     private val mutexPtr = arena.alloc<pthread_mutex_t>()
 
     init {
-        pthread_mutex_init(mutexPtr.ptr, null)
+        memScoped {
+            val attr = alloc<pthread_mutexattr_t>()
+            pthread_mutexattr_init(attr.ptr)
+            pthread_mutexattr_settype(attr.ptr, PTHREAD_MUTEX_RECURSIVE)
+            pthread_mutex_init(mutexPtr.ptr, attr.ptr)
+            pthread_mutexattr_destroy(attr.ptr)
+        }
     }
 
     inline fun <T> withLock(block: () -> T): T {
