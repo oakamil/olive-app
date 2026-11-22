@@ -27,7 +27,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -480,9 +479,7 @@ fun SkyMapSettingsDialog(
             )
 
             // Low Power Timeout
-            var lowPowerTimeoutSeconds by remember {
-                mutableIntStateOf(settingsManager.lowPowerTimeoutSeconds)
-            }
+            val lowPowerTimeoutSeconds = viewModel.lowPowerTimeoutSeconds
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val formattedTime = when (lowPowerTimeoutSeconds) {
                     0 -> stringResource(Res.string.value_off)
@@ -512,9 +509,7 @@ fun SkyMapSettingsDialog(
             Slider(
                 value = lowPowerTimeoutSeconds.toFloat(),
                 onValueChange = {
-                    val newTimeout = it.toInt()
-                    lowPowerTimeoutSeconds = newTimeout
-                    settingsManager.lowPowerTimeoutSeconds = newTimeout
+                    viewModel.lowPowerTimeoutSeconds = round(it).toInt()
                 },
                 valueRange = 0f..300f,
                 steps = 9,

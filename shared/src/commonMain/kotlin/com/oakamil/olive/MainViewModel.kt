@@ -169,6 +169,15 @@ open class MainViewModel(
             settingsManager.guidanceMode = value
         }
 
+    private val _lowPowerTimeoutSeconds = mutableIntStateOf(settingsManager.lowPowerTimeoutSeconds)
+    var lowPowerTimeoutSeconds: Int
+        get() = _lowPowerTimeoutSeconds.intValue
+        set(value) {
+            if (_lowPowerTimeoutSeconds.intValue == value) return
+            _lowPowerTimeoutSeconds.intValue = value
+            settingsManager.lowPowerTimeoutSeconds = value
+        }
+
     private val _showLiveCamera = mutableStateOf(settingsManager.showLiveCamera)
     var showLiveCamera: Boolean
         get() = _showLiveCamera.value
