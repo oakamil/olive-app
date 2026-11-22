@@ -358,40 +358,66 @@ interface UserDatabase {
             ) in observedStaticCoLocatedKeys
         }
 
+        private const val MAX_EXPORT_FILE_NAME_LENGTH = 100
+
         fun escapeCsvField(value: String): String {
-            val needsQuotes = value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
-            if (!needsQuotes) return value
-            return "\"${value.replace("\"", "\"\"")}\""
+            val safeValue = when (value.firstOrNull()) {
+                '=', '+', '@', '\t', '\r' -> "'$value"
+                '-' -> if (value.toDoubleOrNull()?.isFinite() == true) value else "'$value"
+                else -> value
+            }
+            val needsQuotes = safeValue.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
+            if (!needsQuotes) return safeValue
+            return "\"${safeValue.replace("\"", "\"\"")}\""
         }
 
         fun sanitizeExportFileName(rawName: String): String {
             val cleaned = rawName.trim()
                 .replace(Regex("[^A-Za-z0-9._-]+"), "_")
+                .take(MAX_EXPORT_FILE_NAME_LENGTH)
                 .trim('_', '.')
             return cleaned.ifEmpty { "observing_list" }
         }
 
+        private const val MANUAL_LIST_CSV_COLUMNS =
+            "Name,Designation,Type,RA (J2000 deg),Dec (J2000 deg),Magnitude,Angular Size,Constellation"
+
+        private fun manualListRowFields(entry: ResolvedListEntry): List<String> {
+            val obj = entry.catalogObject
+            return listOf(
+                obj.displayName,
+                if (obj.catalogLabel == CUSTOM_CATALOG_LABEL) "" else obj.designation,
+                obj.objectType,
+                pureFormat("%.5f", obj.ra),
+                pureFormat("%.5f", obj.dec),
+                obj.magnitude?.let { pureFormat("%.2f", it) }.orEmpty(),
+                obj.angularSize.orEmpty(),
+                obj.constellation.orEmpty()
+            )
+        }
+
         fun buildManualListCsv(entries: List<ResolvedListEntry>): String {
             val sb = StringBuilder()
-            sb.appendLine("Name,Designation,Type,RA (J2000 deg),Dec (J2000 deg),Magnitude,Angular Size,Constellation")
+            sb.appendLine(MANUAL_LIST_CSV_COLUMNS)
             for (entry in entries) {
-                val obj = entry.catalogObject
-                val fields = listOf(
-                    obj.displayName,
-                    if (obj.catalogLabel == CUSTOM_CATALOG_LABEL) "" else obj.designation,
-                    obj.objectType,
-                    pureFormat("%.5f", obj.ra),
-                    pureFormat("%.5f", obj.dec),
-                    obj.magnitude?.let { pureFormat("%.2f", it) }.orEmpty(),
-                    obj.angularSize.orEmpty(),
-                    obj.constellation.orEmpty()
-                )
-                sb.appendLine(fields.joinToString(",") { escapeCsvField(it) })
+                sb.appendLine(manualListRowFields(entry).joinToString(",") { escapeCsvField(it) })
             }
             return sb.toString()
         }
 
-        fun buildNightObservationsCsv(
+        fun buildAllManualListsCsv(lists: List<Pair<String, List<ResolvedListEntry>>>): String {
+            val sb = StringBuilder()
+            sb.appendLine("List Name,$MANUAL_LIST_CSV_COLUMNS")
+            for ((listName, entries) in lists) {
+                for (entry in entries) {
+                    val fields = listOf(listName) + manualListRowFields(entry)
+                    sb.appendLine(fields.joinToString(",") { escapeCsvField(it) })
+                }
+            }
+            return sb.toString()
+        }
+
+        fun buildObservationsCsv(
             observations: List<ObservationRecord>
         ): String {
             val sb = StringBuilder()

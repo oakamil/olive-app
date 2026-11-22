@@ -6,4 +6,4 @@ package com.oakamil.olive
 import androidx.compose.runtime.Composable
 
 @Composable
-expect fun rememberFileSharer(): (fileName: String, mimeType: String, content: String) -> Unit
+expect fun rememberFileSharer(): suspend (fileName: String, mimeType: String, content: String) -> Unit

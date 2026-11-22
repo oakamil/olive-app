@@ -9,10 +9,15 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.useContents
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.withContext
 import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
+import platform.Foundation.NSUUID
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
 import platform.UIKit.UISceneActivationStateForegroundActive
@@ -24,7 +29,8 @@ import platform.posix.fclose
 import platform.posix.fopen
 import platform.posix.fwrite
 
-@OptIn(ExperimentalForeignApi::class)
+private const val TAG = "IosPlatformShare"
+
 private fun findTopViewController(): UIViewController? {
     val scenes = UIApplication.sharedApplication.connectedScenes.filterIsInstance<UIWindowScene>()
     val activeScene = scenes.firstOrNull {
@@ -43,27 +49,63 @@ private fun findTopViewController(): UIViewController? {
 
 @OptIn(ExperimentalForeignApi::class)
 @Composable
-actual fun rememberFileSharer(): (fileName: String, mimeType: String, content: String) -> Unit {
+actual fun rememberFileSharer(): suspend (fileName: String, mimeType: String, content: String) -> Unit {
     return remember {
         { fileName, _, content ->
-            val tempDir = NSTemporaryDirectory()
-            val filePath = if (tempDir.endsWith("/")) "$tempDir$fileName" else "$tempDir/$fileName"
-            val bytes = content.encodeToByteArray()
-            val fp = fopen(filePath, "wb")
-            if (fp != null) {
-                var writeOk = true
-                try {
-                    if (bytes.isNotEmpty()) {
-                        val written = bytes.usePinned { pinned ->
-                            fwrite(pinned.addressOf(0), 1u, bytes.size.toULong(), fp)
-                        }
-                        writeOk = written == bytes.size.toULong()
+            val safeName = fileName
+                .substringAfterLast('/')
+                .substringAfterLast('\\')
+                .takeUnless { it.isBlank() || it == "." || it == ".." }
+                ?: "export.csv"
+            val tempDir = NSTemporaryDirectory().trimEnd('/')
+            val exportDirPath = "$tempDir/olive_export_${NSUUID().UUIDString}"
+            val filePath = "$exportDirPath/$safeName"
+            val written = try {
+                withContext(Dispatchers.IO) {
+                    val fm = NSFileManager.defaultManager
+                    val dirCreated = fm.createDirectoryAtPath(
+                        path = exportDirPath,
+                        withIntermediateDirectories = true,
+                        attributes = null,
+                        error = null
+                    )
+                    if (!dirCreated) {
+                        Log.e(TAG, "Failed to create export temp directory for $safeName")
+                        return@withContext false
                     }
-                } finally {
-                    fclose(fp)
+                    val bytes = content.encodeToByteArray()
+                    val fp = fopen(filePath, "wb")
+                    if (fp == null) {
+                        Log.e(TAG, "Failed to open temp file for $safeName")
+                        fm.removeItemAtPath(exportDirPath, null)
+                        return@withContext false
+                    }
+                    var writeOk = true
+                    try {
+                        if (bytes.isNotEmpty()) {
+                            val count = bytes.usePinned { pinned ->
+                                fwrite(pinned.addressOf(0), 1u, bytes.size.toULong(), fp)
+                            }
+                            writeOk = count == bytes.size.toULong()
+                        }
+                    } finally {
+                        fclose(fp)
+                    }
+                    if (!writeOk) {
+                        Log.e(TAG, "Failed to write complete export file for $safeName")
+                        fm.removeItemAtPath(exportDirPath, null)
+                    }
+                    writeOk
                 }
-                if (!writeOk) {
-                    NSFileManager.defaultManager.removeItemAtPath(filePath, null)
+            } catch (e: CancellationException) {
+                NSFileManager.defaultManager.removeItemAtPath(exportDirPath, null)
+                throw e
+            }
+            if (written) {
+                val presenter = findTopViewController()
+                if (presenter == null || presenter.isBeingDismissed()) {
+                    Log.e(TAG, "No active presenter available to share $safeName")
+                    NSFileManager.defaultManager.removeItemAtPath(exportDirPath, null)
                 } else {
                     val fileUrl = NSURL.fileURLWithPath(filePath)
                     val activityController = UIActivityViewController(
@@ -71,27 +113,22 @@ actual fun rememberFileSharer(): (fileName: String, mimeType: String, content: S
                         applicationActivities = null
                     )
                     activityController.completionWithItemsHandler = { _, _, _, _ ->
-                        NSFileManager.defaultManager.removeItemAtPath(filePath, null)
+                        NSFileManager.defaultManager.removeItemAtPath(exportDirPath, null)
                     }
-                    val presenter = findTopViewController()
-                    if (presenter != null) {
-                        activityController.popoverPresentationController?.let { popover ->
-                            val view = presenter.view
-                            popover.sourceView = view
-                            val (midX, midY) = view.bounds.useContents {
-                                (size.width / 2.0) to (size.height / 2.0)
-                            }
-                            popover.sourceRect = CGRectMake(midX, midY, 1.0, 1.0)
-                            popover.permittedArrowDirections = 0u
+                    activityController.popoverPresentationController?.let { popover ->
+                        val view = presenter.view
+                        popover.sourceView = view
+                        val (midX, midY) = view.bounds.useContents {
+                            (size.width / 2.0) to (size.height / 2.0)
                         }
-                        presenter.presentViewController(
-                            activityController,
-                            animated = true,
-                            completion = null
-                        )
-                    } else {
-                        NSFileManager.defaultManager.removeItemAtPath(filePath, null)
+                        popover.sourceRect = CGRectMake(midX, midY, 1.0, 1.0)
+                        popover.permittedArrowDirections = 0u
                     }
+                    presenter.presentViewController(
+                        activityController,
+                        animated = true,
+                        completion = null
+                    )
                 }
             }
         }
