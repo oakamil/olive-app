@@ -486,6 +486,8 @@ interface UserDatabase {
     fun updateObservationNotes(observationId: Long, notes: String)
     fun deleteObservation(observationId: Long)
 
+    fun <T> runInTransaction(block: () -> T): T = block()
+
     fun close() {}
 }
 

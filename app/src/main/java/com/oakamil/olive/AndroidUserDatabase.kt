@@ -204,7 +204,7 @@ class AndroidUserDatabase(private val context: Context) : UserDatabase {
             val nextOrder = querySingleInt(
                 database,
                 UserDatabase.SQL_GET_NEXT_ITEM_SORT_ORDER,
-                arrayOf<Any>(listId)
+                arrayOf(listId)
             )
             database.compileStatement(UserDatabase.SQL_INSERT_LIST_ITEM).use { stmt ->
                 stmt.bindLong(1, listId)
@@ -368,6 +368,18 @@ class AndroidUserDatabase(private val context: Context) : UserDatabase {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to delete observation $observationId", e)
             }
+        }
+    }
+
+    override fun <T> runInTransaction(block: () -> T): T = synchronized(dbLock) {
+        val database = openDatabaseLocked() ?: return@synchronized block()
+        database.beginTransaction()
+        try {
+            val result = block()
+            database.setTransactionSuccessful()
+            result
+        } finally {
+            database.endTransaction()
         }
     }
 

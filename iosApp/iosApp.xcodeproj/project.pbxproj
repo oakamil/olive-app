@@ -315,6 +315,8 @@
 					Security,
 					"-framework",
 					SystemConfiguration,
+					"-framework",
+					UniformTypeIdentifiers,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.oakamil.olive;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -381,6 +383,8 @@
 					Security,
 					"-framework",
 					SystemConfiguration,
+					"-framework",
+					UniformTypeIdentifiers,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.oakamil.olive;
 				PRODUCT_NAME = "$(TARGET_NAME)";

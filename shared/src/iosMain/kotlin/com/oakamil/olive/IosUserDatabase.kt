@@ -53,6 +53,7 @@ class IosUserDatabase : UserDatabase {
 
     private val mutex = NativeMutex()
     private var db: CPointer<sqlite3>? = null
+    private var inTransaction = false
 
     private fun resolveDbPath(): String? {
         val fm = NSFileManager.defaultManager
@@ -254,14 +255,38 @@ class IosUserDatabase : UserDatabase {
         database: CPointer<sqlite3>,
         block: () -> Boolean
     ) {
+        if (inTransaction) {
+            block()
+            return
+        }
         if (!execSimple(database, "BEGIN IMMEDIATE;")) return
+        inTransaction = true
         val ok = try {
             block()
         } catch (e: Exception) {
             Log.e(TAG, "Transaction failed: ${e.message}")
             false
+        } finally {
+            inTransaction = false
         }
         execSimple(database, if (ok) "COMMIT;" else "ROLLBACK;")
+    }
+
+    override fun <T> runInTransaction(block: () -> T): T = mutex.withLock {
+        val database = openDatabase() ?: return@withLock block()
+        if (inTransaction) return@withLock block()
+        if (!execSimple(database, "BEGIN IMMEDIATE;")) return@withLock block()
+        inTransaction = true
+        try {
+            val result = block()
+            execSimple(database, "COMMIT;")
+            result
+        } catch (t: Throwable) {
+            execSimple(database, "ROLLBACK;")
+            throw t
+        } finally {
+            inTransaction = false
+        }
     }
 
     override fun reorderManualLists(orderedListIds: List<Long>) {

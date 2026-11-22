@@ -356,4 +356,114 @@ class UserDatabaseTest {
             Locale.setDefault(prevLocale)
         }
     }
+
+    @Test
+    fun csvImportAutoDetectsAllThreeFormatsAndRoundTripsCleanly() {
+        val m42 = CatalogObject(
+            id = 42,
+            catalogLabel = "M",
+            catalogEntry = "42",
+            ra = 83.8221,
+            dec = -5.3911,
+            constellation = "Ori",
+            objectType = "Nebula",
+            broadCategory = "Nebula",
+            magnitude = 4.0,
+            surfaceBrightness = null,
+            angularSize = "85' × 60'",
+            commonName = "Orion Nebula",
+            description = null,
+            copyright = null
+        )
+
+        // 1. Single observing list round-trip (with UTF-8 BOM & CRLF)
+        val singleCsv = "\uFEFF" + UserDatabase.buildManualListCsv(listOf(ResolvedListEntry(m42)))
+            .replace("\n", "\r\n")
+        val parsedSingle = ObservingListCsv.parse(singleCsv)!!
+        assertEquals(CsvImportFormat.SINGLE_LIST, parsedSingle.format)
+        assertEquals(1, parsedSingle.rows.size)
+        assertEquals("Orion Nebula", parsedSingle.rows[0].name)
+        assertEquals("M42", parsedSingle.rows[0].designation)
+        assertEquals(83.8221, parsedSingle.rows[0].raDeg!!, 1e-4)
+        assertEquals(-5.3911, parsedSingle.rows[0].decDeg!!, 1e-4)
+
+        // 2. Full observing lists export round-trip (preserves list order, quotes, formula-escaped names)
+        val fullCsv = UserDatabase.buildAllManualListsCsv(
+            listOf(
+                "Winter, \"Favorites\"" to listOf(ResolvedListEntry(m42)),
+                "=Special List" to listOf(ResolvedListEntry(m42))
+            )
+        )
+        val parsedFull = ObservingListCsv.parse(fullCsv)!!
+        assertEquals(CsvImportFormat.FULL_LISTS, parsedFull.format)
+        assertEquals(2, parsedFull.rows.size)
+        assertEquals("Winter, \"Favorites\"", parsedFull.rows[0].listName)
+        assertEquals("=Special List", parsedFull.rows[1].listName)
+
+        // 3. Observation log round-trip (multi-line notes, formula-neutralized notes, negative coords, sub-second ms)
+        val obsBaseTimeMs = LocalDateTime(2026, 11, 20, 22, 30).toInstant(TimeZone.UTC)
+            .toEpochMilliseconds()
+        val obs = ObservationRecord(
+            id = 1L,
+            catalogLabel = "M",
+            catalogEntry = "42",
+            targetName = "Orion Nebula",
+            objectType = "Nebula",
+            raDeg = 83.8221,
+            decDeg = -5.3911,
+            observedAtMs = obsBaseTimeMs + 456L,
+            observingNight = "2026-11-20",
+            latDeg = 37.24,
+            lonDeg = -121.88,
+            altDeg = 45.2,
+            azDeg = 140.5,
+            notes = "- faint core, \"crisp\"\nO-III helped"
+        )
+        val obsCsv = UserDatabase.buildObservationsCsv(listOf(obs))
+        val parsedObs = ObservingListCsv.parse(obsCsv)!!
+        assertEquals(CsvImportFormat.OBSERVATIONS, parsedObs.format)
+        assertEquals(1, parsedObs.rows.size)
+        assertEquals(obsBaseTimeMs, parsedObs.rows[0].observedAtMs)
+        assertEquals(obs.observedAtMs / 1000L, parsedObs.rows[0].observedAtMs!! / 1000L)
+        assertEquals("2026-11-20", parsedObs.rows[0].observingNight)
+        assertEquals("- faint core, \"crisp\"\nO-III helped", parsedObs.rows[0].notes)
+        assertEquals(-121.88, parsedObs.rows[0].lonDeg!!, 1e-4)
+
+        // 4. Header-only CSV returns empty rows (not unrecognized format); invalid/empty returns null
+        val headerOnly = ObservingListCsv.parse(
+            "Name,Designation,Type,RA (J2000 deg),Dec (J2000 deg)\n"
+        )!!
+        assertEquals(CsvImportFormat.SINGLE_LIST, headerOnly.format)
+        assertTrue(headerOnly.rows.isEmpty())
+        assertEquals(null, ObservingListCsv.parse(""))
+        assertEquals(null, ObservingListCsv.parse("Foo,Bar\n1,2\n"))
+    }
+
+    @Test
+    fun parseCatalogDesignationHandlesCompactSpacedAndUnprefixedForms() {
+        assertEquals("M" to "31", CatalogDatabase.parseCatalogDesignation("M31"))
+        assertEquals("M" to "31", CatalogDatabase.parseCatalogDesignation("M031"))
+        assertEquals("NGC" to "224", CatalogDatabase.parseCatalogDesignation("NGC 224"))
+        assertEquals("NGC" to "205A", CatalogDatabase.parseCatalogDesignation("NGC205A"))
+        assertEquals("Col" to "399", CatalogDatabase.parseCatalogDesignation("Col399"))
+        assertEquals("Sh2" to "155", CatalogDatabase.parseCatalogDesignation("Sh2 155"))
+        assertEquals("Sh2" to "155", CatalogDatabase.parseCatalogDesignation("Sh2-155"))
+        assertEquals("B" to "33", CatalogDatabase.parseCatalogDesignation("B 33"))
+        assertEquals("RDS" to "STF 738", CatalogDatabase.parseCatalogDesignation("RDS STF 738"))
+        assertEquals(
+            "Solar System" to "Moon",
+            CatalogDatabase.parseCatalogDesignation("Solar System Moon")
+        )
+        assertEquals(
+            "Asteroid" to "1 Ceres",
+            CatalogDatabase.parseCatalogDesignation("Asteroid 1 Ceres")
+        )
+        assertEquals(
+            "Comet" to "1P/Halley",
+            CatalogDatabase.parseCatalogDesignation("Comet 1P/Halley")
+        )
+        assertEquals(null, CatalogDatabase.parseCatalogDesignation("Jupiter"))
+        assertEquals(null, CatalogDatabase.parseCatalogDesignation("Sirius"))
+        assertEquals(null, CatalogDatabase.parseCatalogDesignation(""))
+    }
 }

@@ -436,6 +436,17 @@
     <string name="cd_export_csv">Export CSV</string>
     <string name="cd_export_all_lists">Export all observing lists</string>
     <string name="cd_export_all_observations">Export all observations</string>
+    <string name="cd_import_csv">Import CSV</string>
+    <string name="format_imported_list_name">Imported %1$s</string>
+    <string name="msg_imported_single_list">Imported %1$d objects</string>
+    <string name="msg_imported_full_lists">Imported %1$d lists (%2$d objects)</string>
+    <string name="msg_imported_observations">Imported %1$d observations</string>
+    <string name="msg_imported_observations_with_dups">Imported %1$d observations (%2$d duplicates skipped)</string>
+    <string name="msg_import_already_exists">All entries already exist</string>
+    <string name="msg_import_no_valid_rows">No valid objects or observations found in CSV</string>
+    <string name="msg_import_unsupported_format">Unrecognized CSV format</string>
+    <string name="msg_import_file_too_large">CSV file is too large to import</string>
+    <string name="msg_import_read_failed">Could not read selected file</string>
     <string name="title_observation_time_location">Time &amp; Location</string>
     <string name="label_date_time">Date &amp; Time</string>
     <string name="error_time_in_future">Time cannot be in the future</string>

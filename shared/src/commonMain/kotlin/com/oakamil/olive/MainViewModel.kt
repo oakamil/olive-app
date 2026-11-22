@@ -1071,11 +1071,299 @@ open class MainViewModel(
         if (observationIds.isEmpty()) return
         runUserDbWrite {
             withContext(Dispatchers.IO) {
-                for (id in observationIds) {
-                    userDb.deleteObservation(id)
+                userDb.runInTransaction {
+                    for (id in observationIds) {
+                        userDb.deleteObservation(id)
+                    }
                 }
             }
             refreshUserDataLocked()
+        }
+    }
+
+    data class CsvImportResult(
+        val format: CsvImportFormat,
+        val primaryListId: Long?,
+        val latestImportedNight: String?,
+        val listsTouched: Int,
+        val objectsAdded: Int,
+        val duplicateObjectsSkipped: Int,
+        val observationsAdded: Int,
+        val duplicateObservationsSkipped: Int
+    )
+
+    private fun epochSeconds(ms: Long): Long =
+        if (ms >= 0L) ms / 1000L else (ms - 999L) / 1000L
+
+    private fun addTargetsToList(listId: Long, refs: List<TargetRef>): Pair<Int, Int> {
+        var added = 0
+        var duplicates = 0
+        for (ref in refs) {
+            if (userDb.addObjectToList(listId, ref)) {
+                added++
+            } else {
+                duplicates++
+            }
+        }
+        return added to duplicates
+    }
+
+    suspend fun importParsedCsv(
+        parsed: ParsedCsvImport,
+        singleListName: String,
+        lat: Double?,
+        lon: Double?
+    ): CsvImportResult = runUserDbWrite {
+        val result = withContext(Dispatchers.IO) {
+            val resolvedRows = resolveImportedRows(parsed.rows, lat, lon)
+            var primaryListId: Long? = null
+            var latestNight: String? = null
+            var listsTouched = 0
+            var objectsAdded = 0
+            var duplicateObjectsSkipped = 0
+            var observationsAdded = 0
+            var duplicateObservationsSkipped = 0
+
+            userDb.runInTransaction {
+                when (parsed.format) {
+                    CsvImportFormat.SINGLE_LIST -> {
+                        val validRefs = resolvedRows.mapNotNull { it.second }
+                        if (validRefs.isNotEmpty()) {
+                            val listId = userDb.createManualList(singleListName)
+                            if (listId > 0L) {
+                                primaryListId = listId
+                                listsTouched = 1
+                                val (added, dups) = addTargetsToList(listId, validRefs)
+                                objectsAdded += added
+                                duplicateObjectsSkipped += dups
+                            }
+                        }
+                    }
+
+                    CsvImportFormat.FULL_LISTS -> {
+                        val grouped = LinkedHashMap<String, MutableList<TargetRef>>()
+                        for ((row, ref) in resolvedRows) {
+                            val listName = row.listName?.trim().orEmpty()
+                            if (listName.isNotEmpty() && ref != null) {
+                                grouped.getOrPut(listName) { mutableListOf() }.add(ref)
+                            }
+                        }
+                        val existingByName =
+                            userDb.getManualLists().associateBy { it.name }.toMutableMap()
+                        for ((listName, refs) in grouped) {
+                            val existingId = existingByName[listName]?.id
+                            val wasNewList = existingId == null
+                            val listId = existingId
+                                ?: userDb.createManualList(listName).also { newId ->
+                                    if (newId > 0L) {
+                                        existingByName[listName] = ObservingListSummary(
+                                            id = newId,
+                                            name = listName,
+                                            itemCount = 0,
+                                            sortOrder = existingByName.size
+                                        )
+                                    }
+                                }
+                            if (listId <= 0L) continue
+                            val (added, dups) = addTargetsToList(listId, refs)
+                            objectsAdded += added
+                            duplicateObjectsSkipped += dups
+                            if (wasNewList || added > 0) {
+                                if (primaryListId == null) primaryListId = listId
+                                listsTouched++
+                            }
+                        }
+                    }
+
+                    CsvImportFormat.OBSERVATIONS -> {
+                        val seenKeys = userDb.getAllObservations()
+                            .mapTo(HashSet()) {
+                                Triple(it.objectKey, epochSeconds(it.observedAtMs), it.notes.trim())
+                            }
+                        for ((row, ref) in resolvedRows) {
+                            val ts = row.observedAtMs ?: continue
+                            if (ref == null) continue
+                            val trimmedNotes = row.notes.trim()
+                            val dedupKey = Triple(ref.objectKey, epochSeconds(ts), trimmedNotes)
+                            if (!seenKeys.add(dedupKey)) {
+                                duplicateObservationsSkipped++
+                                continue
+                            }
+                            val nightKey =
+                                row.observingNight ?: UserDatabase.computeObservingNightKey(ts)
+                            val insertedId = userDb.insertObservation(
+                                target = ref,
+                                observedAtMs = ts,
+                                observingNight = nightKey,
+                                latDeg = row.latDeg,
+                                lonDeg = row.lonDeg,
+                                altDeg = row.altDeg,
+                                azDeg = row.azDeg,
+                                notes = trimmedNotes
+                            )
+                            if (insertedId > 0L) {
+                                observationsAdded++
+                                val prevNight = latestNight
+                                if (prevNight == null || nightKey > prevNight) {
+                                    latestNight = nightKey
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            CsvImportResult(
+                format = parsed.format,
+                primaryListId = primaryListId,
+                latestImportedNight = latestNight,
+                listsTouched = listsTouched,
+                objectsAdded = objectsAdded,
+                duplicateObjectsSkipped = duplicateObjectsSkipped,
+                observationsAdded = observationsAdded,
+                duplicateObservationsSkipped = duplicateObservationsSkipped
+            )
+        }
+        if (result.primaryListId != null) {
+            lastSelectedObservingListId = result.primaryListId
+        }
+        if (result.listsTouched > 0 || result.observationsAdded > 0) {
+            refreshUserDataLocked()
+        }
+        result
+    }
+
+    private fun resolveImportedRows(
+        rows: List<ParsedCsvRow>,
+        lat: Double?,
+        lon: Double?
+    ): List<Pair<ParsedCsvRow, TargetRef?>> {
+        if (rows.isEmpty()) return emptyList()
+        val parsedPairs = rows.map { row ->
+            if (row.designation.isNotBlank()) {
+                CatalogDatabase.parseCatalogDesignation(row.designation)
+            } else {
+                CatalogDatabase.parseCatalogDesignation(row.name)
+            }
+        }
+
+        val staticQueryPairs = LinkedHashSet<Pair<String, String>>()
+        var needsDynamic = false
+
+        rows.forEachIndexed { idx, row ->
+            val pair = parsedPairs[idx]
+            if (pair != null) {
+                if (pair.first in CatalogDatabase.DYNAMIC_CATALOG_LABELS) {
+                    needsDynamic = true
+                } else {
+                    staticQueryPairs.add(pair)
+                }
+            } else {
+                if (row.designation.isNotBlank()) {
+                    staticQueryPairs.add("Str" to row.designation)
+                    needsDynamic = true
+                }
+                if (row.name.isNotBlank()) {
+                    staticQueryPairs.add("Str" to row.name)
+                    needsDynamic = true
+                }
+            }
+        }
+
+        val staticByKey = HashMap<String, CatalogObject>()
+        if (staticQueryPairs.isNotEmpty()) {
+            for (obj in catalogDb.getObjectsByDesignations(staticQueryPairs.toList())) {
+                staticByKey[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
+            }
+        }
+
+        val dynamicByKey = HashMap<String, CatalogObject>()
+        val dynamicByNameLower = HashMap<String, CatalogObject>()
+        if (needsDynamic) {
+            val sun = AstrometryUtils.getSun(Clock.System.now().toEpochMilliseconds())
+            val allDynamic =
+                listOf(sun) + getPlanets(lat, lon) + getAsteroids(lat, lon) + getComets(lat, lon)
+            for (obj in allDynamic) {
+                dynamicByKey[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
+                dynamicByNameLower.getOrPut(obj.catalogEntry.lowercase()) { obj }
+                dynamicByNameLower.getOrPut(obj.displayName.lowercase()) { obj }
+            }
+        }
+
+        return rows.mapIndexed { idx, row ->
+            val pair = parsedPairs[idx]
+            val matchedObj = when {
+                pair != null -> {
+                    val key = UserDatabase.objectKey(pair.first, pair.second)
+                    staticByKey[key]
+                        ?: dynamicByKey[key]
+                        ?: if (pair.first in CatalogDatabase.DYNAMIC_CATALOG_LABELS) {
+                            dynamicByNameLower[pair.second.lowercase()]
+                        } else {
+                            null
+                        }
+                }
+
+                else -> {
+                    val desLower = row.designation.lowercase()
+                    val nameLower = row.name.lowercase()
+                    dynamicByNameLower[desLower]
+                        ?: dynamicByNameLower[nameLower]
+                        ?: staticByKey[UserDatabase.objectKey("Str", row.designation)]
+                        ?: staticByKey[UserDatabase.objectKey("Str", row.name)]
+                }
+            }
+
+            val ref = when {
+                matchedObj != null -> UserDatabase.targetRefFrom(
+                    catalogObject = matchedObj,
+                    coords = matchedObj.ra to matchedObj.dec,
+                    fallbackTitle = matchedObj.displayName
+                )
+
+                row.raDeg != null && row.decDeg != null -> {
+                    val fallbackTitle = row.name.ifBlank {
+                        row.designation.ifBlank {
+                            "${pureFormat("%.4f", row.raDeg)}, ${pureFormat("%.4f", row.decDeg)}"
+                        }
+                    }
+                    val preservedDynamicLabel = when (row.objectType) {
+                        "Sun" -> "Solar System"
+                        "Planet", "Moon" -> "Planet"
+                        "Asteroid", "Comet" -> row.objectType
+                        else -> null
+                    }
+                    when {
+                        pair != null -> TargetRef(
+                            catalogLabel = pair.first,
+                            catalogEntry = pair.second,
+                            name = fallbackTitle,
+                            objectType = row.objectType.ifBlank { pair.first },
+                            raDeg = row.raDeg,
+                            decDeg = row.decDeg
+                        )
+
+                        preservedDynamicLabel != null &&
+                                (row.designation.isNotBlank() || row.name.isNotBlank()) -> TargetRef(
+                            catalogLabel = preservedDynamicLabel,
+                            catalogEntry = row.designation.ifBlank { row.name },
+                            name = fallbackTitle,
+                            objectType = row.objectType,
+                            raDeg = row.raDeg,
+                            decDeg = row.decDeg
+                        )
+
+                        else -> UserDatabase.targetRefFrom(
+                            catalogObject = null,
+                            coords = row.raDeg to row.decDeg,
+                            fallbackTitle = fallbackTitle
+                        )
+                    }
+                }
+
+                else -> null
+            }
+            row to ref
         }
     }
 
@@ -1203,6 +1491,8 @@ open class MainViewModel(
             }
         }
         if (needsPlanets) {
+            val sun = AstrometryUtils.getSun(Clock.System.now().toEpochMilliseconds())
+            result[UserDatabase.objectKey(sun.catalogLabel, sun.catalogEntry)] = sun
             for (obj in getPlanets(lat, lon)) {
                 result[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
             }
