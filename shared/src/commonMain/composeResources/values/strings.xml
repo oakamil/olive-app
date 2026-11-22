@@ -44,16 +44,15 @@
     <!-- Buttons -->
     <string name="btn_camera_mode">Camera Mode</string>
 
-    <string name="btn_stop_engine">Stop Engine</string>
+    <string name="btn_stop_engine">Stop</string>
     <string name="btn_stop">Stop</string>
-    <string name="btn_start_engine">Start Engine</string>
+    <string name="btn_start_engine">Start</string>
     <string name="btn_stopping">Stopping …</string>
     <string name="btn_starting">Starting …</string>
     <string name="btn_continue">Continue</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_save">Save</string>
     <string name="btn_refresh">Refresh</string>
-    <string name="btn_entering_pip">Entering PIP …</string>
 
     <!-- Control labels -->
     <string name="label_star_sensitivity">Star Sensitivity</string>
@@ -216,6 +215,7 @@
     <string name="cat_sac_asterisms">SAC Asterisms</string>
     <string name="type_asteroid">Asteroid</string>
     <string name="type_comet">Comet</string>
+    <string name="type_custom">Custom</string>
     <string name="label_camera_settings">Camera Settings</string>
     <string name="info_camera_settings">In Auto mode the engine dynamically chooses the camera settings including effective exposure. &lt;br&gt;&lt;br&gt;The app automatically saves successful Auto settings for the phone\'s internal camera. Use the reset button to clear these saved settings and start over if they are no longer working.</string>
     <string name="label_camera_format">Camera Frame Rate</string>
@@ -363,7 +363,7 @@
     <string name="cd_zoom_in">Zoom In</string>
     <string name="cd_zoom_out">Zoom Out</string>
 
-    <string name="btn_pip">Picture\nin Picture</string>
+    <string name="btn_pip">Picture in Picture</string>
     <string name="cd_focus_decrease">Decrease Focus</string>
     <string name="cd_focus_increase">Increase Focus</string>
     <string name="filter_visibility_above_horizon">Above Horizon</string>
@@ -378,4 +378,71 @@
     <string name="mag_large_scope">Large Scope (&lt; 15)</string>
     <string name="format_fps">%1$d fps</string>
     <string name="default_camera_label">Camera 0</string>
+
+    <!-- Observing Lists & Observation Logging -->
+    <string name="btn_lists">Lists</string>
+    <string name="title_observing_lists">Observing Lists</string>
+    <string name="section_manual_lists">Manual Lists</string>
+    <string name="section_past_sessions">Past Sessions</string>
+    <string name="btn_new_list">New List</string>
+    <string name="title_new_list">New Observing List</string>
+    <string name="title_rename_list">Rename List</string>
+    <string name="title_delete_list">Delete List</string>
+    <string name="msg_delete_list">Delete \"%1$s\" and remove all objects from this list? Logged observations will not be deleted.</string>
+    <string name="label_list_name">List Name</string>
+    <string name="placeholder_list_name">e.g. Spring Galaxies</string>
+    <string name="btn_delete">Delete</string>
+    <string name="btn_clear">Clear</string>
+    <string name="btn_undo">Undo</string>
+    <string name="btn_done">Done</string>
+    <string name="btn_edit">Edit</string>
+    <string name="cd_open_lists_menu">Open lists menu</string>
+    <string name="cd_reorder">Reorder</string>
+    <string name="cd_rename">Rename</string>
+    <string name="cd_delete">Delete</string>
+    <string name="cd_voice_input">Voice input</string>
+    <string name="cd_stop_voice_input">Stop voice input</string>
+    <string name="cd_observed">Observed</string>
+    <string name="status_no_lists">No observing lists yet</string>
+    <string name="status_empty_list">This list has no objects yet</string>
+    <string name="hint_add_from_object_info">Open any object\'s info popup to add it to a list.</string>
+    <string name="msg_removed_from_list">Removed %1$s</string>
+    <string name="sort_list_order">List Order</string>
+    <string name="sort_observation_time">Observation Time</string>
+    <string name="filter_observed">Observed</string>
+    <string name="filter_observed_all">All</string>
+    <string name="filter_observed_unobserved">Unobserved</string>
+    <string name="filter_observed_only">Observed</string>
+    <string name="btn_log">Log</string>
+    <string name="format_observations_header">Observations (%1$d)</string>
+    <string name="title_log_observation">Log Observation</string>
+    <string name="title_edit_observation">Edit Observation</string>
+    <string name="title_delete_observation">Delete Observation</string>
+    <string name="msg_delete_observation">Delete this observation entry?</string>
+    <string name="label_observation_notes">Notes</string>
+    <string name="placeholder_observation_notes">Tap mic to dictate or tap here to type…</string>
+    <string name="status_listening">Listening…</string>
+    <string name="status_tap_mic_to_dictate">Tap mic to dictate</string>
+    <string name="status_voice_unavailable">Voice dictation unavailable on this device</string>
+    <string name="title_mic_permission_required">Microphone Permission</string>
+    <string name="desc_mic_permission_required">Microphone and speech recognition permissions are required for voice-to-text dictation. Please enable them in Settings.</string>
+    <string name="format_obs_time_count">%1$s · %2$d logs</string>
+    <string name="status_logged_without_notes">Logged without notes</string>
+    <string name="btn_add_objects">Add</string>
+    <string name="title_add_to_list">Add to %1$s</string>
+    <string name="hint_search_catalog_to_add">Search catalog to add objects…</string>
+    <string name="format_in_lists_header">Observing Lists (%1$d)</string>
+    <string name="msg_delete_night_observations">Delete logged observation(s) of %1$s from %2$s?</string>
+    <string name="cd_open_list">Open list</string>
+    <string name="cd_export_csv">Export CSV</string>
+    <string name="title_observation_time_location">Time &amp; Location</string>
+    <string name="label_date_time">Date &amp; Time</string>
+    <string name="error_time_in_future">Time cannot be in the future</string>
+    <string name="label_am">AM</string>
+    <string name="label_pm">PM</string>
+    <string name="placeholder_year">YYYY</string>
+    <string name="placeholder_month">MM</string>
+    <string name="placeholder_day">DD</string>
+    <string name="placeholder_hour">HH</string>
+    <string name="placeholder_minute">MM</string>
 </resources>

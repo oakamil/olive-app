@@ -22,8 +22,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 private enum class LocField { LAT_DEG, LAT_FRAC, LON_DEG, LON_FRAC }
 
@@ -38,27 +36,15 @@ fun LocationInputDialog(
         MainViewModel.isValidCoordinate(initialLat, initialLon)
     ) Pair(initialLat, initialLon) else null
 
-    val totalLatHundredths = validInitial?.let { (abs(it.first) * 100.0).roundToInt() }
-    var isNorth by remember { mutableStateOf(validInitial == null || validInitial.first >= 0) }
-    var latDeg by remember {
-        mutableStateOf(totalLatHundredths?.let { (it / 100).toString() } ?: "")
-    }
-    var latFrac by remember {
-        mutableStateOf(totalLatHundredths?.let {
-            (it % 100).toString().padStart(2, '0')
-        } ?: "")
-    }
+    val initLat = remember(validInitial) { splitDecimalDegrees(validInitial?.first) }
+    var isNorth by remember { mutableStateOf(initLat.isPositive) }
+    var latDeg by remember { mutableStateOf(initLat.wholeDeg) }
+    var latFrac by remember { mutableStateOf(initLat.fracDeg) }
 
-    val totalLonHundredths = validInitial?.let { (abs(it.second) * 100.0).roundToInt() }
-    var isEast by remember { mutableStateOf(validInitial == null || validInitial.second >= 0) }
-    var lonDeg by remember {
-        mutableStateOf(totalLonHundredths?.let { (it / 100).toString() } ?: "")
-    }
-    var lonFrac by remember {
-        mutableStateOf(totalLonHundredths?.let {
-            (it % 100).toString().padStart(2, '0')
-        } ?: "")
-    }
+    val initLon = remember(validInitial) { splitDecimalDegrees(validInitial?.second) }
+    var isEast by remember { mutableStateOf(initLon.isPositive) }
+    var lonDeg by remember { mutableStateOf(initLon.wholeDeg) }
+    var lonFrac by remember { mutableStateOf(initLon.fracDeg) }
 
     var focusedField by remember { mutableStateOf(LocField.LAT_DEG) }
 
@@ -220,16 +206,8 @@ fun LocationInputDialog(
 
             Button(
                 onClick = {
-                    val dLat = latDeg.toIntOrNull() ?: 0
-                    val fLat = latFrac.padEnd(2, '0').toIntOrNull() ?: 0
-                    var lat = (dLat + fLat / 100.0f).coerceIn(0.0f, 90.0f)
-                    if (!isNorth) lat = -lat
-
-                    val dLon = lonDeg.toIntOrNull() ?: 0
-                    val fLon = lonFrac.padEnd(2, '0').toIntOrNull() ?: 0
-                    var lon = (dLon + fLon / 100.0f).coerceIn(0.0f, 180.0f)
-                    if (!isEast) lon = -lon
-
+                    val lat = combineDecimalDegrees(latDeg, latFrac, isNorth, 90).toFloat()
+                    val lon = combineDecimalDegrees(lonDeg, lonFrac, isEast, 180).toFloat()
                     onSave(lat, lon)
                     onDismiss()
                 },

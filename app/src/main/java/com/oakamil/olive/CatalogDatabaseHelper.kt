@@ -341,6 +341,34 @@ class CatalogDatabaseHelper(
         }
     }
 
+    override fun getObjectsByDesignations(
+        keys: Collection<Pair<String, String>>
+    ): List<CatalogObject> {
+        if (keys.isEmpty()) return emptyList()
+        val uniqueKeys = keys.distinct()
+        val results = mutableListOf<CatalogObject>()
+        return try {
+            synchronized(dbLock) {
+                openDatabaseLocked()
+                val database = db ?: return emptyList()
+                for (chunk in uniqueKeys.chunked(200)) {
+                    val sql = CatalogDatabase.buildDesignationsQuerySql(chunk.size)
+                    val args = Array<Any>(chunk.size * 2) { idx ->
+                        val pair = chunk[idx / 2]
+                        if (idx % 2 == 0) pair.first else pair.second
+                    }
+                    database.rawQuery(sql, args).use { cursor ->
+                        results.addAll(readCatalogObjects(cursor))
+                    }
+                }
+                results
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error querying objects by designation", e)
+            results
+        }
+    }
+
     private fun readCatalogObjects(c: Cursor): List<CatalogObject> {
         val results = mutableListOf<CatalogObject>()
         while (c.moveToNext()) {

@@ -149,6 +149,28 @@ SettingsManager(
             ?: "Nearest Objects"
         set(value) = storage.putString("catalog_selected_category", value)
 
+    var lastSelectedObservingListId: Long
+        get() = storage.getString("last_selected_observing_list_id", null)?.toLongOrNull() ?: -1L
+        set(value) {
+            if (value > 0L) {
+                storage.putString("last_selected_observing_list_id", value.toString())
+            } else {
+                storage.remove("last_selected_observing_list_id")
+            }
+        }
+
+    var listsSortBy: String
+        get() = storage.getString("lists_sort_by", "list_order") ?: "list_order"
+        set(value) = storage.putString("lists_sort_by", value)
+
+    var listsVisibilityFilter: String
+        get() = storage.getString("lists_visibility_filter", "All Objects") ?: "All Objects"
+        set(value) = storage.putString("lists_visibility_filter", value)
+
+    var listsObservedFilter: String
+        get() = storage.getString("lists_observed_filter", "All") ?: "All"
+        set(value) = storage.putString("lists_observed_filter", value)
+
     var landscapeKeyboardOnRight: Boolean
         get() = storage.getBoolean("landscape_keyboard_on_right", true)
         set(value) = storage.putBoolean("landscape_keyboard_on_right", value)
