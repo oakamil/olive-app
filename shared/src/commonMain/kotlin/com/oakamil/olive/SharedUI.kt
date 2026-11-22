@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -65,6 +66,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift.Companion.Superscript
 import androidx.compose.ui.text.style.TextAlign
@@ -330,6 +333,20 @@ fun InfoPopup(
 ) {
     val onUserInteraction = LocalOnUserInteraction.current
     val extColors = LocalOliveExtendedColors.current
+    val windowController = LocalPlatformWindowController.current
+    val windowSize = LocalWindowInfo.current.containerSize
+    val dialogPadding = 24.dp
+    val verticalInsetPx = remember(windowSize, windowController) {
+        windowController.getSystemBarsVerticalInsetPx()
+    }
+    val maxCardHeight = if (windowSize.height > 0) {
+        val availableHeightPx = (windowSize.height - verticalInsetPx).coerceAtLeast(0)
+        with(LocalDensity.current) {
+            (availableHeightPx.toDp() - (dialogPadding * 2 + 1.dp)).coerceAtLeast(160.dp)
+        }
+    } else {
+        Dp.Unspecified
+    }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -339,8 +356,9 @@ fun InfoPopup(
             color = MaterialTheme.colorScheme.surfaceContainer,
             contentColor = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
-                .padding(24.dp)
+                .padding(dialogPadding)
                 .widthIn(min = 200.dp, max = 440.dp)
+                .heightIn(max = maxCardHeight)
                 .then(if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier)
                 .border(
                     1.dp,

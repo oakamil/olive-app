@@ -95,7 +95,7 @@ fun MainScreen(
     }
 
     val isLowPowerMode = viewModel.isLowPowerMode
-    val lowPowerTimeoutSeconds = settingsManager.lowPowerTimeoutSeconds
+    val lowPowerTimeoutSeconds = viewModel.lowPowerTimeoutSeconds
     val lastInteractionTimeMs = remember {
         LongArray(1) { Clock.System.now().toEpochMilliseconds() }
     }

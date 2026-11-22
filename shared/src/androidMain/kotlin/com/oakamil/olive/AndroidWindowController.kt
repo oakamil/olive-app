@@ -8,11 +8,14 @@ import android.hardware.camera2.CameraManager
 import android.os.Build
 import android.provider.Settings
 import android.view.Surface
+import android.view.WindowInsets
 import android.view.WindowManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 
 class AndroidWindowController(private val activity: Activity) : PlatformWindowController {
     override var isLandscape: Boolean by mutableStateOf(
@@ -69,7 +72,7 @@ class AndroidWindowController(private val activity: Activity) : PlatformWindowCo
     }
 
     override fun getDisplayRotationDegrees(): Int =
-        rotationDegrees.let { readDisplayRotationDegrees() }
+        readDisplayRotationDegrees()
 
     private fun readDisplayRotationDegrees(): Int {
         val rotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -103,5 +106,21 @@ class AndroidWindowController(private val activity: Activity) : PlatformWindowCo
         } else {
             activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+    }
+
+    override fun getSystemBarsVerticalInsetPx(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val insets = activity.windowManager.currentWindowMetrics.windowInsets
+                .getInsetsIgnoringVisibility(
+                    WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
+                )
+            return insets.top + insets.bottom
+        }
+        val decorView = activity.window?.decorView ?: return 0
+        val insets = ViewCompat.getRootWindowInsets(decorView)
+            ?.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            ) ?: return 0
+        return insets.top + insets.bottom
     }
 }

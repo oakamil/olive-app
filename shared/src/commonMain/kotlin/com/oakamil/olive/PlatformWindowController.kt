@@ -11,6 +11,7 @@ interface PlatformWindowController {
     fun getDisplayRotationDegrees(): Int
     fun getCameraSensorOrientation(cameraId: String): Int
     fun setKeepScreenOn(keepOn: Boolean)
+    fun getSystemBarsVerticalInsetPx(): Int = 0
 }
 
 val LocalPlatformWindowController = staticCompositionLocalOf<PlatformWindowController> {
