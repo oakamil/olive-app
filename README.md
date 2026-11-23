@@ -42,18 +42,20 @@ Core solving and tracking crates live in separate repositories:
 
 ### 1. Clone Repositories
 
-Both Android and iOS Rust crates currently reference `olive-engine` as a sibling directory next to `olive-app` (`olive-solve` is fetched automatically by Cargo from GitHub):
+Both Android and iOS Rust crates currently reference `olive-engine` as a sibling directory next to `olive-app`, and `olive-engine`'s `DummyCamera` embeds sample sky fixtures from a sibling `olive-solve` checkout:
 
 ```bash
 git clone https://github.com/oakamil/olive-app.git
 git clone https://github.com/oakamil/olive-engine.git
+git clone https://github.com/oakamil/olive-solve.git
 ```
 
 Directory layout:
 ```text
 parent-dir/
 ├── olive-app/
-└── olive-engine/
+├── olive-engine/
+└── olive-solve/
 ```
 
 ### 2. Android

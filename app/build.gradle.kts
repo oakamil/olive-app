@@ -159,12 +159,19 @@ tasks.register<Exec>("cargoBuild") {
     )
     val cargoProgram = resolveExecutable("CARGO", "$userHome/.cargo/bin/cargo")
     val siblingEngineDir = rootProject.projectDir.parentFile?.resolve("olive-engine")
+    val siblingSolveDir = rootProject.projectDir.parentFile?.resolve("olive-solve")
 
     doFirst {
         if (siblingEngineDir == null || !siblingEngineDir.isDirectory) {
             throw GradleException(
                 "Missing sibling repository '../olive-engine' (expected at ${siblingEngineDir?.absolutePath}). " +
                     "Clone it alongside olive-app: git clone https://github.com/oakamil/olive-engine.git ../olive-engine"
+            )
+        }
+        if (siblingSolveDir == null || !siblingSolveDir.isDirectory) {
+            throw GradleException(
+                "Missing sibling repository '../olive-solve' (expected at ${siblingSolveDir?.absolutePath}, required for olive-engine DummyCamera fixtures). " +
+                    "Clone it alongside olive-app: git clone https://github.com/oakamil/olive-solve.git ../olive-solve"
             )
         }
         if (!File(ndkDir).isDirectory) {

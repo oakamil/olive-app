@@ -19,18 +19,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout olive-app
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: olive-app
 
       - name: Checkout sibling olive-engine
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: oakamil/olive-engine
           path: olive-engine
 
+      - name: Checkout sibling olive-solve (sample fixtures embedded by olive-engine DummyCamera)
+        uses: actions/checkout@v7
+        with:
+          repository: oakamil/olive-solve
+          path: olive-solve
+
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
@@ -40,16 +46,16 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
-      - name: Install ninja
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
 
       - name: Install cargo-ndk
-        uses: taiki-e/install-action@cargo-ndk
+        run: cargo binstall --no-confirm cargo-ndk
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Run Android unit tests & release APK build
         working-directory: olive-app
@@ -60,18 +66,24 @@ jobs:
     runs-on: macos-15
     steps:
       - name: Checkout olive-app
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: olive-app
 
       - name: Checkout sibling olive-engine
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: oakamil/olive-engine
           path: olive-engine
 
+      - name: Checkout sibling olive-solve (sample fixtures embedded by olive-engine DummyCamera)
+        uses: actions/checkout@v7
+        with:
+          repository: oakamil/olive-solve
+          path: olive-solve
+
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
@@ -82,7 +94,7 @@ jobs:
           targets: aarch64-apple-ios-sim
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Build Xcode Simulator app (embeds KMP Shared framework & Rust olive-ios)
         working-directory: olive-app
