@@ -56,6 +56,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -98,9 +99,12 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -140,6 +144,14 @@ object SkyMapTuning {
     const val MAX_DSO_LABELS = 25
 }
 
+private data class SkyQueryKey(
+    val azGrid: Int,
+    val altGrid: Int,
+    val fovGrid: Int,
+    val lstGrid: Int,
+    val precessionYearBucket: Int
+)
+
 @OptIn(FlowPreview::class)
 @Composable
 fun SkyMapView(
@@ -162,7 +174,7 @@ fun SkyMapView(
     val lon = if (hasValidLocation && rawLon != null) rawLon else 0.0
 
     val is24Hour = is24HourFormat()
-    var currentTimeMs by remember { mutableStateOf(Clock.System.now().toEpochMilliseconds()) }
+    var liveTimeMs by remember { mutableLongStateOf(Clock.System.now().toEpochMilliseconds()) }
     var timeString by remember(is24Hour) {
         val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
         mutableStateOf(formatSystemTime(now, is24Hour))
@@ -171,16 +183,17 @@ fun SkyMapView(
         while (isActive) {
             val nowInstant = Clock.System.now()
             val nowMs = nowInstant.toEpochMilliseconds()
-            if (nowMs - currentTimeMs >= 10_000L) {
-                currentTimeMs = nowMs
+            if (abs(nowMs - liveTimeMs) >= 10_000L) {
+                liveTimeMs = nowMs
             }
             val now = nowInstant.toLocalDateTime(TimeZone.currentSystemDefault())
             timeString = formatSystemTime(now, is24Hour)
             delay(1000)
         }
     }
-    val lst = remember(lon, currentTimeMs) {
-        if (hasValidLocation) AstrometryUtils.calculateLST(lon, currentTimeMs) else 0.0
+    val effectiveTimeMs = viewModel.effectiveSkyTimeMs(liveTimeMs)
+    val horizontalFrame = remember(lat, lon, effectiveTimeMs, hasValidLocation) {
+        resolveSkyHorizontalFrame(hasValidLocation, lat, lon, effectiveTimeMs)
     }
 
     fun getAlignmentPointRaDec(): Pair<Double, Double>? {
@@ -217,7 +230,7 @@ fun SkyMapView(
     val initialAltAz = remember {
         val alignCoord = getAlignmentPointRaDec()
         if (alignCoord != null) {
-            AstrometryUtils.raDecToAltAz(alignCoord.first, alignCoord.second, lat, lst)
+            horizontalFrame.raDecToAltAz(alignCoord.first, alignCoord.second)
         } else {
             Pair(viewModel.skyMapCenterAz ?: 180.0, viewModel.skyMapCenterAlt ?: 45.0)
         }
@@ -244,17 +257,14 @@ fun SkyMapView(
         stats.isMirrored,
         stats.isImuEstimate,
         viewModel.skyMapCameraLocked,
-        lat,
-        lst
+        horizontalFrame
     ) {
         if (viewModel.skyMapCameraLocked) {
             val alignCoord = getAlignmentPointRaDec()
             if (alignCoord != null) {
-                val (az, alt) = AstrometryUtils.raDecToAltAz(
+                val (az, alt) = horizontalFrame.raDecToAltAz(
                     alignCoord.first,
-                    alignCoord.second,
-                    lat,
-                    lst
+                    alignCoord.second
                 )
                 val curAz = viewModel.skyMapCenterAz
                 val curAlt = viewModel.skyMapCenterAlt
@@ -269,9 +279,9 @@ fun SkyMapView(
         }
     }
 
-    LaunchedEffect(viewModel.skyMapCenterTarget, lat, lst) {
+    LaunchedEffect(viewModel.skyMapCenterTarget, horizontalFrame) {
         val target = viewModel.skyMapCenterTarget ?: return@LaunchedEffect
-        val (az, alt) = AstrometryUtils.raDecToAltAz(target.first, target.second, lat, lst)
+        val (az, alt) = horizontalFrame.raDecToAltAz(target.first, target.second)
         viewModel.skyMapCenterAz = az
         viewModel.skyMapCenterAlt = alt
         viewModel.skyMapCameraLocked = false
@@ -289,26 +299,46 @@ fun SkyMapView(
     val textMeasurer = rememberTextMeasurer(cacheSize = 256)
     val catalogPainters = rememberCatalogPainters()
 
-    // Solar system ephemeris: load asynchronously off the main thread and refresh on location/comet updates
+    // Solar system ephemeris: load asynchronously off the main thread and refresh on time/location/comet updates
     var solPlanets by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     var solComets by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     var solAsteroids by remember { mutableStateOf<List<CatalogObject>>(emptyList()) }
     LaunchedEffect(lat, lon, hasValidLocation, viewModel.cometsRefreshVersion) {
-        if (hasValidLocation) {
-            while (isActive) {
-                val (planets, comets, asteroids) = withContext(Dispatchers.IO) {
-                    Triple(
-                        viewModel.getPlanets(lat, lon),
-                        viewModel.getComets(lat, lon),
-                        viewModel.getAsteroids(lat, lon)
-                    )
-                }
-                solPlanets = planets
-                solComets = comets
-                solAsteroids = asteroids
-                delay(300_000)
-            }
+        if (!hasValidLocation) return@LaunchedEffect
+        var isInitialEmission = true
+        snapshotFlow {
+            val liveBucket = (liveTimeMs / 300_000L) * 300_000L
+            if (viewModel.isEngineRunning) liveBucket else (viewModel.simulatedTimeMs ?: liveBucket)
         }
+            .distinctUntilChanged()
+            .debounce {
+                if (isInitialEmission) {
+                    @Suppress("AssignedValueIsNeverRead")
+                    isInitialEmission = false
+                    0L
+                } else {
+                    250L
+                }
+            }
+            .collectLatest { epochMs ->
+                val planets = withContext(Dispatchers.IO) {
+                    viewModel.getPlanets(lat, lon, epochMs)
+                }
+                currentCoroutineContext().ensureActive()
+                solPlanets = planets
+
+                val comets = withContext(Dispatchers.IO) {
+                    viewModel.getComets(lat, lon, epochMs)
+                }
+                currentCoroutineContext().ensureActive()
+                solComets = comets
+
+                val asteroids = withContext(Dispatchers.IO) {
+                    viewModel.getAsteroids(lat, lon, epochMs)
+                }
+                currentCoroutineContext().ensureActive()
+                solAsteroids = asteroids
+            }
     }
 
     // Dismiss popups on Back button
@@ -316,11 +346,25 @@ fun SkyMapView(
     var showFullStats by remember { mutableStateOf(false) }
     var showTelescopeControlInfo by remember { mutableStateOf(false) }
     var showTargetPopup by remember { mutableStateOf(false) }
+    var showTimeBar by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    var selectedTimeStep by remember { mutableStateOf(SkyTimeStep.ONE_HOUR) }
 
     var targetObject by remember(
         stats.targetRa,
         stats.targetDec
     ) { mutableStateOf<CatalogObject?>(null) }
+
+    LaunchedEffect(viewModel.simulatedTimeMs) {
+        selectedObject = null
+    }
+
+    LaunchedEffect(viewModel.isEngineRunning, viewModel.isLowPowerMode) {
+        if (viewModel.isEngineRunning || viewModel.isLowPowerMode) {
+            showTimeBar = false
+            showTimePicker = false
+        }
+    }
 
     LaunchedEffect(viewModel.isLowPowerMode) {
         if (viewModel.isLowPowerMode) {
@@ -380,12 +424,13 @@ fun SkyMapView(
         }
     }
 
-    BackHandler(enabled = selectedObject != null || showTargetPopup || showFullStats || showTelescopeControlInfo) {
+    BackHandler(enabled = selectedObject != null || showTargetPopup || showFullStats || showTelescopeControlInfo || showTimeBar) {
         when {
             showTelescopeControlInfo -> showTelescopeControlInfo = false
             showFullStats -> showFullStats = false
             showTargetPopup -> showTargetPopup = false
             selectedObject != null -> selectedObject = null
+            showTimeBar -> showTimeBar = false
         }
     }
 
@@ -493,7 +538,7 @@ fun SkyMapView(
     val isAllTypes =
         currentTypeFilters.isEmpty() || currentTypeFilters == DEFAULT_CATALOG_TYPE_FILTERS
 
-    val currentLst by rememberUpdatedState(lst)
+    val currentFrame by rememberUpdatedState(horizontalFrame)
 
     val effectiveMagLimit by remember(currentMagLimit) {
         derivedStateOf {
@@ -515,7 +560,7 @@ fun SkyMapView(
     val targetRa = stats.targetRa
     val targetDec = stats.targetDec
 
-    val sunEpochBucket = currentTimeMs / 60_000L
+    val sunEpochBucket = effectiveTimeMs / 60_000L
 
     // Pre-filter, sort, and partition candidates outside the Canvas draw loop to avoid allocations at 60fps
     val (visibleNonStarCandidates, visibleStarCandidates) = remember(
@@ -599,35 +644,35 @@ fun SkyMapView(
         Pair(nonStars, stars)
     }
 
-    val nonStarAltAz = remember(visibleNonStarCandidates, lat, lst) {
+    val nonStarAltAz = remember(visibleNonStarCandidates, horizontalFrame) {
         val arr = DoubleArray(visibleNonStarCandidates.size * 2)
         for (i in visibleNonStarCandidates.indices) {
             val obj = visibleNonStarCandidates[i]
-            val (az, alt) = AstrometryUtils.raDecToAltAz(obj.ra, obj.dec, lat, lst)
+            val (az, alt) = horizontalFrame.raDecToAltAz(obj.ra, obj.dec)
             arr[i * 2] = az
             arr[i * 2 + 1] = alt
         }
         arr
     }
 
-    val starAltAz = remember(visibleStarCandidates, lat, lst) {
+    val starAltAz = remember(visibleStarCandidates, horizontalFrame) {
         val arr = DoubleArray(visibleStarCandidates.size * 2)
         for (i in visibleStarCandidates.indices) {
             val obj = visibleStarCandidates[i]
-            val (az, alt) = AstrometryUtils.raDecToAltAz(obj.ra, obj.dec, lat, lst)
+            val (az, alt) = horizontalFrame.raDecToAltAz(obj.ra, obj.dec)
             arr[i * 2] = az
             arr[i * 2 + 1] = alt
         }
         arr
     }
 
-    val constellationLineAltAz = remember(lat, lst) {
+    val constellationLineAltAz = remember(horizontalFrame) {
         val lines = ConstellationData.LINES
         val arr = DoubleArray(lines.size * 4)
         for (i in lines.indices) {
             val line = lines[i]
-            val (az1, alt1) = AstrometryUtils.raDecToAltAz(line.ra1, line.dec1, lat, lst)
-            val (az2, alt2) = AstrometryUtils.raDecToAltAz(line.ra2, line.dec2, lat, lst)
+            val (az1, alt1) = horizontalFrame.raDecToAltAz(line.ra1, line.dec1)
+            val (az2, alt2) = horizontalFrame.raDecToAltAz(line.ra2, line.dec2)
             val base = i * 4
             arr[base] = az1
             arr[base + 1] = alt1
@@ -637,12 +682,12 @@ fun SkyMapView(
         arr
     }
 
-    val constellationCenterAltAz = remember(lat, lst) {
+    val constellationCenterAltAz = remember(horizontalFrame) {
         val constells = ConstellationData.CONSTELLATIONS
         val arr = DoubleArray(constells.size * 2)
         for (i in constells.indices) {
             val c = constells[i]
-            val (az, alt) = AstrometryUtils.raDecToAltAz(c.centerRa, c.centerDec, lat, lst)
+            val (az, alt) = horizontalFrame.raDecToAltAz(c.centerRa, c.centerDec)
             arr[i * 2] = az
             arr[i * 2 + 1] = alt
         }
@@ -718,6 +763,13 @@ fun SkyMapView(
             lon,
             hasValidLocation
         ) {
+            fun currentHorizontalFrame(): SkyHorizontalFrame = resolveSkyHorizontalFrame(
+                hasValidLocation,
+                lat,
+                lon,
+                viewModel.effectiveSkyTimeMs(liveTimeMs)
+            )
+
             snapshotFlow {
                 val az = viewModel.skyMapCenterAz ?: initialAltAz.first
                 val alt = viewModel.skyMapCenterAlt ?: initialAltAz.second
@@ -728,7 +780,19 @@ fun SkyMapView(
                 val fovGrid = floor(
                     ln(currentFov.coerceAtLeast(0.5)) / ln(1.15)
                 ).toInt()
-                Triple(azGrid, altGrid, fovGrid)
+                val epochMs = viewModel.effectiveSkyTimeMs(liveTimeMs)
+                val lstDeg = if (hasValidLocation) {
+                    AstrometryUtils.calculateLST(lon, epochMs)
+                } else {
+                    0.0
+                }
+                val lstGrid = floor(lstDeg / stepSize).toInt()
+                val precessionYearBucket = if (hasValidLocation) {
+                    floor(epochMs / (365.0 * 86_400_000.0)).toInt()
+                } else {
+                    0
+                }
+                SkyQueryKey(azGrid, altGrid, fovGrid, lstGrid, precessionYearBucket)
             }
                 .debounce(30.milliseconds)
                 .collectLatest {
@@ -736,7 +800,7 @@ fun SkyMapView(
                     val alt = viewModel.skyMapCenterAlt ?: initialAltAz.second
                     val currentFov = viewModel.skyMapFov
                     if (currentFov < 60.0) {
-                        val (ra, dec) = AstrometryUtils.altAzToRaDec(az, alt, lat, currentLst)
+                        val (ra, dec) = currentHorizontalFrame().altAzToRaDec(az, alt)
                         val stepSize = maxOf(0.1, currentFov * 0.15)
                         val cornerRadius = SkyMapProjection.cornerRadiusDeg(
                             currentFov,
@@ -855,8 +919,7 @@ fun SkyMapView(
                     drawScope = this,
                     tileManager = hipsTileManager,
                     projection = projection,
-                    latDeg = lat,
-                    lstDeg = currentLst,
+                    frame = currentFrame,
                     hasValidLocation = hasValidLocation,
                     isNightVision = viewModel.currentTheme != "blue"
                 )
@@ -1118,7 +1181,13 @@ fun SkyMapView(
                     imageAspect = aspect
                 )
                 val cornerPoints =
-                    corners.mapNotNull { projection.toScreenRaDec(it.first, it.second, lat, lst) }
+                    corners.mapNotNull {
+                        projection.toScreenRaDec(
+                            it.first,
+                            it.second,
+                            currentFrame
+                        )
+                    }
                 if (cornerPoints.size == 4) {
                     val p0 = cornerPoints[0]
                     val p1 = cornerPoints[1]
@@ -1188,7 +1257,7 @@ fun SkyMapView(
                     val rawTargetPxY = (stats.targetPixelY ?: (cameraFrame.height / 2.0)).toFloat()
                     matrix.map(Offset(rawTargetPxX, rawTargetPxY))
                 } else if (camRa != null && camDec != null) {
-                    val pt = projection.toScreenRaDecOffset(camRa, camDec, lat, lst)
+                    val pt = projection.toScreenRaDecOffset(camRa, camDec, currentFrame)
                     if (pt.isSpecified) pt else null
                 } else null
 
@@ -1217,8 +1286,7 @@ fun SkyMapView(
                 size.width,
                 size.height,
                 hasValidLocation,
-                lat,
-                lst,
+                currentFrame,
                 visibleNonStarCandidates,
                 visibleStarCandidates,
                 targetRa,
@@ -1339,12 +1407,10 @@ fun SkyMapView(
                 for (i in 0 until placedCatalogItems.size) {
                     val item = placedCatalogItems[i]
                     placedCatalogObjIds.add(item.obj.id)
-                    val isAbove = !hasValidLocation || AstrometryUtils.raDecToAltAz(
+                    val isAbove = !hasValidLocation || currentFrame.isAboveHorizon(
                         item.obj.ra,
-                        item.obj.dec,
-                        lat,
-                        lst
-                    ).second >= 0.0
+                        item.obj.dec
+                    )
                     placedCatalogIsAbove.add(isAbove)
                 }
 
@@ -1554,7 +1620,7 @@ fun SkyMapView(
             val targetRa = stats.targetRa
             val targetDec = stats.targetDec
             if (viewModel.isEngineRunning && targetRa != null && targetDec != null) {
-                val tPt = projection.toScreenRaDecOffset(targetRa, targetDec, lat, lst)
+                val tPt = projection.toScreenRaDecOffset(targetRa, targetDec, currentFrame)
                 if (tPt.isSpecified) {
                     val s = 14f
                     val stroke = 2.dp.toPx()
@@ -1611,7 +1677,7 @@ fun SkyMapView(
 
                     // Guide line from camera boresight/alignment reticle to target
                     val guideStart = alignPt ?: if (camRa != null && camDec != null) {
-                        val pt = projection.toScreenRaDecOffset(camRa, camDec, lat, lst)
+                        val pt = projection.toScreenRaDecOffset(camRa, camDec, currentFrame)
                         if (pt.isSpecified) pt else null
                     } else null
 
@@ -1630,7 +1696,7 @@ fun SkyMapView(
             // 9. Selected Object Highlight Ring
             val selObj = selectedObject
             if (selObj != null) {
-                val sPt = projection.toScreenRaDecOffset(selObj.ra, selObj.dec, lat, lst)
+                val sPt = projection.toScreenRaDecOffset(selObj.ra, selObj.dec, currentFrame)
                 if (sPt.isSpecified) {
                     drawCircle(
                         color = extColors.selectedRing,
@@ -1695,8 +1761,8 @@ fun SkyMapView(
                         val badgeAz = viewModel.skyMapCenterAz ?: initialAltAz.first
                         val badgeAlt = viewModel.skyMapCenterAlt ?: initialAltAz.second
                         val badgeFov = viewModel.skyMapFov
-                        val (centerRa, centerDec) = remember(badgeAz, badgeAlt, lat, lst) {
-                            AstrometryUtils.altAzToRaDec(badgeAz, badgeAlt, lat, lst)
+                        val (centerRa, centerDec) = remember(badgeAz, badgeAlt, horizontalFrame) {
+                            horizontalFrame.altAzToRaDec(badgeAz, badgeAlt)
                         }
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
@@ -1871,11 +1937,9 @@ fun SkyMapView(
                     OutlinedIconButton(
                         onClick = {
                             viewModel.skyMapCameraLocked = false
-                            val (tAz, tAlt) = AstrometryUtils.raDecToAltAz(
+                            val (tAz, tAlt) = horizontalFrame.raDecToAltAz(
                                 stats.targetRa,
-                                stats.targetDec,
-                                lat,
-                                lst
+                                stats.targetDec
                             )
                             viewModel.skyMapCenterAz = tAz
                             viewModel.skyMapCenterAlt = tAlt
@@ -1910,20 +1974,16 @@ fun SkyMapView(
                         viewModel.skyMapCameraLocked = true
                         val alignCoord = getAlignmentPointRaDec()
                         if (alignCoord != null) {
-                            val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
+                            val (cAz, cAlt) = horizontalFrame.raDecToAltAz(
                                 alignCoord.first,
-                                alignCoord.second,
-                                lat,
-                                lst
+                                alignCoord.second
                             )
                             viewModel.skyMapCenterAz = cAz
                             viewModel.skyMapCenterAlt = cAlt
                         } else if (stats.ra != null && stats.dec != null) {
-                            val (cAz, cAlt) = AstrometryUtils.raDecToAltAz(
+                            val (cAz, cAlt) = horizontalFrame.raDecToAltAz(
                                 stats.ra,
-                                stats.dec,
-                                lat,
-                                lst
+                                stats.dec
                             )
                             viewModel.skyMapCenterAz = cAz
                             viewModel.skyMapCenterAlt = cAlt
@@ -2114,6 +2174,65 @@ fun SkyMapView(
         }
 
 
+        // Overlay Bottom: Sky Time Machine (opposite Zoom +/-, shown only when engine is stopped)
+        if (!viewModel.isEngineRunning) {
+            SkyTimeControlOverlay(
+                isExpanded = showTimeBar,
+                isSimulatedActive = viewModel.isSimulatedTimeActive,
+                effectiveTimeMs = effectiveTimeMs,
+                selectedStep = selectedTimeStep,
+                isReversed = isReversed,
+                is24Hour = is24Hour,
+                onToggleExpanded = {
+                    if (!hasValidLocation) {
+                        viewModel.showLocationDialog = true
+                    } else {
+                        showTimeBar = !showTimeBar
+                    }
+                },
+                onSelectStep = {
+                    @Suppress("AssignedValueIsNeverRead")
+                    selectedTimeStep = it
+                },
+                onStep = { direction ->
+                    val base = viewModel.effectiveSkyTimeMs()
+                    viewModel.setSimulatedTime(
+                        stepSkyTimeMillis(
+                            baseEpochMs = base,
+                            step = selectedTimeStep,
+                            direction = direction
+                        )
+                    )
+                },
+                onOpenPicker = { showTimePicker = true },
+                onResetNow = { viewModel.resetSimulatedTime() },
+                modifier = Modifier
+                    .align(if (isReversed) Alignment.BottomEnd else Alignment.BottomStart)
+                    .padding(
+                        start = if (isReversed) safeStart + 52.dp else safeStart,
+                        end = if (isReversed) hudEnd else hudEnd + 52.dp,
+                        bottom = hudBottom
+                    )
+            )
+        }
+
+        if (showTimePicker && !viewModel.isEngineRunning) {
+            val pickerInitialEpochMs = remember(showTimePicker) { viewModel.effectiveSkyTimeMs() }
+            SkyDateTimePickerDialog(
+                initialEpochMs = pickerInitialEpochMs,
+                is24Hour = is24Hour,
+                onDismiss = {
+                    @Suppress("AssignedValueIsNeverRead")
+                    showTimePicker = false
+                },
+                onApply = { epochMs ->
+                    viewModel.setSimulatedTime(epochMs)
+                    @Suppress("AssignedValueIsNeverRead")
+                    showTimePicker = false
+                }
+            )
+        }
+
         // Selected Object Info Popup
         val obj = selectedObject
         if (obj != null) {
@@ -2121,14 +2240,13 @@ fun SkyMapView(
                 coords = obj.ra to obj.dec,
                 catalogObject = obj,
                 viewModel = viewModel,
-                timeMs = currentTimeMs,
+                timeMs = effectiveTimeMs,
                 onDismiss = { selectedObject = null },
                 altAz = calculateOptionalAltAz(
                     viewModel.hasValidLocation,
                     obj.ra,
                     obj.dec,
-                    lat,
-                    lst
+                    horizontalFrame
                 ),
             )
         }
@@ -2140,14 +2258,13 @@ fun SkyMapView(
                 coords = coords,
                 catalogObject = targetObject,
                 viewModel = viewModel,
-                timeMs = currentTimeMs,
+                timeMs = effectiveTimeMs,
                 onDismiss = { showTargetPopup = false },
                 altAz = calculateOptionalAltAz(
                     viewModel.hasValidLocation,
                     coords.first,
                     coords.second,
-                    lat,
-                    lst
+                    horizontalFrame
                 ),
             )
         }
@@ -2187,14 +2304,24 @@ fun SkyMapView(
     }
 }
 
+private fun resolveSkyHorizontalFrame(
+    hasValidLocation: Boolean,
+    lat: Double,
+    lon: Double,
+    epochMs: Long
+): SkyHorizontalFrame = if (hasValidLocation) {
+    AstrometryUtils.horizontalFrame(lat, lon, epochMs)
+} else {
+    SkyHorizontalFrame.unprecessed(0.0, 0.0)
+}
+
 private fun calculateOptionalAltAz(
     hasValidLocation: Boolean,
     raDeg: Double,
     decDeg: Double,
-    lat: Double,
-    lst: Double,
+    frame: SkyHorizontalFrame,
 ): AltAz? = if (hasValidLocation) {
-    AstrometryUtils.calculateAltAz(raDeg, decDeg, lat, lst)
+    frame.calculateAltAz(raDeg, decDeg)
 } else {
     null
 }

@@ -134,7 +134,14 @@ class HiPSTest {
 
         val skyProj = SkyMapProjection(centerAz, centerAlt, fov, width, height)
         val eqProj = EqToScreenProjector().apply {
-            configure(centerAz, centerAlt, fov, width, height, lat, lst)
+            configure(
+                centerAz,
+                centerAlt,
+                fov,
+                width,
+                height,
+                SkyHorizontalFrame.unprecessed(lat, lst)
+            )
         }
 
         val coords = FloatArray(2)
@@ -1070,7 +1077,7 @@ class HiPSTest {
             val seen1 = AtomicInteger(0)
             val keys10 = IntArray(10) { i -> Healpix.packTileKey(7, 200 + i) }
             val slowBackend1 = object : HiPSLocalBackend by diskBackend {
-                override suspend fun fetchUrlBytes(url: String): ByteArray? {
+                override suspend fun fetchUrlBytes(url: String): ByteArray {
                     val n = seen1.incrementAndGet()
                     if (n == 1) return fakeJpeg(n, size = 200)
                     gate.await()

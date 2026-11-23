@@ -457,4 +457,26 @@
     <string name="placeholder_day">DD</string>
     <string name="placeholder_hour">HH</string>
     <string name="placeholder_minute">MM</string>
+
+    <!-- Sky Map Time Machine -->
+    <string name="cd_sky_time">Sky Time</string>
+    <string name="cd_step_time_back">Step time backward</string>
+    <string name="cd_step_time_forward">Step time forward</string>
+    <string name="cd_edit_sky_time">Edit sky time</string>
+    <string name="btn_now">Now</string>
+    <string name="btn_apply">Apply</string>
+    <string name="title_set_sky_time">Set Sky Time</string>
+    <string name="step_unit_1m">1m</string>
+    <string name="step_unit_1h">1h</string>
+    <string name="step_unit_1d">1d</string>
+    <string name="step_unit_1mo">1mo</string>
+    <string name="step_unit_1y">1y</string>
+    <string name="cd_step_unit_1m">1 minute</string>
+    <string name="cd_step_unit_1h">1 hour</string>
+    <string name="cd_step_unit_1d">1 day</string>
+    <string name="cd_step_unit_1mo">1 month</string>
+    <string name="cd_step_unit_1y">1 year</string>
+    <string name="format_simulated_sky_time">Sky time: %1$s</string>
+    <string name="error_sky_time_range">Supported years: %1$d–%2$d</string>
+    <string name="error_invalid_date_time">Enter a valid date and time</string>
 </resources>

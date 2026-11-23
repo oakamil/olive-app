@@ -104,8 +104,8 @@ fun ObjectHiPSPreview(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            when {
-                dlState is HiPSHqDownloadState.Downloading && dlState.targetId == targetId -> {
+            when (dlState) {
+                is HiPSHqDownloadState.Downloading if dlState.targetId == targetId -> {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(vertical = 8.dp)
@@ -128,7 +128,7 @@ fun ObjectHiPSPreview(
                     }
                 }
 
-                dlState is HiPSHqDownloadState.Failed && dlState.targetId == targetId -> {
+                is HiPSHqDownloadState.Failed if dlState.targetId == targetId -> {
                     Text(
                         text = hipsFailureMessage(dlState.reason),
                         style = MaterialTheme.typography.bodySmall,
@@ -182,23 +182,20 @@ fun ObjectHiPSPreview(
     val rawLat = viewModel.currentLat
     val rawLon = viewModel.currentLon
     val useTopocentric = viewModel.hasValidLocation && rawLat != null && rawLon != null
-    val effectiveLat = if (useTopocentric) rawLat else 90.0
-    // Intentionally excludes timeMs so live clock ticks do not reset user pan/zoom orientation.
-    val effectiveLst = remember(useTopocentric, rawLon, catalogObject) {
-        if (useTopocentric) AstrometryUtils.calculateLST(rawLon, timeMs) else 0.0
+    // Intentionally excludes live timeMs ticks so user pan/zoom orientation does not reset.
+    val previewFrame = remember(useTopocentric, rawLat, rawLon, catalogObject) {
+        if (useTopocentric) {
+            AstrometryUtils.horizontalFrame(rawLat, rawLon, timeMs)
+        } else {
+            SkyHorizontalFrame.unprecessed(90.0, 0.0)
+        }
     }
     val (objAz, objAlt) = remember(
         catalogObject.ra,
         catalogObject.dec,
-        effectiveLat,
-        effectiveLst
+        previewFrame
     ) {
-        AstrometryUtils.raDecToAltAz(
-            catalogObject.ra,
-            catalogObject.dec,
-            effectiveLat,
-            effectiveLst
-        )
+        previewFrame.raDecToAltAz(catalogObject.ra, catalogObject.dec)
     }
 
     val maxZoom = if (useMultiOrderHealpix) {
@@ -307,9 +304,12 @@ fun ObjectHiPSPreview(
                             } else {
                                 zoom = DOUBLE_TAP_ZOOM
                             }
+                            @Suppress("AssignedValueIsNeverRead")
                             lastTapMs = -10_000L
                         } else {
+                            @Suppress("AssignedValueIsNeverRead")
                             lastTapMs = nowMs
+                            @Suppress("AssignedValueIsNeverRead")
                             lastTapPos = down.position
                         }
                     }
@@ -328,8 +328,7 @@ fun ObjectHiPSPreview(
                         viewportWidth = size.width,
                         viewportHeight = size.height
                     ),
-                    latDeg = effectiveLat,
-                    lstDeg = effectiveLst,
+                    frame = previewFrame,
                     hasValidLocation = false,
                     isNightVision = isNightVision
                 )
@@ -343,8 +342,7 @@ fun ObjectHiPSPreview(
                     centerAzDeg = panAz,
                     centerAltDeg = panAlt,
                     fovDeg = currentFovDeg,
-                    latDeg = effectiveLat,
-                    lstDeg = effectiveLst,
+                    frame = previewFrame,
                     isNightVision = isNightVision
                 )
             }
@@ -434,20 +432,17 @@ fun panAndClampZenithUp(
     // Local camera basis in (North, East, Up) matching EqToScreenProjector
     val fn = cosAlt0 * cosAz0
     val fe = cosAlt0 * sinAz0
-    val fu = sinAlt0
 
     val rn = -sinAz0
-    val re = cosAz0
 
     val un = -sinAlt0 * cosAz0
     val ue = -sinAlt0 * sinAz0
-    val uu = cosAlt0
 
     val stepX = -deltaX.toDouble() / scale
     val stepY = deltaY.toDouble() / scale
     var vn = fn + stepX * rn + stepY * un
-    var ve = fe + stepX * re + stepY * ue
-    var vu = fu + stepY * uu
+    var ve = fe + stepX * cosAz0 + stepY * ue
+    var vu = sinAlt0 + stepY * cosAlt0
     val norm = sqrt(vn * vn + ve * ve + vu * vu).coerceAtLeast(1e-12)
     vn /= norm
     ve /= norm

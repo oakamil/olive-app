@@ -65,7 +65,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Clock
 
 @Composable
 fun ListNameDialog(
@@ -380,17 +379,18 @@ internal fun AddObjectsToListDialog(
     var isLoading by remember { mutableStateOf(false) }
     var previewObj by remember { mutableStateOf<CatalogObject?>(null) }
 
-    LaunchedEffect(searchQuery, viewModel.cometsRefreshVersion) {
+    LaunchedEffect(searchQuery, viewModel.cometsRefreshVersion, viewModel.simulatedTimeMs) {
         isLoading = true
         val query = searchQuery.trim()
         val lat = viewModel.currentLat
         val lon = viewModel.currentLon
+        val timeMs = viewModel.effectiveSkyTimeMs()
         results = withContext(Dispatchers.IO) {
             val dynamicMatches = buildList {
                 val allDynamic =
-                    viewModel.getPlanets(lat, lon) +
-                            viewModel.getAsteroids(lat, lon) +
-                            viewModel.getComets(lat, lon)
+                    viewModel.getPlanets(lat, lon, timeMs) +
+                            viewModel.getAsteroids(lat, lon, timeMs) +
+                            viewModel.getComets(lat, lon, timeMs)
                 for (obj in allDynamic) {
                     if (query.isEmpty() ||
                         obj.displayName.contains(query, ignoreCase = true) ||
@@ -406,7 +406,8 @@ internal fun AddObjectsToListDialog(
                 sortBy = "catalog ID",
                 visibilityFilter = "All Objects",
                 limit = 200,
-                offset = 0
+                offset = 0,
+                currentTimeMs = timeMs
             )
             if (query.isEmpty()) {
                 (dynamicMatches.take(12) + sqlMatches)
@@ -452,6 +453,14 @@ internal fun AddObjectsToListDialog(
                     }
                 }
             )
+
+            val activeSimulatedTimeMs = viewModel.simulatedTimeMs
+            if (viewModel.isSimulatedTimeActive && activeSimulatedTimeMs != null) {
+                SimulatedTimeBanner(
+                    epochMs = activeSimulatedTimeMs,
+                    onResetNow = { viewModel.resetSimulatedTime() }
+                )
+            }
 
             NightVisionSearchBar(
                 value = queryValue,
@@ -606,11 +615,11 @@ internal fun AddObjectsToListDialog(
 
     val preview = previewObj
     if (preview != null) {
-        val nowMs = Clock.System.now().toEpochMilliseconds()
+        val timeMs = remember(preview, viewModel.simulatedTimeMs) { viewModel.effectiveSkyTimeMs() }
         val lat = viewModel.currentLat
         val lon = viewModel.currentLon
         val altAz = if (viewModel.hasValidLocation && lat != null && lon != null) {
-            AstrometryUtils.calculateAltAz(preview.ra, preview.dec, lat, lon, nowMs)
+            AstrometryUtils.calculateAltAz(preview.ra, preview.dec, lat, lon, timeMs)
         } else {
             null
         }
@@ -618,7 +627,7 @@ internal fun AddObjectsToListDialog(
             coords = preview.ra to preview.dec,
             catalogObject = preview,
             viewModel = viewModel,
-            timeMs = nowMs,
+            timeMs = timeMs,
             onDismiss = {
                 @Suppress("AssignedValueIsNeverRead")
                 previewObj = null

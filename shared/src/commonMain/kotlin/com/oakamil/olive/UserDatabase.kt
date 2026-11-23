@@ -275,21 +275,13 @@ interface UserDatabase {
             timeZone: TimeZone = TimeZone.currentSystemDefault(),
             amLabel: String = "AM",
             pmLabel: String = "PM"
-        ): String {
-            val dt = Instant.fromEpochMilliseconds(timestampMs).toLocalDateTime(timeZone)
-            val year = dt.year.toString().padStart(4, '0')
-            val month = dt.monthNumber.toString().padStart(2, '0')
-            val day = dt.dayOfMonth.toString().padStart(2, '0')
-            return "$year-$month-$day ${
-                formatObservationTimeOnly(
-                    timestampMs = timestampMs,
-                    is24Hour = is24Hour,
-                    timeZone = timeZone,
-                    amLabel = amLabel,
-                    pmLabel = pmLabel
-                )
-            }"
-        }
+        ): String = formatSkyDateTime(
+            epochMs = timestampMs,
+            is24Hour = is24Hour,
+            amLabel = amLabel,
+            pmLabel = pmLabel,
+            timeZone = timeZone
+        )
 
         /** Formats local clock time as `HH:MM` (24h) or `h:MM AM/PM` (12h). */
         fun formatObservationTimeOnly(
@@ -298,21 +290,13 @@ interface UserDatabase {
             timeZone: TimeZone = TimeZone.currentSystemDefault(),
             amLabel: String = "AM",
             pmLabel: String = "PM"
-        ): String {
-            val dt = Instant.fromEpochMilliseconds(timestampMs).toLocalDateTime(timeZone)
-            val minute = dt.minute.toString().padStart(2, '0')
-            return if (is24Hour) {
-                val hour = dt.hour.toString().padStart(2, '0')
-                "$hour:$minute"
-            } else {
-                val amPm = if (dt.hour < 12) amLabel else pmLabel
-                val hour12 = when (val h = dt.hour % 12) {
-                    0 -> 12
-                    else -> h
-                }
-                "$hour12:$minute $amPm"
-            }
-        }
+        ): String = formatLocalTimeOnly(
+            epochMs = timestampMs,
+            is24Hour = is24Hour,
+            timeZone = timeZone,
+            amLabel = amLabel,
+            pmLabel = pmLabel
+        )
 
         /** Formats exact UTC timestamp in ISO-8601 (`YYYY-MM-DDTHH:MM:SSZ`) for CSV export. */
         fun formatObservationUtcIso(timestampMs: Long): String {

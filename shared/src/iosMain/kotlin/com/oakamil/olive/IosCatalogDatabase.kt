@@ -313,7 +313,8 @@ class IosCatalogDatabase(
         targetDec: Double?,
         maxDistanceDegrees: Double?,
         limit: Int,
-        offset: Int
+        offset: Int,
+        currentTimeMs: Long
     ): List<CatalogObject> = mutex.withLock {
         val database = openDatabase() ?: return@withLock emptyList()
         val (sql, args) = CatalogDatabase.buildSearchQuerySql(
@@ -332,6 +333,7 @@ class IosCatalogDatabase(
             maxDistanceDegrees = maxDistanceDegrees,
             limit = limit,
             offset = offset,
+            currentTimeMs = currentTimeMs,
         )
 
         executeCatalogQuery(database, sql) { stmt ->

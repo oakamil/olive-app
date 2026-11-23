@@ -52,11 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
-import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toInstant
-import kotlinx.datetime.toLocalDateTime
 
 private enum class ObservationMetaField {
     YEAR, MONTH, DAY, HOUR, MINUTE, LAT_DEG, LAT_FRAC, LON_DEG, LON_FRAC
@@ -470,13 +466,6 @@ fun LogObservationDialog(
     VoicePermissionDeniedDialog(voiceController)
 }
 
-private fun daysInMonth(year: Int, month: Int): Int = when (month) {
-    1, 3, 5, 7, 8, 10, 12 -> 31
-    4, 6, 9, 11 -> 30
-    2 -> if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) 29 else 28
-    else -> 30
-}
-
 @Composable
 private fun ObservationMetadataDialog(
     initialTimestampMs: Long,
@@ -488,24 +477,16 @@ private fun ObservationMetadataDialog(
 ) {
     val extColors = LocalOliveExtendedColors.current
     val tz = remember { TimeZone.currentSystemDefault() }
-    val initialDt = remember(initialTimestampMs) {
-        Instant.fromEpochMilliseconds(initialTimestampMs).toLocalDateTime(tz)
+    val initParts = remember(initialTimestampMs, is24Hour) {
+        epochMsToDateTimeParts(initialTimestampMs, is24Hour, tz)
     }
 
-    var yearStr by remember { mutableStateOf(initialDt.year.toString().padStart(4, '0')) }
-    var monthStr by remember { mutableStateOf(initialDt.monthNumber.toString().padStart(2, '0')) }
-    var dayStr by remember { mutableStateOf(initialDt.dayOfMonth.toString().padStart(2, '0')) }
-    var isPm by remember { mutableStateOf(initialDt.hour >= 12) }
-    var hourStr by remember {
-        val h = if (is24Hour) {
-            initialDt.hour
-        } else {
-            val h12 = initialDt.hour % 12
-            if (h12 == 0) 12 else h12
-        }
-        mutableStateOf(h.toString().padStart(2, '0'))
-    }
-    var minuteStr by remember { mutableStateOf(initialDt.minute.toString().padStart(2, '0')) }
+    var yearStr by remember { mutableStateOf(initParts.year) }
+    var monthStr by remember { mutableStateOf(initParts.month) }
+    var dayStr by remember { mutableStateOf(initParts.day) }
+    var isPm by remember { mutableStateOf(initParts.isPm) }
+    var hourStr by remember { mutableStateOf(initParts.hour) }
+    var minuteStr by remember { mutableStateOf(initParts.minute) }
 
     val hasValidInitLoc = MainViewModel.isValidCoordinate(initialLatDeg, initialLonDeg) &&
             initialLatDeg != null && initialLonDeg != null
@@ -531,42 +512,34 @@ private fun ObservationMetadataDialog(
     }
 
     fun appendDigit(current: String, char: Char, maxLen: Int, maxValue: Int): String {
-        val base = if (replaceOnNextDigit) "" else current
-        val next = (base + char)
-        if (next.length > maxLen) return current
-        val parsed = next.toIntOrNull() ?: return current
-        return if (parsed <= maxValue) {
-            @Suppress("AssignedValueIsNeverRead")
-            replaceOnNextDigit = false
-            next
-        } else {
-            current
-        }
+        val (next, nextReplace) = appendBoundedDigits(
+            current = current,
+            char = char,
+            replaceExisting = replaceOnNextDigit,
+            maxLen = maxLen,
+            maxValue = maxValue
+        )
+        @Suppress("AssignedValueIsNeverRead")
+        replaceOnNextDigit = nextReplace
+        return next
     }
 
     val parsedTimestampMs: Long? = run {
         val y = yearStr.toIntOrNull() ?: return@run null
         val m = monthStr.toIntOrNull() ?: return@run null
         val d = dayStr.toIntOrNull() ?: return@run null
-        if (y < 1 || m !in 1..12 || d !in 1..daysInMonth(y, m)) return@run null
         val rawHour = hourStr.toIntOrNull() ?: return@run null
-        val h24 = if (is24Hour) {
-            if (rawHour !in 0..23) return@run null
-            rawHour
-        } else {
-            if (rawHour !in 1..12) return@run null
-            when {
-                !isPm && rawHour == 12 -> 0
-                isPm && rawHour == 12 -> 12
-                isPm -> rawHour + 12
-                else -> rawHour
-            }
-        }
         val min = minuteStr.toIntOrNull() ?: return@run null
-        if (min !in 0..59) return@run null
-        runCatching {
-            LocalDateTime(y, m, d, h24, min).toInstant(tz).toEpochMilliseconds()
-        }.getOrNull()
+        parseLocalDateTimeMillis(
+            year = y,
+            month = m,
+            day = d,
+            rawHour = rawHour,
+            minute = min,
+            is24Hour = is24Hour,
+            isPm = isPm,
+            timeZone = tz
+        )
     }
     val nowMs = Clock.System.now().toEpochMilliseconds()
     val isInFuture = parsedTimestampMs != null && parsedTimestampMs > nowMs
@@ -626,73 +599,36 @@ private fun ObservationMetadataDialog(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CoordinateBox(
-                    value = yearStr,
-                    isFocused = focusedField == ObservationMetaField.YEAR,
-                    suffix = "",
-                    placeholder = stringResource(Res.string.placeholder_year),
-                    onClick = { focus(ObservationMetaField.YEAR) }
-                )
-                Text("-", color = extColors.secondaryText)
-                CoordinateBox(
-                    value = monthStr,
-                    isFocused = focusedField == ObservationMetaField.MONTH,
-                    suffix = "",
-                    placeholder = stringResource(Res.string.placeholder_month),
-                    onClick = { focus(ObservationMetaField.MONTH) }
-                )
-                Text("-", color = extColors.secondaryText)
-                CoordinateBox(
-                    value = dayStr,
-                    isFocused = focusedField == ObservationMetaField.DAY,
-                    suffix = "",
-                    placeholder = stringResource(Res.string.placeholder_day),
-                    onClick = { focus(ObservationMetaField.DAY) }
-                )
+            val focusedDateTimeField = when (focusedField) {
+                ObservationMetaField.YEAR -> DateTimeInputField.YEAR
+                ObservationMetaField.MONTH -> DateTimeInputField.MONTH
+                ObservationMetaField.DAY -> DateTimeInputField.DAY
+                ObservationMetaField.HOUR -> DateTimeInputField.HOUR
+                ObservationMetaField.MINUTE -> DateTimeInputField.MINUTE
+                else -> null
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CoordinateBox(
-                    value = hourStr,
-                    isFocused = focusedField == ObservationMetaField.HOUR,
-                    suffix = "",
-                    placeholder = stringResource(Res.string.placeholder_hour),
-                    onClick = { focus(ObservationMetaField.HOUR) }
-                )
-                Text(":", color = extColors.secondaryText)
-                CoordinateBox(
-                    value = minuteStr,
-                    isFocused = focusedField == ObservationMetaField.MINUTE,
-                    suffix = "",
-                    placeholder = stringResource(Res.string.placeholder_minute),
-                    onClick = { focus(ObservationMetaField.MINUTE) }
-                )
-                if (!is24Hour) {
-                    Spacer(Modifier.width(4.dp))
-                    Box(
-                        modifier = Modifier
-                            .clickable { isPm = !isPm }
-                            .border(
-                                1.dp,
-                                MaterialTheme.colorScheme.primary,
-                                RoundedCornerShape(4.dp)
-                            )
-                            .padding(horizontal = 10.dp, vertical = 8.dp)
-                    ) {
-                        Text(
-                            text = stringResource(if (isPm) Res.string.label_pm else Res.string.label_am),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
+            DateTimeInputRows(
+                yearStr = yearStr,
+                monthStr = monthStr,
+                dayStr = dayStr,
+                hourStr = hourStr,
+                minuteStr = minuteStr,
+                is24Hour = is24Hour,
+                isPm = isPm,
+                focusedField = focusedDateTimeField,
+                onFocusField = { field ->
+                    focus(
+                        when (field) {
+                            DateTimeInputField.YEAR -> ObservationMetaField.YEAR
+                            DateTimeInputField.MONTH -> ObservationMetaField.MONTH
+                            DateTimeInputField.DAY -> ObservationMetaField.DAY
+                            DateTimeInputField.HOUR -> ObservationMetaField.HOUR
+                            DateTimeInputField.MINUTE -> ObservationMetaField.MINUTE
+                        }
+                    )
+                },
+                onToggleAmPm = { isPm = !isPm }
+            )
 
             Box(
                 modifier = Modifier.height(20.dp),

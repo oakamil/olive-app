@@ -287,7 +287,8 @@ class CatalogDatabaseHelper(
         targetDec: Double?,
         maxDistanceDegrees: Double?,
         limit: Int,
-        offset: Int
+        offset: Int,
+        currentTimeMs: Long
     ): List<CatalogObject> {
         val (sql, args) = CatalogDatabase.buildSearchQuerySql(
             searchQuery = searchQuery,
@@ -305,6 +306,7 @@ class CatalogDatabaseHelper(
             maxDistanceDegrees = maxDistanceDegrees,
             limit = limit,
             offset = offset,
+            currentTimeMs = currentTimeMs,
         )
 
         return try {

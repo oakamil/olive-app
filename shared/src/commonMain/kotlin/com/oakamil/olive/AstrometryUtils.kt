@@ -1,5 +1,7 @@
 package com.oakamil.olive
 
+import androidx.compose.runtime.Immutable
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.asin
@@ -11,7 +13,160 @@ import kotlin.math.round
 import kotlin.math.sin
 import kotlin.math.tan
 
+private const val DEG_TO_RAD = PI / 180.0
+private const val RAD_TO_DEG = 180.0 / PI
+private const val ARCSEC_TO_RAD = PI / (180.0 * 3600.0)
+private const val J2000_EPOCH_MS = 946_728_000_000L
+
+private fun normalizeDeg360(deg: Double): Double = ((deg % 360.0) + 360.0) % 360.0
+
+private fun vectorToRaDec(x: Double, y: Double, z: Double): Pair<Double, Double> {
+    val decDeg = (asin(z.coerceIn(-1.0, 1.0)) * RAD_TO_DEG).coerceIn(-90.0, 90.0)
+    val raDeg = normalizeDeg360(atan2(y, x) * RAD_TO_DEG)
+    return Pair(raDeg, decDeg)
+}
+
 data class AltAz(val alt: Double, val az: Double)
+
+/**
+ * Orthogonal 3x3 IAU 1976 / Lieske (Meeus Ch. 21) equatorial precession matrix `P`
+ * mapping J2000/ICRS unit vectors to Mean Equator and Equinox of Date (`v_date = P * v_J2000`).
+ * Inverse (`date -> J2000`) is the exact transpose `P^T`.
+ */
+private class PrecessionMatrix(
+    private val m00: Double, private val m01: Double, private val m02: Double,
+    private val m10: Double, private val m11: Double, private val m12: Double,
+    private val m20: Double, private val m21: Double, private val m22: Double
+) {
+    fun dateToJ2000(x: Double, y: Double, z: Double): Triple<Double, Double, Double> {
+        if (this === IDENTITY) return Triple(x, y, z)
+        return Triple(
+            m00 * x + m10 * y + m20 * z,
+            m01 * x + m11 * y + m21 * z,
+            m02 * x + m12 * y + m22 * z
+        )
+    }
+
+    companion object {
+        val IDENTITY = PrecessionMatrix(
+            1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0
+        )
+
+        fun forEpochMs(utcTimeMs: Long): PrecessionMatrix {
+            if (utcTimeMs == J2000_EPOCH_MS) return IDENTITY
+            val t = (utcTimeMs - J2000_EPOCH_MS) / (36525.0 * 86_400_000.0)
+            val t2 = t * t
+            val t3 = t2 * t
+            val zeta = (2306.2181 * t + 0.30188 * t2 + 0.017998 * t3) * ARCSEC_TO_RAD
+            val z = (2306.2181 * t + 1.09468 * t2 + 0.018203 * t3) * ARCSEC_TO_RAD
+            val theta = (2004.3109 * t - 0.42665 * t2 - 0.041833 * t3) * ARCSEC_TO_RAD
+
+            val cz = cos(z)
+            val sz = sin(z)
+            val ct = cos(theta)
+            val st = sin(theta)
+            val czeta = cos(zeta)
+            val szeta = sin(zeta)
+
+            return PrecessionMatrix(
+                m00 = cz * ct * czeta - sz * szeta,
+                m01 = -cz * ct * szeta - sz * czeta,
+                m02 = -cz * st,
+                m10 = sz * ct * czeta + cz * szeta,
+                m11 = -sz * ct * szeta + cz * czeta,
+                m12 = -sz * st,
+                m20 = st * czeta,
+                m21 = -st * szeta,
+                m22 = ct
+            )
+        }
+    }
+}
+
+/**
+ * Observer's local horizontal `(North, East, Up)` orthonormal basis expressed directly
+ * in J2000/ICRS equatorial coordinates, pre-rotated by `P^T` for the observer's epoch.
+ */
+@Immutable
+data class SkyHorizontalFrame(
+    val nx: Double, val ny: Double, val nz: Double,
+    val ex: Double, val ey: Double, val ez: Double,
+    val ux: Double, val uy: Double, val uz: Double
+) {
+    /** Converts J2000 `(raDeg, decDeg)` to precessed horizontal `(azDeg, altDeg)`. */
+    fun raDecToAltAz(raDeg: Double, decDeg: Double): Pair<Double, Double> {
+        val raRad = raDeg * DEG_TO_RAD
+        val decRad = decDeg * DEG_TO_RAD
+        val cosDec = cos(decRad)
+        val vx = cosDec * cos(raRad)
+        val vy = cosDec * sin(raRad)
+        val vz = sin(decRad)
+
+        val n = nx * vx + ny * vy + nz * vz
+        val e = ex * vx + ey * vy + ez * vz
+        val u = ux * vx + uy * vy + uz * vz
+
+        val altDeg = (asin(u.coerceIn(-1.0, 1.0)) * RAD_TO_DEG).coerceIn(-90.0, 90.0)
+        val azDeg = normalizeDeg360(atan2(e, n) * RAD_TO_DEG)
+        return Pair(azDeg, altDeg)
+    }
+
+    /** Converts J2000 `(raDeg, decDeg)` to precessed horizontal [AltAz]. */
+    fun calculateAltAz(raDeg: Double, decDeg: Double): AltAz {
+        val (az, alt) = raDecToAltAz(raDeg, decDeg)
+        return AltAz(alt = alt, az = az)
+    }
+
+    /** Converts horizontal `(azDeg, altDeg)` to J2000 `(raDeg, decDeg)`. */
+    fun altAzToRaDec(azDeg: Double, altDeg: Double): Pair<Double, Double> {
+        val azRad = azDeg * DEG_TO_RAD
+        val altRad = altDeg * DEG_TO_RAD
+        val cosAlt = cos(altRad)
+        val fn = cosAlt * cos(azRad)
+        val fe = cosAlt * sin(azRad)
+        val fu = sin(altRad)
+
+        val vx = fn * nx + fe * ex + fu * ux
+        val vy = fn * ny + fe * ey + fu * uy
+        val vz = fn * nz + fe * ez + fu * uz
+        return vectorToRaDec(vx, vy, vz)
+    }
+
+    /** Fast altitude-sign check (`sin(alt) > 0`) for J2000 `(raDeg, decDeg)`. */
+    fun isAboveHorizon(raDeg: Double, decDeg: Double): Boolean {
+        val raRad = raDeg * DEG_TO_RAD
+        val decRad = decDeg * DEG_TO_RAD
+        val cosDec = cos(decRad)
+        return ux * cosDec * cos(raRad) + uy * cosDec * sin(raRad) + uz * sin(decRad) > 0.0
+    }
+
+    /** Returns the observer's zenith expressed in J2000 `(raDeg, decDeg)`. */
+    fun zenithRaDecJ2000(): Pair<Double, Double> = vectorToRaDec(ux, uy, uz)
+
+    companion object {
+        fun unprecessed(latDeg: Double, lstDeg: Double): SkyHorizontalFrame {
+            val latRad = latDeg * DEG_TO_RAD
+            val lstRad = lstDeg * DEG_TO_RAD
+            val sinLat = sin(latRad)
+            val cosLat = cos(latRad)
+            val sinLst = sin(lstRad)
+            val cosLst = cos(lstRad)
+            return SkyHorizontalFrame(
+                nx = -sinLat * cosLst,
+                ny = -sinLat * sinLst,
+                nz = cosLat,
+                ex = -sinLst,
+                ey = cosLst,
+                ez = 0.0,
+                ux = cosLat * cosLst,
+                uy = cosLat * sinLst,
+                uz = sinLat
+            )
+        }
+    }
+}
 
 object AstrometryUtils {
     /** Formats RA in degrees (wrapping outside [0, 360)) as `HHh MMm SSs`. */
@@ -164,39 +319,33 @@ object AstrometryUtils {
         return lst
     }
 
+    fun horizontalFrame(latDeg: Double, lonDeg: Double, utcTimeMs: Long): SkyHorizontalFrame {
+        val lstDeg = calculateLST(lonDeg, utcTimeMs)
+        val date = SkyHorizontalFrame.unprecessed(latDeg, lstDeg)
+        val precession = PrecessionMatrix.forEpochMs(utcTimeMs)
+        if (precession === PrecessionMatrix.IDENTITY) return date
+
+        val (nx, ny, nz) = precession.dateToJ2000(date.nx, date.ny, date.nz)
+        val (ex, ey, ez) = precession.dateToJ2000(date.ex, date.ey, date.ez)
+        val (ux, uy, uz) = precession.dateToJ2000(date.ux, date.uy, date.uz)
+        return SkyHorizontalFrame(
+            nx = nx, ny = ny, nz = nz,
+            ex = ex, ey = ey, ez = ez,
+            ux = ux, uy = uy, uz = uz
+        )
+    }
+
     /**
-     * Converts celestial coordinates (RA, Dec in degrees J2000) to horizontal coordinates (Azimuth, Altitude in degrees).
+     * Converts celestial coordinates (RA, Dec in degrees) to horizontal coordinates (Azimuth, Altitude in degrees)
+     * without precession (for epoch-independent or J2000-aligned calls).
      * Azimuth: North = 0°, East = 90°, South = 180°, West = 270°.
      * Altitude: -90° (Nadir) to +90° (Zenith).
      */
-    fun raDecToAltAz(ra: Double, dec: Double, lat: Double, lst: Double): Pair<Double, Double> {
-        val haRad = Math.toRadians((lst - ra) % 360.0)
-        val decRad = Math.toRadians(dec)
-        val latRad = Math.toRadians(lat)
-
-        val sinAlt = sin(latRad) * sin(decRad) + cos(latRad) * cos(decRad) * cos(haRad)
-        val altRad = asin(sinAlt.coerceIn(-1.0, 1.0))
-
-        val y = -cos(decRad) * sin(haRad)
-        val x = cos(latRad) * sin(decRad) - sin(latRad) * cos(decRad) * cos(haRad)
-        val azRad = atan2(y, x)
-
-        val azDeg = (Math.toDegrees(azRad) % 360.0 + 360.0) % 360.0
-        val altDeg = Math.toDegrees(altRad)
-        return Pair(azDeg, altDeg)
-    }
+    fun raDecToAltAz(ra: Double, dec: Double, lat: Double, lst: Double): Pair<Double, Double> =
+        SkyHorizontalFrame.unprecessed(lat, lst).raDecToAltAz(ra, dec)
 
     /**
-     * Converts celestial coordinates (RA, Dec in degrees J2000) to horizontal [AltAz]
-     * using precomputed local sidereal time [lst] (degrees).
-     */
-    fun calculateAltAz(ra: Double, dec: Double, lat: Double, lst: Double): AltAz {
-        val (az, alt) = raDecToAltAz(ra, dec, lat, lst)
-        return AltAz(alt = alt, az = az)
-    }
-
-    /**
-     * Converts celestial coordinates (RA, Dec in degrees J2000) to horizontal [AltAz]
+     * Converts celestial coordinates (RA, Dec in degrees J2000) to precessed horizontal [AltAz]
      * for an observer at [lat], [lon] (degrees) and timestamp [timeMs] (UTC ms).
      */
     fun calculateAltAz(
@@ -205,7 +354,7 @@ object AstrometryUtils {
         lat: Double,
         lon: Double,
         timeMs: Long
-    ): AltAz = calculateAltAz(ra, dec, lat, calculateLST(lon, timeMs))
+    ): AltAz = horizontalFrame(lat, lon, timeMs).calculateAltAz(ra, dec)
 
     /**
      * Returns the 16-point compass sector index (`0..15`, starting at North `0°` clockwise in `22.5°` steps).
@@ -216,46 +365,33 @@ object AstrometryUtils {
     }
 
     /**
-     * Converts horizontal coordinates (Azimuth, Altitude in degrees) to celestial coordinates (RA, Dec in degrees J2000).
+     * Converts horizontal coordinates (Azimuth, Altitude in degrees) to unprecessed equatorial coordinates (RA, Dec in degrees).
      */
-    fun altAzToRaDec(az: Double, alt: Double, lat: Double, lst: Double): Pair<Double, Double> {
-        val azRad = Math.toRadians(az)
-        val altRad = Math.toRadians(alt)
-        val latRad = Math.toRadians(lat)
-
-        val sinDec = sin(latRad) * sin(altRad) + cos(latRad) * cos(altRad) * cos(azRad)
-        val decRad = asin(sinDec.coerceIn(-1.0, 1.0))
-
-        val y = -cos(altRad) * sin(azRad)
-        val x = cos(latRad) * sin(altRad) - sin(latRad) * cos(altRad) * cos(azRad)
-        val haRad = atan2(y, x)
-
-        val raDeg = ((lst - Math.toDegrees(haRad)) % 360.0 + 360.0) % 360.0
-        val decDeg = Math.toDegrees(decRad).coerceIn(-90.0, 90.0)
-        return Pair(raDeg, decDeg)
-    }
+    fun altAzToRaDec(az: Double, alt: Double, lat: Double, lst: Double): Pair<Double, Double> =
+        SkyHorizontalFrame.unprecessed(lat, lst).altAzToRaDec(az, alt)
 
     /**
-     * Computes the Sun's geocentric equatorial coordinates (RA, Dec in degrees)
-     * using the standard Astronomical Almanac low-precision algorithm (~0.01° accuracy).
+     * Computes the Sun's geocentric J2000 equatorial coordinates (RA, Dec in degrees)
+     * using the Astronomical Almanac low-precision algorithm (~0.01° accuracy) precessed
+     * from mean equinox of date back to J2000 so it aligns with J2000 stars, HiPS, and DE421 Moon/planets.
      */
     fun getSunCoordinates(epochMs: Long): Pair<Double, Double> {
         val jd = 2440587.5 + epochMs / 86400000.0
         val n = jd - 2451545.0
         val l = (280.460 + 0.9856474 * n) % 360.0
-        val gRad = Math.toRadians((357.528 + 0.9856003 * n) % 360.0)
-        val lambdaRad = Math.toRadians((l + 1.915 * sin(gRad) + 0.020 * sin(2 * gRad)) % 360.0)
-        val epsRad = Math.toRadians(23.439 - 0.0000004 * n)
+        val gRad = ((357.528 + 0.9856003 * n) % 360.0) * DEG_TO_RAD
+        val lambdaRad = ((l + 1.915 * sin(gRad) + 0.020 * sin(2 * gRad)) % 360.0) * DEG_TO_RAD
+        val epsRad = (23.439 - 0.0000004 * n) * DEG_TO_RAD
 
-        val sinDec = sin(epsRad) * sin(lambdaRad)
-        val decRad = asin(sinDec.coerceIn(-1.0, 1.0))
+        // Unit vector in Mean Equator & Equinox of Date
+        val sinLambda = sin(lambdaRad)
+        val xDate = cos(lambdaRad)
+        val yDate = cos(epsRad) * sinLambda
+        val zDate = sin(epsRad) * sinLambda
 
-        val y = cos(epsRad) * sin(lambdaRad)
-        val x = cos(lambdaRad)
-        val raRad = atan2(y, x)
-        val raDeg = (Math.toDegrees(raRad) % 360.0 + 360.0) % 360.0
-        val decDeg = Math.toDegrees(decRad)
-        return Pair(raDeg, decDeg)
+        val (xJ2000, yJ2000, zJ2000) = PrecessionMatrix.forEpochMs(epochMs)
+            .dateToJ2000(xDate, yDate, zDate)
+        return vectorToRaDec(xJ2000, yJ2000, zJ2000)
     }
 
     /**

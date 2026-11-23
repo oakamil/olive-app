@@ -267,12 +267,13 @@ interface CatalogDatabase {
                 lat != null && lon != null &&
                 lat in -90.0..90.0 && lon in -180.0..180.0
             ) {
-                val lst = AstrometryUtils.calculateLST(lon, currentTimeMs)
-                val lstRad = lst * DEG_TO_RAD
-                val latRad = lat * DEG_TO_RAD
-                val sinLat = sin(latRad)
-                val cosLat = cos(latRad)
-                clauses.add("(SIN(dec * $DEG_TO_RAD) * $sinLat + COS(dec * $DEG_TO_RAD) * $cosLat * COS($lstRad - ra * $DEG_TO_RAD)) > 0")
+                val (zRaDeg, zDecDeg) = AstrometryUtils.horizontalFrame(lat, lon, currentTimeMs)
+                    .zenithRaDecJ2000()
+                val zRaRad = zRaDeg * DEG_TO_RAD
+                val zDecRad = zDecDeg * DEG_TO_RAD
+                val sinZDec = sin(zDecRad)
+                val cosZDec = cos(zDecRad)
+                clauses.add("(SIN(dec * $DEG_TO_RAD) * $sinZDec + COS(dec * $DEG_TO_RAD) * $cosZDec * COS($zRaRad - ra * $DEG_TO_RAD)) > 0")
             }
 
             return clauses.joinToString(" AND ") to args
@@ -580,7 +581,8 @@ interface CatalogDatabase {
         targetDec: Double? = null,
         maxDistanceDegrees: Double? = null,
         limit: Int = 300,
-        offset: Int = 0
+        offset: Int = 0,
+        currentTimeMs: Long = Clock.System.now().toEpochMilliseconds()
     ): List<CatalogObject>
 
     fun getAsteroidsJson(): String = "[]"

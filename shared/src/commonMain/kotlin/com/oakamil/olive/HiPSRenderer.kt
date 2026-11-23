@@ -58,8 +58,7 @@ class EqToScreenProjector {
         fovDeg: Double,
         viewportWidth: Float,
         viewportHeight: Float,
-        latDeg: Double,
-        lstDeg: Double
+        frame: SkyHorizontalFrame
     ) {
         val minDim = minOf(viewportWidth, viewportHeight).toDouble()
         val clFov = if (fovDeg.isFinite()) fovDeg.coerceIn(0.1, 359.0) else 60.0
@@ -68,26 +67,9 @@ class EqToScreenProjector {
         halfW = viewportWidth * 0.5f
         halfH = viewportHeight * 0.5f
 
-        val latRad = latDeg * (PI / 180.0)
-        val lstRad = lstDeg * (PI / 180.0)
-        val cosLat = cos(latRad)
-        val sinLat = sin(latRad)
-        val cosLst = cos(lstRad)
-        val sinLst = sin(lstRad)
-
-        // Orthonormal (North, East, Up) axes expressed in ICRS equatorial coordinates
-        val nx = -sinLat * cosLst
-        val ny = -sinLat * sinLst
-
-        val ex = -sinLst
-        val ez = 0.0
-
-        val ux = cosLat * cosLst
-        val uy = cosLat * sinLst
-
-        horUpX = ux
-        horUpY = uy
-        horUpZ = sinLat
+        horUpX = frame.ux
+        horUpY = frame.uy
+        horUpZ = frame.uz
 
         val az0 = centerAzDeg * (PI / 180.0)
         val alt0 = centerAltDeg * (PI / 180.0)
@@ -96,23 +78,23 @@ class EqToScreenProjector {
         val cosAlt0 = cos(alt0)
         val sinAlt0 = sin(alt0)
 
-        // Camera forward, right, up in horizon coordinates combined directly with N/E/U
+        // Camera forward, right, up in horizon coordinates combined directly with precessed J2000 N/E/U
         val fn = cosAlt0 * cosAz0
         val fe = cosAlt0 * sinAz0
-        fwdX = fn * nx + fe * ex + sinAlt0 * ux
-        fwdY = fn * ny + fe * cosLst + sinAlt0 * uy
-        fwdZ = fn * cosLat + fe * ez + sinAlt0 * sinLat
+        fwdX = fn * frame.nx + fe * frame.ex + sinAlt0 * frame.ux
+        fwdY = fn * frame.ny + fe * frame.ey + sinAlt0 * frame.uy
+        fwdZ = fn * frame.nz + fe * frame.ez + sinAlt0 * frame.uz
 
         val rn = -sinAz0
-        rgtX = rn * nx + cosAz0 * ex
-        rgtY = rn * ny + cosAz0 * cosLst
-        rgtZ = rn * cosLat + cosAz0 * ez
+        rgtX = rn * frame.nx + cosAz0 * frame.ex
+        rgtY = rn * frame.ny + cosAz0 * frame.ey
+        rgtZ = rn * frame.nz + cosAz0 * frame.ez
 
         val un = -sinAlt0 * cosAz0
         val ue = -sinAlt0 * sinAz0
-        upX = un * nx + ue * ex + cosAlt0 * ux
-        upY = un * ny + ue * cosLst + cosAlt0 * uy
-        upZ = un * cosLat + ue * ez + cosAlt0 * sinLat
+        upX = un * frame.nx + ue * frame.ex + cosAlt0 * frame.ux
+        upY = un * frame.ny + ue * frame.ey + cosAlt0 * frame.uy
+        upZ = un * frame.nz + ue * frame.ez + cosAlt0 * frame.uz
     }
 
     /** Project equatorial unit vector `(qx, qy, qz)` -> packed `screenX, screenY`. Returns `sinAlt`, or `Double.NaN` if antipode-culled. */
@@ -194,8 +176,7 @@ class HiPSRenderState {
         drawScope: DrawScope,
         tileManager: HiPSTileManager,
         projection: SkyMapProjection,
-        latDeg: Double,
-        lstDeg: Double,
+        frame: SkyHorizontalFrame,
         hasValidLocation: Boolean,
         isNightVision: Boolean
     ) {
@@ -211,11 +192,9 @@ class HiPSRenderState {
         val desiredOrder = tileManager.selectTargetOrder(fovDeg, w, h)
         val baseOrder = minOf(desiredOrder, Healpix.MAX_ORDER)
         val maxHqOrder = HiPSTileManager.effectiveHqOrder(desiredOrder)
-        val (centerRaDeg, centerDecDeg) = AstrometryUtils.altAzToRaDec(
+        val (centerRaDeg, centerDecDeg) = frame.altAzToRaDec(
             projection.centerAz,
-            projection.centerAlt,
-            latDeg,
-            lstDeg
+            projection.centerAlt
         )
         val viewRadiusDeg = SkyMapProjection.cornerRadiusDeg(fovDeg, w, h)
         val visibleCount = Healpix.queryVisibleTiles(
@@ -251,8 +230,7 @@ class HiPSRenderState {
             fovDeg = fovDeg,
             viewportWidth = w,
             viewportHeight = h,
-            latDeg = latDeg,
-            lstDeg = lstDeg
+            frame = frame
         )
 
         tilePaint.colorFilter = if (isNightVision) NIGHT_VISION_FILTER else DAY_VISION_FILTER
@@ -296,7 +274,7 @@ class HiPSRenderState {
 
     /**
      * Renders a pre-decoded single-order leaf cutout (`tiles` of `(ipix, bitmap)` at [order])
-     * oriented Zenith-up via `(latDeg, lstDeg)` without below-horizon dimming.
+     * oriented Zenith-up via [frame] without below-horizon dimming.
      */
     fun renderCutout(
         drawScope: DrawScope,
@@ -305,8 +283,7 @@ class HiPSRenderState {
         centerAzDeg: Double,
         centerAltDeg: Double,
         fovDeg: Double,
-        latDeg: Double,
-        lstDeg: Double,
+        frame: SkyHorizontalFrame,
         isNightVision: Boolean
     ) {
         val w = drawScope.size.width
@@ -319,8 +296,7 @@ class HiPSRenderState {
             fovDeg = fovDeg,
             viewportWidth = w,
             viewportHeight = h,
-            latDeg = latDeg,
-            lstDeg = lstDeg
+            frame = frame
         )
         tilePaint.colorFilter = if (isNightVision) NIGHT_VISION_FILTER else DAY_VISION_FILTER
         val subdiv = subdivForOrder(order)

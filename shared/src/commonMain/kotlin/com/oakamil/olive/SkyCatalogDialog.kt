@@ -66,7 +66,6 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,14 +129,14 @@ fun SkyCatalogDialog(
     val currentDecState =
         remember { mutableStateOf(if (viewModel.isEngineRunning) viewModel.engineStats.dec else null) }
     val currentTimeMsState =
-        remember { mutableLongStateOf(Clock.System.now().toEpochMilliseconds()) }
+        remember { mutableLongStateOf(viewModel.effectiveSkyTimeMs()) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(viewModel.simulatedTimeMs) {
         while (true) {
             currentRaState.value = if (viewModel.isEngineRunning) viewModel.engineStats.ra else null
             currentDecState.value =
                 if (viewModel.isEngineRunning) viewModel.engineStats.dec else null
-            currentTimeMsState.longValue = Clock.System.now().toEpochMilliseconds()
+            currentTimeMsState.longValue = viewModel.effectiveSkyTimeMs()
             delay(5000)
         }
     }
@@ -167,38 +166,24 @@ fun SkyCatalogDialog(
         val lat = viewModel.currentLat
         val lon = viewModel.currentLon
         withContext(Dispatchers.IO) {
-            val timeMs = Clock.System.now().toEpochMilliseconds()
+            val timeMs = viewModel.effectiveSkyTimeMs()
             val checkVisibility =
                 activeVisibility == "Above Horizon" && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0
-
-            var lstRad = 0.0
-            var sinLat = 0.0
-            var cosLat = 0.0
-            if (lat != null && lon != null) {
-                val daysSinceJ2000 = (timeMs - 946728000000.0) / 86400000.0
-                var gmst = (280.46061837 + 360.98564736629 * daysSinceJ2000) % 360.0
-                if (gmst < 0) gmst += 360.0
-                var lst = (gmst + lon) % 360.0
-                if (lst < 0) lst += 360.0
-                lstRad = Math.toRadians(lst)
-                val latRad = Math.toRadians(lat)
-                sinLat = sin(latRad)
-                cosLat = cos(latRad)
+            val horizontalFrame = if (checkVisibility) {
+                AstrometryUtils.horizontalFrame(lat, lon, timeMs)
+            } else {
+                null
             }
 
             val isAllTypes = activeTypeFilters.size >= catalogTypeOptions.size
             val allPlanets =
                 if (category == "Solar System" || category == "All Objects" || category == "Nearest Objects") {
-                    viewModel.getPlanets(lat, lon)
+                    viewModel.getPlanets(lat, lon, timeMs)
                 } else emptyList()
             val filteredPlanets = allPlanets.filter { p ->
                 var passes = true
-                if (checkVisibility) {
-                    val altCondition =
-                        sin(p.dec * Math.PI / 180.0) * sinLat + cos(
-                            p.dec * Math.PI / 180.0
-                        ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
-                    if (altCondition <= 0) passes = false
+                if (horizontalFrame != null && !horizontalFrame.isAboveHorizon(p.ra, p.dec)) {
+                    passes = false
                 }
                 if (!isAllTypes && "Planet" !in activeTypeFilters && p.objectType !in activeTypeFilters) {
                     passes = false
@@ -244,23 +229,20 @@ fun SkyCatalogDialog(
                         targetRa = currentRa,
                         targetDec = currentDec,
                         limit = 300,
-                        offset = offset
+                        offset = offset,
+                        currentTimeMs = timeMs
                     )
                 }
 
             if (offset == 0 && (category == "Solar System" || category == "Asteroids" || category == "Comets" || category == "All Objects" || category == "Nearest Objects")) {
                 val allAsteroids =
                     if (category == "Asteroids" || category == "All Objects" || category == "Nearest Objects") {
-                        viewModel.getAsteroids(lat, lon)
+                        viewModel.getAsteroids(lat, lon, timeMs)
                     } else emptyList()
                 val filteredAsteroids = allAsteroids.filter { p ->
                     var passes = true
-                    if (checkVisibility) {
-                        val altCondition =
-                            sin(p.dec * Math.PI / 180.0) * sinLat + cos(
-                                p.dec * Math.PI / 180.0
-                            ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
-                        if (altCondition <= 0) passes = false
+                    if (horizontalFrame != null && !horizontalFrame.isAboveHorizon(p.ra, p.dec)) {
+                        passes = false
                     }
                     if (!isAllTypes && "Asteroid" !in activeTypeFilters && p.objectType !in activeTypeFilters) {
                         passes = false
@@ -287,16 +269,12 @@ fun SkyCatalogDialog(
 
                 val allComets =
                     if (category == "Comets" || category == "All Objects" || category == "Nearest Objects") {
-                        viewModel.getComets(lat, lon)
+                        viewModel.getComets(lat, lon, timeMs)
                     } else emptyList()
                 val filteredComets = allComets.filter { p ->
                     var passes = true
-                    if (checkVisibility) {
-                        val altCondition =
-                            sin(p.dec * Math.PI / 180.0) * sinLat + cos(
-                                p.dec * Math.PI / 180.0
-                            ) * cosLat * cos(lstRad - p.ra * Math.PI / 180.0)
-                        if (altCondition <= 0) passes = false
+                    if (horizontalFrame != null && !horizontalFrame.isAboveHorizon(p.ra, p.dec)) {
+                        passes = false
                     }
                     if (!isAllTypes && "Comet" !in activeTypeFilters && p.objectType !in activeTypeFilters) {
                         passes = false
@@ -396,6 +374,7 @@ fun SkyCatalogDialog(
         typeFilters,
         visibilityFilter,
         viewModel.cometsRefreshVersion,
+        viewModel.simulatedTimeMs,
         effectiveLat,
         effectiveLon,
         effectiveRa,
@@ -564,6 +543,14 @@ fun SkyCatalogDialog(
                         }
                     }
                 )
+
+                val activeSimulatedTimeMs = viewModel.simulatedTimeMs
+                if (viewModel.isSimulatedTimeActive && activeSimulatedTimeMs != null) {
+                    SimulatedTimeBanner(
+                        epochMs = activeSimulatedTimeMs,
+                        onResetNow = { viewModel.resetSimulatedTime() }
+                    )
+                }
 
                 Row(
                     modifier = Modifier

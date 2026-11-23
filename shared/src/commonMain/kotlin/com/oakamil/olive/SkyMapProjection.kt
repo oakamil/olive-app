@@ -88,19 +88,19 @@ class SkyMapProjection(
 
     /**
      * Allocation-free projection of celestial coordinates (RA, Dec in degrees J2000) to viewport (x, y) pixels
-     * using the observer's latitude and Local Sidereal Time.
+     * using a precomputed [SkyHorizontalFrame].
      */
-    fun toScreenRaDecOffset(ra: Double, dec: Double, lat: Double, lst: Double): Offset {
-        val (az, alt) = AstrometryUtils.raDecToAltAz(ra, dec, lat, lst)
+    fun toScreenRaDecOffset(ra: Double, dec: Double, frame: SkyHorizontalFrame): Offset {
+        val (az, alt) = frame.raDecToAltAz(ra, dec)
         return toScreenOffset(az, alt)
     }
 
     /**
      * Projects celestial coordinates (RA, Dec in degrees J2000) to viewport (x, y) pixels
-     * using the observer's latitude and Local Sidereal Time.
+     * using a precomputed [SkyHorizontalFrame].
      */
-    fun toScreenRaDec(ra: Double, dec: Double, lat: Double, lst: Double): Pair<Float, Float>? {
-        val (az, alt) = AstrometryUtils.raDecToAltAz(ra, dec, lat, lst)
+    fun toScreenRaDec(ra: Double, dec: Double, frame: SkyHorizontalFrame): Pair<Float, Float>? {
+        val (az, alt) = frame.raDecToAltAz(ra, dec)
         return toScreen(az, alt)
     }
 

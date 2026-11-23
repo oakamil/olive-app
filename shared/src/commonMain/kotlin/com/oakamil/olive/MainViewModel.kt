@@ -137,6 +137,24 @@ open class MainViewModel(
     val isEngineRunning: Boolean
         get() = engineMode != EngineMode.STOPPED
 
+    var simulatedTimeMs by mutableStateOf<Long?>(null)
+        private set
+
+    val isSimulatedTimeActive: Boolean
+        get() = !isEngineRunning && simulatedTimeMs != null
+
+    fun effectiveSkyTimeMs(nowMs: Long = Clock.System.now().toEpochMilliseconds()): Long =
+        if (isEngineRunning) nowMs else (simulatedTimeMs ?: nowMs)
+
+    fun setSimulatedTime(epochMs: Long) {
+        if (isEngineRunning) return
+        simulatedTimeMs = epochMs.coerceIn(MIN_SIMULATED_TIME_MS, MAX_SIMULATED_TIME_MS)
+    }
+
+    fun resetSimulatedTime() {
+        simulatedTimeMs = null
+    }
+
     var engineStats by mutableStateOf(EngineStats())
         private set
 
@@ -1289,9 +1307,13 @@ open class MainViewModel(
         val dynamicByKey = HashMap<String, CatalogObject>()
         val dynamicByNameLower = HashMap<String, CatalogObject>()
         if (needsDynamic) {
-            val sun = AstrometryUtils.getSun(Clock.System.now().toEpochMilliseconds())
+            val timeMs = effectiveSkyTimeMs()
+            val sun = AstrometryUtils.getSun(timeMs)
             val allDynamic =
-                listOf(sun) + getPlanets(lat, lon) + getAsteroids(lat, lon) + getComets(lat, lon)
+                listOf(sun) +
+                        getPlanets(lat, lon, timeMs) +
+                        getAsteroids(lat, lon, timeMs) +
+                        getComets(lat, lon, timeMs)
             for (obj in allDynamic) {
                 dynamicByKey[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
                 dynamicByNameLower.getOrPut(obj.catalogEntry.lowercase()) { obj }
@@ -1499,20 +1521,21 @@ open class MainViewModel(
                 result[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
             }
         }
+        val timeMs = effectiveSkyTimeMs()
         if (needsPlanets) {
-            val sun = AstrometryUtils.getSun(Clock.System.now().toEpochMilliseconds())
+            val sun = AstrometryUtils.getSun(timeMs)
             result[UserDatabase.objectKey(sun.catalogLabel, sun.catalogEntry)] = sun
-            for (obj in getPlanets(lat, lon)) {
+            for (obj in getPlanets(lat, lon, timeMs)) {
                 result[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
             }
         }
         if (needsAsteroids) {
-            for (obj in getAsteroids(lat, lon)) {
+            for (obj in getAsteroids(lat, lon, timeMs)) {
                 result[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
             }
         }
         if (needsComets) {
-            for (obj in getComets(lat, lon)) {
+            for (obj in getComets(lat, lon, timeMs)) {
                 result[UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)] = obj
             }
         }
@@ -1819,6 +1842,7 @@ open class MainViewModel(
     }
 
     private fun prepareStartUiState(lat: Double, lon: Double, initialZoom: Float) {
+        resetSimulatedTime()
         latestFrame = null
         latestFrameAspect = DEFAULT_CAMERA_ASPECT
         lastFrameTimestamp = 0L
@@ -2370,14 +2394,14 @@ open class MainViewModel(
 
     fun getPlanets(
         latValue: Double? = currentLat,
-        lonValue: Double? = currentLon
+        lonValue: Double? = currentLon,
+        timeMs: Long = effectiveSkyTimeMs()
     ): List<CatalogObject> {
         val lat = latValue ?: return emptyList()
         val lon = lonValue ?: return emptyList()
         if (!isValidCoordinate(lat, lon)) return emptyList()
 
         val bspPath = catalogDb.getBspPath()
-        val timeMs = Clock.System.now().toEpochMilliseconds()
 
         val json = engine.getPlanets(bspPath, timeMs, lat, lon)
         if (json.isBlank() || json == "[]") return emptyList()
@@ -2387,14 +2411,14 @@ open class MainViewModel(
 
     fun getAsteroids(
         latValue: Double? = currentLat,
-        lonValue: Double? = currentLon
+        lonValue: Double? = currentLon,
+        timeMs: Long = effectiveSkyTimeMs()
     ): List<CatalogObject> {
         val lat = latValue ?: return emptyList()
         val lon = lonValue ?: return emptyList()
         if (!isValidCoordinate(lat, lon)) return emptyList()
 
         val bspPath = catalogDb.getBspPath()
-        val timeMs = Clock.System.now().toEpochMilliseconds()
         val asteroidsJson = catalogDb.getAsteroidsJson()
 
         val json = engine.getAsteroids(bspPath, timeMs, lat, lon, asteroidsJson)
@@ -2405,14 +2429,14 @@ open class MainViewModel(
 
     fun getComets(
         latValue: Double? = currentLat,
-        lonValue: Double? = currentLon
+        lonValue: Double? = currentLon,
+        timeMs: Long = effectiveSkyTimeMs()
     ): List<CatalogObject> {
         val lat = latValue ?: return emptyList()
         val lon = lonValue ?: return emptyList()
         if (!isValidCoordinate(lat, lon)) return emptyList()
 
         val bspPath = catalogDb.getBspPath()
-        val timeMs = Clock.System.now().toEpochMilliseconds()
         val cometsJson = catalogDb.getCometsJson()
 
         val json = engine.getComets(bspPath, timeMs, lat, lon, cometsJson)

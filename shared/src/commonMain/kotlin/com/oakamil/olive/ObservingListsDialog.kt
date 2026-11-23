@@ -73,8 +73,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import org.jetbrains.compose.resources.StringResource
-import kotlin.math.cos
-import kotlin.math.sin
 
 private sealed interface SelectedObservingView {
     data class Manual(val listId: Long) : SelectedObservingView
@@ -226,15 +224,18 @@ fun ObservingListsDialog(
     val currentDecState =
         remember { mutableStateOf(if (viewModel.isEngineRunning) viewModel.engineStats.dec else null) }
     val currentTimeMsState =
-        remember { mutableLongStateOf(Clock.System.now().toEpochMilliseconds()) }
+        remember { mutableLongStateOf(viewModel.effectiveSkyTimeMs()) }
 
     LaunchedEffect(Unit) {
         viewModel.refreshUserData()
+    }
+
+    LaunchedEffect(viewModel.simulatedTimeMs) {
         while (true) {
             currentRaState.value = if (viewModel.isEngineRunning) viewModel.engineStats.ra else null
             currentDecState.value =
                 if (viewModel.isEngineRunning) viewModel.engineStats.dec else null
-            currentTimeMsState.longValue = Clock.System.now().toEpochMilliseconds()
+            currentTimeMsState.longValue = viewModel.effectiveSkyTimeMs()
             delay(5000)
         }
     }
@@ -261,6 +262,7 @@ fun ObservingListsDialog(
         selectedView,
         viewModel.userDataVersion,
         viewModel.cometsRefreshVersion,
+        viewModel.simulatedTimeMs,
         viewModel.currentLat,
         viewModel.currentLon
     ) {
@@ -367,13 +369,11 @@ fun ObservingListsDialog(
             val hasValidCoords =
                 MainViewModel.isValidCoordinate(lat, lon) && lat != null && lon != null
             val checkAboveHorizon = visibilityFilter == "Above Horizon" && hasValidCoords
-            val lstRad = if (checkAboveHorizon) {
-                Math.toRadians(AstrometryUtils.calculateLST(lon, currentTimeMs))
+            val horizontalFrame = if (checkAboveHorizon) {
+                AstrometryUtils.horizontalFrame(lat, lon, currentTimeMs)
             } else {
-                0.0
+                null
             }
-            val sinLat = if (checkAboveHorizon) sin(Math.toRadians(lat)) else 0.0
-            val cosLat = if (checkAboveHorizon) cos(Math.toRadians(lat)) else 0.0
 
             val filtered = rawEntries.filter { entry ->
                 val obj = entry.catalogObject
@@ -384,11 +384,8 @@ fun ObservingListsDialog(
                 ) {
                     return@filter false
                 }
-                if (checkAboveHorizon) {
-                    val decRad = obj.dec * Math.PI / 180.0
-                    val altSin = sin(decRad) * sinLat +
-                            cos(decRad) * cosLat * cos(lstRad - obj.ra * Math.PI / 180.0)
-                    if (altSin <= 0.0) return@filter false
+                if (horizontalFrame != null && !horizontalFrame.isAboveHorizon(obj.ra, obj.dec)) {
+                    return@filter false
                 }
                 if (isManualSelected && observedFilter != "All") {
                     val observed = viewModel.isObjectObserved(obj)
@@ -1053,6 +1050,14 @@ fun ObservingListsDialog(
                             }
                         }
                     )
+
+                    val activeSimulatedTimeMs = viewModel.simulatedTimeMs
+                    if (viewModel.isSimulatedTimeActive && activeSimulatedTimeMs != null) {
+                        SimulatedTimeBanner(
+                            epochMs = activeSimulatedTimeMs,
+                            onResetNow = { viewModel.resetSimulatedTime() }
+                        )
+                    }
 
                     if (selectedView != null && !isEditingItems) {
                         Row(
