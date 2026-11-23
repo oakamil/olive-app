@@ -5,9 +5,9 @@ package com.oakamil.olive
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,7 +51,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -59,7 +61,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
@@ -76,7 +77,6 @@ fun ListNameDialog(
 ) {
     val extColors = LocalOliveExtendedColors.current
     val focusManager = LocalFocusManager.current
-    val onUserInteraction = LocalOnUserInteraction.current
     val voiceController = rememberVoiceDictationController()
 
     var nameValue by remember(initialName) {
@@ -88,170 +88,163 @@ fun ListNameDialog(
         showKeyboard = false
         focusManager.clearFocus()
     }
+    val handleDismissOrHideKeyboard = {
+        voiceController.stopListening()
+        if (showKeyboard) {
+            hideKeyboard()
+        } else {
+            onDismiss()
+        }
+    }
 
     Dialog(
-        onDismissRequest = {
-            voiceController.stopListening()
-            if (showKeyboard) {
-                hideKeyboard()
-            } else {
-                onDismiss()
-            }
-        },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        onDismissRequest = handleDismissOrHideKeyboard,
+        properties = fullScreenDialogProperties(dismissOnClickOutside = false)
     ) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .notifyUserInteraction(onUserInteraction)
-        ) {
-            val isWide = maxWidth > maxHeight && maxWidth >= 480.dp
-            val dialogShape = RoundedCornerShape(16.dp)
+        val dialogShape = RoundedCornerShape(16.dp)
 
-            val cardContent: @Composable (Modifier) -> Unit = { cardModifier ->
-                Surface(
-                    shape = dialogShape,
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    modifier = cardModifier.border(1.dp, extColors.subtleBorder, dialogShape)
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        OliveDialogHeader(
-                            title = title,
-                            onDismiss = {
-                                voiceController.stopListening()
-                                onDismiss()
-                            }
-                        )
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            DisableSystemKeyboard(disable = true) {
-                                OutlinedTextField(
-                                    value = nameValue,
-                                    onValueChange = { nameValue = it },
-                                    label = { Text(stringResource(Res.string.label_list_name)) },
-                                    placeholder = { Text(stringResource(Res.string.placeholder_list_name)) },
-                                    singleLine = true,
-                                    trailingIcon = if (voiceController.isSupported) {
-                                        {
-                                            IconButton(
-                                                onClick = {
-                                                    hideKeyboard()
-                                                    if (!voiceController.isListening) {
-                                                        speechBaseText = nameValue.text
-                                                    }
-                                                    voiceController.toggleListening { sessionText, _ ->
-                                                        val combined = appendDictationText(
-                                                            speechBaseText,
-                                                            sessionText
-                                                        )
-                                                        nameValue = TextFieldValue(
-                                                            combined,
-                                                            TextRange(combined.length)
-                                                        )
-                                                    }
+        val cardContent: @Composable (Modifier) -> Unit = { cardModifier ->
+            val focusRequester = rememberAutoFocusRequester()
+            Surface(
+                shape = dialogShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = cardModifier
+                    .border(1.dp, extColors.subtleBorder, dialogShape)
+                    .pointerInput(Unit) { detectTapGestures { } }
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    OliveDialogHeader(
+                        title = title,
+                        onDismiss = {
+                            voiceController.stopListening()
+                            onDismiss()
+                        }
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        DisableSystemKeyboard(disable = true) {
+                            OutlinedTextField(
+                                value = nameValue,
+                                onValueChange = { nameValue = it },
+                                label = { Text(stringResource(Res.string.label_list_name)) },
+                                placeholder = { Text(stringResource(Res.string.placeholder_list_name)) },
+                                singleLine = true,
+                                trailingIcon = if (voiceController.isSupported) {
+                                    {
+                                        IconButton(
+                                            onClick = {
+                                                hideKeyboard()
+                                                if (!voiceController.isListening) {
+                                                    speechBaseText = nameValue.text
                                                 }
-                                            ) {
-                                                Icon(
-                                                    imageVector = if (voiceController.isListening) {
-                                                        Outlined.MicOff
-                                                    } else {
-                                                        Outlined.Mic
-                                                    },
-                                                    contentDescription = stringResource(
-                                                        if (voiceController.isListening) Res.string.cd_stop_voice_input
-                                                        else Res.string.cd_voice_input
-                                                    ),
-                                                    tint = MaterialTheme.colorScheme.primary
-                                                )
+                                                voiceController.toggleListening { sessionText, _ ->
+                                                    val combined = appendDictationText(
+                                                        speechBaseText,
+                                                        sessionText
+                                                    )
+                                                    nameValue = TextFieldValue(
+                                                        combined,
+                                                        TextRange(combined.length)
+                                                    )
+                                                }
                                             }
+                                        ) {
+                                            Icon(
+                                                imageVector = if (voiceController.isListening) {
+                                                    Outlined.MicOff
+                                                } else {
+                                                    Outlined.Mic
+                                                },
+                                                contentDescription = stringResource(
+                                                    if (voiceController.isListening) Res.string.cd_stop_voice_input
+                                                    else Res.string.cd_voice_input
+                                                ),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
                                         }
-                                    } else {
-                                        null
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .onFocusChanged { state ->
-                                            if (state.isFocused) {
-                                                voiceController.stopListening()
-                                                showKeyboard = true
-                                            }
+                                    }
+                                } else {
+                                    null
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(focusRequester)
+                                    .onFocusChanged { state ->
+                                        if (state.isFocused) {
+                                            voiceController.stopListening()
+                                            showKeyboard = true
                                         }
-                                )
-                            }
+                                    }
+                            )
+                        }
 
-                            if (voiceController.isListening) {
+                        if (voiceController.isListening) {
+                            Text(
+                                text = stringResource(Res.string.status_listening),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    voiceController.stopListening()
+                                    onDismiss()
+                                }
+                            ) {
                                 Text(
-                                    text = stringResource(Res.string.status_listening),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    text = stringResource(Res.string.btn_cancel),
                                     color = MaterialTheme.colorScheme.primary
                                 )
                             }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
+                            Spacer(Modifier.width(8.dp))
+                            Button(
+                                enabled = nameValue.text.trim().isNotEmpty(),
+                                onClick = {
+                                    voiceController.stopListening()
+                                    onConfirm(nameValue.text.trim())
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
                             ) {
-                                TextButton(
-                                    onClick = {
-                                        voiceController.stopListening()
-                                        onDismiss()
-                                    }
-                                ) {
-                                    Text(
-                                        text = stringResource(Res.string.btn_cancel),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Button(
-                                    enabled = nameValue.text.trim().isNotEmpty(),
-                                    onClick = {
-                                        voiceController.stopListening()
-                                        onConfirm(nameValue.text.trim())
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                ) {
-                                    Text(stringResource(Res.string.btn_save))
-                                }
+                                Text(stringResource(Res.string.btn_save))
                             }
                         }
                     }
                 }
             }
+        }
 
-            val keyboardPanel: @Composable (Modifier) -> Unit = { kbModifier ->
-                NightVisionKeyboardDock(
-                    isLandscape = isWide,
-                    landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
-                    onClose = hideKeyboard,
-                    onSwapSide = {
-                        viewModel.landscapeKeyboardOnRight = !viewModel.landscapeKeyboardOnRight
-                    },
-                    onKeyClick = { ch -> nameValue = nameValue.insertTextAtCursor(ch.toString()) },
-                    onSpace = { nameValue = nameValue.insertTextAtCursor(" ") },
-                    onBackspace = { nameValue = nameValue.backspaceAtCursor() },
-                    showShiftAndPunctuation = true,
-                    modifier = kbModifier
-                )
-            }
-
-            NightVisionKeyboardDialogLayout(
-                isWide = isWide,
-                showKeyboard = showKeyboard,
-                landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
-                maxCardWidth = 440.dp,
-                cardContent = cardContent,
-                keyboardPanel = keyboardPanel
+        val keyboardPanel: @Composable (Boolean, Modifier) -> Unit = { isLandscape, kbModifier ->
+            NightVisionKeyboardDock(
+                isLandscape = isLandscape,
+                viewModel = viewModel,
+                onEdit = { transform -> nameValue = transform(nameValue) },
+                onClose = hideKeyboard,
+                showShiftAndPunctuation = true,
+                modifier = kbModifier
             )
         }
+
+        NightVisionKeyboardDialogLayout(
+            showKeyboard = showKeyboard,
+            landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
+            maxCardWidth = 440.dp,
+            onScrimClick = handleDismissOrHideKeyboard,
+            cardContent = cardContent,
+            keyboardPanel = keyboardPanel
+        )
     }
 
     VoicePermissionDeniedDialog(voiceController)
@@ -367,10 +360,14 @@ internal fun AddObjectsToListDialog(
     val extColors = LocalOliveExtendedColors.current
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
-    val onUserInteraction = LocalOnUserInteraction.current
 
-    var searchQuery by remember { mutableStateOf("") }
+    var queryValue by remember { mutableStateOf(TextFieldValue("")) }
+    val searchQuery = queryValue.text
     var showKeyboard by remember { mutableStateOf(true) }
+    val hideKeyboard = {
+        showKeyboard = false
+        focusManager.clearFocus()
+    }
     var pendingOverrides by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
     LaunchedEffect(existingKeys) {
         if (pendingOverrides.isNotEmpty()) {
@@ -422,205 +419,188 @@ internal fun AddObjectsToListDialog(
 
     BackHandler {
         if (showKeyboard) {
-            showKeyboard = false
-            focusManager.clearFocus()
+            hideKeyboard()
         } else {
             onDismiss()
         }
     }
 
-    Dialog(
+    FullScreenSurfaceDialog(
         onDismissRequest = {
             if (showKeyboard) {
-                showKeyboard = false
-                focusManager.clearFocus()
+                hideKeyboard()
             } else {
                 onDismiss()
             }
-        },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        }
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .notifyUserInteraction(onUserInteraction),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val isLandscape = maxWidth > maxHeight && maxWidth >= 480.dp
-
-                Column(modifier = Modifier.fillMaxSize()) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = stringResource(Res.string.title_add_to_list, list.name),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        actions = {
-                            TextButton(onClick = onDismiss) {
-                                Text(
-                                    text = stringResource(Res.string.btn_done),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
+        Column(modifier = Modifier.fillMaxSize()) {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(Res.string.title_add_to_list, list.name),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-
-                    NightVisionSearchBar(
-                        query = searchQuery,
-                        placeholder = stringResource(Res.string.hint_search_catalog_to_add),
-                        onTap = { showKeyboard = true },
-                        onClear = { searchQuery = "" },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp)
-                    )
-
-                    val resultsContent: @Composable (Modifier) -> Unit = { contentModifier ->
-                        LazyColumn(modifier = contentModifier.fillMaxSize()) {
-                            items(
-                                items = results,
-                                key = { "${it.catalogLabel}_${it.id}_${it.catalogEntry}" }
-                            ) { obj ->
-                                val key = UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)
-                                val isAdded = pendingOverrides[key] ?: (key in existingKeys)
-                                val toggleMembership = {
-                                    val targetAdded = !isAdded
-                                    val ref = UserDatabase.targetRefFrom(
-                                        catalogObject = obj,
-                                        coords = obj.ra to obj.dec,
-                                        fallbackTitle = obj.displayName
-                                    )
-                                    pendingOverrides = pendingOverrides + (key to targetAdded)
-                                    coroutineScope.launch {
-                                        if (targetAdded) {
-                                            viewModel.addObjectToList(list.id, ref)
-                                        } else {
-                                            viewModel.removeObjectFromList(
-                                                list.id,
-                                                obj.catalogLabel,
-                                                obj.catalogEntry
-                                            )
-                                        }
-                                    }
-                                    Unit
-                                }
-
-                                ListItem(
-                                    modifier = Modifier.clickable(onClick = toggleMembership),
-                                    headlineContent = {
-                                        Text(
-                                            text = obj.displayName,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    },
-                                    supportingContent = {
-                                        val localizedType = getLocalizedObjectType(obj.objectType)
-                                        val details = buildList {
-                                            add(localizedType)
-                                            if (obj.designation.isNotBlank() && obj.displayName != obj.designation) {
-                                                add(obj.designation)
-                                            }
-                                            if (obj.magnitude != null) {
-                                                add(
-                                                    stringResource(
-                                                        Res.string.format_mag,
-                                                        String.format("%.1f", obj.magnitude)
-                                                    )
-                                                )
-                                            }
-                                        }.joinToString(" · ")
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            val (iVec, iCol) = obj.getIconAndColor(extColors)
-                                            Icon(
-                                                imageVector = iVec,
-                                                contentDescription = null,
-                                                tint = iCol,
-                                                modifier = Modifier
-                                                    .size(16.dp)
-                                                    .padding(end = 4.dp)
-                                            )
-                                            Text(
-                                                text = details,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                    },
-                                    trailingContent = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            IconButton(onClick = { previewObj = obj }) {
-                                                Icon(
-                                                    imageVector = Default.Info,
-                                                    contentDescription = stringResource(Res.string.cd_info),
-                                                    tint = extColors.secondaryText
-                                                )
-                                            }
-                                            IconButton(onClick = toggleMembership) {
-                                                Icon(
-                                                    imageVector = if (isAdded) Default.Check else Default.Add,
-                                                    contentDescription = stringResource(
-                                                        if (isAdded) Res.string.cd_selected
-                                                        else Res.string.btn_add_objects
-                                                    ),
-                                                    tint = if (isAdded) {
-                                                        MaterialTheme.colorScheme.primary
-                                                    } else {
-                                                        MaterialTheme.colorScheme.onSurface
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
-                                )
-                                HorizontalDivider()
-                            }
-
-                            if (results.isEmpty()) {
-                                item(key = "empty_search") {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 64.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isLoading) {
-                                            CircularProgressIndicator()
-                                        } else {
-                                            Text(stringResource(Res.string.status_no_objects))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    val keyboardPanel: @Composable (Modifier) -> Unit = { kbModifier ->
-                        SearchKeyboardDock(
-                            isLandscape = isLandscape,
-                            viewModel = viewModel,
-                            query = searchQuery,
-                            onQueryChange = { searchQuery = it },
-                            onClose = {
-                                showKeyboard = false
-                                focusManager.clearFocus()
-                            },
-                            modifier = kbModifier
+                },
+                actions = {
+                    TextButton(onClick = onDismiss) {
+                        Text(
+                            text = stringResource(Res.string.btn_done),
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
+                }
+            )
 
-                    NightVisionKeyboardSplitLayout(
-                        isLandscape = isLandscape,
-                        showKeyboard = showKeyboard,
-                        landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
-                        content = resultsContent,
-                        keyboard = keyboardPanel
-                    )
+            NightVisionSearchBar(
+                value = queryValue,
+                onValueChange = { queryValue = it },
+                placeholder = stringResource(Res.string.hint_search_catalog_to_add),
+                onFocus = { showKeyboard = true },
+                autoFocus = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            )
+
+            val resultsContent: @Composable (Modifier) -> Unit = { contentModifier ->
+                LazyColumn(modifier = contentModifier.fillMaxSize()) {
+                    items(
+                        items = results,
+                        key = { "${it.catalogLabel}_${it.id}_${it.catalogEntry}" }
+                    ) { obj ->
+                        val key = UserDatabase.objectKey(obj.catalogLabel, obj.catalogEntry)
+                        val isAdded = pendingOverrides[key] ?: (key in existingKeys)
+                        val toggleMembership = {
+                            val targetAdded = !isAdded
+                            val ref = UserDatabase.targetRefFrom(
+                                catalogObject = obj,
+                                coords = obj.ra to obj.dec,
+                                fallbackTitle = obj.displayName
+                            )
+                            pendingOverrides = pendingOverrides + (key to targetAdded)
+                            coroutineScope.launch {
+                                if (targetAdded) {
+                                    viewModel.addObjectToList(list.id, ref)
+                                } else {
+                                    viewModel.removeObjectFromList(
+                                        list.id,
+                                        obj.catalogLabel,
+                                        obj.catalogEntry
+                                    )
+                                }
+                            }
+                            Unit
+                        }
+
+                        ListItem(
+                            modifier = Modifier.clickable(onClick = toggleMembership),
+                            headlineContent = {
+                                Text(
+                                    text = obj.displayName,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            supportingContent = {
+                                val localizedType = getLocalizedObjectType(obj.objectType)
+                                val details = buildList {
+                                    add(localizedType)
+                                    if (obj.designation.isNotBlank() && obj.displayName != obj.designation) {
+                                        add(obj.designation)
+                                    }
+                                    if (obj.magnitude != null) {
+                                        add(
+                                            stringResource(
+                                                Res.string.format_mag,
+                                                String.format("%.1f", obj.magnitude)
+                                            )
+                                        )
+                                    }
+                                }.joinToString(" · ")
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val (iVec, iCol) = obj.getIconAndColor(extColors)
+                                    Icon(
+                                        imageVector = iVec,
+                                        contentDescription = null,
+                                        tint = iCol,
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .padding(end = 4.dp)
+                                    )
+                                    Text(
+                                        text = details,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            },
+                            trailingContent = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { previewObj = obj }) {
+                                        Icon(
+                                            imageVector = Default.Info,
+                                            contentDescription = stringResource(Res.string.cd_info),
+                                            tint = extColors.secondaryText
+                                        )
+                                    }
+                                    IconButton(onClick = toggleMembership) {
+                                        Icon(
+                                            imageVector = if (isAdded) Default.Check else Default.Add,
+                                            contentDescription = stringResource(
+                                                if (isAdded) Res.string.cd_selected
+                                                else Res.string.btn_add_objects
+                                            ),
+                                            tint = if (isAdded) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                        HorizontalDivider()
+                    }
+
+                    if (results.isEmpty()) {
+                        item(key = "empty_search") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 64.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isLoading) {
+                                    CircularProgressIndicator()
+                                } else {
+                                    Text(stringResource(Res.string.status_no_objects))
+                                }
+                            }
+                        }
+                    }
                 }
             }
+
+            val keyboardPanel: @Composable (Boolean, Modifier) -> Unit =
+                { isLandscape, kbModifier ->
+                    NightVisionKeyboardDock(
+                        isLandscape = isLandscape,
+                        viewModel = viewModel,
+                        onEdit = { transform -> queryValue = transform(queryValue) },
+                        onClose = hideKeyboard,
+                        modifier = kbModifier
+                    )
+                }
+
+            NightVisionKeyboardSplitLayout(
+                showKeyboard = showKeyboard,
+                landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
+                content = resultsContent,
+                keyboard = keyboardPanel
+            )
         }
     }
 

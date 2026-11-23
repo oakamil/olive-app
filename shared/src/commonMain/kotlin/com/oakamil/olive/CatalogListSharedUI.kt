@@ -15,6 +15,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -63,23 +65,32 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.InterceptPlatformTextInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -150,197 +161,307 @@ fun TextFieldValue.backspaceAtCursor(): TextFieldValue {
 }
 
 @Composable
+private fun isLandscapeWindowLayout(): Boolean {
+    val windowSize = LocalWindowInfo.current.containerSize
+    if (windowSize.width <= 0 || windowSize.height <= 0) return false
+    val widthDp = with(LocalDensity.current) { windowSize.width.toDp() }
+    return windowSize.width > windowSize.height && widthDp >= 480.dp
+}
+
+private fun landscapeKeyboardWidth(maxWidth: Dp): Dp =
+    (maxWidth * 0.5f).coerceAtMost(480.dp)
+
+@Composable
+fun rememberAutoFocusRequester(enabled: Boolean = true): FocusRequester {
+    val focusRequester = remember { FocusRequester() }
+    var hasRequested by remember { mutableStateOf(false) }
+    if (enabled && !hasRequested) {
+        LaunchedEffect(Unit) {
+            withFrameNanos {}
+            @Suppress("AssignedValueIsNeverRead")
+            hasRequested = true
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
+    return focusRequester
+}
+
+@Composable
+fun rememberSyncedTextFieldValue(text: String): MutableState<TextFieldValue> {
+    val state = remember {
+        mutableStateOf(TextFieldValue(text, TextRange(text.length)))
+    }
+    LaunchedEffect(text) {
+        if (state.value.text != text) {
+            state.value = TextFieldValue(text, TextRange(text.length))
+        }
+    }
+    return state
+}
+
+@Composable
 fun NightVisionSearchBar(
-    query: String,
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
     placeholder: String,
-    onTap: () -> Unit,
-    onClear: () -> Unit,
-    modifier: Modifier = Modifier
+    onFocus: () -> Unit,
+    modifier: Modifier = Modifier,
+    autoFocus: Boolean = false
 ) {
-    Box(modifier = modifier) {
+    val focusRequester = rememberAutoFocusRequester(enabled = autoFocus)
+    DisableSystemKeyboard(disable = true) {
         OutlinedTextField(
-            value = query,
-            onValueChange = {},
-            modifier = Modifier.fillMaxWidth(),
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier
+                .focusRequester(focusRequester)
+                .onFocusChanged { state ->
+                    if (state.isFocused) {
+                        onFocus()
+                    }
+                },
             placeholder = { Text(placeholder) },
             leadingIcon = { Icon(Default.Search, contentDescription = null) },
-            singleLine = true,
-            readOnly = true
+            trailingIcon = if (value.text.isNotEmpty()) {
+                {
+                    IconButton(onClick = { onValueChange(TextFieldValue("")) }) {
+                        Icon(
+                            Default.Close,
+                            contentDescription = stringResource(Res.string.cd_clear_search),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            } else {
+                null
+            },
+            singleLine = true
         )
-        Spacer(
-            modifier = Modifier
-                .matchParentSize()
-                .padding(end = 48.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onTap
-                )
-        )
-        if (query.isNotEmpty()) {
-            IconButton(
-                onClick = onClear,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 4.dp)
-            ) {
-                Icon(
-                    Default.Close,
-                    contentDescription = stringResource(Res.string.cd_clear_search),
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
     }
 }
 
 @Composable
 fun ColumnScope.NightVisionKeyboardSplitLayout(
-    isLandscape: Boolean,
     showKeyboard: Boolean,
     landscapeKeyboardOnRight: Boolean,
     content: @Composable (Modifier) -> Unit,
-    keyboard: @Composable (Modifier) -> Unit
+    keyboard: @Composable (isLandscape: Boolean, Modifier) -> Unit
 ) {
-    if (isLandscape && showKeyboard) {
-        Row(modifier = Modifier.weight(1f)) {
-            if (landscapeKeyboardOnRight) {
-                content(Modifier.weight(1f))
-                keyboard(Modifier.weight(1f))
-            } else {
-                keyboard(Modifier.weight(1f))
-                content(Modifier.weight(1f))
-            }
+    val isLandscape = isLandscapeWindowLayout()
+    val currentContent by rememberUpdatedState(content)
+    val currentKeyboard by rememberUpdatedState(keyboard)
+    val movableContent = remember {
+        movableContentOf<Modifier> { mod -> currentContent(mod) }
+    }
+    val movableKeyboard = remember {
+        movableContentOf<Boolean, Modifier> { landscape, mod ->
+            currentKeyboard(landscape, mod)
         }
-    } else {
-        content(Modifier.weight(1f))
-        if (showKeyboard) {
-            keyboard(Modifier.fillMaxWidth())
+    }
+    BoxWithConstraints(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+    ) {
+        if (isLandscape && showKeyboard) {
+            val keyboardSlotWidth = landscapeKeyboardWidth(maxWidth)
+            val keyboardSlot: @Composable () -> Unit = {
+                Box(
+                    modifier = Modifier
+                        .width(keyboardSlotWidth)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    movableKeyboard(true, Modifier.fillMaxWidth())
+                }
+            }
+            Row(modifier = Modifier.fillMaxSize()) {
+                if (landscapeKeyboardOnRight) {
+                    movableContent(Modifier.weight(1f).fillMaxHeight())
+                    keyboardSlot()
+                } else {
+                    keyboardSlot()
+                    movableContent(Modifier.weight(1f).fillMaxHeight())
+                }
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxSize()) {
+                movableContent(Modifier.weight(1f).fillMaxWidth())
+                if (showKeyboard) {
+                    movableKeyboard(false, Modifier.fillMaxWidth())
+                }
+            }
         }
     }
 }
 
 @Composable
 fun NightVisionKeyboardDialogLayout(
-    isWide: Boolean,
     showKeyboard: Boolean,
     landscapeKeyboardOnRight: Boolean,
     maxCardWidth: Dp,
+    onScrimClick: () -> Unit,
     fillCardHeightInLandscape: Boolean = false,
     cardContent: @Composable (Modifier) -> Unit,
-    keyboardPanel: @Composable (Modifier) -> Unit
+    keyboardPanel: @Composable (isLandscape: Boolean, Modifier) -> Unit
 ) {
-    if (showKeyboard && isWide) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val cardMod = if (fillCardHeightInLandscape) {
-                Modifier.weight(1f).fillMaxHeight()
-            } else {
-                Modifier.weight(1f)
-            }
-            if (landscapeKeyboardOnRight) {
-                cardContent(cardMod)
-                keyboardPanel(Modifier.weight(1f).fillMaxHeight())
-            } else {
-                keyboardPanel(Modifier.weight(1f).fillMaxHeight())
-                cardContent(cardMod)
-            }
-        }
-    } else if (showKeyboard) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                cardContent(Modifier.widthIn(max = maxCardWidth).fillMaxWidth())
-            }
-            keyboardPanel(Modifier.fillMaxWidth())
-        }
-    } else {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            cardContent(Modifier.widthIn(max = maxCardWidth).fillMaxWidth())
+    val isLandscape = isLandscapeWindowLayout()
+    val onUserInteraction = LocalOnUserInteraction.current
+    val currentOnScrimClick by rememberUpdatedState(onScrimClick)
+    val currentCardContent by rememberUpdatedState(cardContent)
+    val currentKeyboardPanel by rememberUpdatedState(keyboardPanel)
+    val movableCard = remember {
+        movableContentOf<Modifier> { mod -> currentCardContent(mod) }
+    }
+    val movableKeyboard = remember {
+        movableContentOf<Boolean, Modifier> { landscape, mod ->
+            currentKeyboardPanel(landscape, mod)
         }
     }
-}
-
-@Composable
-fun SearchKeyboardDock(
-    isLandscape: Boolean,
-    viewModel: MainViewModel,
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    NightVisionKeyboardDock(
-        isLandscape = isLandscape,
-        landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
-        onClose = onClose,
-        onSwapSide = {
-            viewModel.landscapeKeyboardOnRight = !viewModel.landscapeKeyboardOnRight
-        },
-        onKeyClick = { char -> onQueryChange(query + char) },
-        onSpace = { onQueryChange("$query ") },
-        onBackspace = {
-            if (query.isNotEmpty()) {
-                onQueryChange(query.dropLast(1))
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .notifyUserInteraction(onUserInteraction)
+            .pointerInput(Unit) {
+                detectTapGestures { currentOnScrimClick() }
             }
-        },
-        modifier = modifier
-    )
+            .platformDialogSafeAreaPadding()
+    ) {
+        if (showKeyboard && isLandscape) {
+            val keyboardSlotWidth = landscapeKeyboardWidth(maxWidth)
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val cardSlot: @Composable () -> Unit = {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val cardMod = if (fillCardHeightInLandscape) {
+                            Modifier.widthIn(max = maxCardWidth).fillMaxSize()
+                        } else {
+                            Modifier.widthIn(max = maxCardWidth).fillMaxWidth()
+                        }
+                        movableCard(cardMod)
+                    }
+                }
+                val keyboardSlot: @Composable () -> Unit = {
+                    Box(
+                        modifier = Modifier
+                            .width(keyboardSlotWidth)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        movableKeyboard(true, Modifier.fillMaxWidth())
+                    }
+                }
+                if (landscapeKeyboardOnRight) {
+                    cardSlot()
+                    keyboardSlot()
+                } else {
+                    keyboardSlot()
+                    cardSlot()
+                }
+            }
+        } else if (showKeyboard) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    movableCard(Modifier.widthIn(max = maxCardWidth).fillMaxWidth())
+                }
+                movableKeyboard(false, Modifier.fillMaxWidth())
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                movableCard(Modifier.widthIn(max = maxCardWidth).fillMaxWidth())
+            }
+        }
+    }
 }
 
 @Composable
 fun NightVisionKeyboardDock(
     isLandscape: Boolean,
-    landscapeKeyboardOnRight: Boolean,
+    viewModel: MainViewModel,
+    onEdit: ((TextFieldValue) -> TextFieldValue) -> Unit,
     onClose: () -> Unit,
-    onSwapSide: () -> Unit,
-    onKeyClick: (Char) -> Unit,
-    onSpace: () -> Unit,
-    onBackspace: () -> Unit,
     showShiftAndPunctuation: Boolean = false,
     showNewline: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val sideButtons = @Composable {
-        Column(
-            modifier = Modifier.fillMaxHeight(),
-            verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            IconButton(onClick = onClose) {
-                Icon(
-                    Default.Close,
-                    contentDescription = stringResource(Res.string.cd_close_keyboard),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            IconButton(onClick = onSwapSide) {
-                Icon(
-                    imageVector = if (landscapeKeyboardOnRight) Filled.KeyboardArrowLeft else Filled.KeyboardArrowRight,
-                    contentDescription = stringResource(Res.string.cd_swap_keyboard_side),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
+    val focusManager = LocalFocusManager.current
+    val handleClose = {
+        focusManager.clearFocus()
+        onClose()
     }
+    val onKeyClick: (Char) -> Unit = { ch ->
+        onEdit { it.insertTextAtCursor(ch.toString()) }
+    }
+    val onSpace: () -> Unit = {
+        onEdit { it.insertTextAtCursor(" ") }
+    }
+    val onBackspace: () -> Unit = {
+        onEdit { it.backspaceAtCursor() }
+    }
+    val landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight
+    val dockModifier = modifier
+        .background(MaterialTheme.colorScheme.surface)
+        .pointerInput(Unit) {
+            detectTapGestures { }
+        }
 
     if (isLandscape) {
-        Row(modifier = modifier) {
+        val maxDockHeight = if (showShiftAndPunctuation) 228.dp else 184.dp
+        val sideButtons = @Composable {
+            Column(
+                modifier = Modifier.fillMaxHeight(),
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                IconButton(
+                    onClick = handleClose,
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    Icon(
+                        Default.Close,
+                        contentDescription = stringResource(Res.string.cd_close_keyboard),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        viewModel.landscapeKeyboardOnRight = !viewModel.landscapeKeyboardOnRight
+                    },
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    Icon(
+                        imageVector = if (landscapeKeyboardOnRight) Filled.KeyboardArrowLeft else Filled.KeyboardArrowRight,
+                        contentDescription = stringResource(Res.string.cd_swap_keyboard_side),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+        Row(
+            modifier = dockModifier
+                .heightIn(max = maxDockHeight)
+                .fillMaxHeight()
+        ) {
             if (landscapeKeyboardOnRight) {
                 sideButtons()
             }
@@ -348,7 +469,9 @@ fun NightVisionKeyboardDock(
                 isLandscape = true,
                 showShiftAndPunctuation = showShiftAndPunctuation,
                 showNewline = showNewline,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
                 onKeyClick = onKeyClick,
                 onSpace = onSpace,
                 onBackspace = onBackspace
@@ -358,12 +481,12 @@ fun NightVisionKeyboardDock(
             }
         }
     } else {
-        Column(modifier = modifier) {
+        Column(modifier = dockModifier) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                IconButton(onClick = onClose) {
+                IconButton(onClick = handleClose) {
                     Icon(
                         Default.Close,
                         contentDescription = stringResource(Res.string.cd_close_keyboard),

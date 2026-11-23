@@ -38,7 +38,6 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
@@ -56,8 +55,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.delay
@@ -83,6 +80,11 @@ fun SkyCatalogDialog(
     val focusManager = LocalFocusManager.current
     var showKeyboard by remember { mutableStateOf(false) }
     var searchQuery by viewModel::catalogSearchQuery
+    var queryValue by rememberSyncedTextFieldValue(searchQuery)
+    val hideKeyboard = {
+        showKeyboard = false
+        focusManager.clearFocus()
+    }
     var selectedCategory by viewModel::catalogSelectedCategory
     var sortBy by viewModel::catalogSortBy
     var magLimit by viewModel::catalogMagLimit
@@ -424,376 +426,363 @@ fun SkyCatalogDialog(
 
     BackHandler {
         if (showKeyboard) {
-            showKeyboard = false
-            focusManager.clearFocus()
+            hideKeyboard()
         } else {
             onDismiss()
         }
     }
 
-    val onUserInteraction = LocalOnUserInteraction.current
-
-    Dialog(
+    FullScreenSurfaceDialog(
         onDismissRequest = {
             if (showKeyboard) {
-                showKeyboard = false
-                focusManager.clearFocus()
+                hideKeyboard()
             } else {
                 onDismiss()
             }
-        },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        }
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .notifyUserInteraction(onUserInteraction),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            val drawerState =
-                rememberDrawerState(initialValue = DrawerValue.Closed)
-            val coroutineScope = rememberCoroutineScope()
-            ModalNavigationDrawer(
-                drawerState = drawerState,
-                drawerContent = {
-                    ModalDrawerSheet(
-                        drawerContainerColor = MaterialTheme.colorScheme.surface,
-                        drawerContentColor = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .fillMaxWidth(0.75f)
-                            .widthIn(max = 280.dp)
-                    ) {
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            stringResource(Res.string.title_sky_catalog),
-                            modifier = Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        HorizontalDivider()
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(catalogCategories) { category ->
-                                NavigationDrawerItem(
-                                    label = {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(localizedCatalogCategory(category))
-                                            val currentShortCode = categoryToShortCode[category]
-                                            val currentDesc = catalogDescriptions[currentShortCode]
-                                            if (currentDesc != null && currentDesc.isNotBlank()) {
-                                                IconButton(onClick = {
-                                                    showInfoForCategory = category
-                                                }) {
-                                                    Icon(
-                                                        Default.Info,
-                                                        contentDescription = stringResource(Res.string.cd_info)
-                                                    )
-                                                }
+        val drawerState =
+            rememberDrawerState(initialValue = DrawerValue.Closed)
+        val coroutineScope = rememberCoroutineScope()
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                ModalDrawerSheet(
+                    drawerContainerColor = MaterialTheme.colorScheme.surface,
+                    drawerContentColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .fillMaxWidth(0.75f)
+                        .widthIn(max = 280.dp)
+                ) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        stringResource(Res.string.title_sky_catalog),
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    HorizontalDivider()
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(catalogCategories) { category ->
+                            NavigationDrawerItem(
+                                label = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(localizedCatalogCategory(category))
+                                        val currentShortCode = categoryToShortCode[category]
+                                        val currentDesc = catalogDescriptions[currentShortCode]
+                                        if (currentDesc != null && currentDesc.isNotBlank()) {
+                                            IconButton(onClick = {
+                                                showInfoForCategory = category
+                                            }) {
+                                                Icon(
+                                                    Default.Info,
+                                                    contentDescription = stringResource(Res.string.cd_info)
+                                                )
                                             }
                                         }
-                                    },
-                                    selected = selectedCategory == category,
-                                    onClick = {
-                                        selectedCategory = category
-                                        coroutineScope.launch { drawerState.close() }
-                                    },
-                                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                                    colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = extColors.drawerSelectedContainer,
-                                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                                        unselectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                                        unselectedIconColor = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    }
+                                },
+                                selected = selectedCategory == category,
+                                onClick = {
+                                    selectedCategory = category
+                                    coroutineScope.launch { drawerState.close() }
+                                },
+                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                                colors = NavigationDrawerItemDefaults.colors(
+                                    selectedContainerColor = extColors.drawerSelectedContainer,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurface
                                 )
+                            )
+                        }
+                    }
+                }
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(showKeyboard) {
+                        if (showKeyboard) {
+                            detectTapGestures {
+                                hideKeyboard()
+                            }
+                        }
+                    }) {
+                TopAppBar(
+                    title = { Text(stringResource(Res.string.title_sky_catalog)) },
+                    navigationIcon = {
+                        IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                            Icon(
+                                Default.Menu,
+                                contentDescription = stringResource(Res.string.cd_open_catalogs_menu)
+                            )
+                        }
+                    },
+                    actions = {
+                        Box {
+                            val hasActiveFilters = visibilityFilter != "All Objects" ||
+                                    magLimit != null ||
+                                    typeFilters.size < CATALOG_TYPE_OPTIONS.size
+                            IconButton(onClick = { showSettingsMenu = true }) {
+                                FilterSettingsIcon(
+                                    hasActiveFilters = hasActiveFilters,
+                                    contentDescription = stringResource(Res.string.cd_settings)
+                                )
+                            }
+                            val sortOptions = listOf(
+                                "catalog ID" to Res.string.sort_catalog_id,
+                                "name" to Res.string.sort_name,
+                                "brightness" to Res.string.sort_brightness,
+                                "distance" to Res.string.sort_distance
+                            )
+                            CatalogFilterSortDropdown(
+                                expanded = showSettingsMenu,
+                                onDismissRequest = { showSettingsMenu = false },
+                                sortOptions = sortOptions,
+                                sortBy = sortBy,
+                                onSortByChange = { sortBy = it },
+                                visibilityFilter = visibilityFilter,
+                                onVisibilityFilterChange = { visibilityFilter = it },
+                                magLimit = magLimit,
+                                onMagLimitChange = { magLimit = it },
+                                typeFilters = typeFilters,
+                                onTypeFiltersChange = { typeFilters = it }
+                            )
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                Default.Close,
+                                contentDescription = stringResource(Res.string.cd_close)
+                            )
+                        }
+                    }
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    NightVisionSearchBar(
+                        value = queryValue,
+                        onValueChange = { updated ->
+                            queryValue = updated
+                            searchQuery = updated.text
+                        },
+                        placeholder = stringResource(Res.string.placeholder_search),
+                        onFocus = { showKeyboard = true },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    if (viewModel.isEngineRunning) {
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconBarItem(
+                            icon = Default.GpsFixed,
+                            label = stringResource(Res.string.label_ra_dec),
+                            onClick = { showGotoRaDecPopup = true }
+                        )
+                    }
+                }
+
+                val listContent: @Composable (Modifier) -> Unit = { modifier ->
+                    val pageListState = rememberLazyListState()
+                    LaunchedEffect(pageListState, selectedCategory) {
+                        activeListState = pageListState
+                    }
+                    LazyColumn(
+                        modifier = modifier.fillMaxSize(),
+                        state = pageListState
+                    ) {
+                        val currentCategory = selectedCategory
+                        val currentShortCode = categoryToShortCode[currentCategory]
+                        val missingHq = subCatalogMissingKeys
+                        val hqState = viewModel.hqDownloadState
+                        val catTargetId = currentShortCode?.let { "cat_$it" }
+
+                        if (currentShortCode != null && HiPSObjectPlanner.isEligibleSubCatalog(
+                                currentShortCode
+                            )
+                        ) {
+                            val isThisCatDownloading =
+                                hqState is HiPSHqDownloadState.Downloading && hqState.targetId == catTargetId
+                            if (isThisCatDownloading || (missingHq != null && missingHq.isNotEmpty())) {
+                                item(key = "hq_bulk_header_$currentShortCode") {
+                                    val catTitle = localizedCatalogCategory(currentCategory)
+                                    HqBulkDownloadHeader(
+                                        isDownloading = isThisCatDownloading,
+                                        hqState = hqState,
+                                        missingKeys = missingHq,
+                                        onShowProgress = {
+                                            viewModel.showHqDownloadProgress = true
+                                        },
+                                        onRequestDownload = { keys ->
+                                            viewModel.requestCatalogHqDownload(
+                                                categoryTitle = catTitle,
+                                                shortCode = currentShortCode,
+                                                missingKeys = keys
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        if (currentCategory == "Comets") {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isRefreshingComets) {
+                                        CircularProgressIndicator(
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    } else {
+                                        Button(onClick = {
+                                            isRefreshingComets = true
+                                            viewModel.refreshComets(
+                                                onComplete = {
+                                                    isRefreshingComets = false
+                                                },
+                                                onNetworkError = {
+                                                    isRefreshingComets = false
+                                                    showCometsError = true
+                                                }
+                                            )
+                                        }) {
+                                            Text(stringResource(Res.string.refresh_comets_button))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        val currentRa = currentRaState.value
+                        val currentDec = currentDecState.value
+                        val currentTimeMs = currentTimeMsState.longValue
+                        val lat = viewModel.currentLat
+                        val lon = viewModel.currentLon
+                        val telescopeAltAz =
+                            if (currentRa != null && currentDec != null && lat != null && lon != null) {
+                                AstrometryUtils.calculateAltAz(
+                                    currentRa,
+                                    currentDec,
+                                    lat,
+                                    lon,
+                                    currentTimeMs
+                                )
+                            } else null
+
+                        items(
+                            searchResults,
+                            key = { "${it.catalogLabel}_${it.id}_${it.catalogEntry}" }
+                        ) { obj ->
+                            var isBelowHorizon = false
+                            if (visibilityFilter == "All Objects" && lat != null && lon != null) {
+                                val objAltAz = AstrometryUtils.calculateAltAz(
+                                    obj.ra, obj.dec, lat, lon,
+                                    currentTimeMs
+                                )
+                                if (objAltAz.alt <= 0) {
+                                    isBelowHorizon = true
+                                }
+                            }
+
+                            CatalogObjectListRow(
+                                obj = obj,
+                                isBelowHorizon = isBelowHorizon,
+                                isEngineRunning = viewModel.isEngineRunning,
+                                isObserved = viewModel.isObjectObserved(obj),
+                                telescopeAltAz = telescopeAltAz,
+                                currentRa = currentRa,
+                                currentDec = currentDec,
+                                lat = lat,
+                                lon = lon,
+                                currentTimeMs = currentTimeMs,
+                                onClick = { selectedCatalogObj = obj },
+                                onCenter = { onCenter(obj.ra, obj.dec) },
+                                onGoTo = { onGoTo(obj.ra, obj.dec, 2000.0) }
+                            )
+                            HorizontalDivider()
+                        }
+                        if (searchResults.isEmpty()) {
+                            if (isLoading) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 128.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator()
+                                    }
+                                }
+                            } else {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 128.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(stringResource(Res.string.status_no_objects))
+                                    }
+                                }
+                            }
+                        } else if (hasMore) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isLoading) {
+                                        CircularProgressIndicator()
+                                    } else {
+                                        Button(onClick = { loadMore() }) {
+                                            Text(stringResource(Res.string.btn_load_more))
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            ) {
-                val windowController = LocalPlatformWindowController.current
-                val isLandscape = windowController.isLandscape
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(showKeyboard) {
-                            if (showKeyboard) {
-                                detectTapGestures {
-                                    showKeyboard = false
-                                    focusManager.clearFocus()
-                                }
-                            }
-                        }) {
-                    TopAppBar(
-                        title = { Text(stringResource(Res.string.title_sky_catalog)) },
-                        navigationIcon = {
-                            IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                                Icon(
-                                    Default.Menu,
-                                    contentDescription = stringResource(Res.string.cd_open_catalogs_menu)
-                                )
-                            }
-                        },
-                        actions = {
-                            Box {
-                                val hasActiveFilters = visibilityFilter != "All Objects" ||
-                                        magLimit != null ||
-                                        typeFilters.size < CATALOG_TYPE_OPTIONS.size
-                                IconButton(onClick = { showSettingsMenu = true }) {
-                                    FilterSettingsIcon(
-                                        hasActiveFilters = hasActiveFilters,
-                                        contentDescription = stringResource(Res.string.cd_settings)
-                                    )
-                                }
-                                val sortOptions = listOf(
-                                    "catalog ID" to Res.string.sort_catalog_id,
-                                    "name" to Res.string.sort_name,
-                                    "brightness" to Res.string.sort_brightness,
-                                    "distance" to Res.string.sort_distance
-                                )
-                                CatalogFilterSortDropdown(
-                                    expanded = showSettingsMenu,
-                                    onDismissRequest = { showSettingsMenu = false },
-                                    sortOptions = sortOptions,
-                                    sortBy = sortBy,
-                                    onSortByChange = { sortBy = it },
-                                    visibilityFilter = visibilityFilter,
-                                    onVisibilityFilterChange = { visibilityFilter = it },
-                                    magLimit = magLimit,
-                                    onMagLimitChange = { magLimit = it },
-                                    typeFilters = typeFilters,
-                                    onTypeFiltersChange = { typeFilters = it }
-                                )
-                            }
-                            IconButton(onClick = onDismiss) {
-                                Icon(
-                                    Default.Close,
-                                    contentDescription = stringResource(Res.string.cd_close)
-                                )
-                            }
-                        }
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        NightVisionSearchBar(
-                            query = searchQuery,
-                            placeholder = stringResource(Res.string.placeholder_search),
-                            onTap = { showKeyboard = true },
-                            onClear = { searchQuery = "" },
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        if (viewModel.isEngineRunning) {
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            IconBarItem(
-                                icon = Default.GpsFixed,
-                                label = stringResource(Res.string.label_ra_dec),
-                                onClick = { showGotoRaDecPopup = true }
-                            )
-                        }
-                    }
-
-                    val listContent: @Composable (Modifier) -> Unit = { modifier ->
-                        val pageListState = rememberLazyListState()
-                        LaunchedEffect(pageListState, selectedCategory) {
-                            activeListState = pageListState
-                        }
-                        LazyColumn(
-                            modifier = modifier.fillMaxSize(),
-                            state = pageListState
-                        ) {
-                            val currentCategory = selectedCategory
-                            val currentShortCode = categoryToShortCode[currentCategory]
-                            val missingHq = subCatalogMissingKeys
-                            val hqState = viewModel.hqDownloadState
-                            val catTargetId = currentShortCode?.let { "cat_$it" }
-
-                            if (currentShortCode != null && HiPSObjectPlanner.isEligibleSubCatalog(
-                                    currentShortCode
-                                )
-                            ) {
-                                val isThisCatDownloading =
-                                    hqState is HiPSHqDownloadState.Downloading && hqState.targetId == catTargetId
-                                if (isThisCatDownloading || (missingHq != null && missingHq.isNotEmpty())) {
-                                    item(key = "hq_bulk_header_$currentShortCode") {
-                                        val catTitle = localizedCatalogCategory(currentCategory)
-                                        HqBulkDownloadHeader(
-                                            isDownloading = isThisCatDownloading,
-                                            hqState = hqState,
-                                            missingKeys = missingHq,
-                                            onShowProgress = {
-                                                viewModel.showHqDownloadProgress = true
-                                            },
-                                            onRequestDownload = { keys ->
-                                                viewModel.requestCatalogHqDownload(
-                                                    categoryTitle = catTitle,
-                                                    shortCode = currentShortCode,
-                                                    missingKeys = keys
-                                                )
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (currentCategory == "Comets") {
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(16.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isRefreshingComets) {
-                                            CircularProgressIndicator(
-                                                color = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                        } else {
-                                            Button(onClick = {
-                                                isRefreshingComets = true
-                                                viewModel.refreshComets(
-                                                    onComplete = {
-                                                        isRefreshingComets = false
-                                                    },
-                                                    onNetworkError = {
-                                                        isRefreshingComets = false
-                                                        showCometsError = true
-                                                    }
-                                                )
-                                            }) {
-                                                Text(stringResource(Res.string.refresh_comets_button))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            val currentRa = currentRaState.value
-                            val currentDec = currentDecState.value
-                            val currentTimeMs = currentTimeMsState.longValue
-                            val lat = viewModel.currentLat
-                            val lon = viewModel.currentLon
-                            val telescopeAltAz =
-                                if (currentRa != null && currentDec != null && lat != null && lon != null) {
-                                    AstrometryUtils.calculateAltAz(
-                                        currentRa,
-                                        currentDec,
-                                        lat,
-                                        lon,
-                                        currentTimeMs
-                                    )
-                                } else null
-
-                            items(
-                                searchResults,
-                                key = { "${it.catalogLabel}_${it.id}_${it.catalogEntry}" }
-                            ) { obj ->
-                                var isBelowHorizon = false
-                                if (visibilityFilter == "All Objects" && lat != null && lon != null) {
-                                    val objAltAz = AstrometryUtils.calculateAltAz(
-                                        obj.ra, obj.dec, lat, lon,
-                                        currentTimeMs
-                                    )
-                                    if (objAltAz.alt <= 0) {
-                                        isBelowHorizon = true
-                                    }
-                                }
-
-                                CatalogObjectListRow(
-                                    obj = obj,
-                                    isBelowHorizon = isBelowHorizon,
-                                    isEngineRunning = viewModel.isEngineRunning,
-                                    isObserved = viewModel.isObjectObserved(obj),
-                                    telescopeAltAz = telescopeAltAz,
-                                    currentRa = currentRa,
-                                    currentDec = currentDec,
-                                    lat = lat,
-                                    lon = lon,
-                                    currentTimeMs = currentTimeMs,
-                                    onClick = { selectedCatalogObj = obj },
-                                    onCenter = { onCenter(obj.ra, obj.dec) },
-                                    onGoTo = { onGoTo(obj.ra, obj.dec, 2000.0) }
-                                )
-                                HorizontalDivider()
-                            }
-                            if (searchResults.isEmpty()) {
-                                if (isLoading) {
-                                    item {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 128.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            CircularProgressIndicator()
-                                        }
-                                    }
-                                } else {
-                                    item {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 128.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(stringResource(Res.string.status_no_objects))
-                                        }
-                                    }
-                                }
-                            } else if (hasMore) {
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(16.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isLoading) {
-                                            CircularProgressIndicator()
-                                        } else {
-                                            Button(onClick = { loadMore() }) {
-                                                Text(stringResource(Res.string.btn_load_more))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
 
 
-                    val keyboardContent: @Composable (Modifier) -> Unit = { modifier ->
-                        SearchKeyboardDock(
+                val keyboardContent: @Composable (Boolean, Modifier) -> Unit =
+                    { isLandscape, modifier ->
+                        NightVisionKeyboardDock(
                             isLandscape = isLandscape,
                             viewModel = viewModel,
-                            query = searchQuery,
-                            onQueryChange = { searchQuery = it },
-                            onClose = {
-                                showKeyboard = false
-                                focusManager.clearFocus()
+                            onEdit = { transform ->
+                                val updated = transform(queryValue)
+                                queryValue = updated
+                                searchQuery = updated.text
                             },
+                            onClose = hideKeyboard,
                             modifier = modifier
                         )
                     }
 
-                    NightVisionKeyboardSplitLayout(
-                        isLandscape = isLandscape,
-                        showKeyboard = showKeyboard,
-                        landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
-                        content = listContent,
-                        keyboard = keyboardContent
-                    )
-                }
+                NightVisionKeyboardSplitLayout(
+                    showKeyboard = showKeyboard,
+                    landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
+                    content = listContent,
+                    keyboard = keyboardContent
+                )
             }
         }
     }

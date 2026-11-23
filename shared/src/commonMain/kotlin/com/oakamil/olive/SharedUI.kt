@@ -3,12 +3,14 @@ package com.oakamil.olive
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -58,6 +60,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,7 +79,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
@@ -158,6 +160,81 @@ fun IconBarItem(
 }
 
 @Composable
+fun FullScreenSurfaceDialog(
+    onDismissRequest: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val onUserInteraction = LocalOnUserInteraction.current
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = fullScreenDialogProperties(dismissOnClickOutside = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .notifyUserInteraction(onUserInteraction),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .platformDialogSafeAreaPadding()
+            ) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun OliveScrimCardDialog(
+    onDismissRequest: () -> Unit,
+    dismissOnBackPress: Boolean,
+    dismissOnClickOutside: Boolean,
+    surfaceModifier: Modifier,
+    content: @Composable () -> Unit
+) {
+    val onUserInteraction = LocalOnUserInteraction.current
+    val extColors = LocalOliveExtendedColors.current
+    val currentOnDismiss by rememberUpdatedState(onDismissRequest)
+    val cardShape = RoundedCornerShape(16.dp)
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = fullScreenDialogProperties(
+            dismissOnBackPress = dismissOnBackPress,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .notifyUserInteraction(onUserInteraction)
+                .then(
+                    if (dismissOnClickOutside) {
+                        Modifier.pointerInput(Unit) {
+                            detectTapGestures { currentOnDismiss() }
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
+                .platformDialogSafeAreaPadding(),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = cardShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = surfaceModifier
+                    .border(1.dp, extColors.subtleBorder, cardShape)
+                    .pointerInput(Unit) { detectTapGestures { } },
+                content = content
+            )
+        }
+    }
+}
+
+@Composable
 fun OliveAlertDialog(
     title: String,
     text: String,
@@ -169,95 +246,75 @@ fun OliveAlertDialog(
     dismissOnClickOutside: Boolean = true,
     dismissOnBackPress: Boolean = true
 ) {
-    val onUserInteraction = LocalOnUserInteraction.current
     val extColors = LocalOliveExtendedColors.current
-    Dialog(
-        onDismissRequest = {
-            if (dismissOnClickOutside) {
-                onDismiss()
-            }
-        },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnClickOutside = dismissOnClickOutside,
-            dismissOnBackPress = dismissOnBackPress
-        )
+    OliveScrimCardDialog(
+        onDismissRequest = onDismiss,
+        dismissOnBackPress = dismissOnBackPress,
+        dismissOnClickOutside = dismissOnClickOutside,
+        surfaceModifier = Modifier
+            .padding(24.dp)
+            .widthIn(max = 440.dp)
+            .fillMaxWidth()
     ) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+        Column(
             modifier = Modifier
-                .padding(24.dp)
-                .widthIn(max = 440.dp)
                 .fillMaxWidth()
-                .border(
-                    1.dp,
-                    extColors.subtleBorder,
-                    RoundedCornerShape(16.dp)
-                )
-                .notifyUserInteraction(onUserInteraction)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState())
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    if (showCloseButton) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = stringResource(id = Res.string.cd_close),
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (showCloseButton) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(id = Res.string.cd_close),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(color = extColors.dialogDivider)
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(20.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (dismissButtonText != null) Arrangement.End else Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (dismissButtonText != null) {
-                        TextButton(onClick = onDismiss) {
-                            Text(
-                                text = dismissButtonText,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-                    Button(
-                        onClick = onConfirm,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = extColors.dialogDivider)
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = if (dismissButtonText != null) Arrangement.End else Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (dismissButtonText != null) {
+                    TextButton(onClick = onDismiss) {
+                        Text(
+                            text = dismissButtonText,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                    ) {
-                        Text(confirmButtonText)
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Button(
+                    onClick = onConfirm,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text(confirmButtonText)
                 }
             }
         }
@@ -331,7 +388,6 @@ fun InfoPopup(
     bottomBar: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
-    val onUserInteraction = LocalOnUserInteraction.current
     val extColors = LocalOliveExtendedColors.current
     val windowController = LocalPlatformWindowController.current
     val windowSize = LocalWindowInfo.current.containerSize
@@ -347,54 +403,43 @@ fun InfoPopup(
     } else {
         Dp.Unspecified
     }
-    Dialog(
+    OliveScrimCardDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        dismissOnBackPress = true,
+        dismissOnClickOutside = true,
+        surfaceModifier = Modifier
+            .padding(dialogPadding)
+            .widthIn(min = 200.dp, max = 440.dp)
+            .heightIn(max = maxCardHeight)
+            .then(if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier)
     ) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier
-                .padding(dialogPadding)
-                .widthIn(min = 200.dp, max = 440.dp)
-                .heightIn(max = maxCardHeight)
-                .then(if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier)
-                .border(
-                    1.dp,
-                    extColors.subtleBorder,
-                    RoundedCornerShape(16.dp)
-                )
-                .notifyUserInteraction(onUserInteraction)
+        Column(
+            modifier = if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier.width(
+                IntrinsicSize.Max
+            )
         ) {
+            OliveDialogHeader(
+                title = title,
+                onDismiss = onDismiss,
+                headerAction = headerAction
+            )
             Column(
-                modifier = if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier.width(
-                    IntrinsicSize.Max
-                )
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .padding(16.dp)
+                    .verticalScrollWithScrollbar(rememberScrollState())
             ) {
-                OliveDialogHeader(
-                    title = title,
-                    onDismiss = onDismiss,
-                    headerAction = headerAction
-                )
-                Column(
+                content()
+            }
+            if (bottomBar != null) {
+                HorizontalDivider(color = extColors.dialogDivider)
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .padding(16.dp)
-                        .verticalScrollWithScrollbar(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    content()
-                }
-                if (bottomBar != null) {
-                    HorizontalDivider(color = extColors.dialogDivider)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        bottomBar()
-                    }
+                    bottomBar()
                 }
             }
         }

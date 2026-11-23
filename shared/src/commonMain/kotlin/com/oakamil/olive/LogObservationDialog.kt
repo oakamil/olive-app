@@ -6,13 +6,12 @@ package com.oakamil.olive
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -44,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -51,7 +51,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDateTime
@@ -88,7 +87,6 @@ fun LogObservationDialog(
 ) {
     val extColors = LocalOliveExtendedColors.current
     val focusManager = LocalFocusManager.current
-    val onUserInteraction = LocalOnUserInteraction.current
     val voiceController = rememberVoiceDictationController()
 
     var currentObservedAtMs by remember { mutableLongStateOf(observedAtMs) }
@@ -165,298 +163,288 @@ fun LogObservationDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = {
-            voiceController.stopListening()
-            if (showKeyboard) {
-                hideKeyboard()
-            } else {
-                onDismiss()
-            }
-        },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .notifyUserInteraction(onUserInteraction)
-        ) {
-            val isWide = maxWidth > maxHeight && maxWidth >= 480.dp
-            val dialogShape = RoundedCornerShape(16.dp)
+    val handleDismissOrHideKeyboard = {
+        voiceController.stopListening()
+        if (showKeyboard) {
+            hideKeyboard()
+        } else {
+            onDismiss()
+        }
+    }
 
-            val cardContent: @Composable (Modifier) -> Unit = { cardModifier ->
-                Surface(
-                    shape = dialogShape,
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    modifier = cardModifier.border(1.dp, extColors.subtleBorder, dialogShape)
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        OliveDialogHeader(
-                            title = stringResource(
-                                if (isEditing) Res.string.title_edit_observation
-                                else Res.string.title_log_observation
-                            ),
-                            onDismiss = {
-                                voiceController.stopListening()
-                                onDismiss()
-                            }
+    Dialog(
+        onDismissRequest = handleDismissOrHideKeyboard,
+        properties = fullScreenDialogProperties(dismissOnClickOutside = false)
+    ) {
+        val dialogShape = RoundedCornerShape(16.dp)
+
+        val cardContent: @Composable (Modifier) -> Unit = { cardModifier ->
+            Surface(
+                shape = dialogShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = cardModifier
+                    .border(1.dp, extColors.subtleBorder, dialogShape)
+                    .pointerInput(Unit) { detectTapGestures { } }
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    OliveDialogHeader(
+                        title = stringResource(
+                            if (isEditing) Res.string.title_edit_observation
+                            else Res.string.title_log_observation
+                        ),
+                        onDismiss = {
+                            voiceController.stopListening()
+                            onDismiss()
+                        }
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScrollWithScrollbar(rememberScrollState())
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = targetName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+
+                        val metaCardShape = RoundedCornerShape(10.dp)
+                        val metaBorderColor = if (!isEditing) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            extColors.subtleBorder
+                        }
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .weight(1f, fill = false)
-                                .verticalScrollWithScrollbar(rememberScrollState())
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                .clip(metaCardShape)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    metaCardShape
+                                )
+                                .border(1.dp, metaBorderColor, metaCardShape)
+                                .then(
+                                    if (!isEditing) {
+                                        Modifier.clickable {
+                                            voiceController.stopListening()
+                                            hideKeyboard()
+                                            showMetadataEditor = true
+                                        }
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Text(
-                                text = targetName,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                text = formattedTime,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-
-                            val metaCardShape = RoundedCornerShape(10.dp)
-                            val metaBorderColor = if (!isEditing) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                extColors.subtleBorder
-                            }
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(metaCardShape)
-                                    .background(
-                                        MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        metaCardShape
-                                    )
-                                    .border(1.dp, metaBorderColor, metaCardShape)
-                                    .then(
-                                        if (!isEditing) {
-                                            Modifier.clickable {
-                                                voiceController.stopListening()
-                                                hideKeyboard()
-                                                showMetadataEditor = true
-                                            }
-                                        } else {
-                                            Modifier
-                                        }
-                                    )
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
+                            Text(
+                                text = formattedLocation,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = extColors.secondaryText
+                            )
+                            if (formattedAltAz != null) {
                                 Text(
-                                    text = formattedTime,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = formattedLocation,
+                                    text = stringResource(
+                                        Res.string.format_label_value_string,
+                                        stringResource(Res.string.label_alt_az),
+                                        formattedAltAz
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = extColors.secondaryText
-                                )
-                                if (formattedAltAz != null) {
-                                    Text(
-                                        text = stringResource(
-                                            Res.string.format_label_value_string,
-                                            stringResource(Res.string.label_alt_az),
-                                            formattedAltAz
-                                        ),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = extColors.secondaryText
-                                    )
-                                }
-                            }
-
-                            val clearNotesButton: @Composable () -> Unit = {
-                                TextButton(
-                                    onClick = {
-                                        voiceController.stopListening()
-                                        speechBaseText = ""
-                                        notesValue = TextFieldValue("")
-                                    }
-                                ) {
-                                    Text(
-                                        text = stringResource(Res.string.btn_clear),
-                                        color = extColors.ctaStop
-                                    )
-                                }
-                            }
-
-                            if (voiceController.isSupported) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    val isListening = voiceController.isListening
-                                    Box(
-                                        modifier = Modifier
-                                            .size(56.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (isListening) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.surfaceContainerHigh
-                                            )
-                                            .border(
-                                                width = if (isListening) 2.dp else 1.dp,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                shape = CircleShape
-                                            )
-                                            .clickable { startOrToggleMic() },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isListening) Icons.Outlined.MicOff else Icons.Outlined.Mic,
-                                            contentDescription = stringResource(
-                                                if (isListening) Res.string.cd_stop_voice_input
-                                                else Res.string.cd_voice_input
-                                            ),
-                                            tint = if (isListening) {
-                                                MaterialTheme.colorScheme.onPrimary
-                                            } else {
-                                                MaterialTheme.colorScheme.primary
-                                            },
-                                            modifier = Modifier.size(28.dp)
-                                        )
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = stringResource(
-                                                if (isListening) {
-                                                    Res.string.status_listening
-                                                } else {
-                                                    Res.string.status_tap_mic_to_dictate
-                                                }
-                                            ),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = if (isListening) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
-                                            }
-                                        )
-                                    }
-                                    if (notesValue.text.isNotEmpty()) {
-                                        clearNotesButton()
-                                    }
-                                }
-                            }
-
-                            DisableSystemKeyboard(disable = true) {
-                                OutlinedTextField(
-                                    value = notesValue,
-                                    onValueChange = { updated ->
-                                        notesValue = updated
-                                    },
-                                    label = { Text(stringResource(Res.string.label_observation_notes)) },
-                                    placeholder = {
-                                        Text(
-                                            stringResource(
-                                                if (voiceController.isSupported) {
-                                                    Res.string.placeholder_observation_notes
-                                                } else {
-                                                    Res.string.placeholder_observation_notes_text
-                                                }
-                                            )
-                                        )
-                                    },
-                                    trailingIcon = if (!voiceController.isSupported && notesValue.text.isNotEmpty()) {
-                                        clearNotesButton
-                                    } else {
-                                        null
-                                    },
-                                    minLines = 3,
-                                    maxLines = 6,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 96.dp)
-                                        .onFocusChanged { state ->
-                                            if (state.isFocused) {
-                                                voiceController.stopListening()
-                                                showKeyboard = true
-                                            }
-                                        }
                                 )
                             }
                         }
 
-                        HorizontalDivider(color = extColors.dialogDivider)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        val clearNotesButton: @Composable () -> Unit = {
                             TextButton(
                                 onClick = {
                                     voiceController.stopListening()
-                                    onDismiss()
+                                    speechBaseText = ""
+                                    notesValue = TextFieldValue("")
                                 }
                             ) {
                                 Text(
-                                    text = stringResource(Res.string.btn_cancel),
-                                    color = MaterialTheme.colorScheme.primary
+                                    text = stringResource(Res.string.btn_clear),
+                                    color = extColors.ctaStop
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Button(
-                                onClick = {
-                                    voiceController.stopListening()
-                                    onSave(
-                                        currentObservedAtMs,
-                                        currentLatDeg,
-                                        currentLonDeg,
-                                        currentAltAz?.alt,
-                                        currentAltAz?.az,
-                                        notesValue.text
+                        }
+
+                        if (voiceController.isSupported) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                val isListening = voiceController.isListening
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isListening) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        )
+                                        .border(
+                                            width = if (isListening) 2.dp else 1.dp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            shape = CircleShape
+                                        )
+                                        .clickable { startOrToggleMic() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (isListening) Icons.Outlined.MicOff else Icons.Outlined.Mic,
+                                        contentDescription = stringResource(
+                                            if (isListening) Res.string.cd_stop_voice_input
+                                            else Res.string.cd_voice_input
+                                        ),
+                                        tint = if (isListening) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.primary
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(
+                                            if (isListening) {
+                                                Res.string.status_listening
+                                            } else {
+                                                Res.string.status_tap_mic_to_dictate
+                                            }
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (isListening) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+                                }
+                                if (notesValue.text.isNotEmpty()) {
+                                    clearNotesButton()
+                                }
+                            }
+                        }
+
+                        DisableSystemKeyboard(disable = true) {
+                            OutlinedTextField(
+                                value = notesValue,
+                                onValueChange = { updated ->
+                                    notesValue = updated
+                                },
+                                label = { Text(stringResource(Res.string.label_observation_notes)) },
+                                placeholder = {
+                                    Text(
+                                        stringResource(
+                                            if (voiceController.isSupported) {
+                                                Res.string.placeholder_observation_notes
+                                            } else {
+                                                Res.string.placeholder_observation_notes_text
+                                            }
+                                        )
                                     )
                                 },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                )
-                            ) {
-                                Text(stringResource(Res.string.btn_save))
+                                trailingIcon = if (!voiceController.isSupported && notesValue.text.isNotEmpty()) {
+                                    clearNotesButton
+                                } else {
+                                    null
+                                },
+                                minLines = 3,
+                                maxLines = 6,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 96.dp)
+                                    .onFocusChanged { state ->
+                                        if (state.isFocused) {
+                                            voiceController.stopListening()
+                                            showKeyboard = true
+                                        }
+                                    }
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = extColors.dialogDivider)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                voiceController.stopListening()
+                                onDismiss()
                             }
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.btn_cancel),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                voiceController.stopListening()
+                                onSave(
+                                    currentObservedAtMs,
+                                    currentLatDeg,
+                                    currentLonDeg,
+                                    currentAltAz?.alt,
+                                    currentAltAz?.az,
+                                    notesValue.text
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        ) {
+                            Text(stringResource(Res.string.btn_save))
                         }
                     }
                 }
             }
+        }
 
-            val keyboardPanel: @Composable (Modifier) -> Unit = { kbModifier ->
-                NightVisionKeyboardDock(
-                    isLandscape = isWide,
-                    landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
-                    onClose = hideKeyboard,
-                    onSwapSide = {
-                        viewModel.landscapeKeyboardOnRight = !viewModel.landscapeKeyboardOnRight
-                    },
-                    onKeyClick = { ch ->
-                        notesValue = notesValue.insertTextAtCursor(ch.toString())
-                    },
-                    onSpace = { notesValue = notesValue.insertTextAtCursor(" ") },
-                    onBackspace = { notesValue = notesValue.backspaceAtCursor() },
-                    showShiftAndPunctuation = true,
-                    showNewline = true,
-                    modifier = kbModifier
-                )
-            }
-
-            NightVisionKeyboardDialogLayout(
-                isWide = isWide,
-                showKeyboard = showKeyboard,
-                landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
-                maxCardWidth = 460.dp,
-                fillCardHeightInLandscape = true,
-                cardContent = cardContent,
-                keyboardPanel = keyboardPanel
+        val keyboardPanel: @Composable (Boolean, Modifier) -> Unit = { isLandscape, kbModifier ->
+            NightVisionKeyboardDock(
+                isLandscape = isLandscape,
+                viewModel = viewModel,
+                onEdit = { transform -> notesValue = transform(notesValue) },
+                onClose = hideKeyboard,
+                showShiftAndPunctuation = true,
+                showNewline = true,
+                modifier = kbModifier
             )
         }
+
+        NightVisionKeyboardDialogLayout(
+            showKeyboard = showKeyboard,
+            landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
+            maxCardWidth = 460.dp,
+            onScrimClick = handleDismissOrHideKeyboard,
+            fillCardHeightInLandscape = true,
+            cardContent = cardContent,
+            keyboardPanel = keyboardPanel
+        )
     }
 
     if (showMetadataEditor && !isEditing) {

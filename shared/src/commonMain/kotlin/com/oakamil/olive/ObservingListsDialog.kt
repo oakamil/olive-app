@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -66,8 +65,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -112,7 +109,6 @@ fun ObservingListsDialog(
     val extColors = LocalOliveExtendedColors.current
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
-    val onUserInteraction = LocalOnUserInteraction.current
     val shareFile = rememberFileSharer()
 
     val manualLists = viewModel.manualLists
@@ -203,7 +199,12 @@ fun ObservingListsDialog(
     }
 
     var searchQuery by remember { mutableStateOf("") }
+    var queryValue by rememberSyncedTextFieldValue(searchQuery)
     var showKeyboard by remember { mutableStateOf(false) }
+    val hideKeyboard = {
+        showKeyboard = false
+        focusManager.clearFocus()
+    }
     var showSettingsMenu by remember { mutableStateOf(false) }
     var isEditingItems by remember { mutableStateOf(false) }
     var isEditingDrawerLists by remember { mutableStateOf(false) }
@@ -439,8 +440,7 @@ fun ObservingListsDialog(
 
     BackHandler {
         if (showKeyboard) {
-            showKeyboard = false
-            focusManager.clearFocus()
+            hideKeyboard()
         } else if (isEditingItems) {
             isEditingItems = false
         } else {
@@ -554,948 +554,937 @@ fun ObservingListsDialog(
         }
     )
 
-    Dialog(
+    FullScreenSurfaceDialog(
         onDismissRequest = {
             if (showKeyboard) {
-                showKeyboard = false
-                focusManager.clearFocus()
+                hideKeyboard()
             } else {
                 onDismiss()
             }
-        },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        }
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .notifyUserInteraction(onUserInteraction),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            val drawerListState = rememberLazyListState()
-            val drawerReorderState = rememberDragReorderState(
-                listState = drawerListState,
-                onMoveKeys = { fromKey, toKey ->
-                    val fromId = (fromKey as? String)?.removePrefix("ml_")?.toLongOrNull()
-                        ?: return@rememberDragReorderState false
-                    val toId = (toKey as? String)?.removePrefix("ml_")?.toLongOrNull()
-                        ?: return@rememberDragReorderState false
-                    val currentLists = viewModel.manualLists
-                    val fromIdx = currentLists.indexOfFirst { it.id == fromId }
-                    val toIdx = currentLists.indexOfFirst { it.id == toId }
-                    if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx) {
-                        return@rememberDragReorderState false
-                    }
-                    val mutable = currentLists.toMutableList()
-                    val moved = mutable.removeAt(fromIdx)
-                    mutable.add(toIdx, moved)
-                    viewModel.reorderManualListsInMemory(mutable)
-                    true
-                },
-                onDragEnd = {
-                    viewModel.persistManualListOrderAsync(viewModel.manualLists.map { it.id })
+        val drawerListState = rememberLazyListState()
+        val drawerReorderState = rememberDragReorderState(
+            listState = drawerListState,
+            onMoveKeys = { fromKey, toKey ->
+                val fromId = (fromKey as? String)?.removePrefix("ml_")?.toLongOrNull()
+                    ?: return@rememberDragReorderState false
+                val toId = (toKey as? String)?.removePrefix("ml_")?.toLongOrNull()
+                    ?: return@rememberDragReorderState false
+                val currentLists = viewModel.manualLists
+                val fromIdx = currentLists.indexOfFirst { it.id == fromId }
+                val toIdx = currentLists.indexOfFirst { it.id == toId }
+                if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx) {
+                    return@rememberDragReorderState false
                 }
-            )
+                val mutable = currentLists.toMutableList()
+                val moved = mutable.removeAt(fromIdx)
+                mutable.add(toIdx, moved)
+                viewModel.reorderManualListsInMemory(mutable)
+                true
+            },
+            onDragEnd = {
+                viewModel.persistManualListOrderAsync(viewModel.manualLists.map { it.id })
+            }
+        )
 
-            Box(modifier = Modifier.fillMaxSize()) {
-                ModalNavigationDrawer(
-                    drawerState = drawerState,
-                    gesturesEnabled = drawerReorderState.draggedKey == null,
-                    drawerContent = {
-                        ModalDrawerSheet(
-                            drawerContainerColor = MaterialTheme.colorScheme.surface,
-                            drawerContentColor = MaterialTheme.colorScheme.onSurface,
+        Box(modifier = Modifier.fillMaxSize()) {
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                gesturesEnabled = drawerReorderState.draggedKey == null,
+                drawerContent = {
+                    ModalDrawerSheet(
+                        drawerContainerColor = MaterialTheme.colorScheme.surface,
+                        drawerContentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .fillMaxWidth(0.80f)
+                            .widthIn(max = 300.dp)
+                    ) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
                             modifier = Modifier
-                                .fillMaxWidth(0.80f)
-                                .widthIn(max = 300.dp)
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = stringResource(Res.string.title_observing_lists),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
-                                        onClick = { launchCsvPicker() },
-                                        enabled = !isImporting,
-                                        modifier = Modifier.size(40.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Default.Upload,
-                                            contentDescription = stringResource(Res.string.cd_import_csv),
-                                            tint = MaterialTheme.colorScheme.primary.copy(
-                                                alpha = if (isImporting) 0.38f else 1f
-                                            )
+                            Text(
+                                text = stringResource(Res.string.title_observing_lists),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { launchCsvPicker() },
+                                    enabled = !isImporting,
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Default.Upload,
+                                        contentDescription = stringResource(Res.string.cd_import_csv),
+                                        tint = MaterialTheme.colorScheme.primary.copy(
+                                            alpha = if (isImporting) 0.38f else 1f
                                         )
-                                    }
-                                    if (manualLists.isNotEmpty()) {
-                                        IconButton(
-                                            onClick = {
-                                                isEditingDrawerLists = !isEditingDrawerLists
-                                            },
-                                            modifier = Modifier.size(40.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = if (isEditingDrawerLists) Default.Check else Outlined.Edit,
-                                                contentDescription = stringResource(
-                                                    if (isEditingDrawerLists) Res.string.btn_done else Res.string.btn_edit
-                                                ),
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                    }
+                                    )
+                                }
+                                if (manualLists.isNotEmpty()) {
                                     IconButton(
-                                        onClick = { showCreateListDialog = true },
+                                        onClick = {
+                                            isEditingDrawerLists = !isEditingDrawerLists
+                                        },
                                         modifier = Modifier.size(40.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Default.Add,
-                                            contentDescription = stringResource(Res.string.btn_new_list),
+                                            imageVector = if (isEditingDrawerLists) Default.Check else Outlined.Edit,
+                                            contentDescription = stringResource(
+                                                if (isEditingDrawerLists) Res.string.btn_done else Res.string.btn_edit
+                                            ),
                                             tint = MaterialTheme.colorScheme.primary
                                         )
                                     }
                                 }
-                            }
-                            HorizontalDivider()
-
-                            LazyColumn(
-                                state = drawerListState,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                item(key = "section_manual") {
-                                    val canExportAllLists =
-                                        !isEditingDrawerLists && manualLists.any { it.itemCount > 0 }
-                                    DrawerSectionHeader(
-                                        title = stringResource(Res.string.section_manual_lists),
-                                        exportContentDescription = if (canExportAllLists) {
-                                            stringResource(Res.string.cd_export_all_lists)
-                                        } else {
-                                            null
-                                        },
-                                        exportEnabled = !isExporting,
-                                        onExport = if (canExportAllLists) {
-                                            {
-                                                runExport {
-                                                    val lists =
-                                                        viewModel.resolveAllManualListsForExport(
-                                                            lat = lat,
-                                                            lon = lon
-                                                        )
-                                                    if (lists.isNotEmpty()) {
-                                                        val csv = withContext(Dispatchers.IO) {
-                                                            UserDatabase.buildAllManualListsCsv(
-                                                                lists
-                                                            )
-                                                        }
-                                                        shareFile(
-                                                            "all_observing_lists.csv",
-                                                            "text/csv",
-                                                            csv
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            null
-                                        }
+                                IconButton(
+                                    onClick = { showCreateListDialog = true },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Default.Add,
+                                        contentDescription = stringResource(Res.string.btn_new_list),
+                                        tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
+                            }
+                        }
+                        HorizontalDivider()
 
-                                if (manualLists.isEmpty()) {
-                                    item(key = "empty_manual") {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                                        ) {
-                                            TextButton(onClick = { showCreateListDialog = true }) {
-                                                Icon(
-                                                    Default.Add,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Spacer(Modifier.width(6.dp))
-                                                Text(stringResource(Res.string.btn_new_list))
+                        LazyColumn(
+                            state = drawerListState,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            item(key = "section_manual") {
+                                val canExportAllLists =
+                                    !isEditingDrawerLists && manualLists.any { it.itemCount > 0 }
+                                DrawerSectionHeader(
+                                    title = stringResource(Res.string.section_manual_lists),
+                                    exportContentDescription = if (canExportAllLists) {
+                                        stringResource(Res.string.cd_export_all_lists)
+                                    } else {
+                                        null
+                                    },
+                                    exportEnabled = !isExporting,
+                                    onExport = if (canExportAllLists) {
+                                        {
+                                            runExport {
+                                                val lists =
+                                                    viewModel.resolveAllManualListsForExport(
+                                                        lat = lat,
+                                                        lon = lon
+                                                    )
+                                                if (lists.isNotEmpty()) {
+                                                    val csv = withContext(Dispatchers.IO) {
+                                                        UserDatabase.buildAllManualListsCsv(
+                                                            lists
+                                                        )
+                                                    }
+                                                    shareFile(
+                                                        "all_observing_lists.csv",
+                                                        "text/csv",
+                                                        csv
+                                                    )
+                                                }
                                             }
                                         }
+                                    } else {
+                                        null
                                     }
-                                } else {
-                                    items(
-                                        items = manualLists,
-                                        key = { "ml_${it.id}" }
-                                    ) { list ->
-                                        val itemKey = "ml_${list.id}"
-                                        val isSelected =
-                                            selectedView == SelectedObservingView.Manual(list.id)
-                                        NavigationDrawerItem(
-                                            label = {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
-                                                    if (isEditingDrawerLists) {
-                                                        Icon(
-                                                            imageVector = Default.DragHandle,
-                                                            contentDescription = stringResource(Res.string.cd_reorder),
-                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            modifier = Modifier
-                                                                .dragReorderHandle(
-                                                                    drawerReorderState,
-                                                                    itemKey
-                                                                )
-                                                                .padding(end = 8.dp)
-                                                                .size(20.dp)
-                                                        )
-                                                    }
-                                                    Text(
-                                                        text = list.name,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        modifier = Modifier.weight(1f)
-                                                    )
-                                                    if (isEditingDrawerLists) {
-                                                        IconButton(
-                                                            onClick = { renamingList = list },
-                                                            modifier = Modifier.size(44.dp)
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = Outlined.Edit,
-                                                                contentDescription = stringResource(
-                                                                    Res.string.cd_rename
-                                                                ),
-                                                                modifier = Modifier.size(18.dp)
-                                                            )
-                                                        }
-                                                        Spacer(Modifier.width(8.dp))
-                                                        IconButton(
-                                                            onClick = { deletingList = list },
-                                                            modifier = Modifier.size(44.dp)
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = Outlined.Delete,
-                                                                contentDescription = stringResource(
-                                                                    Res.string.cd_delete
-                                                                ),
-                                                                tint = extColors.ctaStop,
-                                                                modifier = Modifier.size(18.dp)
-                                                            )
-                                                        }
-                                                    } else {
-                                                        Text(
-                                                            text = "${list.itemCount}",
-                                                            style = MaterialTheme.typography.labelMedium,
-                                                            color = extColors.secondaryText,
-                                                            modifier = Modifier.padding(start = 8.dp)
-                                                        )
-                                                    }
-                                                }
-                                            },
-                                            selected = isSelected,
-                                            onClick = {
-                                                if (!isEditingDrawerLists) {
-                                                    selectedView =
-                                                        SelectedObservingView.Manual(list.id)
-                                                    viewModel.lastSelectedObservingListId = list.id
-                                                    coroutineScope.launch { drawerState.close() }
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .padding(NavigationDrawerItemDefaults.ItemPadding)
-                                                .dragReorderItem(
-                                                    state = drawerReorderState,
-                                                    itemKey = itemKey,
-                                                    enableLongPressDrag = manualLists.size > 1
-                                                ),
-                                            colors = NavigationDrawerItemDefaults.colors(
-                                                selectedContainerColor = extColors.drawerSelectedContainer,
-                                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                                unselectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                                unselectedIconColor = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            if (manualLists.isEmpty()) {
+                                item(key = "empty_manual") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    ) {
+                                        TextButton(onClick = { showCreateListDialog = true }) {
+                                            Icon(
+                                                Default.Add,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
                                             )
-                                        )
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(stringResource(Res.string.btn_new_list))
+                                        }
                                     }
                                 }
-
-                                if (nightSessions.isNotEmpty()) {
-                                    item(key = "divider_sessions") {
-                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                    }
-                                    item(key = "section_sessions") {
-                                        DrawerSectionHeader(
-                                            title = stringResource(Res.string.section_past_sessions),
-                                            exportContentDescription = stringResource(Res.string.cd_export_all_observations),
-                                            exportEnabled = !isExporting,
-                                            onExport = {
-                                                runExport {
-                                                    val allObs =
-                                                        viewModel.getAllObservationsForExport()
-                                                    if (allObs.isNotEmpty()) {
-                                                        val csv = withContext(Dispatchers.IO) {
-                                                            UserDatabase.buildObservationsCsv(allObs)
-                                                        }
-                                                        shareFile(
-                                                            "all_observations.csv",
-                                                            "text/csv",
-                                                            csv
+                            } else {
+                                items(
+                                    items = manualLists,
+                                    key = { "ml_${it.id}" }
+                                ) { list ->
+                                    val itemKey = "ml_${list.id}"
+                                    val isSelected =
+                                        selectedView == SelectedObservingView.Manual(list.id)
+                                    NavigationDrawerItem(
+                                        label = {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                if (isEditingDrawerLists) {
+                                                    Icon(
+                                                        imageVector = Default.DragHandle,
+                                                        contentDescription = stringResource(Res.string.cd_reorder),
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier
+                                                            .dragReorderHandle(
+                                                                drawerReorderState,
+                                                                itemKey
+                                                            )
+                                                            .padding(end = 8.dp)
+                                                            .size(20.dp)
+                                                    )
+                                                }
+                                                Text(
+                                                    text = list.name,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                if (isEditingDrawerLists) {
+                                                    IconButton(
+                                                        onClick = { renamingList = list },
+                                                        modifier = Modifier.size(44.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Outlined.Edit,
+                                                            contentDescription = stringResource(
+                                                                Res.string.cd_rename
+                                                            ),
+                                                            modifier = Modifier.size(18.dp)
                                                         )
                                                     }
-                                                }
-                                            }
-                                        )
-                                    }
-                                    items(
-                                        items = nightSessions,
-                                        key = { "ns_${it.observingNight}" }
-                                    ) { session ->
-                                        val isSelected =
-                                            selectedView == SelectedObservingView.NightSession(
-                                                session.observingNight
-                                            )
-                                        NavigationDrawerItem(
-                                            label = {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
+                                                    Spacer(Modifier.width(8.dp))
+                                                    IconButton(
+                                                        onClick = { deletingList = list },
+                                                        modifier = Modifier.size(44.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Outlined.Delete,
+                                                            contentDescription = stringResource(
+                                                                Res.string.cd_delete
+                                                            ),
+                                                            tint = extColors.ctaStop,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                } else {
                                                     Text(
-                                                        text = session.observingNight,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        modifier = Modifier.weight(1f)
-                                                    )
-                                                    Text(
-                                                        text = "${session.objectCount}",
+                                                        text = "${list.itemCount}",
                                                         style = MaterialTheme.typography.labelMedium,
                                                         color = extColors.secondaryText,
                                                         modifier = Modifier.padding(start = 8.dp)
                                                     )
                                                 }
-                                            },
-                                            selected = isSelected,
-                                            onClick = {
+                                            }
+                                        },
+                                        selected = isSelected,
+                                        onClick = {
+                                            if (!isEditingDrawerLists) {
                                                 selectedView =
-                                                    SelectedObservingView.NightSession(session.observingNight)
+                                                    SelectedObservingView.Manual(list.id)
+                                                viewModel.lastSelectedObservingListId = list.id
                                                 coroutineScope.launch { drawerState.close() }
-                                            },
-                                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                                            colors = NavigationDrawerItemDefaults.colors(
-                                                selectedContainerColor = extColors.drawerSelectedContainer,
-                                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                                unselectedTextColor = MaterialTheme.colorScheme.onSurface
-                                            )
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                                            .dragReorderItem(
+                                                state = drawerReorderState,
+                                                itemKey = itemKey,
+                                                enableLongPressDrag = manualLists.size > 1
+                                            ),
+                                        colors = NavigationDrawerItemDefaults.colors(
+                                            selectedContainerColor = extColors.drawerSelectedContainer,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                                            unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                                            unselectedIconColor = MaterialTheme.colorScheme.onSurface
                                         )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                ) {
-                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val isLandscape = maxWidth > maxHeight && maxWidth >= 480.dp
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .pointerInput(showKeyboard) {
-                                    if (showKeyboard) {
-                                        detectTapGestures {
-                                            showKeyboard = false
-                                            focusManager.clearFocus()
-                                        }
-                                    }
-                                }
-                        ) {
-                            val topTitle = activeManualList?.name
-                                ?: activeNightKey
-                                ?: stringResource(Res.string.title_observing_lists)
-
-                            TopAppBar(
-                                title = {
-                                    Text(
-                                        text = topTitle,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.clickable {
-                                            coroutineScope.launch { drawerState.open() }
-                                        }
                                     )
-                                },
-                                navigationIcon = {
-                                    IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                                        Icon(
-                                            Default.Menu,
-                                            contentDescription = stringResource(Res.string.cd_open_lists_menu)
-                                        )
-                                    }
-                                },
-                                actions = {
-                                    if (selectedView != null && loadedView == selectedView && !isLoading && rawEntries.isNotEmpty() && !isEditingItems) {
-                                        IconButton(
-                                            enabled = !isExporting,
-                                            onClick = {
-                                                if (activeManualList != null) {
-                                                    val listName = activeManualList.name
-                                                    val entriesSnapshot = rawEntries.toList()
-                                                    runExport {
-                                                        val csv = withContext(Dispatchers.IO) {
-                                                            UserDatabase.buildManualListCsv(
-                                                                entriesSnapshot
-                                                            )
-                                                        }
-                                                        val fileName =
-                                                            "${
-                                                                UserDatabase.sanitizeExportFileName(
-                                                                    listName
-                                                                )
-                                                            }.csv"
-                                                        shareFile(fileName, "text/csv", csv)
-                                                    }
-                                                } else if (activeNightKey != null) {
-                                                    runExport {
-                                                        val obs =
-                                                            viewModel.getObservationsForNight(
-                                                                activeNightKey
-                                                            )
-                                                        if (obs.isNotEmpty()) {
-                                                            val csv = withContext(Dispatchers.IO) {
-                                                                UserDatabase.buildObservationsCsv(
-                                                                    obs
-                                                                )
-                                                            }
-                                                            shareFile(
-                                                                "observations_$activeNightKey.csv",
-                                                                "text/csv",
-                                                                csv
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        ) {
-                                            Icon(
-                                                imageVector = Default.Download,
-                                                contentDescription = stringResource(Res.string.cd_export_csv),
-                                                modifier = Modifier.size(26.dp)
-                                            )
-                                        }
-                                    }
-
-                                    if (selectedView != null && (rawEntries.isNotEmpty() || isEditingItems)) {
-                                        IconButton(
-                                            onClick = {
-                                                showKeyboard = false
-                                                isEditingItems = !isEditingItems
-                                            }
-                                        ) {
-                                            Icon(
-                                                imageVector = if (isEditingItems) Default.Check else Outlined.Edit,
-                                                contentDescription = stringResource(
-                                                    if (isEditingItems) Res.string.btn_done else Res.string.btn_edit
-                                                ),
-                                                tint = if (isEditingItems) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurface
-                                                }
-                                            )
-                                        }
-                                    }
-
-                                    if (selectedView != null && !isEditingItems) {
-                                        Box {
-                                            val hasActiveFilters =
-                                                visibilityFilter != "All Objects" ||
-                                                        (isManualSelected && observedFilter != "All")
-                                            IconButton(onClick = { showSettingsMenu = true }) {
-                                                FilterSettingsIcon(
-                                                    hasActiveFilters = hasActiveFilters,
-                                                    contentDescription = stringResource(Res.string.cd_settings)
-                                                )
-                                            }
-                                            val sortOptions = listOf(
-                                                "list_order" to if (isManualSelected) {
-                                                    Res.string.sort_list_order
-                                                } else {
-                                                    Res.string.sort_observation_time
-                                                },
-                                                "catalog ID" to Res.string.sort_catalog_id,
-                                                "name" to Res.string.sort_name,
-                                                "brightness" to Res.string.sort_brightness,
-                                                "distance" to Res.string.sort_distance
-                                            )
-                                            CatalogFilterSortDropdown(
-                                                expanded = showSettingsMenu,
-                                                onDismissRequest = { showSettingsMenu = false },
-                                                sortOptions = sortOptions,
-                                                sortBy = sortBy,
-                                                onSortByChange = { sortBy = it },
-                                                visibilityFilter = visibilityFilter,
-                                                onVisibilityFilterChange = {
-                                                    visibilityFilter = it
-                                                },
-                                                observedFilter = if (isManualSelected) observedFilter else null,
-                                                onObservedFilterChange = if (isManualSelected) {
-                                                    { observedFilter = it }
-                                                } else {
-                                                    null
-                                                }
-                                            )
-                                        }
-                                    }
-
-                                    IconButton(onClick = onDismiss) {
-                                        Icon(
-                                            Default.Close,
-                                            contentDescription = stringResource(Res.string.cd_close)
-                                        )
-                                    }
-                                }
-                            )
-
-                            if (selectedView != null && !isEditingItems) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    NightVisionSearchBar(
-                                        query = searchQuery,
-                                        placeholder = stringResource(Res.string.placeholder_search),
-                                        onTap = { showKeyboard = true },
-                                        onClear = { searchQuery = "" },
-                                        modifier = Modifier.weight(1f)
-                                    )
-
-                                    if (isManualSelected && activeManualList != null) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        IconBarItem(
-                                            icon = Default.Add,
-                                            label = stringResource(Res.string.btn_add_objects),
-                                            iconTint = MaterialTheme.colorScheme.primary,
-                                            labelColor = MaterialTheme.colorScheme.primary,
-                                            onClick = {
-                                                showKeyboard = false
-                                                showAddObjectsDialog = true
-                                            }
-                                        )
-                                    }
                                 }
                             }
 
-                            val listContent: @Composable (Modifier) -> Unit = { contentModifier ->
-                                Box(modifier = contentModifier.fillMaxSize()) {
-                                    if (selectedView == null) {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .padding(24.dp),
-                                            verticalArrangement = Arrangement.Center,
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Text(
-                                                text = stringResource(Res.string.status_no_lists),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Spacer(Modifier.height(8.dp))
-                                            Text(
-                                                text = stringResource(Res.string.hint_add_from_object_info),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = extColors.secondaryText
-                                            )
-                                            Spacer(Modifier.height(16.dp))
-                                            Button(onClick = { showCreateListDialog = true }) {
-                                                Icon(Default.Add, contentDescription = null)
-                                                Spacer(Modifier.width(6.dp))
-                                                Text(stringResource(Res.string.btn_new_list))
+                            if (nightSessions.isNotEmpty()) {
+                                item(key = "divider_sessions") {
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                                }
+                                item(key = "section_sessions") {
+                                    DrawerSectionHeader(
+                                        title = stringResource(Res.string.section_past_sessions),
+                                        exportContentDescription = stringResource(Res.string.cd_export_all_observations),
+                                        exportEnabled = !isExporting,
+                                        onExport = {
+                                            runExport {
+                                                val allObs =
+                                                    viewModel.getAllObservationsForExport()
+                                                if (allObs.isNotEmpty()) {
+                                                    val csv = withContext(Dispatchers.IO) {
+                                                        UserDatabase.buildObservationsCsv(allObs)
+                                                    }
+                                                    shareFile(
+                                                        "all_observations.csv",
+                                                        "text/csv",
+                                                        csv
+                                                    )
+                                                }
                                             }
                                         }
-                                    } else {
-                                        val itemsListState = rememberLazyListState()
-                                        val itemReorderState = rememberDragReorderState(
-                                            listState = itemsListState,
-                                            onMoveKeys = { fromKey, toKey ->
-                                                val fromId =
-                                                    (fromKey as? String)?.removePrefix("item_")
-                                                        ?.toLongOrNull()
-                                                        ?: return@rememberDragReorderState false
-                                                val toId =
-                                                    (toKey as? String)?.removePrefix("item_")
-                                                        ?.toLongOrNull()
-                                                        ?: return@rememberDragReorderState false
-                                                val fromIdx =
-                                                    rawEntries.indexOfFirst { it.listItemId == fromId }
-                                                val toIdx =
-                                                    rawEntries.indexOfFirst { it.listItemId == toId }
-                                                if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx) {
-                                                    return@rememberDragReorderState false
-                                                }
-                                                val mutable = rawEntries.toMutableList()
-                                                val moved = mutable.removeAt(fromIdx)
-                                                mutable.add(toIdx, moved)
-                                                rawEntries = mutable
-                                                true
-                                            },
-                                            onDragEnd = {
-                                                val listId = activeManualList?.id
-                                                    ?: return@rememberDragReorderState
-                                                val orderedIds =
-                                                    rawEntries.mapNotNull { it.listItemId }
-                                                viewModel.reorderListItemsAsync(listId, orderedIds)
-                                            }
+                                    )
+                                }
+                                items(
+                                    items = nightSessions,
+                                    key = { "ns_${it.observingNight}" }
+                                ) { session ->
+                                    val isSelected =
+                                        selectedView == SelectedObservingView.NightSession(
+                                            session.observingNight
                                         )
-
-                                        val hasValidCoords =
-                                            MainViewModel.isValidCoordinate(
-                                                lat,
-                                                lon
-                                            ) && lat != null && lon != null
-                                        val telescopeAltAz =
-                                            if (currentRa != null && currentDec != null && hasValidCoords) {
-                                                AstrometryUtils.calculateAltAz(
-                                                    currentRa,
-                                                    currentDec,
-                                                    lat,
-                                                    lon,
-                                                    currentTimeMs
-                                                )
-                                            } else {
-                                                null
-                                            }
-
-                                        LazyColumn(
-                                            state = itemsListState,
-                                            modifier = Modifier.fillMaxSize()
-                                        ) {
-                                            if (isManualSelected && activeManualList != null && !isEditingItems) {
-                                                val listTargetId = "list_${activeManualList.id}"
-                                                val hqState = viewModel.hqDownloadState
-                                                val isThisListDownloading =
-                                                    hqState is HiPSHqDownloadState.Downloading &&
-                                                            hqState.targetId == listTargetId
-                                                val missing = manualListMissingHqKeys
-                                                if (isThisListDownloading || (missing != null && missing.isNotEmpty())) {
-                                                    item(key = "hq_header_$listTargetId") {
-                                                        HqBulkDownloadHeader(
-                                                            isDownloading = isThisListDownloading,
-                                                            hqState = hqState,
-                                                            missingKeys = missing,
-                                                            onShowProgress = {
-                                                                viewModel.showHqDownloadProgress =
-                                                                    true
-                                                            },
-                                                            onRequestDownload = { keys ->
-                                                                viewModel.requestListHqDownload(
-                                                                    listId = activeManualList.id,
-                                                                    listTitle = activeManualList.name,
-                                                                    missingKeys = keys
-                                                                )
-                                                            }
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            items(
-                                                items = displayedEntries,
-                                                key = { entry ->
-                                                    entry.listItemId?.let { "item_$it" }
-                                                        ?: "obs_${entry.catalogObject.catalogLabel}_${entry.catalogObject.catalogEntry}"
-                                                }
-                                            ) { entry ->
-                                                val obj = entry.catalogObject
-                                                val rowKey = entry.listItemId?.let { "item_$it" }
-                                                    ?: "obs_${obj.catalogLabel}_${obj.catalogEntry}"
-                                                val isBelowHorizon =
-                                                    visibilityFilter == "All Objects" &&
-                                                            hasValidCoords &&
-                                                            AstrometryUtils.calculateAltAz(
-                                                                obj.ra,
-                                                                obj.dec,
-                                                                lat,
-                                                                lon,
-                                                                currentTimeMs
-                                                            ).alt <= 0.0
-
-                                                val notePreview = if (!isManualSelected) {
-                                                    val timeLabel = entry.observationTimeMs?.let {
-                                                        UserDatabase.formatObservationTimeOnly(
-                                                            it,
-                                                            is24Hour = is24Hour,
-                                                            amLabel = amLabel,
-                                                            pmLabel = pmLabel
-                                                        )
-                                                    }.orEmpty()
-                                                    val countPrefix =
-                                                        if (entry.observationCount > 1) {
-                                                            stringResource(
-                                                                Res.string.format_obs_time_count,
-                                                                timeLabel,
-                                                                entry.observationCount
-                                                            )
-                                                        } else {
-                                                            timeLabel
-                                                        }
-                                                    val noteText = entry.observationNotePreview
-                                                        ?.replace('\n', ' ')
-                                                        ?.takeIf { it.isNotBlank() }
-                                                        ?: stringResource(Res.string.status_logged_without_notes)
-                                                    if (countPrefix.isNotEmpty()) "$countPrefix — $noteText" else noteText
-                                                } else {
-                                                    null
-                                                }
-
-                                                Column(
-                                                    modifier = Modifier.dragReorderItem(
-                                                        state = itemReorderState,
-                                                        itemKey = rowKey,
-                                                        enableLongPressDrag = canDirectReorderItems && rawEntries.size > 1
-                                                    )
-                                                ) {
-                                                    CatalogObjectListRow(
-                                                        obj = obj,
-                                                        isBelowHorizon = isBelowHorizon,
-                                                        isEngineRunning = viewModel.isEngineRunning,
-                                                        isObserved = !isManualSelected || viewModel.isObjectObserved(
-                                                            obj
-                                                        ),
-                                                        telescopeAltAz = telescopeAltAz,
-                                                        currentRa = currentRa,
-                                                        currentDec = currentDec,
-                                                        lat = lat,
-                                                        lon = lon,
-                                                        currentTimeMs = currentTimeMs,
-                                                        extraSubtext = notePreview,
-                                                        isEditMode = isEditingItems,
-                                                        showDragHandle = isManualSelected,
-                                                        dragHandleModifier = if (isManualSelected) {
-                                                            Modifier.dragReorderHandle(
-                                                                state = itemReorderState,
-                                                                itemKey = rowKey
-                                                            )
-                                                        } else {
-                                                            Modifier
-                                                        },
-                                                        onRemoveClick = when {
-                                                            isEditingItems && isManualSelected && activeManualList != null -> {
-                                                                {
-                                                                    val listId = activeManualList.id
-                                                                    val ref =
-                                                                        UserDatabase.targetRefFrom(
-                                                                            catalogObject = obj,
-                                                                            coords = obj.ra to obj.dec,
-                                                                            fallbackTitle = obj.displayName
-                                                                        )
-                                                                    rawEntries =
-                                                                        rawEntries.filterNot {
-                                                                            it.listItemId == entry.listItemId
-                                                                        }
-                                                                    pendingUndo =
-                                                                        PendingUndoRemoval(
-                                                                            listId,
-                                                                            ref
-                                                                        )
-                                                                    coroutineScope.launch {
-                                                                        viewModel.removeObjectFromList(
-                                                                            listId,
-                                                                            obj.catalogLabel,
-                                                                            obj.catalogEntry
-                                                                        )
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            isEditingItems && !isManualSelected && entry.observationIds.isNotEmpty() -> {
-                                                                { deletingNightEntry = entry }
-                                                            }
-
-                                                            else -> null
-                                                        },
-                                                        onClick = {
-                                                            selectedFromNightSession =
-                                                                !isManualSelected
-                                                            selectedObject = obj
-                                                        },
-                                                        onCenter = { onCenter(obj.ra, obj.dec) },
-                                                        onGoTo = { onGoTo(obj.ra, obj.dec, 2000.0) }
-                                                    )
-                                                    HorizontalDivider()
-                                                }
-                                            }
-
-                                            if (displayedEntries.isEmpty()) {
-                                                item(key = "empty_state") {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(
-                                                                vertical = 96.dp,
-                                                                horizontal = 24.dp
-                                                            ),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        if (isLoading) {
-                                                            CircularProgressIndicator()
-                                                        } else if (rawEntries.isEmpty() && isManualSelected) {
-                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                Text(
-                                                                    text = stringResource(Res.string.status_empty_list),
-                                                                    style = MaterialTheme.typography.bodyLarge
-                                                                )
-                                                                Spacer(Modifier.height(6.dp))
-                                                                Text(
-                                                                    text = stringResource(Res.string.hint_add_from_object_info),
-                                                                    style = MaterialTheme.typography.bodySmall,
-                                                                    color = extColors.secondaryText
-                                                                )
-                                                                Spacer(Modifier.height(14.dp))
-                                                                Button(onClick = {
-                                                                    showAddObjectsDialog = true
-                                                                }) {
-                                                                    Icon(
-                                                                        Default.Add,
-                                                                        contentDescription = null
-                                                                    )
-                                                                    Spacer(Modifier.width(6.dp))
-                                                                    Text(stringResource(Res.string.btn_add_objects))
-                                                                }
-                                                            }
-                                                        } else {
-                                                            Text(stringResource(Res.string.status_no_objects))
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    val undo = pendingUndo
-                                    if (undo != null && importBanner == null) {
-                                        FloatingStatusBanner(
-                                            modifier = Modifier.align(Alignment.BottomCenter)
-                                        ) {
+                                    NavigationDrawerItem(
+                                        label = {
                                             Row(
-                                                modifier = Modifier.padding(
-                                                    start = 16.dp,
-                                                    end = 8.dp,
-                                                    top = 6.dp,
-                                                    bottom = 6.dp
-                                                ),
+                                                modifier = Modifier.fillMaxWidth(),
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                                horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Text(
-                                                    text = stringResource(
-                                                        Res.string.msg_removed_from_list,
-                                                        undo.target.name
-                                                    ),
-                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    text = session.observingNight,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f, fill = false)
+                                                    modifier = Modifier.weight(1f)
                                                 )
-                                                TextButton(
-                                                    onClick = {
-                                                        pendingUndo = null
-                                                        coroutineScope.launch {
-                                                            viewModel.addObjectToList(
-                                                                undo.listId,
-                                                                undo.target
-                                                            )
-                                                        }
-                                                    }
-                                                ) {
-                                                    Text(
-                                                        text = stringResource(Res.string.btn_undo),
-                                                        color = MaterialTheme.colorScheme.primary
-                                                    )
-                                                }
+                                                Text(
+                                                    text = "${session.objectCount}",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = extColors.secondaryText,
+                                                    modifier = Modifier.padding(start = 8.dp)
+                                                )
                                             }
-                                        }
-                                    }
+                                        },
+                                        selected = isSelected,
+                                        onClick = {
+                                            selectedView =
+                                                SelectedObservingView.NightSession(session.observingNight)
+                                            coroutineScope.launch { drawerState.close() }
+                                        },
+                                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                                        colors = NavigationDrawerItemDefaults.colors(
+                                            selectedContainerColor = extColors.drawerSelectedContainer,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                                            unselectedTextColor = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    )
                                 }
                             }
-
-                            val keyboardPanel: @Composable (Modifier) -> Unit = { kbModifier ->
-                                SearchKeyboardDock(
-                                    isLandscape = isLandscape,
-                                    viewModel = viewModel,
-                                    query = searchQuery,
-                                    onQueryChange = { searchQuery = it },
-                                    onClose = {
-                                        showKeyboard = false
-                                        focusManager.clearFocus()
-                                    },
-                                    modifier = kbModifier
-                                )
-                            }
-
-                            NightVisionKeyboardSplitLayout(
-                                isLandscape = isLandscape,
-                                showKeyboard = showKeyboard,
-                                landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
-                                content = listContent,
-                                keyboard = keyboardPanel
-                            )
                         }
                     }
                 }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(showKeyboard) {
+                            if (showKeyboard) {
+                                detectTapGestures {
+                                    hideKeyboard()
+                                }
+                            }
+                        }
+                ) {
+                    val topTitle = activeManualList?.name
+                        ?: activeNightKey
+                        ?: stringResource(Res.string.title_observing_lists)
 
-                val activeBanner = importBanner?.banner
-                if (activeBanner != null) {
-                    val statusText = when (activeBanner) {
-                        is ImportBanner.SingleList -> stringResource(
-                            Res.string.msg_imported_single_list,
-                            activeBanner.objectsAdded
-                        )
-
-                        is ImportBanner.FullLists -> stringResource(
-                            Res.string.msg_imported_full_lists,
-                            activeBanner.listsTouched,
-                            activeBanner.objectsAdded
-                        )
-
-                        is ImportBanner.Observations -> if (activeBanner.duplicatesSkipped > 0) {
-                            stringResource(
-                                Res.string.msg_imported_observations_with_dups,
-                                activeBanner.added,
-                                activeBanner.duplicatesSkipped
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = topTitle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.clickable {
+                                    coroutineScope.launch { drawerState.open() }
+                                }
                             )
-                        } else {
-                            stringResource(
-                                Res.string.msg_imported_observations,
-                                activeBanner.added
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                                Icon(
+                                    Default.Menu,
+                                    contentDescription = stringResource(Res.string.cd_open_lists_menu)
+                                )
+                            }
+                        },
+                        actions = {
+                            if (selectedView != null && loadedView == selectedView && !isLoading && rawEntries.isNotEmpty() && !isEditingItems) {
+                                IconButton(
+                                    enabled = !isExporting,
+                                    onClick = {
+                                        if (activeManualList != null) {
+                                            val listName = activeManualList.name
+                                            val entriesSnapshot = rawEntries.toList()
+                                            runExport {
+                                                val csv = withContext(Dispatchers.IO) {
+                                                    UserDatabase.buildManualListCsv(
+                                                        entriesSnapshot
+                                                    )
+                                                }
+                                                val fileName =
+                                                    "${
+                                                        UserDatabase.sanitizeExportFileName(
+                                                            listName
+                                                        )
+                                                    }.csv"
+                                                shareFile(fileName, "text/csv", csv)
+                                            }
+                                        } else if (activeNightKey != null) {
+                                            runExport {
+                                                val obs =
+                                                    viewModel.getObservationsForNight(
+                                                        activeNightKey
+                                                    )
+                                                if (obs.isNotEmpty()) {
+                                                    val csv = withContext(Dispatchers.IO) {
+                                                        UserDatabase.buildObservationsCsv(
+                                                            obs
+                                                        )
+                                                    }
+                                                    shareFile(
+                                                        "observations_$activeNightKey.csv",
+                                                        "text/csv",
+                                                        csv
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Default.Download,
+                                        contentDescription = stringResource(Res.string.cd_export_csv),
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
+
+                            if (selectedView != null && (rawEntries.isNotEmpty() || isEditingItems)) {
+                                IconButton(
+                                    onClick = {
+                                        hideKeyboard()
+                                        isEditingItems = !isEditingItems
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = if (isEditingItems) Default.Check else Outlined.Edit,
+                                        contentDescription = stringResource(
+                                            if (isEditingItems) Res.string.btn_done else Res.string.btn_edit
+                                        ),
+                                        tint = if (isEditingItems) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+                                }
+                            }
+
+                            if (selectedView != null && !isEditingItems) {
+                                Box {
+                                    val hasActiveFilters =
+                                        visibilityFilter != "All Objects" ||
+                                                (isManualSelected && observedFilter != "All")
+                                    IconButton(onClick = { showSettingsMenu = true }) {
+                                        FilterSettingsIcon(
+                                            hasActiveFilters = hasActiveFilters,
+                                            contentDescription = stringResource(Res.string.cd_settings)
+                                        )
+                                    }
+                                    val sortOptions = listOf(
+                                        "list_order" to if (isManualSelected) {
+                                            Res.string.sort_list_order
+                                        } else {
+                                            Res.string.sort_observation_time
+                                        },
+                                        "catalog ID" to Res.string.sort_catalog_id,
+                                        "name" to Res.string.sort_name,
+                                        "brightness" to Res.string.sort_brightness,
+                                        "distance" to Res.string.sort_distance
+                                    )
+                                    CatalogFilterSortDropdown(
+                                        expanded = showSettingsMenu,
+                                        onDismissRequest = { showSettingsMenu = false },
+                                        sortOptions = sortOptions,
+                                        sortBy = sortBy,
+                                        onSortByChange = { sortBy = it },
+                                        visibilityFilter = visibilityFilter,
+                                        onVisibilityFilterChange = {
+                                            visibilityFilter = it
+                                        },
+                                        observedFilter = if (isManualSelected) observedFilter else null,
+                                        onObservedFilterChange = if (isManualSelected) {
+                                            { observedFilter = it }
+                                        } else {
+                                            null
+                                        }
+                                    )
+                                }
+                            }
+
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    Default.Close,
+                                    contentDescription = stringResource(Res.string.cd_close)
+                                )
+                            }
+                        }
+                    )
+
+                    if (selectedView != null && !isEditingItems) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            NightVisionSearchBar(
+                                value = queryValue,
+                                onValueChange = { updated ->
+                                    queryValue = updated
+                                    searchQuery = updated.text
+                                },
+                                placeholder = stringResource(Res.string.placeholder_search),
+                                onFocus = { showKeyboard = true },
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            if (isManualSelected && activeManualList != null) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                IconBarItem(
+                                    icon = Default.Add,
+                                    label = stringResource(Res.string.btn_add_objects),
+                                    iconTint = MaterialTheme.colorScheme.primary,
+                                    labelColor = MaterialTheme.colorScheme.primary,
+                                    onClick = {
+                                        hideKeyboard()
+                                        showAddObjectsDialog = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    val listContent: @Composable (Modifier) -> Unit = { contentModifier ->
+                        Box(modifier = contentModifier.fillMaxSize()) {
+                            if (selectedView == null) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(24.dp),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = stringResource(Res.string.status_no_lists),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        text = stringResource(Res.string.hint_add_from_object_info),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = extColors.secondaryText
+                                    )
+                                    Spacer(Modifier.height(16.dp))
+                                    Button(onClick = { showCreateListDialog = true }) {
+                                        Icon(Default.Add, contentDescription = null)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(stringResource(Res.string.btn_new_list))
+                                    }
+                                }
+                            } else {
+                                val itemsListState = rememberLazyListState()
+                                val itemReorderState = rememberDragReorderState(
+                                    listState = itemsListState,
+                                    onMoveKeys = { fromKey, toKey ->
+                                        val fromId =
+                                            (fromKey as? String)?.removePrefix("item_")
+                                                ?.toLongOrNull()
+                                                ?: return@rememberDragReorderState false
+                                        val toId =
+                                            (toKey as? String)?.removePrefix("item_")
+                                                ?.toLongOrNull()
+                                                ?: return@rememberDragReorderState false
+                                        val fromIdx =
+                                            rawEntries.indexOfFirst { it.listItemId == fromId }
+                                        val toIdx =
+                                            rawEntries.indexOfFirst { it.listItemId == toId }
+                                        if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx) {
+                                            return@rememberDragReorderState false
+                                        }
+                                        val mutable = rawEntries.toMutableList()
+                                        val moved = mutable.removeAt(fromIdx)
+                                        mutable.add(toIdx, moved)
+                                        rawEntries = mutable
+                                        true
+                                    },
+                                    onDragEnd = {
+                                        val listId = activeManualList?.id
+                                            ?: return@rememberDragReorderState
+                                        val orderedIds =
+                                            rawEntries.mapNotNull { it.listItemId }
+                                        viewModel.reorderListItemsAsync(listId, orderedIds)
+                                    }
+                                )
+
+                                val hasValidCoords =
+                                    MainViewModel.isValidCoordinate(
+                                        lat,
+                                        lon
+                                    ) && lat != null && lon != null
+                                val telescopeAltAz =
+                                    if (currentRa != null && currentDec != null && hasValidCoords) {
+                                        AstrometryUtils.calculateAltAz(
+                                            currentRa,
+                                            currentDec,
+                                            lat,
+                                            lon,
+                                            currentTimeMs
+                                        )
+                                    } else {
+                                        null
+                                    }
+
+                                LazyColumn(
+                                    state = itemsListState,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    if (isManualSelected && activeManualList != null && !isEditingItems) {
+                                        val listTargetId = "list_${activeManualList.id}"
+                                        val hqState = viewModel.hqDownloadState
+                                        val isThisListDownloading =
+                                            hqState is HiPSHqDownloadState.Downloading &&
+                                                    hqState.targetId == listTargetId
+                                        val missing = manualListMissingHqKeys
+                                        if (isThisListDownloading || (missing != null && missing.isNotEmpty())) {
+                                            item(key = "hq_header_$listTargetId") {
+                                                HqBulkDownloadHeader(
+                                                    isDownloading = isThisListDownloading,
+                                                    hqState = hqState,
+                                                    missingKeys = missing,
+                                                    onShowProgress = {
+                                                        viewModel.showHqDownloadProgress =
+                                                            true
+                                                    },
+                                                    onRequestDownload = { keys ->
+                                                        viewModel.requestListHqDownload(
+                                                            listId = activeManualList.id,
+                                                            listTitle = activeManualList.name,
+                                                            missingKeys = keys
+                                                        )
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    items(
+                                        items = displayedEntries,
+                                        key = { entry ->
+                                            entry.listItemId?.let { "item_$it" }
+                                                ?: "obs_${entry.catalogObject.catalogLabel}_${entry.catalogObject.catalogEntry}"
+                                        }
+                                    ) { entry ->
+                                        val obj = entry.catalogObject
+                                        val rowKey = entry.listItemId?.let { "item_$it" }
+                                            ?: "obs_${obj.catalogLabel}_${obj.catalogEntry}"
+                                        val isBelowHorizon =
+                                            visibilityFilter == "All Objects" &&
+                                                    hasValidCoords &&
+                                                    AstrometryUtils.calculateAltAz(
+                                                        obj.ra,
+                                                        obj.dec,
+                                                        lat,
+                                                        lon,
+                                                        currentTimeMs
+                                                    ).alt <= 0.0
+
+                                        val notePreview = if (!isManualSelected) {
+                                            val timeLabel = entry.observationTimeMs?.let {
+                                                UserDatabase.formatObservationTimeOnly(
+                                                    it,
+                                                    is24Hour = is24Hour,
+                                                    amLabel = amLabel,
+                                                    pmLabel = pmLabel
+                                                )
+                                            }.orEmpty()
+                                            val countPrefix =
+                                                if (entry.observationCount > 1) {
+                                                    stringResource(
+                                                        Res.string.format_obs_time_count,
+                                                        timeLabel,
+                                                        entry.observationCount
+                                                    )
+                                                } else {
+                                                    timeLabel
+                                                }
+                                            val noteText = entry.observationNotePreview
+                                                ?.replace('\n', ' ')
+                                                ?.takeIf { it.isNotBlank() }
+                                                ?: stringResource(Res.string.status_logged_without_notes)
+                                            if (countPrefix.isNotEmpty()) "$countPrefix — $noteText" else noteText
+                                        } else {
+                                            null
+                                        }
+
+                                        Column(
+                                            modifier = Modifier.dragReorderItem(
+                                                state = itemReorderState,
+                                                itemKey = rowKey,
+                                                enableLongPressDrag = canDirectReorderItems && rawEntries.size > 1
+                                            )
+                                        ) {
+                                            CatalogObjectListRow(
+                                                obj = obj,
+                                                isBelowHorizon = isBelowHorizon,
+                                                isEngineRunning = viewModel.isEngineRunning,
+                                                isObserved = !isManualSelected || viewModel.isObjectObserved(
+                                                    obj
+                                                ),
+                                                telescopeAltAz = telescopeAltAz,
+                                                currentRa = currentRa,
+                                                currentDec = currentDec,
+                                                lat = lat,
+                                                lon = lon,
+                                                currentTimeMs = currentTimeMs,
+                                                extraSubtext = notePreview,
+                                                isEditMode = isEditingItems,
+                                                showDragHandle = isManualSelected,
+                                                dragHandleModifier = if (isManualSelected) {
+                                                    Modifier.dragReorderHandle(
+                                                        state = itemReorderState,
+                                                        itemKey = rowKey
+                                                    )
+                                                } else {
+                                                    Modifier
+                                                },
+                                                onRemoveClick = when {
+                                                    isEditingItems && isManualSelected && activeManualList != null -> {
+                                                        {
+                                                            val listId = activeManualList.id
+                                                            val ref =
+                                                                UserDatabase.targetRefFrom(
+                                                                    catalogObject = obj,
+                                                                    coords = obj.ra to obj.dec,
+                                                                    fallbackTitle = obj.displayName
+                                                                )
+                                                            rawEntries =
+                                                                rawEntries.filterNot {
+                                                                    it.listItemId == entry.listItemId
+                                                                }
+                                                            pendingUndo =
+                                                                PendingUndoRemoval(
+                                                                    listId,
+                                                                    ref
+                                                                )
+                                                            coroutineScope.launch {
+                                                                viewModel.removeObjectFromList(
+                                                                    listId,
+                                                                    obj.catalogLabel,
+                                                                    obj.catalogEntry
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+
+                                                    isEditingItems && !isManualSelected && entry.observationIds.isNotEmpty() -> {
+                                                        { deletingNightEntry = entry }
+                                                    }
+
+                                                    else -> null
+                                                },
+                                                onClick = {
+                                                    selectedFromNightSession =
+                                                        !isManualSelected
+                                                    selectedObject = obj
+                                                },
+                                                onCenter = { onCenter(obj.ra, obj.dec) },
+                                                onGoTo = { onGoTo(obj.ra, obj.dec, 2000.0) }
+                                            )
+                                            HorizontalDivider()
+                                        }
+                                    }
+
+                                    if (displayedEntries.isEmpty()) {
+                                        item(key = "empty_state") {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(
+                                                        vertical = 96.dp,
+                                                        horizontal = 24.dp
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (isLoading) {
+                                                    CircularProgressIndicator()
+                                                } else if (rawEntries.isEmpty() && isManualSelected) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                        Text(
+                                                            text = stringResource(Res.string.status_empty_list),
+                                                            style = MaterialTheme.typography.bodyLarge
+                                                        )
+                                                        Spacer(Modifier.height(6.dp))
+                                                        Text(
+                                                            text = stringResource(Res.string.hint_add_from_object_info),
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = extColors.secondaryText
+                                                        )
+                                                        Spacer(Modifier.height(14.dp))
+                                                        Button(onClick = {
+                                                            showAddObjectsDialog = true
+                                                        }) {
+                                                            Icon(
+                                                                Default.Add,
+                                                                contentDescription = null
+                                                            )
+                                                            Spacer(Modifier.width(6.dp))
+                                                            Text(stringResource(Res.string.btn_add_objects))
+                                                        }
+                                                    }
+                                                } else {
+                                                    Text(stringResource(Res.string.status_no_objects))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            val undo = pendingUndo
+                            if (undo != null && importBanner == null) {
+                                FloatingStatusBanner(
+                                    modifier = Modifier.align(Alignment.BottomCenter)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(
+                                            start = 16.dp,
+                                            end = 8.dp,
+                                            top = 6.dp,
+                                            bottom = 6.dp
+                                        ),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Text(
+                                            text = stringResource(
+                                                Res.string.msg_removed_from_list,
+                                                undo.target.name
+                                            ),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        TextButton(
+                                            onClick = {
+                                                pendingUndo = null
+                                                coroutineScope.launch {
+                                                    viewModel.addObjectToList(
+                                                        undo.listId,
+                                                        undo.target
+                                                    )
+                                                }
+                                            }
+                                        ) {
+                                            Text(
+                                                text = stringResource(Res.string.btn_undo),
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val keyboardPanel: @Composable (Boolean, Modifier) -> Unit =
+                        { isLandscape, kbModifier ->
+                            NightVisionKeyboardDock(
+                                isLandscape = isLandscape,
+                                viewModel = viewModel,
+                                onEdit = { transform ->
+                                    val updated = transform(queryValue)
+                                    queryValue = updated
+                                    searchQuery = updated.text
+                                },
+                                onClose = hideKeyboard,
+                                modifier = kbModifier
                             )
                         }
 
-                        is ImportBanner.Message -> stringResource(activeBanner.res)
-                    }
-                    FloatingStatusBanner(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .clickable { importBanner = null }
-                    ) {
-                        Text(
-                            text = statusText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    NightVisionKeyboardSplitLayout(
+                        showKeyboard = showKeyboard,
+                        landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
+                        content = listContent,
+                        keyboard = keyboardPanel
+                    )
+                }
+            }
+
+            val activeBanner = importBanner?.banner
+            if (activeBanner != null) {
+                val statusText = when (activeBanner) {
+                    is ImportBanner.SingleList -> stringResource(
+                        Res.string.msg_imported_single_list,
+                        activeBanner.objectsAdded
+                    )
+
+                    is ImportBanner.FullLists -> stringResource(
+                        Res.string.msg_imported_full_lists,
+                        activeBanner.listsTouched,
+                        activeBanner.objectsAdded
+                    )
+
+                    is ImportBanner.Observations -> if (activeBanner.duplicatesSkipped > 0) {
+                        stringResource(
+                            Res.string.msg_imported_observations_with_dups,
+                            activeBanner.added,
+                            activeBanner.duplicatesSkipped
+                        )
+                    } else {
+                        stringResource(
+                            Res.string.msg_imported_observations,
+                            activeBanner.added
                         )
                     }
+
+                    is ImportBanner.Message -> stringResource(activeBanner.res)
+                }
+                FloatingStatusBanner(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .clickable { importBanner = null }
+                ) {
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
                 }
             }
         }
