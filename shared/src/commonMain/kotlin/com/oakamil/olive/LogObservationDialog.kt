@@ -271,76 +271,77 @@ fun LogObservationDialog(
                                 }
                             }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                val isListening = voiceController.isListening
-                                Box(
-                                    modifier = Modifier
-                                        .size(56.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (isListening) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.surfaceContainerHigh
-                                        )
-                                        .border(
-                                            width = if (isListening) 2.dp else 1.dp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            shape = CircleShape
-                                        )
-                                        .clickable(enabled = voiceController.isSupported) {
-                                            startOrToggleMic()
-                                        },
-                                    contentAlignment = Alignment.Center
+                            val clearNotesButton: @Composable () -> Unit = {
+                                TextButton(
+                                    onClick = {
+                                        voiceController.stopListening()
+                                        speechBaseText = ""
+                                        notesValue = TextFieldValue("")
+                                    }
                                 ) {
-                                    Icon(
-                                        imageVector = if (isListening) Icons.Outlined.MicOff else Icons.Outlined.Mic,
-                                        contentDescription = stringResource(
-                                            if (isListening) Res.string.cd_stop_voice_input
-                                            else Res.string.cd_voice_input
-                                        ),
-                                        tint = when {
-                                            !voiceController.isSupported -> extColors.secondaryText
-                                            isListening -> MaterialTheme.colorScheme.onPrimary
-                                            else -> MaterialTheme.colorScheme.primary
-                                        },
-                                        modifier = Modifier.size(28.dp)
-                                    )
-                                }
-                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = when {
-                                            !voiceController.isSupported ->
-                                                stringResource(Res.string.status_voice_unavailable)
-
-                                            voiceController.isListening ->
-                                                stringResource(Res.string.status_listening)
-
-                                            else ->
-                                                stringResource(Res.string.status_tap_mic_to_dictate)
-                                        },
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = if (voiceController.isListening) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface
-                                        }
+                                        text = stringResource(Res.string.btn_clear),
+                                        color = extColors.ctaStop
                                     )
                                 }
-                                if (notesValue.text.isNotEmpty()) {
-                                    TextButton(
-                                        onClick = {
-                                            voiceController.stopListening()
-                                            speechBaseText = ""
-                                            notesValue = TextFieldValue("")
-                                        }
+                            }
+
+                            if (voiceController.isSupported) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    val isListening = voiceController.isListening
+                                    Box(
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (isListening) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.surfaceContainerHigh
+                                            )
+                                            .border(
+                                                width = if (isListening) 2.dp else 1.dp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                shape = CircleShape
+                                            )
+                                            .clickable { startOrToggleMic() },
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Text(
-                                            text = stringResource(Res.string.btn_clear),
-                                            color = extColors.ctaStop
+                                        Icon(
+                                            imageVector = if (isListening) Icons.Outlined.MicOff else Icons.Outlined.Mic,
+                                            contentDescription = stringResource(
+                                                if (isListening) Res.string.cd_stop_voice_input
+                                                else Res.string.cd_voice_input
+                                            ),
+                                            tint = if (isListening) {
+                                                MaterialTheme.colorScheme.onPrimary
+                                            } else {
+                                                MaterialTheme.colorScheme.primary
+                                            },
+                                            modifier = Modifier.size(28.dp)
                                         )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = stringResource(
+                                                if (isListening) {
+                                                    Res.string.status_listening
+                                                } else {
+                                                    Res.string.status_tap_mic_to_dictate
+                                                }
+                                            ),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (isListening) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            }
+                                        )
+                                    }
+                                    if (notesValue.text.isNotEmpty()) {
+                                        clearNotesButton()
                                     }
                                 }
                             }
@@ -353,7 +354,20 @@ fun LogObservationDialog(
                                     },
                                     label = { Text(stringResource(Res.string.label_observation_notes)) },
                                     placeholder = {
-                                        Text(stringResource(Res.string.placeholder_observation_notes))
+                                        Text(
+                                            stringResource(
+                                                if (voiceController.isSupported) {
+                                                    Res.string.placeholder_observation_notes
+                                                } else {
+                                                    Res.string.placeholder_observation_notes_text
+                                                }
+                                            )
+                                        )
+                                    },
+                                    trailingIcon = if (!voiceController.isSupported && notesValue.text.isNotEmpty()) {
+                                        clearNotesButton
+                                    } else {
+                                        null
                                     },
                                     minLines = 3,
                                     maxLines = 6,

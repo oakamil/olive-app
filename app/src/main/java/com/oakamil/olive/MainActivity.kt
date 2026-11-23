@@ -97,12 +97,22 @@ class MainActivity : ComponentActivity() {
 
     private var isInPipMode by mutableStateOf(false)
 
+    private val hasUsbHost: Boolean by lazy {
+        packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)
+    }
+
+    private val hasLocationHardware: Boolean by lazy {
+        packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION)
+    }
+
     private val androidCapabilities: AndroidPlatformCapabilities by lazy {
         val version = runCatching {
             packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
         }.getOrDefault("")
         AndroidPlatformCapabilities(
+            supportsUsbCamera = hasUsbHost,
             hasInternalCamera = hasBackFacingCamera(),
+            supportsLocation = hasLocationHardware,
             appVersion = version
         )
     }
@@ -248,8 +258,11 @@ class MainActivity : ComponentActivity() {
             if (granted) {
                 if (pendingLocationRefresh) {
                     pendingLocationRefresh = false
-                    val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
-                    if (!LocationManagerCompat.isLocationEnabled(locationManager)) {
+                    val locationManager = getSystemService(LOCATION_SERVICE) as? LocationManager
+                    if (locationManager == null || !LocationManagerCompat.isLocationEnabled(
+                            locationManager
+                        )
+                    ) {
                         showLocationServicesDisabledDialog = true
                     } else {
                         fetchLocation(isManualRefresh = true)
@@ -312,6 +325,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun fetchLocation(isManualRefresh: Boolean = false) {
+        if (!hasLocationHardware) return
         if (isManualRefresh) {
             if (viewModel.locationRefreshStatus != MainViewModel.LocationRefreshStatus.IDLE) return
             viewModel.locationRefreshStatus = MainViewModel.LocationRefreshStatus.REFRESHING
@@ -364,9 +378,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleRefreshLocation() {
+        if (!hasLocationHardware) return
         if (hasLocationPermission) {
-            val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
-            if (!LocationManagerCompat.isLocationEnabled(locationManager)) {
+            val locationManager = getSystemService(LOCATION_SERVICE) as? LocationManager
+            if (locationManager == null || !LocationManagerCompat.isLocationEnabled(locationManager)) {
                 showLocationServicesDisabledDialog = true
                 return
             }
@@ -385,16 +400,18 @@ class MainActivity : ComponentActivity() {
             IntentFilter(OliveService.ACTION_ENGINE_TIMED_OUT),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
-        ContextCompat.registerReceiver(
-            this,
-            usbReceiver,
-            IntentFilter().apply {
-                addAction(ACTION_USB_PERMISSION)
-                addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
-                addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
-            },
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
+        if (hasUsbHost) {
+            ContextCompat.registerReceiver(
+                this,
+                usbReceiver,
+                IntentFilter().apply {
+                    addAction(ACTION_USB_PERMISSION)
+                    addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+                    addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+                },
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        }
         window.attributes.layoutInDisplayCutoutMode =
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         hideSystemUI()
@@ -412,17 +429,20 @@ class MainActivity : ComponentActivity() {
             viewModel.currentLon = lon
         }
 
-        val prefs = getPreferences(MODE_PRIVATE)
-        val isFirstRunLocation = prefs.getBoolean("first_run_location_permission", true)
-        if (isFirstRunLocation) {
-            prefs.edit { putBoolean("first_run_location_permission", false) }
-            requestLocationPermissionLauncher.launch(locationPermissions)
-        } else if (settingsManager.locationMode == "Auto" && hasLocationPermission) {
-            fetchLocation(isManualRefresh = false)
+        if (!hasLocationHardware) {
+            settingsManager.locationMode = "Manual"
+        } else {
+            val prefs = getPreferences(MODE_PRIVATE)
+            val isFirstRunLocation = prefs.getBoolean("first_run_location_permission", true)
+            if (isFirstRunLocation) {
+                prefs.edit { putBoolean("first_run_location_permission", false) }
+                requestLocationPermissionLauncher.launch(locationPermissions)
+            } else if (settingsManager.locationMode == "Auto" && hasLocationPermission) {
+                fetchLocation(isManualRefresh = false)
+            }
         }
 
-
-        checkForCameras(if (savedInstanceState == null) attachedUsbDevice(intent) else null)
+        checkForCameras(if (hasUsbHost && savedInstanceState == null) attachedUsbDevice(intent) else null)
 
         setContent {
             CompositionLocalProvider(
@@ -647,7 +667,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+        if (hasUsbHost && intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
             checkForCameras(attachedUsbDevice(intent))
         }
     }
@@ -710,7 +730,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         hideSystemUI()
         checkForCameras()
-        if (settingsManager.locationMode == "Auto" && hasLocationPermission && !viewModel.hasValidLocation) {
+        if (hasLocationHardware && settingsManager.locationMode == "Auto" && hasLocationPermission && !viewModel.hasValidLocation) {
             fetchLocation(isManualRefresh = false)
         }
         if (viewModel.isEngineRunning && !isStopping) {
@@ -726,9 +746,11 @@ class MainActivity : ComponentActivity() {
             unregisterReceiver(engineTimeoutReceiver)
         } catch (_: Exception) {
         }
-        try {
-            unregisterReceiver(usbReceiver)
-        } catch (_: Exception) {
+        if (hasUsbHost) {
+            try {
+                unregisterReceiver(usbReceiver)
+            } catch (_: Exception) {
+            }
         }
         windowController.restoreScreenBrightness()
         if (isStarting || viewModel.isEngineRunning || viewModel.uvcWrapper != null) {
@@ -755,16 +777,20 @@ class MainActivity : ComponentActivity() {
 
     private fun checkForCameras(attachedDevice: UsbDevice? = null) {
         if (isFinishing || isDestroyed) return
-        val devices = (getSystemService(USB_SERVICE) as? UsbManager)?.deviceList?.values
-            ?.filter { isUvcDevice(it) }
-            ?.sortedWith(
-                compareBy<UsbDevice> {
-                    BUILT_IN_WEBCAM_REGEX.containsMatchIn(
-                        "${it.productName.orEmpty()} ${it.manufacturerName.orEmpty()}"
-                    )
-                }.thenByDescending { it.deviceId }
-            )
-            .orEmpty()
+        val devices = if (hasUsbHost) {
+            (getSystemService(USB_SERVICE) as? UsbManager)?.deviceList?.values
+                ?.filter { isUvcDevice(it) }
+                ?.sortedWith(
+                    compareBy<UsbDevice> {
+                        BUILT_IN_WEBCAM_REGEX.containsMatchIn(
+                            "${it.productName.orEmpty()} ${it.manufacturerName.orEmpty()}"
+                        )
+                    }.thenByDescending { it.deviceId }
+                )
+                .orEmpty()
+        } else {
+            emptyList()
+        }
         val freshMap = devices.associateBy { it.deviceName }
         val previousIds = connectedDevices?.keys
         connectedDevices = freshMap
@@ -841,7 +867,8 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("MissingPermission")
     private suspend fun getFreshLocation(): Pair<Double, Double> {
-        val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+        val locationManager = getSystemService(LOCATION_SERVICE) as? LocationManager
+            ?: return Pair(MainViewModel.INVALID_COORD, MainViewModel.INVALID_COORD)
         return withTimeoutOrNull(10000L) {
             suspendCancellableCoroutine { cont ->
                 val cancellationSignal = CancellationSignal()

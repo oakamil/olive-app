@@ -39,10 +39,21 @@ class OliveService : Service() {
     override fun onCreate() {
         super.onCreate()
 
-        val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-        multicastLock = wifiManager.createMulticastLock("OliveAlpacaMulticastLock")
-        multicastLock?.setReferenceCounted(true)
-        multicastLock?.acquire()
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI)) {
+            val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager
+            if (wifiManager != null) {
+                try {
+                    multicastLock =
+                        wifiManager.createMulticastLock("OliveAlpacaMulticastLock").apply {
+                            setReferenceCounted(true)
+                            acquire()
+                        }
+                } catch (e: Exception) {
+                    Log.w("OliveService", "Unable to acquire Wi-Fi multicast lock", e)
+                    multicastLock = null
+                }
+            }
+        }
 
         createNotificationChannel()
         startServers()
@@ -113,7 +124,16 @@ class OliveService : Service() {
     }
 
     override fun onDestroy() {
-        multicastLock?.release()
+        multicastLock?.let { lock ->
+            try {
+                if (lock.isHeld) {
+                    lock.release()
+                }
+            } catch (e: Exception) {
+                Log.w("OliveService", "Error releasing Wi-Fi multicast lock", e)
+            }
+        }
+        multicastLock = null
         releaseWakeLock()
         stopServers()
         super.onDestroy()

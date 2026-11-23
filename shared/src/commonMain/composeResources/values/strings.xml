@@ -420,9 +420,9 @@
     <string name="msg_delete_observation">Delete this observation entry?</string>
     <string name="label_observation_notes">Notes</string>
     <string name="placeholder_observation_notes">Tap mic to dictate or tap here to type…</string>
+    <string name="placeholder_observation_notes_text">Tap here to type…</string>
     <string name="status_listening">Listening…</string>
     <string name="status_tap_mic_to_dictate">Tap mic to dictate</string>
-    <string name="status_voice_unavailable">Voice dictation unavailable on this device</string>
     <string name="title_mic_permission_required">Microphone Permission</string>
     <string name="desc_mic_permission_required">Microphone and speech recognition permissions are required for voice-to-text dictation. Please enable them in Settings.</string>
     <string name="format_obs_time_count">%1$s · %2$d logs</string>

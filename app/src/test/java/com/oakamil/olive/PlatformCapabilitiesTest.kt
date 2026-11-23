@@ -1,6 +1,8 @@
 package com.oakamil.olive
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlatformCapabilitiesTest {
@@ -64,5 +66,33 @@ class PlatformCapabilitiesTest {
             withBack.resolveCameraSelection("external", isExternalConnected = true)
         )
         assertEquals("demo", withBack.resolveCameraSelection("demo", isExternalConnected = true))
+    }
+
+    @Test
+    fun testAndroidWithoutUsbHostNeverSelectsExternal() {
+        val noUsbWithBack =
+            AndroidPlatformCapabilities(supportsUsbCamera = false, hasInternalCamera = true)
+        assertEquals(
+            "internal",
+            noUsbWithBack.resolveCameraSelection("external", isExternalConnected = true)
+        )
+
+        val noUsbNoBack =
+            AndroidPlatformCapabilities(supportsUsbCamera = false, hasInternalCamera = false)
+        assertEquals(
+            "demo",
+            noUsbNoBack.resolveCameraSelection("external", isExternalConnected = true)
+        )
+        assertEquals(
+            "demo",
+            noUsbNoBack.resolveCameraSelection("internal", isExternalConnected = true)
+        )
+    }
+
+    @Test
+    fun testSupportsLocationDefaultsAndOverride() {
+        assertTrue(AndroidPlatformCapabilities.supportsLocation)
+        assertTrue(ApplePlatformCapabilities.supportsLocation)
+        assertFalse(AndroidPlatformCapabilities(supportsLocation = false).supportsLocation)
     }
 }

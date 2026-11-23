@@ -40,7 +40,9 @@ private class AndroidVoiceDictationController(
     private val context: Context,
     private val onRequestAudioPermission: () -> Unit
 ) : VoiceDictationController {
-    override val isSupported: Boolean = SpeechRecognizer.isRecognitionAvailable(context)
+    override val isSupported: Boolean =
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE) &&
+                SpeechRecognizer.isRecognitionAvailable(context)
     override var isListening by mutableStateOf(false)
         private set
     override var permissionDeniedPermanently by mutableStateOf(false)

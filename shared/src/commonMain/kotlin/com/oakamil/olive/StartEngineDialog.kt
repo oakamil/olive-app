@@ -131,7 +131,9 @@ fun StartEngineDialog(
     var sensorMode by remember { mutableStateOf(settingsManager.sensorMode) }
     var downsampling by remember { mutableIntStateOf(settingsManager.downsampling) }
     var internalCameraId by remember { mutableStateOf(settingsManager.internalCameraId) }
-    var locationMode by remember { mutableStateOf(settingsManager.locationMode) }
+    var locationMode by remember {
+        mutableStateOf(if (capabilities.supportsLocation) settingsManager.locationMode else "Manual")
+    }
     var explicitMotionSensorMode by remember {
         mutableStateOf(if (settingsManager.hasExplicitMotionSensorMode) settingsManager.motionSensorMode else null)
     }
@@ -785,71 +787,73 @@ fun StartEngineDialog(
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)
             ) {
-                // Auto Option
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { locationMode = "Auto" }
-                        .padding(end = 8.dp)
-                ) {
-                    RadioButton(
-                        selected = locationMode == "Auto",
-                        onClick = { locationMode = "Auto" },
-                        colors = RadioButtonDefaults.colors(
-                            selectedColor = MaterialTheme.colorScheme.primary,
-                            unselectedColor = MaterialTheme.colorScheme.onBackground
+                if (capabilities.supportsLocation) {
+                    // Auto Option
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable { locationMode = "Auto" }
+                            .padding(end = 8.dp)
+                    ) {
+                        RadioButton(
+                            selected = locationMode == "Auto",
+                            onClick = { locationMode = "Auto" },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.onBackground
+                            )
                         )
-                    )
-                    Text(
-                        stringResource(id = Res.string.value_auto),
-                        modifier = Modifier.padding(start = 4.dp),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-
-                if (locationMode == "Auto") {
-                    val isRefreshing =
-                        viewModel.locationRefreshStatus == MainViewModel.LocationRefreshStatus.REFRESHING
-                    val refreshIcon = when (viewModel.locationRefreshStatus) {
-                        MainViewModel.LocationRefreshStatus.SUCCESS -> Icons.Default.Check
-                        MainViewModel.LocationRefreshStatus.FAILURE -> Icons.Default.Close
-                        else -> Icons.Default.Refresh
+                        Text(
+                            stringResource(id = Res.string.value_auto),
+                            modifier = Modifier.padding(start = 4.dp),
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
                     }
-                    IconBarItem(
-                        icon = refreshIcon,
-                        label = stringResource(id = Res.string.btn_refresh),
-                        isLoading = isRefreshing,
-                        enabled = true,
-                        onClick = {
-                            if (viewModel.locationRefreshStatus == MainViewModel.LocationRefreshStatus.IDLE) {
-                                onRefreshLocation()
-                            }
+
+                    if (locationMode == "Auto") {
+                        val isRefreshing =
+                            viewModel.locationRefreshStatus == MainViewModel.LocationRefreshStatus.REFRESHING
+                        val refreshIcon = when (viewModel.locationRefreshStatus) {
+                            MainViewModel.LocationRefreshStatus.SUCCESS -> Icons.Default.Check
+                            MainViewModel.LocationRefreshStatus.FAILURE -> Icons.Default.Close
+                            else -> Icons.Default.Refresh
                         }
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                // Manual Option
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { locationMode = "Manual" }
-                        .padding(end = 8.dp)
-                ) {
-                    RadioButton(
-                        selected = locationMode == "Manual",
-                        onClick = { locationMode = "Manual" },
-                        colors = RadioButtonDefaults.colors(
-                            selectedColor = MaterialTheme.colorScheme.primary,
-                            unselectedColor = MaterialTheme.colorScheme.onBackground
+                        IconBarItem(
+                            icon = refreshIcon,
+                            label = stringResource(id = Res.string.btn_refresh),
+                            isLoading = isRefreshing,
+                            enabled = true,
+                            onClick = {
+                                if (viewModel.locationRefreshStatus == MainViewModel.LocationRefreshStatus.IDLE) {
+                                    onRefreshLocation()
+                                }
+                            }
                         )
-                    )
-                    Text(
-                        stringResource(id = Res.string.value_manual),
-                        modifier = Modifier.padding(start = 4.dp),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    // Manual Option
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable { locationMode = "Manual" }
+                            .padding(end = 8.dp)
+                    ) {
+                        RadioButton(
+                            selected = locationMode == "Manual",
+                            onClick = { locationMode = "Manual" },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.onBackground
+                            )
+                        )
+                        Text(
+                            stringResource(id = Res.string.value_manual),
+                            modifier = Modifier.padding(start = 4.dp),
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
                 }
 
                 if (locationMode == "Manual") {
