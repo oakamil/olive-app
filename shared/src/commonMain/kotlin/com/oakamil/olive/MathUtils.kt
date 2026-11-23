@@ -3,6 +3,7 @@
 
 package com.oakamil.olive
 
+/** KMP degree/radian helpers mirroring `java.lang.Math`. */
 internal object Math {
     const val PI: Double = kotlin.math.PI
     fun toRadians(angdeg: Double): Double = angdeg * (PI / 180.0)

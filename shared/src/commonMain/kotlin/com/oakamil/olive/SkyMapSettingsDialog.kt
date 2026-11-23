@@ -36,6 +36,11 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import kotlin.math.round
 
+/**
+ * Settings modal for display/theme preferences (Night Vision, HiPS sky background and HQ image
+ * storage, guidance mode, HUD overlays, reverse layout), screen brightness, low-power timeout,
+ * and live manual camera controls while the plate-solving engine is running.
+ */
 @Composable
 fun SkyMapSettingsDialog(
     viewModel: MainViewModel,
@@ -71,7 +76,7 @@ fun SkyMapSettingsDialog(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 1. Night Vision
+            // Night Vision
             Text(
                 text = stringResource(Res.string.theme_night_vision),
                 style = MaterialTheme.typography.titleMedium,
@@ -111,7 +116,7 @@ fun SkyMapSettingsDialog(
                 )
             }
 
-            // 2. Sky Background
+            // Sky Background
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(Res.string.label_sky_background),
@@ -194,7 +199,7 @@ fun SkyMapSettingsDialog(
                 )
             }
 
-            // 2b. High-Quality Object Images Storage
+            // High-Quality Object Images Storage
             val hqDlState = viewModel.hqDownloadState
             val isHqBulkDownloading =
                 hqDlState is HiPSHqDownloadState.Downloading && hqDlState.isBulkCatalog
@@ -228,7 +233,7 @@ fun SkyMapSettingsDialog(
                 )
             }
 
-            // 2. Guidance Mode
+            // Guidance Mode
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(Res.string.label_guidance_mode),
@@ -271,7 +276,7 @@ fun SkyMapSettingsDialog(
                 }
             }
 
-            // 3. Show Live Camera
+            // Show Live Camera
             Text(
                 text = stringResource(Res.string.label_show_live_camera),
                 style = MaterialTheme.typography.titleMedium,
@@ -310,7 +315,7 @@ fun SkyMapSettingsDialog(
                 )
             }
 
-            // 4. Show Map Position
+            // Show Map Position
             Text(
                 text = stringResource(Res.string.label_show_map_position),
                 style = MaterialTheme.typography.titleMedium,
@@ -349,7 +354,7 @@ fun SkyMapSettingsDialog(
                 )
             }
 
-            // 4. Show Stats
+            // Show Stats
             Text(
                 text = stringResource(Res.string.label_show_stats),
                 style = MaterialTheme.typography.titleMedium,
@@ -388,7 +393,7 @@ fun SkyMapSettingsDialog(
                 )
             }
 
-            // 5. Reverse Layout
+            // Reverse Layout
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(Res.string.label_reverse_layout),
@@ -440,7 +445,7 @@ fun SkyMapSettingsDialog(
                 )
             }
 
-            // 6. Sliders (Screen Brightness, Low Power Timeout, Zoom, Star Sensitivity, Exposure / Stacking)
+            // Sliders (Screen Brightness, Low Power Timeout, Zoom, Star Sensitivity, Exposure / Stacking)
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 4.dp),
                 color = LocalOliveExtendedColors.current.dialogDivider
@@ -704,7 +709,7 @@ fun SkyMapSettingsDialog(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                } // End of isAutoMode check
+                }
             }
         }
     }

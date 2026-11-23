@@ -17,6 +17,12 @@ import platform.CoreLocation.kCLLocationAccuracyBest
 import platform.Foundation.NSError
 import platform.darwin.NSObject
 
+/**
+ * CoreLocation delegate wrapper performing one-shot observer location requests.
+ *
+ * Prompts for When-In-Use authorization when undetermined and triggers `requestLocation()` once
+ * authorized, forwarding coordinates, errors, or permission denials to the supplied callbacks.
+ */
 @OptIn(ExperimentalForeignApi::class)
 class IosLocationProvider(
     private val onLocationUpdated: (Double, Double) -> Unit,

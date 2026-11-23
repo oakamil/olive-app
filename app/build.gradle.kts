@@ -130,14 +130,23 @@ tasks.register<Exec>("cargoBuild") {
         val fromEnv = System.getenv(envVar)?.takeIf { it.isNotBlank() }
         if (fromEnv != null) return fromEnv
 
-        candidates.firstOrNull { File(it).canExecute() }?.let { return it }
-
-        val binaryName = File(candidates.last()).name
-        val pathDirs = System.getenv("PATH")?.split(File.pathSeparator).orEmpty()
-        pathDirs.map { File(it, binaryName) }.firstOrNull { it.canExecute() }?.let {
-            return it.absolutePath
+        val isWindows = System.getProperty("os.name").lowercase().contains("win")
+        val expandedCandidates = candidates.flatMap { candidate ->
+            if (isWindows && !candidate.endsWith(".exe")) listOf("$candidate.exe", candidate) else listOf(candidate)
         }
-        return binaryName
+        expandedCandidates.firstOrNull { File(it).let { f -> f.isFile && f.canExecute() } }?.let { return it }
+
+        val baseName = File(candidates.last()).name
+        val namesToCheck = if (isWindows && !baseName.endsWith(".exe")) listOf("$baseName.exe", baseName) else listOf(baseName)
+        val pathDirs = System.getenv("PATH")?.split(File.pathSeparator).orEmpty()
+        for (dir in pathDirs) {
+            if (dir.isBlank()) continue
+            for (name in namesToCheck) {
+                val file = File(dir, name)
+                if (file.isFile && file.canExecute()) return file.absolutePath
+            }
+        }
+        return namesToCheck.first()
     }
 
     val ndkDir = resolveNdkDir()
@@ -149,6 +158,22 @@ tasks.register<Exec>("cargoBuild") {
         "/usr/bin/ninja"
     )
     val cargoProgram = resolveExecutable("CARGO", "$userHome/.cargo/bin/cargo")
+    val siblingEngineDir = rootProject.projectDir.parentFile?.resolve("olive-engine")
+
+    doFirst {
+        if (siblingEngineDir == null || !siblingEngineDir.isDirectory) {
+            throw GradleException(
+                "Missing sibling repository '../olive-engine' (expected at ${siblingEngineDir?.absolutePath}). " +
+                    "Clone it alongside olive-app: git clone https://github.com/oakamil/olive-engine.git ../olive-engine"
+            )
+        }
+        if (!File(ndkDir).isDirectory) {
+            throw GradleException(
+                "Android NDK not found (checked ANDROID_NDK_HOME, local.properties ndk.dir, and ${resolveSdkDir().absolutePath}/ndk). " +
+                    "Install Android NDK via Android Studio SDK Manager or set ANDROID_NDK_HOME."
+            )
+        }
+    }
 
     workingDir(rustDir)
     environment("ANDROID_NDK_HOME", ndkDir)

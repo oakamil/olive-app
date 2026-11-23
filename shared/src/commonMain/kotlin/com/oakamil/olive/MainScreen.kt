@@ -67,6 +67,18 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
+/**
+ * Root application screen hosting [SkyMapView], an adaptive bottom/side action bar, the
+ * low-power OLED-saving guidance/clock overlay, and modal dialogs (Catalog, Observing Lists,
+ * Camera/Align Tuner, Settings, Start Engine, and HiPS downloads).
+ *
+ * Invariants:
+ * - Low-power idle timeout tracks pointer activity in a 1-element [LongArray] (avoiding
+ *   recomposition per touch), updated via `PointerEventPass.Initial` and [LocalOnUserInteraction]
+ *   across modal dialog windows. Entering low-power mode dismisses open dialogs and caps refresh
+ *   rate to 30 Hz.
+ * - [ActionButtons] consumes stray pointer events so taps/drags on the bar do not pan the sky map.
+ */
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,

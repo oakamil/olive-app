@@ -65,6 +65,11 @@ import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
+/*
+ * Simulated sky-time ("time machine") HUD controls, date/time picker dialog, persistent banner,
+ * and shared bounded date/time numpad helpers (also reused by LogObservationDialog).
+ */
+
 internal enum class DateTimeInputField {
     YEAR, MONTH, DAY, HOUR, MINUTE
 }
@@ -214,6 +219,10 @@ private fun rememberFormattedSkyDateTime(epochMs: Long, is24Hour: Boolean): Stri
     }
 }
 
+/**
+ * Collapsible bottom-corner HUD control for stepping simulated sky time while the engine is
+ * stopped. Mirrors child order horizontally when [isReversed] is enabled.
+ */
 @Composable
 fun SkyTimeControlOverlay(
     isExpanded: Boolean,
@@ -552,6 +561,11 @@ private fun stepUnitContentDescription(step: SkyTimeStep): String = when (step) 
     SkyTimeStep.ONE_YEAR -> stringResource(Res.string.cd_step_unit_1y)
 }
 
+/**
+ * Night-vision numpad dialog for choosing an exact simulated sky date/time within
+ * `MIN_SIMULATED_TIME_YEAR..MAX_SIMULATED_TIME_YEAR`. Uses `replaceOnNextDigit` so typing
+ * immediately after focusing a field overwrites its current value.
+ */
 @Composable
 fun SkyDateTimePickerDialog(
     initialEpochMs: Long,
@@ -749,6 +763,7 @@ fun SkyDateTimePickerDialog(
     }
 }
 
+/** Top status banner shown in Catalog and Observing Lists when simulated sky time is active. */
 @Composable
 fun SimulatedTimeBanner(
     epochMs: Long,

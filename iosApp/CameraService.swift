@@ -5,6 +5,19 @@ import AVFoundation
 import CoreMedia
 import Foundation
 
+/// AVFoundation capture pipeline feeding 8-bit Y-plane luminance frames into `crates/olive-ios`.
+///
+/// - Threading: `sessionQueue` serializes session lifecycle/reconfiguration; `cameraControlQueue`
+///   serializes device configuration locks dispatched from Rust's `AppleCameraControlCallback`;
+///   a dedicated serial `cameraFrames` queue pushes locked `CVPixelBuffer` plane-0 data synchronously
+///   into `olive_ios_push_camera_frame`.
+/// - Exposure classes:
+///   - Internal cameras use manual `.custom` exposure/ISO, locked optical-infinity focus (`0.92`),
+///     disabled HDR/low-light boost, and 2016x1512 full-range Y-plane output.
+///   - External UVC cameras (iPadOS 17+ / macOS Continuity) split into Class A (supports
+///     `.continuousAutoExposure`, e.g. Sony IMX662: hardware AEC owns exposure and Rust skips
+///     pedestal trim) and Class B (supports `.custom` only, e.g. SmartSens SC2210: fixed-iris
+///     shutter priority at max ISO, with Rust software pedestal calibration).
 public final class CameraService: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     public static let shared = CameraService()
 
@@ -779,6 +792,8 @@ private final class CaptureStartResultBox: @unchecked Sendable {
 
 // MARK: - C-ABI Hardware Capture Hooks
 
+/// Returns a `strdup`-allocated JSON array of built-in rear cameras.
+/// Caller must release with libc `free()` (not `olive_ios_free_string`).
 @_cdecl("olive_ios_get_available_cameras")
 public func olive_ios_get_available_cameras() -> UnsafeMutablePointer<CChar>? {
     let deviceTypes: [AVCaptureDevice.DeviceType] = [
@@ -845,6 +860,8 @@ public func olive_ios_has_connected_external_camera() -> Bool {
     return !discovery.devices.isEmpty
 }
 
+/// Returns a `strdup`-allocated JSON array of supported formats for the first connected external camera.
+/// Caller must release with libc `free()` (not `olive_ios_free_string`).
 @_cdecl("olive_ios_get_external_camera_formats")
 public func olive_ios_get_external_camera_formats() -> UnsafeMutablePointer<CChar>? {
     guard #available(iOS 17.0, *) else {
@@ -946,6 +963,7 @@ public func olive_ios_get_external_camera_formats() -> UnsafeMutablePointer<CCha
     return strdup(jsonString)
 }
 
+/// Starts AVFoundation capture and CoreMotion updates, blocking up to 8s for session startup.
 @_cdecl("olive_ios_start_hardware_capture")
 public func olive_ios_start_hardware_capture(
     cameraId: UnsafePointer<CChar>?,

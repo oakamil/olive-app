@@ -58,6 +58,12 @@ private enum class ObservationMetaField {
     YEAR, MONTH, DAY, HOUR, MINUTE, LAT_DEG, LAT_FRAC, LON_DEG, LON_FRAC
 }
 
+/**
+ * Modal for logging a new target observation or editing notes on an existing record.
+ *
+ * Uses [NightVisionKeyboardDock] (suppressing the OS keyboard) alongside optional voice dictation.
+ * When [isEditing] is true, timestamp, observer coordinates, and Alt/Az metadata are locked.
+ */
 @Composable
 fun LogObservationDialog(
     targetName: String,
@@ -466,6 +472,10 @@ fun LogObservationDialog(
     VoicePermissionDeniedDialog(voiceController)
 }
 
+/**
+ * Numpad editor for observation date/time and observer coordinates. Rejects future timestamps and
+ * uses `replaceOnNextDigit` so the first digit typed after focusing a field overwrites its value.
+ */
 @Composable
 private fun ObservationMetadataDialog(
     initialTimestampMs: Long,

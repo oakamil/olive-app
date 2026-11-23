@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import cnames.structs.sqlite3
@@ -68,6 +71,10 @@ import platform.posix.pthread_mutexattr_init
 import platform.posix.pthread_mutexattr_settype
 import platform.posix.pthread_mutexattr_t
 
+/**
+ * Recursive POSIX mutex serializing SQLite access across Kotlin/Native threads, including nested
+ * transaction helpers. Intended for app-lifetime database instances.
+ */
 @OptIn(ExperimentalForeignApi::class)
 internal class NativeMutex {
     private val arena = Arena()
@@ -93,6 +100,12 @@ internal class NativeMutex {
     }
 }
 
+/**
+ * Read-only SQLite [CatalogDatabase] backed by the bundled `catalog.db` (`immutable=1` URI mode).
+ *
+ * Registers `SIN`/`COS` SQLite math functions via [olive_register_sqlite_math_functions] for
+ * visibility queries and caches downloaded comet orbital elements in [KeyValueStorage].
+ */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 class IosCatalogDatabase(
     private val storage: KeyValueStorage,
@@ -364,6 +377,7 @@ class IosCatalogDatabase(
         if (keys.isEmpty()) return@withLock emptyList()
         val database = openDatabase() ?: return@withLock emptyList()
         val results = mutableListOf<CatalogObject>()
+        // Chunked to 200 pairs (400 bind parameters) to stay below SQLite's parameter limit.
         for (chunk in keys.distinct().chunked(200)) {
             val sql = CatalogDatabase.buildDesignationsQuerySql(chunk.size)
             results.addAll(

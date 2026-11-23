@@ -5,6 +5,7 @@ package com.oakamil.olive
 
 import androidx.compose.runtime.staticCompositionLocalOf
 
+/** Platform feature flags and camera focus/exposure parameter bounds (Android vs. Apple). */
 interface PlatformCapabilities {
     val isApple: Boolean
     val supportsUsbCamera: Boolean
@@ -53,6 +54,7 @@ open class ApplePlatformCapabilities(
         ApplePlatformCapabilities(supportsUsbCamera = false, hasInternalCamera = true)
 }
 
+/** Resolves a requested camera source (`"internal"`, `"external"`, `"demo"`) against platform capabilities and connection state. */
 fun PlatformCapabilities.resolveCameraSelection(
     requested: String,
     isExternalConnected: Boolean

@@ -152,6 +152,21 @@ private data class SkyQueryKey(
     val precessionYearBucket: Int
 )
 
+/**
+ * Interactive stereographic sky map canvas and HUD overlays.
+ *
+ * Rendering & data pipeline:
+ * - Two-tier catalog loading: Tier 1 holds bright stars (`<= 5.0` mag) and showcase DSOs in memory
+ *   for instant wide-field rendering; Tier 2 runs debounced, quantized SQL cone searches
+ *   (`SkyQueryKey`) when `fov < 60°` to stream deeper stars/DSOs during pan/zoom.
+ * - Draw passes run in painter's order (0: HiPS sky background, 1–5: horizon/cardinals/zenith/
+ *   constellations, 6: warped live camera FOV preview, 7: catalog items & decrowded stars,
+ *   8–10: alignment reticle, target marker/guide line, selection ring).
+ * - `layoutKey` caching gates projection, text measurement, and reticle/label/star decrowding so
+ *   stationary redraws reuse pre-allocated buffers without per-frame heap churn.
+ * - Gestures: pinch-zoom noise (`zoom !in 0.98f..1.02f`) preserves `skyMapCameraLocked`; explicit
+ *   pan disengages lock; taps prefer catalog items/labels over bare stars.
+ */
 @OptIn(FlowPreview::class)
 @Composable
 fun SkyMapView(
@@ -341,7 +356,7 @@ fun SkyMapView(
             }
     }
 
-    // Dismiss popups on Back button
+    // Overlay & popup state
     var selectedObject by remember { mutableStateOf<CatalogObject?>(null) }
     var showFullStats by remember { mutableStateOf(false) }
     var showTelescopeControlInfo by remember { mutableStateOf(false) }
@@ -925,7 +940,7 @@ fun SkyMapView(
                 )
             }
 
-            // 1. Local Horizon Circle & Below-Horizon Shading (only if observer location is known)
+            // 1. Local Horizon Line (only when observer location is known)
             if (hasValidLocation) {
                 val horizonPoints = SkyMapProjection.HORIZON_POINTS
                 val n = horizonPoints.size
@@ -982,7 +997,7 @@ fun SkyMapView(
                     style = strokeHorizon
                 )
 
-                // 2. Cardinal Points (N, E, S, W)
+                // 2. Cardinal & Intercardinal Points
                 val cardinals = SkyMapProjection.CARDINAL_POINTS
                 for ((cardinal, coords) in cardinals) {
                     val pt = projection.toScreenOffset(coords.first, coords.second)
@@ -1008,7 +1023,7 @@ fun SkyMapView(
                     }
                 }
 
-                // 3. Zenith & Nadir (Simple crosshair + title-case label in secondary color)
+                // 3. Zenith & Nadir
                 val (zenithAz, zenithAlt) = SkyMapProjection.getZenith()
                 val zenithPt = projection.toScreenOffset(zenithAz, zenithAlt)
                 if (zenithPt.isSpecified && zenithPt.x in -50f..size.width + 50f && zenithPt.y in -50f..size.height + 50f) {
@@ -1693,7 +1708,7 @@ fun SkyMapView(
                 }
             }
 
-            // 9. Selected Object Highlight Ring
+            // 10. Selected Object Highlight Ring
             val selObj = selectedObject
             if (selObj != null) {
                 val sPt = projection.toScreenRaDecOffset(selObj.ra, selObj.dec, currentFrame)
@@ -1710,7 +1725,7 @@ fun SkyMapView(
 
         val topControlsY = maxOf(safeTop, 36.dp)
 
-        // Overlay Top Controls: Digital Clock (in cutout row / left or right ear, rendered at bottom of unsafe cutout area)
+        // Overlay Top: Digital Clock (aligned inside display cutout top inset)
         if (timeString.isNotEmpty()) {
             Box(
                 modifier = Modifier
@@ -1734,7 +1749,7 @@ fun SkyMapView(
             }
         }
 
-        // Overlay Top Controls: In-line FOV Badge (Left/Right) and Action Buttons (Right/Left)
+        // Overlay Top: Map Position & Live Stats HUD Cards
         if (viewModel.showMapPosition || (viewModel.showStats && viewModel.isEngineRunning)) {
             Column(
                 modifier = Modifier

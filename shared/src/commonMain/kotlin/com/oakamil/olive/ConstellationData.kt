@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 data class ConstellationInfo(
@@ -15,6 +18,10 @@ data class ConstellationLineSegment(
     val constCode: String
 )
 
+/**
+ * Static dataset of the 88 IAU constellations and their stick-figure line segments.
+ * All RA/Dec coordinates are in J2000 degrees.
+ */
 object ConstellationData {
     val CONSTELLATIONS: List<ConstellationInfo> by lazy {
         listOf(

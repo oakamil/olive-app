@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 enum class EngineStatus(val rawValue: String) {
@@ -13,6 +16,11 @@ enum class EngineStatus(val rawValue: String) {
     }
 }
 
+/**
+ * Telemetry snapshot parsed from the native engine's JSON stats payload.
+ * Celestial coordinates, FOV, roll, and GoTo offsets are in degrees (J2000 RA/Dec);
+ * stage timings are in milliseconds.
+ */
 data class EngineStats(
     val status: String = EngineStatus.IDLE.rawValue,
     val ra: Double? = null,
@@ -67,6 +75,7 @@ data class EngineStats(
         val projRa = if (isImuEstimate || centerRa == null) ra else centerRa
         val projDec = if (isImuEstimate || centerDec == null) dec else centerDec
         if (projRa == null || projDec == null) return false
+        // 0.75 * FOV covers the half-diagonal of common sensor aspect ratios (4:3 to 16:9).
         return AstrometryUtils.angularDistance(projRa, projDec, objRa, objDec) < fov * 0.75
     }
 

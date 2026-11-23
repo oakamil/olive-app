@@ -9,6 +9,7 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.StringResource
 
 
+/** Unescapes Android-style XML quote escapes (`\'`, `\"`) in Compose Resources strings. */
 internal fun String.unescapeXml(): String =
     this.replace("\\'", "'").replace("\\\"", "\"")
 
@@ -16,6 +17,7 @@ internal fun String.unescapeXml(): String =
 fun stringResource(id: StringResource): String =
     org.jetbrains.compose.resources.stringResource(id).unescapeXml()
 
+/** Resolves a Compose string resource, unescapes XML quotes, and formats arguments via [pureFormat]. */
 @Composable
 fun stringResource(id: StringResource, vararg formatArgs: Any): String {
     val raw = org.jetbrains.compose.resources.stringResource(id).unescapeXml()

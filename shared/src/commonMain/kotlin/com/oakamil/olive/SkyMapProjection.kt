@@ -145,7 +145,8 @@ class SkyMapProjection(
         val HORIZON_POINTS: List<Pair<Double, Double>> = computeHorizonPoints(72)
 
         /**
-         * Precomputed 4 Cardinal direction points (N, E, S, W) on the horizon in horizontal coordinates.
+         * Precomputed 8 Cardinal and Ordinal direction points (N, NE, E, SE, S, SW, W, NW)
+         * on the horizon in horizontal coordinates.
          */
         val CARDINAL_POINTS: List<Pair<String, Pair<Double, Double>>> = computeCardinalPoints()
 
@@ -345,6 +346,7 @@ class SkyMapProjection(
             val x3 = c3.first
             val y3 = c3.second
 
+            // Projective unit-square-to-quad mapping (Heckbert 1989); g=h=0 degenerates to affine.
             val dx1 = x1 - x2
             val dx2 = x3 - x2
             val dx3 = x0 - x1 + x2 - x3
@@ -367,6 +369,7 @@ class SkyMapProjection(
             val d = y1 - y0 + g * y1
             val e = y3 - y0 + h * y3
 
+            // Compose Matrix stores 4x4 entries in column-major order.
             return Matrix(
                 floatArrayOf(
                     a / srcW, d / srcW, 0f, g / srcW,

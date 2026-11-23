@@ -1,3 +1,11 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
+//! Android NDK `ASensorManager` backend implementing `olive_imu::ImuDevice`.
+//!
+//! Modes 1 and 2 read fused rotation vectors and differentiate successive hardware quaternions
+//! into angular velocity; mode 3 integrates raw gyroscope samples over hardware timestamps.
+
 use log::warn;
 use nalgebra::{Quaternion, UnitQuaternion, Vector3};
 use ndk_sys::*;
@@ -15,6 +23,9 @@ pub struct AndroidImu {
     last_fused_quat: Option<UnitQuaternion<f64>>,
 }
 
+// SAFETY: `ASensorManager` and `ASensor` are process-global NDK singletons; `queue` is lazily
+// opened on the polling thread (where its `ALooper` lives) and all `ImuDevice` operations
+// require `&mut self`, preventing concurrent access across threads.
 unsafe impl Send for AndroidImu {}
 unsafe impl Sync for AndroidImu {}
 
@@ -136,7 +147,7 @@ impl ImuDevice for AndroidImu {
 
                         if let Some(last_ts) = self.last_hardware_timestamp {
                             let dt_hw = (ev.timestamp - last_ts) as f64 / 1_000_000_000.0;
-                            // Guard against weird backwards or zero timestamps
+                            // Guard against backwards, zero, or stalled hardware timestamps
                             if dt_hw > 0.0 && dt_hw < 1.0 {
                                 let delta_q = UnitQuaternion::new(gyro_vec * dt_hw);
                                 accumulated_q *= delta_q;

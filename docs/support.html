@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Support — Olive Finder</title>
+  <meta name="description" content="Support, FAQ, hardware notes, and issue reporting for Olive Finder on Android, iOS, and iPadOS.">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a class="brand" href="./">
+        <img src="icon.png" alt="Olive Finder icon">
+        <span>Olive Finder</span>
+      </a>
+      <nav class="nav-links">
+        <a href="./">Overview</a>
+        <a class="active" href="support.html">Support</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="https://github.com/oakamil/olive-app">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container prose">
+    <h1>Support</h1>
+    <p class="meta">Help, setup notes, and issue reporting for Olive Finder on Android, iOS, and iPadOS.</p>
+
+    <h2>Getting Help &amp; Reporting Bugs</h2>
+    <ul>
+      <li><strong>GitHub Issues:</strong> <a href="https://github.com/oakamil/olive-app/issues">github.com/oakamil/olive-app/issues</a> (preferred for bug reports and feature requests)</li>
+      <li><strong>Email:</strong> <a href="mailto:okamil.dev@gmail.com">okamil.dev@gmail.com</a></li>
+    </ul>
+
+    <h2>Frequently Asked Questions</h2>
+
+    <p><strong>What hardware do I need?</strong><br>
+    You can explore the sky map, catalog, sky time simulation, and observing lists with no extra hardware. To use Olive Finder as an active telescope finder with your device's built-in camera or motion sensors, attach your phone or tablet to the telescope using a rigid mount or piggyback adapter.</p>
+
+    <p><strong>Which external USB cameras are supported?</strong><br>
+    Standard UVC USB astronomy cameras are supported on Android (USB Host / OTG) and iPad (iPadOS 17+). An SC2210-based UVC camera module paired with a 25mm lens is recommended for fast plate-solving under dark or suburban skies.</p>
+
+    <p><strong>How do I align the camera with my telescope?</strong><br>
+    Start the engine, center a bright star or planet in your telescope eyepiece, open <strong>Camera / Align</strong>, and tap the corresponding star in the live camera view (or use Align/Sync from SkySafari or Stellarium). Alignment only needs to be done once per mounting session.</p>
+
+    <p><strong>How do I connect SkySafari or Stellarium?</strong><br>
+    When the engine is running, Olive Finder exposes standard Meade LX200 (TCP port <code>4030</code>) and ASCOM Alpaca (TCP port <code>11111</code> + UDP discovery) servers over your local network. Tap the stats badge inside the app to view the local IP address and step-by-step SkySafari / Stellarium configuration instructions.</p>
+
+    <p><strong>Does Olive Finder require an internet connection?</strong><br>
+    No. Plate-solving, the star and deep-sky catalog, solar system ephemerides, observing lists, and logs all run completely offline. Internet access is only needed if you choose to download optional DSS2 sky background imagery or update comet orbital elements.</p>
+  </main>
+
+  <footer>
+    <div class="container footer-row">
+      <span>&copy; 2026 Omair Kamil &middot; PolyForm Noncommercial License 1.0.0</span>
+      <div class="footer-links">
+        <a href="./">Overview</a>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="https://github.com/oakamil/olive-app/blob/main/LICENSE">License</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

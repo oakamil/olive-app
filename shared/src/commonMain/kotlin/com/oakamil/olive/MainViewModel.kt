@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.runtime.getValue
@@ -29,6 +32,7 @@ import kotlinx.datetime.Clock
 import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
 
+/** Catalog object enriched with observing-list membership or night-session observation metadata. */
 data class ResolvedListEntry(
     val catalogObject: CatalogObject,
     val listItemId: Long? = null,
@@ -38,6 +42,21 @@ data class ResolvedListEntry(
     val observationIds: List<Long> = emptyList()
 )
 
+/**
+ * Shared KMP state holder bridging Compose UI with the native plate-solving engine ([EngineBridge]),
+ * internal/UVC cameras, SQLite catalog and user databases, ephemeris queries, and local HiPS sky
+ * and HQ object tile storage.
+ *
+ * Concurrency & lifecycle invariants:
+ * - Compose `mutableStateOf` properties are mutated on `Dispatchers.Main`; IO workers read
+ *   `@Volatile` snapshots where cross-thread access is required.
+ * - Engine start/stop transitions are serialized by `engineLifecycleMutex` (cancelling and joining
+ *   any in-flight `engineStartJob` first).
+ * - All `userDb` reads, `NonCancellable` writes, and final disposal `close()` are serialized by
+ *   `userDbMutex`.
+ * - HiPS base-pack and HQ download/cleanup jobs are chained via `hipsCleanupJob` / `hqCleanupJob`
+ *   so downloads and tile planners never race against on-disk deletion.
+ */
 open class MainViewModel(
     val storage: KeyValueStorage,
     val capabilities: PlatformCapabilities,
@@ -46,6 +65,9 @@ open class MainViewModel(
     private val hipsLocalBackend: HiPSLocalBackend? = null,
     val userDb: UserDatabase = NoOpUserDatabase
 ) : ViewModel() {
+
+    // --- HiPS Sky Background & HQ Object Image State ---
+
     var hipsTileManager by mutableStateOf<HiPSTileManager?>(null)
         private set
     var isSkyPackDownloaded by mutableStateOf(false)
@@ -77,10 +99,13 @@ open class MainViewModel(
     private var hqDownloadJob: Job? = null
     private var hqCleanupJob: Job? = null
 
+    // Set during HQ deletion/dispose so a cancelled download's NonCancellable exit flush cannot recreate files or overwrite cleared state.
     @Volatile
     private var suppressHqFlush = false
 
     private val activePreviewManagers = mutableSetOf<HiPSTileManager>()
+
+    // --- External UVC Camera Configuration ---
 
     data class ExternalCamera(val id: String, val name: String)
 
@@ -125,6 +150,8 @@ open class MainViewModel(
     private val timeMark = TimeSource.Monotonic.markNow()
     fun getElapsedRealtimeMs(): Long = timeMark.elapsedNow().inWholeMilliseconds
 
+    // --- Engine Mode, Sky Time & Telemetry State ---
+
     enum class EngineMode { STOPPED, UVC, NATIVE }
 
     var engineMode by mutableStateOf(EngineMode.STOPPED)
@@ -158,6 +185,7 @@ open class MainViewModel(
     var engineStats by mutableStateOf(EngineStats())
         private set
 
+    // --- Location & Persisted UI Settings ---
 
     enum class LocationRefreshStatus { IDLE, REFRESHING, SUCCESS, FAILURE }
 
@@ -244,6 +272,8 @@ open class MainViewModel(
             showSkyBackground = false
         }
     }
+
+    // --- HiPS Storage & Base Sky Pack Lifecycle ---
 
     private fun updateHqStateOnMain(index: HiPSHqIndex, storageBytes: Long) {
         hqIndex = index
@@ -365,6 +395,7 @@ open class MainViewModel(
         }
     }
 
+    // Serializes download cancellation and disk cleanup; subsequent downloads/planners join hipsCleanupJob first.
     private fun launchHiPSCleanup(block: suspend (HiPSLocalBackend) -> Unit) {
         val activeJob = hipsDownloadJob
         val priorCleanup = hipsCleanupJob
@@ -399,6 +430,8 @@ open class MainViewModel(
             }
         }
     }
+
+    // --- HiPS HQ Object Images ---
 
     fun objectHqTargetId(obj: CatalogObject): String =
         "obj_${obj.catalogLabel}_${obj.catalogEntry}_${obj.id}"
@@ -652,6 +685,7 @@ open class MainViewModel(
         }
     }
 
+    // Serializes HQ download cancellation and disk cleanup; planners, cutout loaders, and new downloads join hqCleanupJob first.
     private fun launchHqCleanup(block: suspend (HiPSLocalBackend) -> Unit) {
         val activeJob = hqDownloadJob
         val priorCleanup = hqCleanupJob
@@ -723,6 +757,8 @@ open class MainViewModel(
         }
     }
 
+    // --- Sky Map View & Display Settings ---
+
     private val _showStats = mutableStateOf(settingsManager.showStats)
     var showStats: Boolean
         get() = _showStats.value
@@ -762,7 +798,8 @@ open class MainViewModel(
     var cometsRefreshVersion by mutableIntStateOf(0)
         private set
 
-    // Catalog State
+    // --- Catalog Search & Filter State ---
+
     var catalogSearchQuery by mutableStateOf("")
 
     private val _catalogSelectedCategory = mutableStateOf(settingsManager.catalogSelectedCategory)
@@ -813,7 +850,8 @@ open class MainViewModel(
             settingsManager.landscapeKeyboardOnRight = value
         }
 
-    // Observing Lists & Observation Logs State
+    // --- Observing Lists, Observation Logs & CSV Import/Export ---
+
     var showObservingLists by mutableStateOf(false)
     var pendingOpenManualListId by mutableStateOf<Long?>(null)
         private set
@@ -886,6 +924,7 @@ open class MainViewModel(
         pendingOpenNightSession = null
     }
 
+    // Serializes all userDb reads, writes, and teardown close() to prevent concurrent SQLite access.
     private val userDbMutex = Mutex()
 
     @Volatile
@@ -895,6 +934,7 @@ open class MainViewModel(
         refreshUserDataAsync()
     }
 
+    // Runs mutations under NonCancellable so a composable leaving composition mid-write cannot leave DB and UI snapshots out of sync.
     private suspend fun <T> runUserDbWrite(block: suspend () -> T): T =
         withContext(NonCancellable) {
             userDbMutex.withLock {
@@ -1567,7 +1607,8 @@ open class MainViewModel(
         copyright = null
     )
 
-    // Camera Tuning Parameters
+    // --- Camera Tuning, Live Frame & Low-Power State ---
+
     var currentExposure by mutableFloatStateOf(33000f)
     var currentGain by mutableFloatStateOf(50f)
     var minAnalogGain by mutableFloatStateOf(100f)
@@ -1592,6 +1633,7 @@ open class MainViewModel(
 
     private val _isLowPowerMode = mutableStateOf(false)
 
+    // Volatile mirror for the IO frameJob; exiting low-power resets the stuck-camera deadline.
     @Volatile
     private var isLowPowerSnapshot = false
     var isLowPowerMode: Boolean
@@ -1630,12 +1672,15 @@ open class MainViewModel(
     private var lastCalibratedFocus: Float? = null
     private var statsJob: Job? = null
     private var frameJob: Job? = null
+    // Serializes all native/UVC engine start and stop transitions across coroutines.
     private val engineLifecycleMutex = Mutex()
     private var engineStartJob: Job? = null
 
     fun getAvailableInternalCameras(): String {
         return engine.getAvailableInternalCameras()
     }
+
+    // --- Engine Polling, Telemetry & Stuck-Camera Watchdog ---
 
     private fun readStatsSnapshot(): StatsSnapshot? {
         val json = engine.getEngineStats()
@@ -1798,6 +1843,7 @@ open class MainViewModel(
                     if (markStuckBaseline != null) {
                         lastReportedStuckBaseline = markStuckBaseline
                         withContext(Dispatchers.Main) {
+                            // Verify baseline is unchanged on Main so a concurrent frame or dialog dismissal is never clobbered.
                             if (isActive && isEngineRunning && !isCameraStuck &&
                                 lastFrameReceivedRealtime == markStuckBaseline
                             ) {
@@ -1853,6 +1899,8 @@ open class MainViewModel(
         currentLon = lon
         currentZoom = initialZoom
     }
+
+    // --- Native & External UVC Engine Lifecycle ---
 
     fun executeStartEngine(
         cameraId: String,
@@ -1992,6 +2040,7 @@ open class MainViewModel(
 
         val prevStart = engineStartJob
         prevStart?.cancel()
+        // UNDISPATCHED enters the try/finally synchronously so wrapper ownership is always released even if cancelled before dispatch.
         engineStartJob = viewModelScope.launch(
             context = Dispatchers.Main,
             start = CoroutineStart.UNDISPATCHED
@@ -2104,6 +2153,8 @@ open class MainViewModel(
             }
         }
     }
+
+    // --- Realtime Camera & Processing Controls ---
 
     fun setExposure(us: Float) {
         currentExposure = us
@@ -2297,6 +2348,8 @@ open class MainViewModel(
         engine.updateUvcStacking(uvcStacking)
     }
 
+    // --- GoTo Target, Telescope Sync & Alignment ---
+
     fun setGoToTarget(ra: Double, dec: Double, epoch: Double = 2000.0) {
         if (isEngineRunning) {
             engine.setGoToTarget(ra, dec, epoch)
@@ -2392,6 +2445,8 @@ open class MainViewModel(
         }
     }
 
+    // --- Solar System Ephemeris (Planets, Asteroids, Comets) ---
+
     fun getPlanets(
         latValue: Double? = currentLat,
         lonValue: Double? = currentLon,
@@ -2459,6 +2514,8 @@ open class MainViewModel(
         }
     }
 
+    // --- Engine Shutdown & ViewModel Disposal ---
+
     private suspend fun stopEngineInternalLocked() {
         stopPollingAndJoin()
         val wasRunning = withContext(Dispatchers.Main) {
@@ -2511,6 +2568,11 @@ open class MainViewModel(
         uvcWrapper = null
     }
 
+    /**
+     * Cancels active jobs, persists any pending debounced FOV write, closes HiPS tile managers,
+     * and defers SQLite shutdown on `Dispatchers.IO` (serializing `userDb.close()` behind
+     * `userDbMutex` so in-flight `NonCancellable` writes finish cleanly).
+     */
     fun dispose() {
         suppressHqFlush = true
         fovSaveJob?.cancel()

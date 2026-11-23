@@ -1,3 +1,28 @@
+# Required Notice: Copyright (c) 2026 Omair Kamil
+# See LICENSE file in root directory for license terms.
+
+"""Build or clean the bundled SQLite astronomical catalog (`app/src/main/assets/catalog.db`).
+
+Populates the `catalog`, `catalog_descriptions`, and `asteroids` tables, applies
+deterministic data-quality cleanups (type fixes, shorthand expansion, note enrichment),
+creates query/spatial indexes, and compacts the database atomically.
+
+Expected inputs for `--rebuild`:
+    - `../pifinder/astro_data/pifinder_objects.db`: PiFinder DSO catalog and names.
+    - `bsc5-all.json` (cwd or `~/Downloads/bsc5-all.json`): Bright Star Catalogue (`Str`).
+    - `catalog_descriptions.md`: Markdown sections (`## <label>`) for catalog metadata.
+    - `asteroids.dat`: MPCORB-format orbital elements for the `asteroids` table.
+
+CLI flags (mutually exclusive):
+    --rebuild   Rebuild `app/src/main/assets/catalog.db` from source inputs and clean it.
+    --clean     Clean and compact an existing `app/src/main/assets/catalog.db` in place
+                (default when the PiFinder source DB is absent).
+
+Output:
+    Uncompressed SQLite database at `app/src/main/assets/catalog.db` (removes any
+    legacy `catalog.db.gz` alongside it).
+"""
+
 import argparse
 import json
 import os

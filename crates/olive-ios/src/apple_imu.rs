@@ -1,6 +1,12 @@
 // Required Notice: Copyright (c) 2026 Omair Kamil
 // See LICENSE file in root directory for license terms.
 
+//! `ImuDevice` implementation fed by raw CoreMotion gyroscope updates from `MotionService.swift`.
+//!
+//! Samples arrive in Apple's right-handed device-body frame (`CMGyroData.rotationRate`, rad/s:
+//! +X right, +Y up in portrait, +Z out of screen) and are integrated via body-frame quaternion
+//! composition (`accumulated_q *= exp(omega * dt_hw)`) between engine polls.
+
 use log::info;
 use nalgebra::{UnitQuaternion, Vector3};
 use olive_imu::{ImuDevice, SensorEvent};
@@ -134,12 +140,12 @@ impl Drop for AppleImu {
     }
 }
 
-/// Push raw hardware gyroscope updates from Swift CoreMotion.
+/// Pushes a raw hardware gyroscope sample from Swift CoreMotion (device-body frame, rad/s).
 ///
-/// Accumulates hardware rotational deltas over each hardware time interval dt_hw.
-/// When polled by the engine thread, the accumulated delta quaternion is converted
-/// to equivalent velocity over dt_engine, guaranteeing 100% sample preservation
-/// with zero bias-filter distortion.
+/// Right-multiplies each incremental rotation (`gyro_vec * dt_hw`) into `accumulated_q` so
+/// consecutive body-frame deltas compose cleanly without losing high-frequency motion. On
+/// [`AppleImu::poll`], the net rotation is converted to an equivalent constant angular velocity
+/// over the summed hardware interval `dt_hw` (falling back to wall-clock poll delta if out of bounds).
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_push_gyro_update(gx: f64, gy: f64, gz: f64, timestamp_ns: i64) {
     let state = {

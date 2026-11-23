@@ -10,6 +10,7 @@ iosApp/build/
 
 # Local configuration file (sdk path, etc)
 local.properties
+iosApp/LocalSigning.xcconfig
 
 # IntelliJ IDEA / Android Studio
 .idea/

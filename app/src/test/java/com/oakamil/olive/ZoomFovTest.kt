@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import org.junit.Assert.assertEquals
@@ -33,10 +36,7 @@ class ZoomFovTest {
     fun testRectilinearFovProjectionAtTwoXZoom() {
         val baseFov = 65.0
         val zoomedFov = calculateZoomedFov(baseFov, 2.0)
-        // tan(65° / 2) = tan(32.5°) ≈ 0.63707
-        // 0.63707 / 2 = 0.318535
-        // 2 * atan(0.318535) ≈ 35.34° (or 35.81° depending on precision)
-        // 2 * atan(tan(32.5° * pi / 180) / 2) * 180 / pi ≈ 35.342°
+        // Rectilinear 2x zoom: 2 * atan(tan(65° / 2) / 2) ≈ 35.34°
         val recoveredBase = calculateBaseFov(zoomedFov, 2.0)
         assertEquals(baseFov, recoveredBase, 1e-4)
         assertTrue("Zoomed FOV must be smaller than base FOV", zoomedFov < baseFov)

@@ -101,6 +101,7 @@ fun daysInMonth(year: Int, month: Int): Int = when (month) {
     else -> 30
 }
 
+/** Validates a local calendar date/time (12h or 24h) and converts it to UTC epoch ms, or `null` if invalid. */
 fun parseLocalDateTimeMillis(
     year: Int,
     month: Int,
@@ -130,6 +131,10 @@ fun parseLocalDateTimeMillis(
     }.getOrNull()
 }
 
+/**
+ * Advances [baseEpochMs] by [direction] units of [step] (exact duration for minutes/hours,
+ * DST-aware calendar periods for days/months/years), clamped to the DE421-safe `1900..2050` local range.
+ */
 fun stepSkyTimeMillis(
     baseEpochMs: Long,
     step: SkyTimeStep,

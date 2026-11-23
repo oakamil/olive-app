@@ -3,7 +3,6 @@
 
 package com.oakamil.olive
 
-import com.oakamil.olive.HiPSDownloadManager.HQ_FLUSH_BATCH_SIZE
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -104,6 +103,7 @@ object HiPSDownloadManager {
         "https://casda.csiro.au/hips/DSS2/color"
     )
 
+    /** Maps a dense `OLVHIPS1` TOC index (`0 until TOTAL_TILES`) back to `(order, ipix)`. */
     fun globalIndexToOrderIpix(globalIdx: Int, maxOrder: Int = Healpix.MAX_ORDER): Pair<Int, Int> {
         for (order in Healpix.MIN_ORDER until maxOrder) {
             val nextOffset = Healpix.orderOffset(order + 1)
@@ -170,6 +170,7 @@ object HiPSDownloadManager {
         return "$trimmed/Norder$order/Dir$dir/Npix$ipix.jpg"
     }
 
+    /** Rejects truncated payloads and HTML error pages by checking size and JPEG SOI (`FF D8 FF`). */
     private fun isValidJpeg(bytes: ByteArray): Boolean {
         if (bytes.size <= 128) return false
         val b0 = bytes[0].toInt() and 0xFF
@@ -178,6 +179,11 @@ object HiPSDownloadManager {
         return b0 == 0xFF && b1 == 0xD8 && b2 == 0xFF
     }
 
+    /**
+     * Fetches a tile with sticky mirror failover: starts at the last known good mirror, rotates
+     * through fallbacks (plus one final retry of the starting mirror), and promotes whichever
+     * mirror succeeds so concurrent workers switch over.
+     */
     private suspend fun fetchValidTileJpeg(
         backend: HiPSLocalBackend,
         mirrorBaseUrls: List<String>,
@@ -205,6 +211,10 @@ object HiPSDownloadManager {
         return null
     }
 
+    /**
+     * Downloads all missing base-pack tiles (`Orders 0..MAX_ORDER`) into staging and atomically
+     * assembles the `OLVHIPS1` `.pack` file, emitting throttled state updates on [callbackDispatcher].
+     */
     suspend fun downloadDss2(
         backend: HiPSLocalBackend,
         mirrorBaseUrls: List<String> = MIRROR_BASE_URLS,
@@ -385,6 +395,7 @@ object HiPSDownloadManager {
             return HqDownloadOutcome(0, 0, false)
         }
 
+        // Lock order: commitMutex -> stateMutex (never reversed) to keep disk commits atomic without stalling workers.
         val stateMutex = Mutex()
         val commitMutex = Mutex()
         var nextQueuePos = 0

@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import android.Manifest
@@ -77,6 +80,11 @@ import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.math.round
 
+/**
+ * Main Android activity hosting the Compose UI, hardware capability detection (back camera,
+ * USB host, location), runtime & USB permission flows, Picture-in-Picture guidance mode,
+ * and [OliveService] / native engine lifecycle coordination.
+ */
 class MainActivity : ComponentActivity() {
     companion object {
         private const val ACTION_USB_PERMISSION = "com.oakamil.olive.USB_PERMISSION"
@@ -96,6 +104,8 @@ class MainActivity : ComponentActivity() {
     private var connectedDevices: Map<String, UsbDevice>? = null
 
     private var isInPipMode by mutableStateOf(false)
+
+    // --- Hardware capability detection ---
 
     private val hasUsbHost: Boolean by lazy {
         packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)
@@ -176,6 +186,8 @@ class MainActivity : ComponentActivity() {
     init {
         System.loadLibrary("olive_jni")
     }
+
+    // --- Broadcast receivers (FGS timeout & USB hot-plug / permission) ---
 
     private val engineTimeoutReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -284,6 +296,8 @@ class MainActivity : ComponentActivity() {
         }
 
 
+    // --- Star database asset staging & location refresh ---
+
     private fun copyAssetDatabase() {
         val assetName = "default_database.npz"
         val outFile = File(filesDir, assetName)
@@ -391,6 +405,8 @@ class MainActivity : ComponentActivity() {
             requestLocationPermissionLauncher.launch(locationPermissions)
         }
     }
+
+    // --- Activity lifecycle, immersive fullscreen & Picture-in-Picture ---
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -755,6 +771,7 @@ class MainActivity : ComponentActivity() {
         windowController.restoreScreenBrightness()
         if (isStarting || viewModel.isEngineRunning || viewModel.uvcWrapper != null) {
             val clearGoTo = viewModel.cancelAndResetForDestroy()
+            // Block until native camera/UVC teardown finishes before stopping OliveService.
             runBlocking(Dispatchers.IO) {
                 viewModel.stopEngineNativeSync(clearGoTo = clearGoTo)
             }
@@ -762,6 +779,8 @@ class MainActivity : ComponentActivity() {
         stopBackgroundService()
         super.onDestroy()
     }
+
+    // --- USB UVC device enumeration & location / network helpers ---
 
     private fun updateCameraSelection(selection: String) {
         settingsManager.cameraSelection = selection
@@ -949,10 +968,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         } catch (_: Exception) {
-            // Ignore
         }
         return "127.0.0.1"
     }
+
+    // --- Engine & OliveService lifecycle, permissions, and UVC startup ---
 
     private fun startBackgroundService(mode: String) {
         val hasCameraPermission = ContextCompat.checkSelfPermission(
@@ -1187,6 +1207,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Requests Android USB permission (or opens immediately if already granted).
+    // On API 31+, UsbManager requires a mutable PendingIntent so the system can attach extras.
     private fun requestUsbPermission(device: UsbDevice): Boolean {
         val usbManager = getSystemService(USB_SERVICE) as? UsbManager ?: return false
         if (usbManager.hasPermission(device)) {
@@ -1213,6 +1235,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Opens the UVC device off the main thread, parses raw USB descriptors to pick the best
+    // format/FPS, initializes UvcCameraWrapper, and hands ownership off to MainViewModel.
     private fun openAndStartUvcCamera(device: UsbDevice) {
         armStartupTimeout()
         lifecycleScope.launch(Dispatchers.IO) {

@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import android.graphics.SurfaceTexture
@@ -8,6 +11,11 @@ import com.jiangdg.usb.USBMonitor
 import com.jiangdg.uvc.UVCCamera
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Wraps `com.jiangdg.uvc.UVCCamera` for external USB cameras, streaming zero-copy NV21 frames
+ * into [OliveEngine.pushExternalUvcFrame] and exposing `@Keep` gain/brightness/AE hooks called
+ * back from Rust via JNI.
+ */
 class UvcCameraWrapper() : UvcCameraHandler {
     var uvcCameraInstance: UVCCamera? = null
     override var previewWidth: Int = 640
@@ -38,6 +46,11 @@ class UvcCameraWrapper() : UvcCameraHandler {
         }
     }
 
+    /**
+     * Connects via reflection instead of `UVCCamera.open()` so we can immediately clear libuvc's
+     * status callback before status interrupts fire on a native thread (preventing a JNI
+     * `DetachCurrentThread` abort inside libUVCCamera).
+     */
     private fun connectCamera(cam: UVCCamera, ctrlBlock: USBMonitor.UsbControlBlock) {
         synchronized(cam) {
             val ctrlBlockField = UVCCamera::class.java.getDeclaredField("mCtrlBlock")
@@ -270,7 +283,7 @@ class UvcCameraWrapper() : UvcCameraHandler {
             isPreviewRunning = true
         }
 
-        // Configure camera for astronomy in Auto-Exposure (Mode 2) with Target Gain
+        // Prime camera exposure mode (AE Mode 8 preferred, manual Mode 4/1 fallback) and initial gain.
         primeThread = Thread {
             try {
                 // Sleep 200ms for USB endpoint stabilization
@@ -393,7 +406,7 @@ class UvcCameraWrapper() : UvcCameraHandler {
                         }
                     }
 
-                    // Apply maximum gain to Processing Unit (100%) for both Mode 8 and Mode 4/1
+                    // Apply target gain percentage to the Processing Unit for both AE and manual modes.
                     val targetGainPct = initialGain.coerceIn(0, 100)
                     setGain(targetGainPct)
                     Log.i("UvcCameraWrapper", "Applied UVC gain: ${targetGainPct}%")

@@ -66,6 +66,10 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Modal dialog for creating or renaming an observing list, pairing [NightVisionKeyboardDock]
+ * with optional voice dictation.
+ */
 @Composable
 fun ListNameDialog(
     title: String,
@@ -249,6 +253,10 @@ fun ListNameDialog(
     VoicePermissionDeniedDialog(voiceController)
 }
 
+/**
+ * Checkbox picker for adding/removing an object across manual observing lists. Pins
+ * [lastSelectedListId] at the top for the lifetime of the dialog so rows do not jump mid-edit.
+ */
 @Composable
 fun ObservingListPickerDialog(
     lists: List<ObservingListSummary>,
@@ -348,6 +356,10 @@ fun ObservingListPickerDialog(
     }
 }
 
+/**
+ * Full-screen catalog search dialog for adding/removing objects in a manual observing list.
+ * Maintains `pendingOverrides` for immediate optimistic checkbox state until DB refresh catches up.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AddObjectsToListDialog(

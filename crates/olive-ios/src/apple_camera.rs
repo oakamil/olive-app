@@ -1,6 +1,12 @@
 // Required Notice: Copyright (c) 2026 Omair Kamil
 // See LICENSE file in root directory for license terms.
 
+//! `CameraTrait` implementation for Apple AVFoundation internal and iPad external UVC cameras.
+//!
+//! Swift's `CameraService` pushes 8-bit Y-plane luminance frames via
+//! [`olive_ios_push_camera_frame`]. Parameter mutations from the solver/UI are forwarded back to
+//! Swift through [`AppleCameraControlCallback`].
+
 use log::info;
 use olive_engine::{CameraConfig, CameraTrait, CameraType, Image};
 use std::sync::{
@@ -13,12 +19,18 @@ pub const OPTICAL_INFINITY_FOCUS: f32 = 0.92;
 pub const MIN_EXPOSURE_US: i32 = 16_667;
 pub const MAX_EXPOSURE_US: i32 = 1_000_000;
 
+/// C callback invoked synchronously from engine/UI threads to apply camera hardware settings.
+///
+/// Negative values are sentinels meaning "leave unchanged". Implementations must dispatch
+/// AVFoundation device locks onto their own serial queue.
 pub type AppleCameraControlCallback =
     extern "C" fn(exposure_us: i32, gain: f32, focus: f32, zoom: f32);
 
 static CAMERA_CONTROL_CB: Mutex<Option<AppleCameraControlCallback>> = Mutex::new(None);
 static ACTIVE_APPLE_CAMERA: Mutex<Option<Arc<AppleCamera>>> = Mutex::new(None);
 
+/// Registers the Swift hardware-control callback and immediately replays current parameters
+/// if an [`AppleCamera`] is already active (manual exposure/gain/focus/zoom, or zoom-only in AE mode).
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_register_camera_control_callback(cb: AppleCameraControlCallback) {
     *CAMERA_CONTROL_CB.lock().unwrap() = Some(cb);
@@ -507,10 +519,12 @@ impl CameraTrait for AppleCamera {
     }
 }
 
-/// Push a camera luminance frame from Swift / AVFoundation.
+/// Pushes a camera luminance frame from Swift / AVFoundation.
 ///
-/// If `stride == width`, performs a direct block copy.
-/// If `stride > width`, strips row padding row-by-row into a contiguous buffer of `width * height` bytes.
+/// `buffer` is borrowed only for the duration of this call and copied into an owned `Vec<u8>`.
+/// If `stride == width`, performs a direct block copy; if `stride > width`, strips row padding
+/// row-by-row into a contiguous `width * height` buffer. The delivered `Image` timestamp is
+/// shifted back by `applied_exposure_us / 2` to estimate exposure midpoint.
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_push_camera_frame(
     buffer: *const u8,

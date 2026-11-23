@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import android.Manifest
@@ -24,6 +27,16 @@ import java.io.FileDescriptor
 import java.net.InetAddress
 import java.net.InetSocketAddress
 
+/**
+ * Keeps the plate-solving engine and telescope protocol listeners alive while the app is running.
+ *
+ * Lifecycle:
+ * - Promotes to a `FOREGROUND_SERVICE_TYPE_CAMERA` foreground service for `NATIVE`/`UVC` modes
+ *   (requires `CAMERA` permission); `DEMO` mode runs without foreground promotion.
+ * - Holds a partial wake lock and (when Wi-Fi is available) a multicast lock for Alpaca UDP discovery.
+ * - Accepts TCP connections for LX200 (port 4030) and ASCOM Alpaca (port 11111, IPv4 & IPv6) via
+ *   `android.system.Os` sockets so accepted Alpaca fds can be detached and handed off to Rust.
+ */
 class OliveService : Service() {
 
     companion object {
@@ -104,6 +117,7 @@ class OliveService : Service() {
         return START_NOT_STICKY
     }
 
+    // Android 15+ foreground-service timeout callback: notify UI, stop native engine, release locks.
     override fun onTimeout(startId: Int, fgsType: Int) {
         super.onTimeout(startId, fgsType)
         Log.w(
@@ -182,6 +196,7 @@ class OliveService : Service() {
     private var alpacaFd: FileDescriptor? = null
     private var alpacaFdV6: FileDescriptor? = null
 
+    // Starts LX200 (TCP 4030, byte-forwarded via JNI) and Alpaca (TCP 11111, fd-handed off to Rust).
     private fun startServers() {
         lx200Thread = Thread {
             try {
@@ -302,6 +317,7 @@ class OliveService : Service() {
                         val clientFd = Os.accept(fd, null)
                         var pfd: ParcelFileDescriptor? = null
                         try {
+                            // Duplicate and detach so Rust takes sole ownership of the socket fd.
                             pfd = ParcelFileDescriptor.dup(clientFd)
                             val nativeFd = pfd.detachFd()
                             pfd = null

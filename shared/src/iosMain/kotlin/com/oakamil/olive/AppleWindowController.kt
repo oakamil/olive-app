@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.runtime.getValue
@@ -17,6 +20,14 @@ import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import platform.UIKit.UIScreen
 import platform.darwin.NSObjectProtocol
 
+/**
+ * iOS [PlatformWindowController] managing device orientation state, keep-screen-on idle timer,
+ * and night-vision screen brightness.
+ *
+ * Original system brightness is captured before custom dimming and restored automatically when
+ * the app resigns active or [dispose] is called. Callers must invoke [dispose] to unregister
+ * `NSNotificationCenter` observers and balance `beginGeneratingDeviceOrientationNotifications()`.
+ */
 class AppleWindowController : PlatformWindowController {
     override var isLandscape: Boolean by mutableStateOf(false)
     private var rotationDegrees: Int by mutableIntStateOf(0)

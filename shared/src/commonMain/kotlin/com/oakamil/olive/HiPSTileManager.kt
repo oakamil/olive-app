@@ -31,6 +31,12 @@ data class ResolvedHiPSTile(
     val bitmap: ImageBitmap
 )
 
+/**
+ * Table of contents for a packed `OLVHIPS1` base sky archive (`Orders 0..maxOrder`).
+ *
+ * Binary layout: 28-byte little-endian header followed by `tileCount` 16-byte TOC entries
+ * `(offset u64, length u32, reserved u32)` indexed by [Healpix.globalIndex].
+ */
 data class HiPSPackToc(
     val maxOrder: Int,
     val offsets: LongArray,
@@ -217,8 +223,11 @@ data class HiPSPackToc(
 /**
  * Hysteresis LOD selector + asynchronous `Dispatchers.IO` HiPS tile decoder and LRU tile cache.
  *
- * Order 0 (`12` tiles) is preloaded on startup and pinned permanently so zooming or panning fast
- * never leaves blank holes (`pix ushr 2` parent fallback resolves upward cleanly to Order 0).
+ * - Order 0 (`12` tiles) is preloaded on startup and pinned permanently so zooming or panning fast
+ *   never leaves blank holes (`pix ushr 2` parent fallback resolves upward cleanly to Order 0).
+ * - All cache maps (`order0Tiles`, `dynamicTiles`, `decodedHqKeys`) are mutated strictly on Main;
+ *   the single IO worker reads `@Volatile` snapshots (`pendingTargets`, `settledKeysSnapshot`,
+ *   `hqIndexSnapshot`) and serializes lazy `activeHqSource` access via `hqSourceMutex`.
  */
 class HiPSTileManager(
     private val assetSource: HiPSAssetSource,
@@ -408,10 +417,12 @@ class HiPSTileManager(
             refreshSettledSnapshotOnMain()
             return
         }
+        // Drop late-arriving HQ decodes if HQ storage was cleared while the tile was decoding.
         if (order > Healpix.MAX_ORDER && !hqIndexSnapshot.containsKey(packedKey)) {
             return
         }
         dynamicTiles.remove(packedKey)
+        // Prefer evicting the oldest tile outside the current viewport to avoid thrashing visible tiles.
         while (dynamicTiles.size >= MAX_DYNAMIC_TILES) {
             val evictKey = dynamicTiles.keys.firstOrNull { it !in activeRequestedKeys }
                 ?: dynamicTiles.keys.firstOrNull()
@@ -505,6 +516,7 @@ class HiPSTileManager(
                     val coneRad =
                         ((viewRadiusDeg + tileHalfDiagDeg) * (PI / 180.0)).coerceAtMost(PI)
                     val minCos = cos(coneRad)
+                    // In HEALPix NESTED ordering, all descendants of ipix4 at childOrder form a contiguous index range.
                     val shift = 2 * (childOrder - Healpix.MAX_ORDER)
                     for (i in 0 until baseCap) {
                         val ipix4 = visibleIpix[i]
@@ -597,6 +609,8 @@ class HiPSTileManager(
     companion object {
         const val MAX_DYNAMIC_TILES = 96
 
+        // Separate promote/demote thresholds prevent rapid LOD oscillation during pinch-zoom;
+        // orders beyond index 5 halve thresholds per order via scaledThreshold().
         private val PROMOTE_ARCSEC = doubleArrayOf(0.0, 360.0, 175.0, 85.0, 42.5, 26.0)
         private val PROMOTE_FOV = doubleArrayOf(0.0, 105.0, 52.0, 26.0, 13.0, 9.0)
         private val DEMOTE_ARCSEC = doubleArrayOf(0.0, 420.0, 205.0, 100.0, 50.0, 30.0)

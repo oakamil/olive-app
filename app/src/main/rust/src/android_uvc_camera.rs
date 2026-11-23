@@ -1,3 +1,13 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
+//! External USB (UVC) camera backend implementing `CameraTrait`.
+//!
+//! Receives NV21 frames pushed from `UvcCameraWrapper` via JNI, runs an optional auto-mode
+//! brightness/gain calibration pass, stacks `stack_count` Y-planes with saturating addition,
+//! and invokes `UvcCameraWrapper` controls back over JNI (attaching the current thread and
+//! clearing any Java exception).
+
 use jni::{
     JavaVM,
     objects::{GlobalRef, JValue},
@@ -126,16 +136,15 @@ impl AndroidUvcCamera {
             return;
         }
 
-        // --- Fast Autonomous Calibration State Machine (Auto Mode Only) ---
+        // Autonomous calibration state machine (auto mode only)
         if !self.calibrated.load(Ordering::Relaxed) {
             let remaining = self.settle_frames.load(Ordering::Relaxed);
             if remaining > 0 {
                 self.settle_frames.store(remaining - 1, Ordering::Relaxed);
-                return; // DROP FRAME: flushing hardware pipeline
+                return; // Flush initial pipeline frames before metering
             }
 
-            // After initial settle frames have flushed the cold startup buffer,
-            // query if the camera is running pure Auto-Exposure (Mode 8 or Mode 2).
+            // Once cold startup frames are flushed, check whether UVC AE (Mode 8/2) is active.
             let is_ae = if let (Some(jvm), Some(wrapper)) = (&self.jvm, &self.uvc_wrapper) {
                 if let Ok(mut env) = jvm.attach_current_thread() {
                     let res = env.call_method(wrapper.as_obj(), "isAutoExposure", "()Z", &[]);
@@ -149,11 +158,9 @@ impl AndroidUvcCamera {
             };
 
             if is_ae {
-                // Mode 8 (Aperture Priority Auto-Exposure - Sony IMX662):
-                // Initial 10 frames already flushed; bypass brightness calibration so Sony AEC runs cleanly.
+                // In hardware AE (e.g., Mode 8 Aperture Priority), skip software brightness tuning.
                 info!("Camera in Auto-Exposure mode: bypassing brightness calibration, locking.");
                 self.calibrated.store(true, Ordering::Relaxed);
-                // Proceed to deliver this settled frame to the Engine!
             } else {
                 let y_plane = &nv21_data[0..y_plane_size];
                 let (p5, median) = Self::measure_p5_and_median(y_plane);
@@ -161,18 +168,18 @@ impl AndroidUvcCamera {
 
                 match phase {
                     0 => {
-                        // Phase 0: Settle Baseline Brightness
+                        // Phase 0: Settle baseline brightness pedestal
                         let attempts = self.cal_attempts.fetch_add(1, Ordering::Relaxed);
 
                         if median > 100 {
-                            // Daytime/bright scene: skip brightness cal, set gain to 100
+                            // Bright/daytime scene: skip pedestal tuning and lock after setting gain
                             info!(
                                 "Daytime scene detected (median={}). Skipping brightness cal.",
                                 median
                             );
                             self.set_gain(100.0);
                             self.settle_frames.store(3, Ordering::Relaxed);
-                            self.cal_phase.store(2, Ordering::Relaxed); // Verify/lock
+                            self.cal_phase.store(2, Ordering::Relaxed);
                             return;
                         }
 
@@ -193,28 +200,27 @@ impl AndroidUvcCamera {
                                 );
                                 self.set_brightness(new_b);
                                 self.settle_frames.store(3, Ordering::Relaxed);
-                                return; // DROP FRAME
+                                return;
                             }
                         }
 
-                        // Brightness settled! Now transition to Phase 1: set gain to 100
+                        // Transition to Phase 1: apply target gain and let ISP settle
                         info!("Brightness settled at P5={}. Setting gain to 100...", p5);
                         self.set_gain(100.0);
                         self.settle_frames.store(3, Ordering::Relaxed);
                         self.cal_phase.store(1, Ordering::Relaxed);
-                        return; // DROP FRAME while gain settles
+                        return;
                     }
                     1 => {
-                        // Phase 1: Verify at Gain 100
+                        // Phase 1: Verify pedestal at Gain 100
                         if p5 >= 5 && p5 <= 14 {
                             info!(
                                 "Calibration verified at Gain 100: P5={} (Optimal). Locking calibration.",
                                 p5
                             );
                             self.calibrated.store(true, Ordering::Relaxed);
-                            // Do not return: pass this settled frame directly to Engine!
                         } else {
-                            // Rare trim step if gain caused unexpected pedestal shift
+                            // Trim brightness if gain shifted the black pedestal
                             info!("Post-gain trim needed at Gain 100: P5={}", p5);
                             let current_b = self.brightness.load(Ordering::Relaxed);
                             let delta = ((p5 - 10) as f32 / 1.5).round() as i32;
@@ -228,14 +234,13 @@ impl AndroidUvcCamera {
                             self.set_brightness(new_b);
                             self.settle_frames.store(3, Ordering::Relaxed);
                             self.cal_phase.store(2, Ordering::Relaxed);
-                            return; // DROP FRAME
+                            return;
                         }
                     }
                     _ => {
-                        // Final Lock Phase
+                        // Phase 2: Lock calibration and deliver current frame
                         info!("Calibration locked: final P5={}", p5);
                         self.calibrated.store(true, Ordering::Relaxed);
-                        // Do not return: pass this frame to Engine!
                     }
                 }
             }

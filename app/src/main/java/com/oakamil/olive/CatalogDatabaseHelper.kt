@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import android.content.Context
@@ -18,6 +21,13 @@ import java.nio.file.StandardCopyOption
 import kotlin.math.cos
 import kotlin.math.sin
 
+/**
+ * Android [CatalogDatabase] backed by bundled read-only assets (SQLite object catalog and
+ * JPL DE421 `.bsp` ephemeris) plus cached MPC comet data in [KeyValueStorage].
+ *
+ * Bundled assets are atomically staged into the app's databases directory once per app update
+ * (tracked via `versionCode:lastUpdateTime`). All SQLite access is serialized under [dbLock].
+ */
 class CatalogDatabaseHelper(
     private val context: Context,
     private val storage: KeyValueStorage,
@@ -78,6 +88,7 @@ class CatalogDatabaseHelper(
         if (isCatalogDb) {
             db?.close()
             db = null
+            // Clear leftover SQLite sidecars before replacing the read-only catalog file.
             deleteSidecars(destFile)
         }
         if (!copyAssetAtomically(assetName, destFile)) {
@@ -143,6 +154,7 @@ class CatalogDatabaseHelper(
         db = database
     }
 
+    // Register trig helpers required by CatalogDatabase's SQL altitude/angular-distance queries.
     private fun registerMathFunctions(database: SQLiteDatabase) {
         val sinFunc = SQLiteDatabase.Function { args, result ->
             try {

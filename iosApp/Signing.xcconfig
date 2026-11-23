@@ -1,0 +1,7 @@
+// Default Apple signing settings for Olive Finder.
+// External contributors: copy LocalSigning.xcconfig.example to LocalSigning.xcconfig
+// (gitignored) to override DEVELOPMENT_TEAM and PRODUCT_BUNDLE_IDENTIFIER locally.
+DEVELOPMENT_TEAM = VA83C4R5TG
+PRODUCT_BUNDLE_IDENTIFIER = com.oakamil.olive
+
+#include? "LocalSigning.xcconfig"

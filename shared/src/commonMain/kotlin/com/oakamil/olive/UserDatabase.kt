@@ -75,6 +75,16 @@ data class StaticCoLocatedKey(
     val objectType: String
 )
 
+/**
+ * Persistent SQLite store (`user_data.db`) for user-created observing lists and observation logs.
+ *
+ * Invariants:
+ * - Platform implementations must enable `PRAGMA foreign_keys = ON` so deleting an observing list
+ *   cascades to `observing_list_items`.
+ * - Objects are keyed canonically as `"catalogLabel|catalogEntry"` (see [objectKey]).
+ * - Coordinates (`ra_deg`, `dec_deg`) are stored in J2000 degrees; `observing_night` is a local
+ *   noon-to-noon `YYYY-MM-DD` session key.
+ */
 interface UserDatabase {
     companion object {
         const val USER_DB_NAME = "user_data.db"
@@ -328,6 +338,7 @@ interface UserDatabase {
             return allObservations.filter { obs -> obs.objectKey in directKeys }
         }
 
+        // Match by canonical key for all objects, or by exact (RA, Dec, type) for static catalog aliases.
         fun matchesObservedSet(
             obj: CatalogObject,
             observedKeys: Set<String>,
@@ -344,6 +355,7 @@ interface UserDatabase {
 
         private const val MAX_EXPORT_FILE_NAME_LENGTH = 100
 
+        // Neutralizes spreadsheet formula injection (leading =/+/@/\t/\r or non-numeric '-') and applies RFC 4180 quoting.
         fun escapeCsvField(value: String): String {
             val safeValue = when (value.firstOrNull()) {
                 '=', '+', '@', '\t', '\r' -> "'$value"

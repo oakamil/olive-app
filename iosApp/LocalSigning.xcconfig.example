@@ -1,0 +1,4 @@
+// Copy this file to LocalSigning.xcconfig (gitignored) and replace with your own
+// Apple Developer Team ID and Bundle Identifier to sign builds locally in Xcode.
+DEVELOPMENT_TEAM = YOUR_APPLE_TEAM_ID
+PRODUCT_BUNDLE_IDENTIFIER = com.example.olivefinder

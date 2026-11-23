@@ -146,6 +146,7 @@ actual fun rememberFileSharer(): suspend (fileName: String, mimeType: String, co
     }
 }
 
+// Strongly retains the weak UIDocumentPickerViewController.delegate until completion, cancel, or dispose.
 private class IosCsvPickerDelegateHolder {
     var activeDelegate: UIDocumentPickerDelegateProtocol? = null
 }

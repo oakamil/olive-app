@@ -102,6 +102,13 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.StringResource
 
+/*
+ * Shared UI components for the Sky Catalog and Observing Lists screens:
+ * - Night-vision in-app keyboard and adaptive split/dialog layouts (suppressing the bright system IME).
+ * - Catalog filter/sort dropdown, list rows, and bulk HiPS HQ download header.
+ * - Drag-to-reorder state and gesture modifiers for LazyColumn lists.
+ */
+
 val CATALOG_TYPE_OPTIONS = listOf(
     "Asterism",
     "Asteroid",
@@ -118,6 +125,7 @@ val CATALOG_TYPE_OPTIONS = listOf(
     "Star"
 )
 
+/** Suppresses the OS soft keyboard so text fields use the red/dim [NightVisionKeyboard] instead. */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun DisableSystemKeyboard(
@@ -171,6 +179,10 @@ private fun isLandscapeWindowLayout(): Boolean {
 private fun landscapeKeyboardWidth(maxWidth: Dp): Dp =
     (maxWidth * 0.5f).coerceAtMost(480.dp)
 
+/**
+ * Requests focus once after the first composition frame so the target field is attached
+ * before focus is dispatched.
+ */
 @Composable
 fun rememberAutoFocusRequester(enabled: Boolean = true): FocusRequester {
     val focusRequester = remember { FocusRequester() }
@@ -240,6 +252,11 @@ fun NightVisionSearchBar(
     }
 }
 
+/**
+ * Hosts primary list content alongside [NightVisionKeyboardDock], placing the keyboard on the
+ * side in landscape and at the bottom in portrait. Uses [movableContentOf] so toggling the
+ * keyboard or swapping sides preserves scroll and focus state without re-creating child subtrees.
+ */
 @Composable
 fun ColumnScope.NightVisionKeyboardSplitLayout(
     showKeyboard: Boolean,
@@ -295,6 +312,10 @@ fun ColumnScope.NightVisionKeyboardSplitLayout(
     }
 }
 
+/**
+ * Full-screen dialog container pairing a centered card with [NightVisionKeyboardDock]
+ * (side-by-side in landscape, stacked in portrait), preserving card state via [movableContentOf].
+ */
 @Composable
 fun NightVisionKeyboardDialogLayout(
     showKeyboard: Boolean,
@@ -678,6 +699,10 @@ fun NightVisionKey(
         Text(text = text, color = textColor, style = MaterialTheme.typography.bodyMedium)
     }
 }
+
+// =========================================================================
+// Shared Catalog List Controls & Rows
+// =========================================================================
 
 @Composable
 fun HqBulkDownloadHeader(
@@ -1168,6 +1193,15 @@ fun CatalogObjectListRow(
     )
 }
 
+// =========================================================================
+// LazyColumn Drag-to-Reorder
+// =========================================================================
+
+/**
+ * Coordinates vertical drag-to-reorder on a [LazyListState], swapping adjacent items when the
+ * dragged item's center crosses a neighbor and compensating [draggedOffsetY] by the layout delta
+ * to prevent visual jumps. Triggers edge auto-scrolling when dragged near viewport bounds.
+ */
 @Stable
 class DragReorderState(
     val listState: LazyListState,

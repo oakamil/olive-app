@@ -1,6 +1,16 @@
 // Required Notice: Copyright (c) 2026 Omair Kamil
 // See LICENSE file in root directory for license terms.
 
+//! C-ABI bridge exposing `olive-engine`, `olive-imu`, and ephemeris calculations to iOS
+//! (Swift `iosApp/` and Kotlin/Native `shared/iosMain` via `OliveBridge.h`).
+//!
+//! # FFI Ownership & Threading
+//! - `*mut c_char` returned by `olive_ios_*` functions in this crate are Rust `CString::into_raw`
+//!   allocations and must be released with [`olive_ios_free_string`].
+//! - `*mut c_char` returned by [`AppleStorageGetCallback`] must be `malloc`/`strdup`-allocated;
+//!   Rust releases them with libc `free`.
+//! - Borrowed `*const c_char` inputs must remain valid NUL-terminated UTF-8 for the call duration.
+
 use log::{error, info, warn};
 use olive_engine::CameraTrait;
 use olive_engine::engine::EngineStateData;
@@ -23,8 +33,12 @@ pub use apple_camera::{
 };
 pub use apple_imu::{AppleImu, olive_ios_push_gyro_update};
 
+/// Returns a `malloc`/`strdup`-allocated UTF-8 string (freed by Rust via libc `free`), or null.
+/// May be called from engine background threads.
 pub type AppleStorageGetCallback = extern "C" fn(key: *const c_char) -> *mut c_char;
+/// Stores a key/value pair in iOS `UserDefaults`. May be called from engine background threads.
 pub type AppleStorageSetCallback = extern "C" fn(key: *const c_char, value: *const c_char);
+/// Removes a key from iOS `UserDefaults`. May be called from engine background threads.
 pub type AppleStorageRemoveCallback = extern "C" fn(key: *const c_char);
 
 static STORAGE_GET_CB: Mutex<Option<AppleStorageGetCallback>> = Mutex::new(None);
@@ -46,6 +60,10 @@ pub extern "C" fn olive_ios_register_storage_callbacks(
     *STORAGE_REMOVE_CB.lock().unwrap() = Some(remove_cb);
 }
 
+/// `PersistentStorage` backed by Swift `UserDefaults` callbacks.
+///
+/// External UVC sessions suppress `"imu_calibration"` persistence because camera-to-iPad-IMU
+/// alignment varies per mount/session.
 pub struct IosStorage {
     pub is_external: bool,
 }
@@ -116,6 +134,8 @@ fn str_to_c_char_ptr(s: &str) -> *mut c_char {
     CString::new(s).unwrap_or_default().into_raw()
 }
 
+/// Frees a C string allocated by Rust `olive_ios_*` functions.
+/// Do not pass `strdup` strings allocated by Swift (`CameraService.swift`).
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
@@ -139,6 +159,8 @@ fn init_ios_logger() {
 
 // --- Engine Lifecycle & Control Exports ---
 
+/// Initializes the active camera, IMU, and solver engine on a background thread.
+/// Blocks until the solver loop has started (returning `true`) or startup fails (`false`).
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_start_engine(
     width: u32,
@@ -362,6 +384,8 @@ pub extern "C" fn olive_ios_start_engine(
     }
 }
 
+/// Signals the engine and control/telescope servers to stop, detaches the active camera,
+/// and joins the coordinator thread synchronously.
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_stop_engine() {
     if let Some(running) = ENGINE_IS_RUNNING.lock().unwrap().take() {
@@ -385,6 +409,8 @@ pub extern "C" fn olive_ios_stop_engine() {
     *CAMERA.lock().unwrap() = None;
 }
 
+/// Returns the current `EngineStateData` serialized as JSON.
+/// Caller must free the returned pointer with [`olive_ios_free_string`].
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_get_engine_stats() -> *mut c_char {
     let state_lock = ENGINE_STATE.lock().unwrap();
@@ -524,6 +550,13 @@ pub extern "C" fn olive_ios_get_camera_zoom() -> f32 {
 
 // --- Frame Extraction ---
 
+/// Copies the latest grayscale capture as RGBA8888 into `buffer` prefixed with a little-endian
+/// 8-byte header (`[width: u32, height: u32]`).
+///
+/// Returns the frame's Unix epoch timestamp in ms:
+/// - `0` if no frame is available or `capacity` is too small
+/// - `<= last_timestamp_ms` if no newer frame has arrived (buffer untouched)
+/// - `> last_timestamp_ms` when a new frame has been written
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_get_latest_frame_into(
     buffer: *mut u8,
@@ -722,6 +755,8 @@ fn resolve_bsp_path(bsp_path: *const c_char) -> String {
     }
 }
 
+/// Computes planet/Moon positions as a JSON array. Panics are caught at the FFI boundary.
+/// Caller must free the returned pointer with [`olive_ios_free_string`].
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_get_planets(
     bsp_path: *const c_char,
@@ -801,6 +836,8 @@ pub extern "C" fn olive_ios_get_planets(
     str_to_c_char_ptr(&json_str)
 }
 
+/// Computes asteroid positions and H-G magnitudes from `asteroids_json` as a JSON array.
+/// Caller must free the returned pointer with [`olive_ios_free_string`].
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_get_asteroids(
     bsp_path: *const c_char,
@@ -950,6 +987,8 @@ pub extern "C" fn olive_ios_get_asteroids(
     str_to_c_char_ptr(&json_str)
 }
 
+/// Computes comet positions and magnitudes from `comets_json` as a JSON array.
+/// Caller must free the returned pointer with [`olive_ios_free_string`].
 #[unsafe(no_mangle)]
 pub extern "C" fn olive_ios_get_comets(
     bsp_path: *const c_char,

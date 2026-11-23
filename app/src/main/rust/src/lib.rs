@@ -1,3 +1,12 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
+//! Android JNI entry points for `com.oakamil.olive.OliveEngine`.
+//!
+//! Manages the global Tokio runtimes, engine lifecycle thread, active camera (`AndroidCamera`,
+//! `AndroidUvcCamera`, or `DummyCamera`), LX200/ASCOM Alpaca socket handoffs, JPL ephemeris
+//! queries, and targeted `libuvc` ABI workarounds.
+
 use jni::objects::{GlobalRef, JByteArray, JByteBuffer, JClass, JObject, JString};
 use jni::sys::{
     jboolean, jbyteArray, jdouble, jfloat, jfloatArray, jint, jintArray, jlong, jstring,
@@ -33,6 +42,8 @@ static LX200_CONTROLLER: Mutex<
 static ALPACA_FD_TX: Mutex<Option<tokio::sync::mpsc::Sender<i32>>> = Mutex::new(None);
 static ALPACA_V6_FD_TX: Mutex<Option<tokio::sync::mpsc::Sender<i32>>> = Mutex::new(None);
 
+/// Bridges `olive_imu::PersistentStorage` to Kotlin `SettingsManager` via a JNI `GlobalRef`.
+/// Each call attaches the current native thread to the JVM and clears any Java exception.
 struct JniStorage {
     jvm: JavaVM,
     settings_mgr: GlobalRef,
@@ -435,7 +446,6 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
 
             let _ = ready_tx.send(Ok(()));
 
-            // Wait for stop signal
             let _ = rx.await;
             is_running_clone.store(false, Ordering::Relaxed);
             server_handle.abort();
@@ -656,7 +666,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getLatestFrameInto(
             let height = img.height as usize;
             let data = &img.data;
 
-            // ARGB requires 4 bytes per pixel + 8 bytes header
+            // Wire layout: 8-byte LE header (width, height) + 4 bytes/pixel RGBA_8888
+            // (matches Android Bitmap.Config.ARGB_8888 copyPixelsFromBuffer byte order).
             let Some(pixel_count) = width.checked_mul(height) else {
                 return 0;
             };
@@ -670,6 +681,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_getLatestFrameInto(
             if let Ok(capacity) = env.get_direct_buffer_capacity(&buffer) {
                 if capacity >= req_len {
                     if let Ok(buf_ptr) = env.get_direct_buffer_address(&buffer) {
+                        // SAFETY: `buffer` is a valid direct ByteBuffer with `capacity >= req_len`
+                        // bytes pinned for the duration of this JNI call.
                         let slice =
                             unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, capacity) };
                         slice[0..4].copy_from_slice(&(width as u32).to_le_bytes());
@@ -778,6 +791,8 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_setEngineStrictMatch(
     }
 }
 
+/// Takes sole ownership of a detached POSIX socket fd from `OliveService` (IPv4 Alpaca)
+/// and forwards it to the engine, closing the fd immediately if the channel is unavailable.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnection(
     _env: JNIEnv,
@@ -786,12 +801,14 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnection
 ) {
     if let Some(tx) = lock_or_recover(&ALPACA_FD_TX, "ALPACA_FD_TX").as_ref() {
         if tx.try_send(fd).is_err() {
+            // SAFETY: Caller detached `fd`; close via `File` drop so it is not leaked.
             unsafe {
                 use std::os::unix::io::FromRawFd;
                 drop(std::fs::File::from_raw_fd(fd));
             }
         }
     } else {
+        // SAFETY: Caller detached `fd`; close via `File` drop so it is not leaked.
         unsafe {
             use std::os::unix::io::FromRawFd;
             drop(std::fs::File::from_raw_fd(fd));
@@ -799,6 +816,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnection
     }
 }
 
+/// IPv6 counterpart to `handleAlpacaConnection`; takes ownership of the detached socket fd.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_oakamil_olive_OliveEngine_handleAlpacaConnectionV6(
     _env: JNIEnv,
@@ -930,7 +948,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_resetTelescopeServer<'
     _class: JClass<'local>,
 ) {
     if let Some(_engine_state_arc) = lock_or_recover(&ENGINE_STATE, "ENGINE_STATE").clone() {
-        // We just reset the buffer and state of the controller, since it's a new connection
+        // Clear per-connection parser buffer and client dialect flag on reconnect.
         let controller_opt = lock_or_recover(&LX200_CONTROLLER, "LX200_CONTROLLER").clone();
         if let Some(controller_lock) = controller_opt {
             if let Ok(mut controller) = controller_lock.write() {
@@ -1747,6 +1765,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_pushExternalUvcFrame(
 ) {
     if let Ok(data_ptr) = env.get_direct_buffer_address(&buffer) {
         if let Ok(data_len) = env.get_direct_buffer_capacity(&buffer) {
+            // SAFETY: `buffer` is a direct ByteBuffer valid for `data_len` bytes during this JNI call.
             let data_slice = unsafe { std::slice::from_raw_parts(data_ptr as *const u8, data_len) };
             if let Some(cam) = lock_or_recover(&UVC_CAMERA_RECEIVER, "UVC_CAMERA_RECEIVER").as_ref()
             {

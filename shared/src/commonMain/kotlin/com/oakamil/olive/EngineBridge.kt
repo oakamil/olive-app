@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.ui.graphics.ImageBitmap
@@ -7,6 +10,11 @@ class LatestFrame(
     val imageBitmap: ImageBitmap
 )
 
+/**
+ * Platform bridge between shared Compose/Kotlin code and the native camera, plate-solving,
+ * and DE421/Keplerian ephemeris engine. Stats, camera lists, and ephemeris responses are
+ * JSON-encoded strings; GoTo/sync coordinates are in J2000 degrees.
+ */
 interface EngineBridge {
     fun startNativeCameraEngine(
         motionSensorMode: Int,

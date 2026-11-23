@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.foundation.Canvas
@@ -92,6 +95,13 @@ private enum class TunerInfoTopic {
     HOT_PIXEL
 }
 
+/**
+ * Live Camera & Alignment Tuner modal shown while the engine is running.
+ *
+ * Enables HFR focus telemetry only while open (`DisposableEffect`), rotates the internal camera
+ * feed by `(sensorOrientation - displayRotationDegrees)`, and adapts between a side-by-side
+ * landscape split and a scrollable portrait layout.
+ */
 @Composable
 fun TunerDialog(
     viewModel: MainViewModel,
@@ -573,6 +583,17 @@ private fun TelemetryStrip(
     }
 }
 
+/**
+ * Pinch-to-zoom and tap-to-align live camera preview.
+ *
+ * Coordinate invariants:
+ * - `baseScale` compensates for 90°/270° rotated frames so they fit inside the viewport cleanly.
+ * - `canPan` is enabled only above [ZOOM_ACTIVE_THRESHOLD] so portrait vertical scroll works
+ *   normally at 1x zoom.
+ * - Tap coordinates invert `translation -> rotation -> scale/mirror -> fitScale` back to raw
+ *   bitmap pixels for boresight alignment.
+ * - Overlay reticles divide stroke/arm sizes by `scale * baseScale` to hold constant screen weight.
+ */
 @Composable
 private fun CameraViewport(
     viewModel: MainViewModel,

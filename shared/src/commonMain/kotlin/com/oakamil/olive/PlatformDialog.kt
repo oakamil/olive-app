@@ -6,9 +6,11 @@ package com.oakamil.olive
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.DialogProperties
 
+/** Platform-specific [DialogProperties] configured for edge-to-edge full-screen Compose dialogs. */
 expect fun fullScreenDialogProperties(
     dismissOnBackPress: Boolean = true,
     dismissOnClickOutside: Boolean = false
 ): DialogProperties
 
+/** Applies system-bar / display-cutout safe-area padding inside full-screen dialogs. */
 expect fun Modifier.platformDialogSafeAreaPadding(): Modifier

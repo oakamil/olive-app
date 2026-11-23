@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.runtime.Immutable
@@ -168,6 +171,12 @@ data class SkyHorizontalFrame(
     }
 }
 
+/**
+ * Core astrometry utilities: coordinate formatting, J2000-to-horizontal precession and frame
+ * conversion, Gnomonic camera-overlay projection with radial distortion, and low-precision solar
+ * ephemeris. Equatorial coordinates are J2000/ICRS degrees unless noted otherwise; horizontal
+ * coordinates are degrees (Azimuth clockwise from North, Altitude in `[-90°, +90°]`).
+ */
 object AstrometryUtils {
     /** Formats RA in degrees (wrapping outside [0, 360)) as `HHh MMm SSs`. */
     fun formatRa(raDegrees: Double): String {
@@ -192,7 +201,8 @@ object AstrometryUtils {
     }
 
     /**
-     * Projects RA/Dec to screen X/Y coordinates using Gnomic (tangent plane) projection.
+     * Projects RA/Dec to screen X/Y coordinates using Gnomonic (tangent-plane) projection,
+     * optionally applying Tetra3's radial lens distortion model.
      */
     fun projectToScreen(
         ra: Double,
@@ -237,6 +247,7 @@ object AstrometryUtils {
 
         val imageAspect = imageWidth.toDouble() / imageHeight.toDouble()
 
+        // Plate-solver FOV spans the shorter sensor axis (vertical in landscape, horizontal in portrait).
         val effectiveImageWidth = if (imageAspect > 1.0) {
             screenHeight * imageAspect
         } else {
@@ -249,19 +260,17 @@ object AstrometryUtils {
             (screenWidth / 2.0) / tanHalfFov
         }
 
-        // Apply scale
         val xPx = -xRad * scale // RA increases East, East is Left
         val yPx = -yRad * scale // y is flipped in screen coordinates
 
-        // Apply roll rotation
         val rollRad = Math.toRadians(-roll) // Tetra3 roll is CCW, Android Canvas is CW
         val xRot = xPx * cos(rollRad) - yPx * sin(rollRad)
         val yRot = xPx * sin(rollRad) + yPx * cos(rollRad)
 
-        // Translate to center pixel
         var finalX = centerPixelX + xRot.toFloat()
         var finalY = centerPixelY + yRot.toFloat()
 
+        // Invert Tetra3 radial distortion: r_undist = r_dist * (1 - k_p * r_dist^2) / (1 - k) via Newton-Raphson.
         if (distortion != null && distortion != 0.0 && abs(1.0 - distortion) > 1e-9) {
             val cx = screenWidth / 2f
             val cy = screenHeight / 2f
@@ -310,6 +319,7 @@ object AstrometryUtils {
         return Math.toDegrees(acos(c.coerceIn(-1.0, 1.0)))
     }
 
+    /** Computes approximate Local Sidereal Time in degrees `[0, 360)` from East longitude and UTC ms. */
     fun calculateLST(lon: Double, utcTimeMs: Long): Double {
         val jd = (utcTimeMs / 86400000.0) + 2440587.5
         val d = jd - 2451545.0
@@ -319,6 +329,7 @@ object AstrometryUtils {
         return lst
     }
 
+    /** Builds the precessed J2000-to-horizontal orthonormal basis for an observer and UTC epoch. */
     fun horizontalFrame(latDeg: Double, lonDeg: Double, utcTimeMs: Long): SkyHorizontalFrame {
         val lstDeg = calculateLST(lonDeg, utcTimeMs)
         val date = SkyHorizontalFrame.unprecessed(latDeg, lstDeg)

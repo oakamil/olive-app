@@ -96,6 +96,14 @@ private data class TimedImportBanner(
     val banner: ImportBanner
 )
 
+/**
+ * Full-screen manager for user-created observing lists and past night observation logs.
+ *
+ * Features a navigation drawer for switching between manual lists and night sessions, CSV
+ * import/export, search/sort/filter controls, undoable item removal, bulk DSS2 HQ downloads, and
+ * drag-to-reorder (for both drawer lists and manual list items). Drawer swipe gestures are
+ * disabled while a drawer drag reorder is active so vertical drags are not intercepted.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ObservingListsDialog(
@@ -430,6 +438,7 @@ fun ObservingListsDialog(
         }
     }
 
+    // Only allow direct drag-reorder when all manual list entries are visible in custom order
     val canDirectReorderItems =
         isManualSelected &&
                 (isEditingItems || (searchQuery.isBlank() && sortBy == "list_order")) &&

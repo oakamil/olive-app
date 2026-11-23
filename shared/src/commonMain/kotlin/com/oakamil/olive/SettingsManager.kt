@@ -1,5 +1,13 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
+/**
+ * Typed persistence wrapper over [KeyValueStorage] for camera, catalog, observing-list,
+ * location, and UI preferences. Also exposes `@Keep` string callbacks read/written by the
+ * native Rust engine layer.
+ */
 class
 SettingsManager(
     private val storage: KeyValueStorage,
@@ -60,6 +68,7 @@ SettingsManager(
     var internalCameraId: String
         get() {
             val v = storage.getString("internal_camera_id", "0") ?: "0"
+            // Normalize legacy sentinel values to the default rear camera ID.
             return if (v == "auto" || v == "demo") "0" else v
         }
         set(value) = storage.putString("internal_camera_id", value)
@@ -135,6 +144,7 @@ SettingsManager(
             }
             val set = storage.getStringSet("catalog_type_filters", null)
                 ?: return DEFAULT_CATALOG_TYPE_FILTERS
+            // Migrate legacy "Double Star" filter label to "Multiple Star".
             if ("Double Star" in set) {
                 val migrated = (set - "Double Star" + "Multiple Star").toSet()
                 storage.putStringSet("catalog_type_filters", migrated)
@@ -222,7 +232,7 @@ SettingsManager(
         get() = storage.getFloat("sky_map_fov", 60.0f).toDouble().coerceIn(0.5, 180.0)
         set(value) = storage.putFloat("sky_map_fov", value.toFloat())
 
-    /* Native layer callbacks */
+    /* Native layer callbacks (JNI / FFI); ignores phone IMU calibration keys when an external USB camera is selected */
     @Keep
     fun getString(key: String): String? {
         if (key == "imu_calibration" && cameraSelection == "external") {

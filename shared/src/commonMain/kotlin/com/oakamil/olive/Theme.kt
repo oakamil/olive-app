@@ -49,6 +49,7 @@ private const val BELOW_HORIZON_NIGHT_ALPHA = 0.85f
 private const val BELOW_HORIZON_DAY_ALPHA = 0.75f
 private const val SKY_MAP_OVERLAY_ALPHA = 0.5f
 
+/** Extended semantic colors for sky-map rendering, HUD overlays, and catalog object categories. */
 @Immutable
 data class OliveExtendedColors(
     val actionBarBorder: Color,
@@ -258,6 +259,11 @@ private val DayVisionColorScheme = darkColorScheme(
 
 val LocalOliveExtendedColors = staticCompositionLocalOf { NightVisionExtendedColors }
 
+/**
+ * Application Material3 + [OliveExtendedColors] theme.
+ * Supports `"red"` (default Night Vision: pure red on pure black for dark adaptation) and
+ * `"blue"` (Day Vision: cosmic navy surfaces with distinct spectral category accents).
+ */
 @Composable
 fun OliveTheme(
     theme: String = "red",

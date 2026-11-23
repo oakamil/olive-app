@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.ui.graphics.asImageBitmap
@@ -5,6 +8,12 @@ import androidx.core.graphics.createBitmap
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+/**
+ * JNI bridge to the native Rust engine (`libolive_jni.so`, implemented in `app/src/main/rust/src/lib.rs`).
+ *
+ * Exposes engine/camera lifecycle, Camera2 and UVC controls, direct-ByteBuffer frame transfer,
+ * LX200/ASCOM Alpaca telescope protocol handoff, and JPL ephemeris queries.
+ */
 object OliveEngine : EngineBridge {
     init {
         System.loadLibrary("olive_jni")
@@ -44,6 +53,7 @@ object OliveEngine : EngineBridge {
         timestamp: Long
     )
 
+    // Native libuvc workarounds taking UVCCamera's raw mNativePtr (see Rust lib.rs).
     external fun disableUvcStatusCallback(nativePtr: Long): Boolean
     external fun quiesceUvcStream(nativePtr: Long): Boolean
 
@@ -68,8 +78,14 @@ object OliveEngine : EngineBridge {
     external override fun getNativeCameraHotPixelMode(): Int
     external override fun getAvailableInternalCameras(): String
 
+    /**
+     * Copies the latest grayscale frame expanded to RGBA_8888 into a direct [ByteBuffer]
+     * using the layout `[width: u32 LE][height: u32 LE][RGBA pixels...]`.
+     * Returns the frame timestamp in ms, or <= [lastTimestamp] / 0 when no newer frame is ready.
+     */
     external fun getLatestFrameInto(buffer: ByteBuffer, lastTimestamp: Long): Long
 
+    // Reused across polls; expected to be called from a single consumer thread/coroutine.
     private var frameBuffer: ByteBuffer? = null
 
     override fun getLatestFrame(lastTimestamp: Long): LatestFrame? {
@@ -99,6 +115,7 @@ object OliveEngine : EngineBridge {
     external override fun updateUvcStacking(frames: Int)
     external fun processTelescopeData(data: ByteArray): ByteArray?
     external fun resetTelescopeServer()
+    // Transfers ownership of a detached POSIX socket fd to the native Alpaca server (Rust closes it).
     external fun handleAlpacaConnection(fd: Int)
     external fun handleAlpacaConnectionV6(fd: Int)
     external override fun getPlanets(

@@ -20,6 +20,7 @@
 		2895390114EC4D76A79BE472 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		7B79493A8B7FC1F200000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8AA86AD28C394E35ACC06ABD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		9E8D7C6B5A4F3E2D1C0B9A88 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		A13BEDE448EC4E2F9AC739CF /* MotionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionService.swift; sourceTree = "<group>"; };
 		D3DF066B6D0541DDAFBC5D62 /* OliveApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OliveApp.swift; sourceTree = "<group>"; };
 		F15A392E35F7453EB437ACE3 /* CameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraService.swift; sourceTree = "<group>"; };
@@ -53,6 +54,7 @@
 				A13BEDE448EC4E2F9AC739CF /* MotionService.swift */,
 				0BCA8BE1C1FA4C238756F477 /* OliveBridge.h */,
 				8AA86AD28C394E35ACC06ABD /* Info.plist */,
+				9E8D7C6B5A4F3E2D1C0B9A88 /* Signing.xcconfig */,
 				7B79493A8B7FC1F200000002 /* Assets.xcassets */,
 			);
 			name = "Olive Finder";
@@ -150,7 +152,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nexport CONFIGURATION=\"Release\"\nif [ -z \"$JAVA_HOME\" ] || [ ! -d \"$JAVA_HOME\" ]; then\n    if [ -d \"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ]; then\n        export JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\"\n    elif [ -d \"/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home\"\n    elif /usr/libexec/java_home >/dev/null 2>&1; then\n        export JAVA_HOME=\"$(/usr/libexec/java_home)\"\n    fi\nfi\ncd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode -Dorg.gradle.java.home=\"$JAVA_HOME\"\n";
+			shellScript = "set -e\nexport CONFIGURATION=\"Release\"\nif [ -z \"$JAVA_HOME\" ] || [ ! -d \"$JAVA_HOME\" ]; then\n    if [ -d \"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ]; then\n        export JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\"\n    elif [ -d \"/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home\"\n    elif [ -d \"/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home\" ]; then\n        export JAVA_HOME=\"/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home\"\n    elif /usr/libexec/java_home >/dev/null 2>&1; then\n        export JAVA_HOME=\"$(/usr/libexec/java_home)\"\n    fi\nfi\ncd \"$SRCROOT/..\"\nif [ -n \"$JAVA_HOME\" ] && [ -d \"$JAVA_HOME\" ]; then\n    ./gradlew :shared:embedAndSignAppleFrameworkForXcode -Dorg.gradle.java.home=\"$JAVA_HOME\"\nelse\n    ./gradlew :shared:embedAndSignAppleFrameworkForXcode\nfi\n";
 		};
 		B2C3D4E5F60718293A4B5C6D /* Copy Olive Assets to App Bundle */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -186,7 +188,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nif [ \"$PLATFORM_NAME\" = \"iphonesimulator\" ]; then\n    TARGET=\"aarch64-apple-ios-sim\"\n    CLANG_TARGET=\"arm64-apple-ios16.0-simulator\"\nelse\n    TARGET=\"aarch64-apple-ios\"\n    CLANG_TARGET=\"arm64-apple-ios16.0\"\nfi\n\nBUILD_ARGS=\"--target $TARGET --release\"\n\nexport PATH=\"$HOME/.cargo/bin:/usr/local/bin:/opt/homebrew/bin:$PATH\"\nexport SDKROOT=\"$SDK_DIR\"\nexport BINDGEN_EXTRA_CLANG_ARGS=\"-target $CLANG_TARGET -isysroot $SDKROOT\"\n\ncd \"$SRCROOT/../crates/olive-ios\"\ncargo build $BUILD_ARGS\n";
+			shellScript = "set -e\nif [ ! -d \"$SRCROOT/../../olive-engine\" ]; then\n    echo \"error: Missing sibling repository '../olive-engine'. Clone it next to olive-app: git clone https://github.com/oakamil/olive-engine.git ../olive-engine\" >&2\n    exit 1\nfi\nif [ \"$PLATFORM_NAME\" = \"iphonesimulator\" ]; then\n    TARGET=\"aarch64-apple-ios-sim\"\n    CLANG_TARGET=\"arm64-apple-ios16.0-simulator\"\nelse\n    TARGET=\"aarch64-apple-ios\"\n    CLANG_TARGET=\"arm64-apple-ios16.0\"\nfi\n\nBUILD_ARGS=\"--target $TARGET --release\"\n\nexport PATH=\"$HOME/.cargo/bin:/usr/local/bin:/opt/homebrew/bin:$PATH\"\nexport SDKROOT=\"$SDK_DIR\"\nexport BINDGEN_EXTRA_CLANG_ARGS=\"-target $CLANG_TARGET -isysroot $SDKROOT\"\n\ncd \"$SRCROOT/../crates/olive-ios\"\ncargo build $BUILD_ARGS\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -234,7 +236,6 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = VA83C4R5TG;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
@@ -261,6 +262,7 @@
 		};
 		C303EAF576874002AE08853D /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9E8D7C6B5A4F3E2D1C0B9A88 /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -318,7 +320,6 @@
 					"-framework",
 					UniformTypeIdentifiers,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.oakamil.olive;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = OliveBridge.h;
@@ -329,6 +330,7 @@
 		};
 		E534B4DEF8C34B529EB270D6 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9E8D7C6B5A4F3E2D1C0B9A88 /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -386,7 +388,6 @@
 					"-framework",
 					UniformTypeIdentifiers,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.oakamil.olive;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = OliveBridge.h;
@@ -424,7 +425,6 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = VA83C4R5TG;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;

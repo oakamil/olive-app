@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.foundation.border
@@ -25,6 +28,10 @@ import androidx.compose.ui.unit.dp
 
 private enum class LocField { LAT_DEG, LAT_FRAC, LON_DEG, LON_FRAC }
 
+/**
+ * Manual observer coordinate entry dialog using [NightVisionNumpad] (whole + hundredths degrees
+ * with N/S and E/W toggles; clamps fractional digits to `.00` at ±90° latitude and ±180° longitude).
+ */
 @Composable
 fun LocationInputDialog(
     initialLat: Double?,

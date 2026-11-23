@@ -40,6 +40,7 @@ object Healpix {
 
     fun tileKeyIpix(key: Int): Int = key and TILE_KEY_IPIX_MASK
 
+    // Standard HEALPix base-pixel row (jrll) and azimuth (jpll) offsets for the 12 base faces.
     private val JRLL = intArrayOf(2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4)
     private val JPLL = intArrayOf(1, 3, 5, 7, 0, 2, 4, 6, 1, 3, 5, 7)
 

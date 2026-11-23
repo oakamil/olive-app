@@ -140,7 +140,13 @@ private suspend fun refreshExternalCameraFormats(
     }
 }
 
-// Public entry point called from Swift (iosApp/ContentView.swift: MainViewControllerKt.MainViewController())
+/**
+ * Public Compose root entry point invoked from Swift (`iosApp/ContentView.swift`).
+ *
+ * Wires iOS platform services ([IosEngineBridge], [IosCatalogDatabase], [IosHiPSLocalBackend],
+ * [IosUserDatabase], [AppleWindowController], [IosLocationProvider]), iPad external UVC hotplug
+ * observers, camera/location permission flows, and a 10s engine startup timeout guard.
+ */
 @Suppress("unused", "FunctionName")
 fun MainViewController(): UIViewController = ComposeUIViewController {
     val storage = remember { NSUserDefaultsStorage() }
@@ -188,6 +194,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     var showLocationPermissionDialog by remember { mutableStateOf(false) }
     var pendingLocationRefresh by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+    // Serializes hardware discovery and AVFoundation hotplug events so camera selection stays consistent.
     val cameraDiscoveryMutex = remember { Mutex() }
 
     fun updateCameraSelection(selection: String) {
@@ -414,6 +421,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         }
     }
 
+    // Debug/UI-test launch arguments and initial automatic location fetch.
     LaunchedEffect(Unit) {
         val launchArgs =
             NSProcessInfo.processInfo.arguments.filterIsInstance<String>()

@@ -1,5 +1,12 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
+/**
+ * Dependency-free, `org.json`-compatible JSON object wrapper for KMP targets, backed by
+ * `SimpleJsonParser`.
+ */
 class JsonObject(initialMap: Map<String, Any?> = emptyMap()) {
     private val map: Map<String, Any?> = initialMap
 
@@ -90,13 +97,14 @@ class JsonArray(initialList: List<Any?> = emptyList()) {
 typealias JSONObject = JsonObject
 typealias JSONArray = JsonArray
 
+/** Lenient recursive-descent JSON parser; malformed input degrades to empty maps/lists or defaults. */
 internal class SimpleJsonParser(private val src: String) {
     private var pos = 0
 
     fun parseObject(): Map<String, Any?> {
         skipWhitespace()
         if (pos >= src.length || src[pos] != '{') return emptyMap()
-        pos++ // skip '{'
+        pos++
         val result = mutableMapOf<String, Any?>()
         skipWhitespace()
         if (pos < src.length && src[pos] == '}') {
@@ -131,7 +139,7 @@ internal class SimpleJsonParser(private val src: String) {
     fun parseArray(): List<Any?> {
         skipWhitespace()
         if (pos >= src.length || src[pos] != '[') return emptyList()
-        pos++ // skip '['
+        pos++
         val result = mutableListOf<Any?>()
         skipWhitespace()
         if (pos < src.length && src[pos] == ']') {
@@ -170,7 +178,7 @@ internal class SimpleJsonParser(private val src: String) {
     }
 
     private fun parseString(): String {
-        pos++ // skip opening quote
+        pos++
         val sb = StringBuilder()
         while (pos < src.length) {
             val c = src[pos++]

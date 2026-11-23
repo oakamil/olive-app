@@ -4,6 +4,12 @@
 import CoreMotion
 import Foundation
 
+/// Streams raw 100 Hz CoreMotion gyroscope samples into `crates/olive-ios` and registers
+/// `UserDefaults` callbacks for Rust `PersistentStorage`.
+///
+/// Gyroscope rates (`CMGyroData.rotationRate`, rad/s) are forwarded directly in Apple's
+/// right-handed device-body frame (+X right, +Y up in portrait, +Z out of screen) on a serial
+/// `OperationQueue`, where `AppleImu` integrates them as body-frame delta quaternions.
 public final class MotionService {
     public static let shared = MotionService()
 
@@ -73,6 +79,8 @@ public final class MotionService {
 }
 
 // MARK: - C-ABI Storage Hooks for Rust (crates/olive-ios)
+// Invoked from Rust background threads; UserDefaults.standard is thread-safe.
+// storageGetCallback returns a strdup-allocated string that Rust frees via libc free().
 
 private func storageGetCallback(_ keyPtr: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
     guard let keyPtr = keyPtr else { return nil }

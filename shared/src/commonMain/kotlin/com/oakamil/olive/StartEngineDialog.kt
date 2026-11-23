@@ -100,6 +100,15 @@ private fun CameraSelectionOption(
     }
 }
 
+/**
+ * Pre-launch configuration dialog for the plate-solving engine: camera source (Internal, External
+ * UVC, or Demo), Auto/Manual exposure & sensor/downsampling settings, observer location (Auto GPS
+ * or Manual), and IMU motion-sensor fusion.
+ *
+ * Syncs edits back to [SettingsManager], adapts dynamically to USB camera hot-plugging via
+ * `capabilities.resolveCameraSelection`, and defaults IMU on (`3`) for internal camera vs. off
+ * (`0`) for external UVC unless explicitly overridden by the user.
+ */
 @Composable
 fun StartEngineDialog(
     viewModel: MainViewModel,

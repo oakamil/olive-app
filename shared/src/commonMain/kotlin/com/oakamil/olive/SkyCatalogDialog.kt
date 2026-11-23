@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.foundation.background
@@ -67,6 +70,14 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
 
+/**
+ * Full-screen astronomical catalog browser with category drawer, search/filter/sort controls,
+ * bulk DSS2 HQ downloads, manual RA/Dec GoTo, and [NightVisionKeyboardSplitLayout].
+ *
+ * Combines paginated SQLite queries (300-row pages) with dynamically computed solar system
+ * ephemerides (planets, asteroids, comets) merged on the first page (`offset == 0`). A 5-second
+ * timer keeps telescope coordinates and horizon visibility fresh while open.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SkyCatalogDialog(
@@ -874,6 +885,10 @@ private fun localizedCatalogCategory(category: String): String = when (category)
     else -> category
 }
 
+/**
+ * Returns the screen-space bearing in degrees (0° = up / higher altitude, clockwise) from
+ * `(az1, alt1)` to `(az2, alt2)`, foreshortening azimuth deltas by `cos(alt1)`.
+ */
 fun targetBearingAltAz(az1: Double, alt1: Double, az2: Double, alt2: Double): Double {
     var dAz = az2 - az1
     while (dAz > 180.0) dAz -= 360.0
@@ -891,6 +906,7 @@ enum class CoordinateField {
     RA_H, RA_M, RA_S, DEC_D, DEC_M, DEC_S
 }
 
+/** Manual RA (HMS) / Dec (DMS) coordinate entry dialog supporting J2000 and current-epoch ("Now") input. */
 @Composable
 fun GotoRaDecPopup(
     onDismiss: () -> Unit,

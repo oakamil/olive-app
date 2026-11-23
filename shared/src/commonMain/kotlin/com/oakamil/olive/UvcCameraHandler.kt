@@ -3,6 +3,7 @@
 
 package com.oakamil.olive
 
+/** Platform contract for an external USB (UVC) camera streaming zero-copy frames into the solver. */
 interface UvcCameraHandler {
     val previewWidth: Int
     val previewHeight: Int

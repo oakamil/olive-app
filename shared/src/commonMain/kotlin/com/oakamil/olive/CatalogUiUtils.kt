@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.material.icons.Icons
@@ -172,6 +175,10 @@ val catalogCategories = listOf(
     "Harris", "RASC Doubles", "EGC"
 )
 
+/**
+ * Returns the display and decrowding priority rank for [obj] (lower value = higher priority:
+ * Sun -> Solar System -> bright stars -> Messier -> Caldwell -> Collinder -> NGC -> IC -> ...).
+ */
 fun getCatalogPriority(obj: CatalogObject): Int {
     if (obj.objectType == "Sun" || obj.catalogEntry == "Sun") return 1
     return when (obj.catalogLabel) {
@@ -271,6 +278,13 @@ data class PlacedCatalogItem(
     val textLayout: TextLayoutResult? = null
 )
 
+/**
+ * Decrowds sky-map catalog reticles and places non-overlapping text labels around them.
+ *
+ * Candidates are sorted by target match, [getCatalogPriority], and brightness. Mutates
+ * [placedReticles] and [placedLabels] in place so callers can share collision rects across passes
+ * (e.g. cardinal/constellation labels and alignment reticles).
+ */
 fun layoutCatalogItems(
     candidates: List<Pair<CatalogObject, Offset>>,
     textMeasurer: TextMeasurer,
@@ -440,6 +454,10 @@ fun layoutCatalogItems(
     return result
 }
 
+/**
+ * Hit-tests a sky-map tap against placed catalog items, preferring inflated label bounds over
+ * icon proximity. Excludes the Sun to prevent accidental solar GoTo selection.
+ */
 fun findTappedCatalogItem(
     items: List<PlacedCatalogItem>,
     tapOffset: Offset,

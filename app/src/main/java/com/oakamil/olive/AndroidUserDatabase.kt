@@ -8,6 +8,10 @@ import android.database.Cursor
 import android.util.Log
 import io.requery.android.database.sqlite.SQLiteDatabase
 
+/**
+ * Android [UserDatabase] backed by requery SQLite (`USER_DB_NAME`).
+ * All reads and writes are serialized under `dbLock` with foreign-key enforcement enabled.
+ */
 class AndroidUserDatabase(private val context: Context) : UserDatabase {
     companion object {
         private const val TAG = "AndroidUserDatabase"

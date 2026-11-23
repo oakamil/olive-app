@@ -117,7 +117,12 @@ class EqToScreenProjector {
 }
 
 /**
- * Reusable frame state and scratch buffers for multi-order HiPS `drawVertices` sky rendering.
+ * Reusable frame state and preallocated scratch buffers for multi-order HiPS `drawVertices` sky
+ * rendering.
+ *
+ * All projection arrays, mesh vertex lists, `Paint`, and cached `ImageShader`s are reused across
+ * frames to minimize draw-pass allocations. Must be used strictly from the Compose UI/draw thread;
+ * call [clear] on disposal to release cached GPU shader references.
  */
 class HiPSRenderState {
     private val projector = EqToScreenProjector()
@@ -141,6 +146,7 @@ class HiPSRenderState {
     private val dynamicShaderCache =
         LinkedHashMap<ImageBitmap, Shader>(HiPSTileManager.MAX_DYNAMIC_TILES + 8)
 
+    // Disable edge AA to prevent hairline seams between adjacent HEALPix tiles; Screen blends over navy/OLED sky.
     private val tilePaint = Paint().apply {
         isAntiAlias = false
         filterQuality = FilterQuality.Medium
@@ -319,6 +325,10 @@ class HiPSRenderState {
         }
     }
 
+    /**
+     * Recursively subdivides a HEALPix tile (`(ipix shl 2) + 0..3`) whenever finer HQ descendants are
+     * decoded underneath it, falling back seamlessly to the finest decoded ancestor in each quadrant.
+     */
     private fun drawQuadtreeTile(
         canvas: Canvas,
         tileManager: HiPSTileManager,
@@ -385,6 +395,7 @@ class HiPSRenderState {
         val ix = faceIxIyScratch[1]
         val iy = faceIxIyScratch[2]
         val invNside = 1.0 / Healpix.nsideForOrder(targetOrder).toDouble()
+        // When rendering with a coarser ancestor texture (loadedOrder < targetOrder), crop its UV sub-rectangle.
         val levelDiff = targetOrder - resolved.loadedOrder
         val subMask = (1 shl levelDiff) - 1
         val parentScale = 1.0 / (1 shl levelDiff).toDouble()
@@ -392,6 +403,7 @@ class HiPSRenderState {
         val subOffsetFy = (iy and subMask).toDouble()
 
         val cols = subdiv + 1
+        // Half-texel inset (0.5..dim-0.5) avoids sampling outside tile edges under bilinear filtering.
         val texSpanX = (resolved.bitmap.width - 1).coerceAtLeast(1).toFloat()
         val texSpanY = (resolved.bitmap.height - 1).coerceAtLeast(1).toFloat()
 
@@ -492,6 +504,7 @@ class HiPSRenderState {
                 val y2 = gridScreenCoords[tr * 2 + 1]
                 val x3 = gridScreenCoords[bl * 2]
                 val y3 = gridScreenCoords[bl * 2 + 1]
+                // Drop quads stretched across the stereographic antipode singularity.
                 val span = max(max(abs(x1 - x0), abs(y1 - y0)), max(abs(x3 - x2), abs(y3 - y2)))
                 if (span > maxEdgePx) continue
 
@@ -517,12 +530,14 @@ class HiPSRenderState {
         canvas.drawVertices(vertices, BlendMode.Modulate, tilePaint)
     }
 
+    // Coarser orders need denser meshes to follow stereographic curvature; orders >= 2 are nearly planar.
     private fun subdivForOrder(order: Int): Int = when (order) {
         0 -> 8
         1 -> 4
         else -> 2
     }
 
+    // In-place insertion sort descending by dot product with view center (zero allocations).
     private fun sortIndicesByCenterProximity(
         indices: IntArray,
         count: Int,

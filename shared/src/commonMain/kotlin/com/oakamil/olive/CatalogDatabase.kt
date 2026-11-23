@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import kotlinx.datetime.Clock
@@ -7,6 +10,11 @@ import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.sin
 
+/**
+ * Astronomical object from the bundled static SQLite catalog or runtime solar-system ephemerides.
+ * [ra] and [dec] are J2000/ICRS degrees; dynamic objects (Sun, planets, asteroids, comets) use
+ * non-positive [id] values.
+ */
 data class CatalogObject(
     val id: Int,
     val catalogLabel: String,
@@ -88,6 +96,11 @@ data class ParsedCometElements(
     val incl: Double,
 )
 
+/**
+ * Read-only astronomical catalog contract backed by the bundled SQLite database (`catalog.db`),
+ * DE421 SPK ephemeris (`de421.bsp`), and active-comet MPC elements feed.
+ * Shared SQL query builders and comet-feed parsers live on [Companion].
+ */
 interface CatalogDatabase {
     companion object {
         // 1. Constants & Shared Catalog Metadata
@@ -273,6 +286,7 @@ interface CatalogDatabase {
                 val zDecRad = zDecDeg * DEG_TO_RAD
                 val sinZDec = sin(zDecRad)
                 val cosZDec = cos(zDecRad)
+                // sin(alt) = dot(object, zenith) > 0 in J2000 coordinates.
                 clauses.add("(SIN(dec * $DEG_TO_RAD) * $sinZDec + COS(dec * $DEG_TO_RAD) * $cosZDec * COS($zRaRad - ra * $DEG_TO_RAD)) > 0")
             }
 
@@ -315,6 +329,7 @@ interface CatalogDatabase {
             )
             val priorityCase = buildPriorityCaseSql()
             val orderBy = buildOrderBySql(sortBy, targetRa, targetDec)
+            // SQLite bare-column selection returns the row achieving MIN(priority) per co-located group.
             val sql =
                 "SELECT $CATALOG_OBJECT_COLUMNS_SQL, MIN($priorityCase) as priority " +
                         "FROM catalog WHERE $selection " +
@@ -436,6 +451,7 @@ interface CatalogDatabase {
                 }
             }
 
+            // Exact spherical cap filter (with tiny epsilon for trig rounding) after the RA/Dec box pre-filter.
             val minCos = cos(radius * DEG_TO_RAD) - 1e-12
             clauses += "(${sphericalCosDistanceSql(targetRa, targetDec)} >= $minCos)"
             return clauses.joinToString(" AND ")
@@ -445,6 +461,7 @@ interface CatalogDatabase {
             "(1.0 - ${sphericalCosDistanceSql(targetRa, targetDec)}) ASC"
 
         // 3. Comet Parsing & JSON Serialization
+        // Gregorian calendar date (with fractional UTC day) to Julian Date (Meeus Ch. 7).
         private fun dateToJd(year: Int, month: Int, dayFrac: Double): Double {
             var y = year
             var m = month
@@ -530,6 +547,7 @@ interface CatalogDatabase {
             onParseError: ((String, Exception) -> Unit)? = null,
         ): String? {
             if (lines.isEmpty()) return null
+            // Reject HTML/XML error pages or captive-portal responses.
             if (lines.any { it.trimStart().startsWith("<") }) return null
             val sb = StringBuilder("[")
             var nextId = 1

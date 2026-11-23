@@ -1,6 +1,11 @@
 // Required Notice: Copyright (c) 2026 Omair Kamil
 // See LICENSE file in root directory for license terms.
 
+//! Android NDK Camera2 backend implementing `CameraTrait` for internal back-facing cameras.
+//!
+//! Captures RAW16/RAW10/RAW12 or YUV_420_888 frames on a dedicated capture thread that owns
+//! the `ALooper`, `AImageReader`, and Camera2 NDK handles (`CameraCaptureResources`).
+
 use log::{error, info, warn};
 use ndk_sys::*;
 use olive_engine::{CameraConfig, CameraTrait, CameraType, Image};
@@ -58,7 +63,8 @@ pub struct AndroidCameraConfiguration {
     pub zoom_ratio: Option<f32>,
 }
 
-/// Context passed to the AImageReader C callback
+/// Shared context passed to `AImageReader` and `ACameraCaptureSession` C callbacks.
+/// Owned by `CameraCaptureResources` and dropped only after all native handles are closed.
 struct ImageReaderContext {
     store: Arc<CaptureStore>,
     width: u32,
@@ -670,7 +676,7 @@ impl AndroidCamera {
                     continue;
                 }
 
-                // 1. Ensure Back-Facing
+                // Ensure back-facing lens
                 let mut entry: ACameraMetadata_const_entry = std::mem::zeroed();
                 ACameraMetadata_getConstEntry(
                     metadata,
@@ -687,7 +693,7 @@ impl AndroidCamera {
                     continue;
                 }
 
-                // 2. Physical Size & Focal Length
+                // Physical size & focal length
                 ACameraMetadata_getConstEntry(
                     metadata,
                     acamera_metadata_tag::ACAMERA_SENSOR_INFO_PHYSICAL_SIZE.0 as u32,
@@ -715,7 +721,7 @@ impl AndroidCamera {
                 }
                 let focal_length_mm = *entry.data.f.offset(0);
 
-                // 3. Max Analog and Digital Gain
+                // Max analog and total sensitivity
                 ACameraMetadata_getConstEntry(
                     metadata,
                     acamera_metadata_tag::ACAMERA_SENSOR_INFO_SENSITIVITY_RANGE.0 as u32,
@@ -796,7 +802,7 @@ impl AndroidCamera {
                 let fov_rad = 2.0 * (phys_width_mm / (2.0 * focal_length_mm)).atan();
                 let fov_deg = fov_rad * (180.0 / std::f32::consts::PI);
 
-                // 5. Query Available Stream Configurations for RAW16 or YUV_420_888
+                // Query available stream configurations for RAW or YUV_420_888
                 let mut stream_configs_entry: ACameraMetadata_const_entry = std::mem::zeroed();
                 ACameraMetadata_getConstEntry(
                     metadata,
@@ -994,7 +1000,6 @@ impl AndroidCamera {
                 return Err("No suitable back-facing camera found!".to_string());
             }
 
-            // No software cropping applied
             info!(
                 "Camera {} selected. Native FOV: {:.1}°. Streaming at {}x{}. No software cropping applied.",
                 best_id, min_fov, best_dim.0, best_dim.1
@@ -1020,7 +1025,10 @@ impl AndroidCamera {
         }
     }
 
-    /// The AImageReader callback, invoked by the NDK Looper when a RAW16 frame is ready.
+    /// `AImageReader` callback invoked on the NDK Looper thread when a frame is ready.
+    ///
+    /// Expects `context` to point to the `ImageReaderContext` kept alive by
+    /// `CameraCaptureResources` for the entire lifetime of `reader`.
     extern "C" fn on_image_available(context: *mut c_void, reader: *mut AImageReader) {
         if context.is_null() || reader.is_null() {
             return;
@@ -1051,8 +1059,7 @@ impl AndroidCamera {
                     return;
                 }
 
-                // RAW16 is 16-bit. Downshift to 8-bit to fit `Image` struct
-                // YUV_420_888 is 8-bit. Plane 0 is the Y-plane (grayscale).
+                // Unpack RAW16/RAW10/RAW12 (scaled to 8-bit) or YUV_420_888 Y-plane into luma bytes.
                 let Some(image_data) = unpack_plane_to_luma(
                     data,
                     len,
@@ -1478,7 +1485,8 @@ impl AndroidCamera {
             let request = res.request;
             let session = res.session;
 
-            // Disable 3A routines
+            // Disable 3A, stabilization, and sharpening; apply a linear tonemap curve when supported
+            // so ISP post-processing does not distort star centroids.
             let control_mode_off =
                 acamera_metadata_enum_acamera_control_mode::ACAMERA_CONTROL_MODE_OFF.0 as u8;
             ACaptureRequest_setEntry_u8(
@@ -1661,7 +1669,7 @@ impl AndroidCamera {
                 &color_correction_hq,
             );
 
-            let black_level_lock = 1u8; // true
+            let black_level_lock = 1u8;
             ACaptureRequest_setEntry_u8(
                 request,
                 acamera_metadata_tag::ACAMERA_BLACK_LEVEL_LOCK.0 as u32,
@@ -1868,6 +1876,10 @@ impl Drop for AcquiredImage {
     }
 }
 
+/// RAII owner for all NDK Camera2 / `AImageReader` handles on the capture thread.
+///
+/// Teardown order in `Drop` is load-bearing: session/device/reader must all be closed before
+/// `reader_context` is freed so no in-flight C callback can dereference `context_ptr()`.
 struct CameraCaptureResources {
     manager: *mut ACameraManager,
     image_reader: *mut AImageReader,
@@ -1961,6 +1973,12 @@ fn build_raw_to_u8_lut(black_floor: f32, white_ceiling: f32) -> Vec<u8> {
     lut
 }
 
+/// Unpacks an `AImage` plane 0 buffer (RAW16/RAW10/RAW12 or YUV_420_888 Y-plane) into 8-bit luma.
+///
+/// # Safety
+/// `data` must point to at least `len` readable bytes from a currently acquired `AImage`.
+/// Row stride and plane length are validated against `width`, `height`, and format packing
+/// before creating the slice.
 unsafe fn unpack_plane_to_luma(
     data: *const u8,
     len: i32,

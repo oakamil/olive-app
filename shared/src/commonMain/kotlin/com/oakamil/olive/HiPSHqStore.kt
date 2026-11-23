@@ -31,12 +31,7 @@ class PreparedHqAppend(
     val indexBytes: ByteArray
 )
 
-/**
- * Immutable sorted index of sparse HQ tiles (`Orders 0..HQ_MAX_ORDER`) stored in `dss2_hq.dat`.
- *
- * Keys are packed via [Healpix.packTileKey] (`(order shl 20) or ipix`), so ascending integer order
- * sorts naturally by `(order, ipix)` and keeps every ancestor's `NESTED` descendants contiguous.
- */
+/** Binary search on a sorted [IntArray]; returns the matching index or `-(insertionPoint + 1)`. */
 fun IntArray.binarySearchKey(target: Int): Int {
     var low = 0
     var high = size - 1
@@ -52,6 +47,12 @@ fun IntArray.binarySearchKey(target: Int): Int {
     return -(low + 1)
 }
 
+/**
+ * Immutable sorted index of sparse HQ tiles (`Orders 0..HQ_MAX_ORDER`) stored in `dss2_hq.dat`.
+ *
+ * Keys are packed via [Healpix.packTileKey] (`(order shl 20) or ipix`), so ascending integer order
+ * sorts naturally by `(order, ipix)` and keeps every ancestor's `NESTED` descendants contiguous.
+ */
 class HiPSHqIndex(
     val keys: IntArray,
     val offsets: LongArray,
@@ -85,6 +86,11 @@ class HiPSHqIndex(
 
         val EMPTY = HiPSHqIndex(IntArray(0), LongArray(0), IntArray(0), 0L)
 
+        /**
+         * Parses `OLVHQIDX` v1 bytes (16B header + sorted 16B `(key u32, len u32, offset u64)`
+         * entries) and validates strict key monotonicity and bounds against [dataFileLength].
+         * Returns [EMPTY] if corrupt or truncated.
+         */
         fun parse(indexBytes: ByteArray?, dataFileLength: Long): HiPSHqIndex {
             if (indexBytes == null || indexBytes.size < HEADER_BYTES || dataFileLength < 0L) {
                 return EMPTY
@@ -147,6 +153,10 @@ class HiPSHqIndex(
             return out
         }
 
+        /**
+         * Deduplicates [newItems] against [existing], assigns sequential byte offsets from
+         * `existing.dataEndOffset`, and returns the merged index + serialized bytes for atomic commit.
+         */
         fun prepareAppend(
             existing: HiPSHqIndex,
             newItems: List<Pair<Int, ByteArray>>
@@ -222,7 +232,7 @@ object HiPSObjectPlanner {
     private const val FOV_MULTIPLIER = 2.2
     private const val MIN_FOV_ARCMIN = 8.0
     private const val MAX_FOV_ARCMIN = 3600.0
-    private const val ORDER0_ARCMIN_PER_PX = 6.871
+    private const val ORDER0_ARCMIN_PER_PX = 6.871 // ~58.6° / 512 px for an Order-0 HEALPix tile
     private const val TARGET_CUTOUT_PX = 320.0
     private const val DISC_RADIUS_PAD = 1.12
     private const val DISC_GRID_STEPS = 13

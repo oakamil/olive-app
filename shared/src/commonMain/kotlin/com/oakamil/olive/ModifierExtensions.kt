@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -15,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
+/** Draws an animated vertical scrollbar overlay synced to [state] when content overflows. */
 fun Modifier.simpleVerticalScrollbar(
     state: ScrollState,
     width: Dp = 4.dp,

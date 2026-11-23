@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.ui.text.AnnotatedString
@@ -13,6 +16,10 @@ import kotlin.math.roundToLong
 
 fun String.Companion.format(format: String, vararg args: Any?): String = pureFormat(format, *args)
 
+/**
+ * Lightweight multiplatform HTML-to-[AnnotatedString] parser supporting basic formatting tags
+ * (`b`, `strong`, `i`, `em`, `u`, `h1`-`h3`, `small`, `p`, `br`) and common HTML entities.
+ */
 fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
     val clean = htmlString
         .replace("\\'", "'")
@@ -194,6 +201,10 @@ fun AnnotatedString.Companion.fromHtml(htmlString: String): AnnotatedString {
 }
 
 
+/**
+ * Pure-Kotlin `printf`-style formatter for KMP targets, supporting positional arguments (`1$`),
+ * `-`/`+`/`0` flags, width, precision, and `s`, `d`, `f`, `b`, `c`, `x`/`X` conversions.
+ */
 internal fun pureFormat(format: String, vararg args: Any?): String {
     val sb = StringBuilder()
     var argIndex = 0
@@ -325,6 +336,7 @@ private fun formatDouble(value: Double, precision: Int, alwaysSign: Boolean): St
     val absVal = abs(value)
     val factor = 10.0.pow(safePrecision)
     val scaled = absVal * factor
+    // Guard against Long overflow in roundToLong() (max signed Long ≈ 9.22e18).
     if (!scaled.isFinite() || scaled >= 4.5e18) {
         val sign = if (isNeg && absVal > 0.0) "-" else if (alwaysSign) "+" else ""
         return "$sign$absVal"

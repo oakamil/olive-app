@@ -54,6 +54,19 @@ import org.jetbrains.skia.ColorType
 import org.jetbrains.skia.ImageInfo
 import platform.posix.free
 
+/**
+ * iOS [EngineBridge] dispatching to Rust (`crates/olive-ios`) and Swift (`CameraService`/`MotionService`)
+ * via `OliveBridge.h` cinterop.
+ *
+ * Key invariants:
+ * - Rust engine initialization ([olive_ios_start_engine]) must precede hardware capture startup
+ *   ([olive_ios_start_hardware_capture]) so `ACTIVE_APPLE_CAMERA` exists when Swift registers its
+ *   control callback and begins pushing frames.
+ * - JSON strings returned by Rust (`olive_ios_get_engine_stats`, ephemeris queries) are freed with
+ *   [olive_ios_free_string]; JSON strings returned by Swift (`olive_ios_get_available_cameras`,
+ *   `olive_ios_get_external_camera_formats`) are `strdup`-allocated and freed with POSIX [free].
+ * - `frameRawBuffer` is reused across [getLatestFrame] polls and assumes sequential callers.
+ */
 @OptIn(ExperimentalForeignApi::class)
 class IosEngineBridge : EngineBridge {
 
@@ -67,7 +80,6 @@ class IosEngineBridge : EngineBridge {
             frameRawBuffer = ByteArray(newCap)
         }
     }
-
 
     override fun startNativeCameraEngine(
         motionSensorMode: Int,

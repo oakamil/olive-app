@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.foundation.background
@@ -88,6 +91,15 @@ import org.jetbrains.compose.resources.StringResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+/*
+ * Shared UI building blocks across Olive:
+ * - Low-power idle timer propagation across Dialog windows (LocalOnUserInteraction).
+ * - Full-screen and scrim-card dialog shells (FullScreenSurfaceDialog, OliveAlertDialog, InfoPopup).
+ * - Night-vision numeric/coordinate input controls (CoordinateBox, NightVisionNumpad).
+ * - ObjectInfoPopup target detail sheet and StatsDisplay engine telemetry table.
+ */
+
+/** Callback invoked on pointer activity inside modal dialogs to reset `MainScreen`'s low-power idle timer. */
 val LocalOnUserInteraction = compositionLocalOf { {} }
 
 fun Modifier.notifyUserInteraction(onUserInteraction: () -> Unit): Modifier =
@@ -186,6 +198,10 @@ fun FullScreenSurfaceDialog(
     }
 }
 
+/**
+ * Centered modal card hosted inside a full-screen dialog with a custom tap scrim so outside taps
+ * and [LocalOnUserInteraction] tracking behave identically on Android and Apple targets.
+ */
 @Composable
 private fun OliveScrimCardDialog(
     onDismissRequest: () -> Unit,
@@ -379,6 +395,10 @@ fun OliveDialogHeader(
     HorizontalDivider(color = extColors.dialogDivider)
 }
 
+/**
+ * Scrollable modal card with a standard [OliveDialogHeader] and optional pinned [bottomBar].
+ * Computes `maxCardHeight` against system bar vertical insets so tall content scrolls cleanly.
+ */
 @Composable
 fun InfoPopup(
     title: String,
@@ -562,6 +582,13 @@ fun NightVisionNumpad(
     }
 }
 
+/**
+ * Celestial object detail sheet showing catalog metadata, coordinates, observation history,
+ * HiPS sky preview, and quick actions (Center, GoTo, Align, Observing Lists, Log Observation).
+ *
+ * Defers [ObjectHiPSPreview] and aggregated observation queries until `coLocatedReady` settles
+ * so co-located cross-catalog entries (e.g. Messier/NGC pairs) are merged cleanly.
+ */
 @Composable
 fun ObjectInfoPopup(
     coords: Pair<Double, Double>,

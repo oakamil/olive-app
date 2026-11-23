@@ -1,3 +1,6 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +49,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 
+/**
+ * Push-to telescope guidance readout showing two-axis offsets (Alt/Az or RA/Dec), directional
+ * indicators, and a central [TargetArrow].
+ *
+ * Supports both full-card (two-row) and [isCompactLayout] (single-row PiP) presentations, plus
+ * hollow stroke rendering in [isLowPowerMode] to save OLED power. Latches the last non-null
+ * offsets across brief solve dropouts while a target remains active, clearing only when the
+ * target is removed.
+ */
 @Composable
 fun GuidanceDisplay(
     stats: EngineStats,
@@ -453,6 +465,7 @@ fun DirectionArrow(rotation: Int, alignRight: Boolean, isOutlined: Boolean) {
     )
 }
 
+/** Rotating arrow pointing toward the active GoTo target; negates angle to map sky bearing to screen rotation. */
 @Composable
 fun TargetArrow(rotation: Double, isOutlined: Boolean) {
     val colors = MaterialTheme.colorScheme

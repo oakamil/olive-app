@@ -1,8 +1,15 @@
+// Required Notice: Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
 package com.oakamil.olive
 
 import kotlin.math.abs
 import kotlin.math.round
 
+/**
+ * External USB Video Class (UVC) stream mode, with USB 2.0/3.0 bandwidth checks and raw
+ * `CS_INTERFACE` (`0x24`) descriptor parsing.
+ */
 data class UvcFormat(
     val width: Int,
     val height: Int,
@@ -107,6 +114,11 @@ data class UvcFormat(
             ) ?: validList.first()
         }
 
+        /**
+         * Parses raw USB configuration descriptors for UVC 1.1/1.5 `VS_FORMAT`/`VS_FRAME` entries,
+         * auto-detects SuperSpeed (USB 3.0) unless [isUsb3Override] is given, and returns the
+         * filtered best format per FPS.
+         */
         fun parseRawDescriptors(raw: ByteArray?, isUsb3Override: Boolean? = null): List<UvcFormat> {
             if (raw == null || raw.size < 4) return emptyList()
             val formats = mutableListOf<UvcFormat>()
@@ -142,6 +154,7 @@ data class UvcFormat(
                                                     ((raw[intOffset + 2].toLong() and 0xFF) shl 16) or
                                                     ((raw[intOffset + 3].toLong() and 0xFF) shl 24)
                                             if (interval > 0) {
+                                                // UVC dwFrameInterval is expressed in 100 ns units (10^7 per second).
                                                 val fps = round(10_000_000.0 / interval)
                                                     .toInt()
                                                 if (fps in 1..120) {

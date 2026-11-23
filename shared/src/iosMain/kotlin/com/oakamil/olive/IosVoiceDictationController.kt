@@ -37,6 +37,7 @@ private class IosVoiceDictationController : VoiceDictationController {
     private var recognitionTask: SFSpeechRecognitionTask? = null
     private var tapInstalled = false
     private var activeCallback: ((String, Boolean) -> Unit)? = null
+    // Monotonic generation counter invalidating stale async permission/recognition callbacks.
     private var sessionToken: Int = 0
     private var disposed: Boolean = false
 

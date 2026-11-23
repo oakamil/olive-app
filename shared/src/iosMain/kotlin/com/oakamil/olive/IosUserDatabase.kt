@@ -45,6 +45,12 @@ import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSUserDomainMask
 
+/**
+ * Read-write SQLite [UserDatabase] stored under `Application Support/<USER_DB_NAME>`.
+ *
+ * Serializes all queries and transactions with a recursive [NativeMutex], enforces
+ * `PRAGMA foreign_keys = ON`, and applies [UserDatabase.SCHEMA_STATEMENTS] idempotently on open.
+ */
 @OptIn(ExperimentalForeignApi::class)
 class IosUserDatabase : UserDatabase {
     companion object {
@@ -53,6 +59,7 @@ class IosUserDatabase : UserDatabase {
 
     private val mutex = NativeMutex()
     private var db: CPointer<sqlite3>? = null
+    // Guarded by mutex; prevents nested BEGIN IMMEDIATE when helper transactions run inside runInTransaction.
     private var inTransaction = false
 
     private fun resolveDbPath(): String? {

@@ -1,6 +1,16 @@
 // Required Notice: Copyright (c) 2026 Omair Kamil
 // See LICENSE file in root directory for license terms.
 
+// Shared C-ABI bridge between Rust (crates/olive-ios), Swift (iosApp/), and Kotlin/Native cinterop.
+//
+// String ownership rules:
+// - Strings returned by Rust (`olive_ios_get_engine_stats`, `olive_ios_get_planets`,
+//   `olive_ios_get_asteroids`, `olive_ios_get_comets`) must be freed with `olive_ios_free_string()`.
+// - Strings returned by Swift (`olive_ios_get_available_cameras`,
+//   `olive_ios_get_external_camera_formats`, `AppleStorageGetCallback`) are `strdup`-allocated
+//   and must be freed with libc `free()`.
+// - All `const char *` input arguments are borrowed only for the duration of the call.
+
 #ifndef OliveBridge_h
 #define OliveBridge_h
 
@@ -50,15 +60,19 @@ static inline void olive_ios_get_local_ip(char *out_buf, size_t buf_len) {
 }
 
 // --- Camera Control Callback ---
+// Invoked synchronously from Rust engine/UI threads; negative values mean "leave unchanged".
+// Implementations must hop onto their own AVFoundation control queue.
 typedef void (*AppleCameraControlCallback)(int32_t exposure_us, float gain, float focus, float zoom);
 
 void olive_ios_register_camera_control_callback(AppleCameraControlCallback cb);
 void olive_ios_unregister_camera_control_callback(void);
 
 // --- Hardware Capture Lifecycle (Swift) ---
+// Returned JSON strings are `strdup`-allocated; caller must release with libc `free()`.
 const char *olive_ios_get_available_cameras(void);
 const char *olive_ios_get_external_camera_formats(void);
 bool olive_ios_has_connected_external_camera(void);
+// Blocks up to 8s awaiting AVFoundation startup, then starts CoreMotion updates on success.
 bool olive_ios_start_hardware_capture(
     const char *camera_id,
     int32_t width,
@@ -77,6 +91,7 @@ void olive_ios_set_camera_hardware_limits(
 );
 
 // --- Frame and IMU Push Pipelines ---
+// `buffer` points to a locked 8-bit Y-plane (stride >= width), borrowed only during the call.
 void olive_ios_push_camera_frame(
     const uint8_t *buffer,
     uint32_t width,
@@ -88,12 +103,15 @@ void olive_ios_push_camera_frame(
     float zoom
 );
 
+// Raw CoreMotion gyroscope rates (rad/s, right-handed device-body frame) with monotonic ns timestamp.
 void olive_ios_push_gyro_update(
     double gx, double gy, double gz,
     int64_t timestamp_ns
 );
 
 // --- Key-Value Storage Callbacks (Rust <-> Swift UserDefaults) ---
+// Invoked from Rust background threads. Get callback returns a `strdup`-allocated string
+// (freed by Rust via libc `free()`) or NULL.
 typedef char *(*AppleStorageGetCallback)(const char *key);
 typedef void (*AppleStorageSetCallback)(const char *key, const char *value);
 typedef void (*AppleStorageRemoveCallback)(const char *key);
@@ -105,6 +123,7 @@ void olive_ios_register_storage_callbacks(
 );
 
 // --- Memory Management ---
+// Frees C strings returned by Rust `olive_ios_*` functions (not Swift `strdup` strings).
 void olive_ios_free_string(char *ptr);
 
 // --- Engine Lifecycle & Control ---
@@ -147,6 +166,8 @@ void olive_ios_set_camera_is_ae(bool is_ae);
 void olive_ios_set_camera_brightness(int32_t brightness);
 int32_t olive_ios_get_camera_brightness(void);
 
+// Writes `[width: u32 LE][height: u32 LE][RGBA8888 pixels...]` into `buffer`.
+// Returns Unix epoch ms (> last_timestamp_ms when written, <= last_timestamp_ms if unchanged, 0 on error).
 int64_t olive_ios_get_latest_frame_into(uint8_t *buffer, size_t capacity, int64_t last_timestamp_ms);
 
 // --- Telescope & Ephemeris Controls ---
@@ -162,6 +183,7 @@ char *olive_ios_get_asteroids(const char *bsp_path, int64_t time_ms, double lati
 char *olive_ios_get_comets(const char *bsp_path, int64_t time_ms, double latitude, double longitude, const char *comets_json);
 
 // --- SQLite Helpers ---
+// Wraps SQLITE_TRANSIENT for Kotlin/Native cinterop and registers SIN/COS on iOS SQLite builds.
 static inline int olive_sqlite3_bind_text(sqlite3_stmt *stmt, int col, const char *val) {
     if (!val) {
         return sqlite3_bind_null(stmt, col);

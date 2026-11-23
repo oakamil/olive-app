@@ -9,9 +9,15 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Stateless decode-time normalizer that flattens per-plate DSS2 sky-fog pedestals on
- * dark and cool-bluish starfields while leaving Milky Way clouds, warm dust, bright nebulae,
+ * Stateless decode-time normalizer that flattens per-plate DSS2 sky-fog pedestals and plate seams
+ * on dark and cool-bluish starfields while leaving Milky Way clouds, warm dust, bright nebulae,
  * and saturated stars untouched.
+ *
+ * Uses two passes over a `16x16` cell grid:
+ * 1. Estimates each cell's ~15th-percentile RGB floor and computes a brightness- and warmth-gated
+ *    pedestal subtraction toward [TARGET_FLOOR].
+ * 2. Applies an edge-preserving 3x3 bilateral blend of neighboring cell subtractions with a linear
+ *    highlight taper above [HIGHLIGHT_TAPER_START] to eliminate block seams without haloing.
  */
 object HiPSTileNormalizer {
     private const val CELL_SIZE = 16
@@ -184,6 +190,8 @@ object HiPSTileNormalizer {
                         val pMax = max(pR, max(pG, pB))
                         if (pMax <= TARGET_FLOOR || pMax >= CHANNEL_MAX) continue
 
+                        // Accumulate both a color-edge-weighted bilateral blend (for plate-seam preservation)
+                        // and a pure spatial fallback, blending smoothly across fadeStart..EDGE_TOLERANCE.
                         var sumR = 0
                         var sumG = 0
                         var sumB = 0

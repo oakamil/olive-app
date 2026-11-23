@@ -33,6 +33,10 @@ data class ParsedCsvImport(
     val rows: List<ParsedCsvRow>
 )
 
+/**
+ * RFC 4180 CSV parser and format auto-detector for importing single observing lists,
+ * multi-list backups, and observation logs exported by [UserDatabase].
+ */
 object ObservingListCsv {
 
     /**
@@ -114,6 +118,7 @@ object ObservingListCsv {
         val rest = value.substring(1)
         return when (rest[0]) {
             '=', '+', '@', '\t', '\r' -> rest
+            // Negative numeric values are not apostrophe-prefixed on export, so preserve literal "'-12.3".
             '-' -> if (rest.toDoubleOrNull()?.isFinite() == true) value else rest
             else -> value
         }
