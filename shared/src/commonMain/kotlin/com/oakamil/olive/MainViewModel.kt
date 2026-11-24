@@ -1672,6 +1672,7 @@ open class MainViewModel(
     private var lastCalibratedFocus: Float? = null
     private var statsJob: Job? = null
     private var frameJob: Job? = null
+
     // Serializes all native/UVC engine start and stop transitions across coroutines.
     private val engineLifecycleMutex = Mutex()
     private var engineStartJob: Job? = null

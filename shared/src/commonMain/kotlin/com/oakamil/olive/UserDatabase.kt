@@ -3,6 +3,7 @@
 
 package com.oakamil.olive
 
+import com.oakamil.olive.UserDatabase.Companion.objectKey
 import kotlinx.datetime.Clock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.Instant
@@ -36,7 +37,7 @@ data class ObservingListItemRecord(
     val sortOrder: Int,
     val addedAtMs: Long
 ) {
-    val objectKey: String get() = UserDatabase.objectKey(catalogLabel, catalogEntry)
+    val objectKey: String get() = objectKey(catalogLabel, catalogEntry)
 }
 
 data class ObservationRecord(
@@ -55,7 +56,7 @@ data class ObservationRecord(
     val azDeg: Double?,
     val notes: String
 ) {
-    val objectKey: String get() = UserDatabase.objectKey(catalogLabel, catalogEntry)
+    val objectKey: String get() = objectKey(catalogLabel, catalogEntry)
 }
 
 data class TargetRef(
@@ -66,7 +67,7 @@ data class TargetRef(
     val raDeg: Double,
     val decDeg: Double
 ) {
-    val objectKey: String get() = UserDatabase.objectKey(catalogLabel, catalogEntry)
+    val objectKey: String get() = objectKey(catalogLabel, catalogEntry)
 }
 
 data class StaticCoLocatedKey(

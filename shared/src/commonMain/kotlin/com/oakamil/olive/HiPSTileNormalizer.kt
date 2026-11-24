@@ -113,7 +113,7 @@ object HiPSTileNormalizer {
                 val maxC = max(r, max(g, b))
                 // Strictly monotonic fade across bright nebulae/clouds so no dark moats form
                 var gate = when {
-                    maxC <= TARGET_FLOOR || maxC >= BRIGHT_FADE_END -> 0f
+                    maxC !in 5..<BRIGHT_FADE_END -> 0f
                     maxC > BRIGHT_FADE_START ->
                         (BRIGHT_FADE_END - maxC).toFloat() / (BRIGHT_FADE_END - BRIGHT_FADE_START)
 
@@ -188,7 +188,7 @@ object HiPSTileNormalizer {
                         val pG = rgba[p + 1].toInt() and CHANNEL_MAX
                         val pB = rgba[p + 2].toInt() and CHANNEL_MAX
                         val pMax = max(pR, max(pG, pB))
-                        if (pMax <= TARGET_FLOOR || pMax >= CHANNEL_MAX) continue
+                        if (pMax !in 5..<CHANNEL_MAX) continue
 
                         // Accumulate both a color-edge-weighted bilateral blend (for plate-seam preservation)
                         // and a pure spatial fallback, blending smoothly across fadeStart..EDGE_TOLERANCE.

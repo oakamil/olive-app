@@ -23,7 +23,25 @@ interface HiPSAssetSource {
 data class HiPSStagedStats(
     val flags: BooleanArray,
     val totalBytes: Long
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other == null || this::class != other::class) return false
+
+        other as HiPSStagedStats
+
+        if (totalBytes != other.totalBytes) return false
+        if (!flags.contentEquals(other.flags)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = totalBytes.hashCode()
+        result = 31 * result + flags.contentHashCode()
+        return result
+    }
+}
 
 /**
  * Platform storage and HTTP primitives backing on-demand download, resume staging,
@@ -84,8 +102,8 @@ interface HiPSLocalBackend {
 
     companion object {
         private const val PACK_FILE_PREFIX = "dss2_o0_"
-        val PACK_FILE_NAME = "${PACK_FILE_PREFIX}${Healpix.MAX_ORDER}.pack"
-        val TEMP_PACK_NAME = "$PACK_FILE_NAME.tmp"
+        const val PACK_FILE_NAME = "${PACK_FILE_PREFIX}${Healpix.MAX_ORDER}.pack"
+        const val TEMP_PACK_NAME = "$PACK_FILE_NAME.tmp"
         const val STAGING_DIR_NAME = "dss2_staging"
         const val HQ_DIR_NAME = "hq"
         const val HQ_DATA_FILE_NAME = "dss2_hq.dat"

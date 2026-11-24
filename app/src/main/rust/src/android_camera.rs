@@ -28,6 +28,83 @@ const MAX_EXPOSURE_US: i32 = 5_000_000;
 pub static CURRENT_HOT_PIXEL_MODE: AtomicU32 = AtomicU32::new(0);
 pub static SUPPORTED_HOT_PIXEL_MODES: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 
+unsafe fn get_metadata_entry(
+    metadata: *const ACameraMetadata,
+    tag: acamera_metadata_tag,
+    expected_type: u8,
+) -> Option<ACameraMetadata_const_entry> {
+    if metadata.is_null() {
+        return None;
+    }
+    unsafe {
+        let mut entry: ACameraMetadata_const_entry = std::mem::zeroed();
+        let status = ACameraMetadata_getConstEntry(metadata, tag.0 as u32, &mut entry);
+        if status == camera_status_t::ACAMERA_OK && entry.type_ == expected_type && entry.count > 0
+        {
+            Some(entry)
+        } else {
+            None
+        }
+    }
+}
+
+unsafe fn raw_slice<'a, T>(ptr: *const T, count: u32) -> Option<&'a [T]> {
+    let len = count as usize;
+    if ptr.is_null()
+        || (ptr as usize) % std::mem::align_of::<T>() != 0
+        || len
+            .checked_mul(std::mem::size_of::<T>())
+            .is_none_or(|bytes| bytes > isize::MAX as usize)
+    {
+        return None;
+    }
+    unsafe { Some(std::slice::from_raw_parts(ptr, len)) }
+}
+
+/// Borrows a `BYTE` metadata slice valid only while `metadata` remains alive.
+unsafe fn metadata_u8<'a>(
+    metadata: *const ACameraMetadata,
+    tag: acamera_metadata_tag,
+) -> Option<&'a [u8]> {
+    unsafe {
+        let entry = get_metadata_entry(metadata, tag, ACAMERA_TYPE_BYTE as u8)?;
+        raw_slice(entry.data.u8_, entry.count)
+    }
+}
+
+/// Borrows an `INT32` metadata slice valid only while `metadata` remains alive.
+unsafe fn metadata_i32<'a>(
+    metadata: *const ACameraMetadata,
+    tag: acamera_metadata_tag,
+) -> Option<&'a [i32]> {
+    unsafe {
+        let entry = get_metadata_entry(metadata, tag, ACAMERA_TYPE_INT32 as u8)?;
+        raw_slice(entry.data.i32_, entry.count)
+    }
+}
+
+/// Borrows a `FLOAT` metadata slice valid only while `metadata` remains alive.
+unsafe fn metadata_f32<'a>(
+    metadata: *const ACameraMetadata,
+    tag: acamera_metadata_tag,
+) -> Option<&'a [f32]> {
+    unsafe {
+        let entry = get_metadata_entry(metadata, tag, ACAMERA_TYPE_FLOAT as u8)?;
+        raw_slice(entry.data.f, entry.count)
+    }
+}
+
+/// Borrows an `INT64` metadata slice valid only while `metadata` remains alive.
+unsafe fn metadata_i64<'a>(
+    metadata: *const ACameraMetadata,
+    tag: acamera_metadata_tag,
+) -> Option<&'a [i64]> {
+    unsafe {
+        let entry = get_metadata_entry(metadata, tag, ACAMERA_TYPE_INT64 as u8)?;
+        raw_slice(entry.data.i64_, entry.count)
+    }
+}
+
 // --- Data Structures ---
 
 struct CaptureStore {
@@ -369,22 +446,13 @@ impl AndroidCamera {
                         == camera_status_t::ACAMERA_OK
                         && !metadata.is_null()
                     {
-                        let mut entry: ACameraMetadata_const_entry = std::mem::zeroed();
-                        if ACameraMetadata_getConstEntry(
+                        if let Some(data_slice) = metadata_u8(
                             metadata,
-                            acamera_metadata_tag::ACAMERA_LOGICAL_MULTI_CAMERA_PHYSICAL_IDS.0
-                                as u32,
-                            &mut entry,
-                        ) == camera_status_t::ACAMERA_OK
-                            && entry.count > 0
-                            && !entry.data.u8_.is_null()
-                        {
+                            acamera_metadata_tag::ACAMERA_LOGICAL_MULTI_CAMERA_PHYSICAL_IDS,
+                        ) {
                             let mut start = 0;
-                            let data_slice =
-                                std::slice::from_raw_parts(entry.data.u8_, entry.count as usize);
-
-                            for k in 0..entry.count as usize {
-                                if data_slice[k] == 0 {
+                            for (k, &byte) in data_slice.iter().enumerate() {
+                                if byte == 0 {
                                     if let Ok(s) = std::str::from_utf8(&data_slice[start..k]) {
                                         let phys_id = s.to_string();
                                         if !all_cam_ids.iter().any(|(p, _)| *p == phys_id) {
@@ -414,6 +482,13 @@ impl AndroidCamera {
         }
     }
 
+    pub fn clear_supported_hot_pixel_modes() {
+        let mut global_modes = SUPPORTED_HOT_PIXEL_MODES
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        global_modes.clear();
+    }
+
     pub fn get_available_cameras() -> String {
         unsafe {
             let manager = ACameraManager_create();
@@ -441,116 +516,87 @@ impl AndroidCamera {
                 let mut metadata: *mut ACameraMetadata = ptr::null_mut();
                 if ACameraManager_getCameraCharacteristics(manager, cam_id_ptr, &mut metadata)
                     != camera_status_t::ACAMERA_OK
+                    || metadata.is_null()
                 {
                     continue;
                 }
 
-                let mut entry: ACameraMetadata_const_entry = std::mem::zeroed();
-                ACameraMetadata_getConstEntry(
-                    metadata,
-                    acamera_metadata_tag::ACAMERA_LENS_FACING.0 as u32,
-                    &mut entry,
-                );
-                if entry.count == 0
-                    || *entry.data.u8_
-                        != acamera_metadata_enum_acamera_lens_facing::ACAMERA_LENS_FACING_BACK.0
-                            as u8
+                let back_facing =
+                    acamera_metadata_enum_acamera_lens_facing::ACAMERA_LENS_FACING_BACK.0 as u8;
+                if metadata_u8(metadata, acamera_metadata_tag::ACAMERA_LENS_FACING)
+                    .is_none_or(|facing| facing[0] != back_facing)
                 {
                     ACameraMetadata_free(metadata);
                     continue;
                 }
 
-                ACameraMetadata_getConstEntry(
+                let Some(phys_width_mm) = metadata_f32(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_PHYSICAL_SIZE.0 as u32,
-                    &mut entry,
-                );
-                if entry.count < 2 {
+                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_PHYSICAL_SIZE,
+                )
+                .and_then(|s| (s.len() >= 2).then_some(s[0])) else {
                     ACameraMetadata_free(metadata);
                     continue;
-                }
-                let phys_width_mm = *entry.data.f.offset(0);
+                };
 
-                ACameraMetadata_getConstEntry(
+                let Some(focal_length_mm) = metadata_f32(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_LENS_INFO_AVAILABLE_FOCAL_LENGTHS.0 as u32,
-                    &mut entry,
-                );
-                if entry.count == 0 {
+                    acamera_metadata_tag::ACAMERA_LENS_INFO_AVAILABLE_FOCAL_LENGTHS,
+                )
+                .map(|s| s[0]) else {
                     ACameraMetadata_free(metadata);
                     continue;
-                }
-                let focal_length_mm = *entry.data.f.offset(0);
+                };
 
                 let fov_rad = 2.0 * (phys_width_mm / (2.0 * focal_length_mm)).atan();
                 let fov_deg = fov_rad * (180.0 / std::f32::consts::PI);
 
-                let mut stream_configs_entry: ACameraMetadata_const_entry = std::mem::zeroed();
-                ACameraMetadata_getConstEntry(
-                    metadata,
-                    acamera_metadata_tag::ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS.0 as u32,
-                    &mut stream_configs_entry,
-                );
-
                 let mut supports_raw = false;
 
                 // Method 1: Check stream configs for RAW formats
-                let num_configs = stream_configs_entry.count / 4;
-                for j in 0..num_configs {
-                    let offset = (j * 4) as isize;
-                    let format = *stream_configs_entry.data.i32_.offset(offset);
-                    let is_input = *stream_configs_entry.data.i32_.offset(offset + 3);
+                if let Some(stream_configs) = metadata_i32(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS,
+                ) {
+                    for cfg in stream_configs.chunks_exact(4) {
+                        let format = cfg[0];
+                        let is_input = cfg[3];
+                        let is_raw_format = format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32
+                            || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32
+                            || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32;
 
-                    let is_raw_format = format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32
-                        || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32
-                        || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32;
-
-                    if is_input == 0 && is_raw_format {
-                        supports_raw = true;
-                        break;
+                        if is_input == 0 && is_raw_format {
+                            supports_raw = true;
+                            break;
+                        }
                     }
                 }
 
                 // Method 2: Check capabilities
                 if !supports_raw {
-                    let mut caps_entry: ACameraMetadata_const_entry = std::mem::zeroed();
-                    let has_caps = ACameraMetadata_getConstEntry(
+                    let raw_cap = acamera_metadata_enum_android_request_available_capabilities_t::ACAMERA_REQUEST_AVAILABLE_CAPABILITIES_RAW.0 as u8;
+                    if let Some(caps) = metadata_u8(
                         metadata,
-                        acamera_metadata_tag::ACAMERA_REQUEST_AVAILABLE_CAPABILITIES.0 as u32,
-                        &mut caps_entry,
-                    ) == camera_status_t::ACAMERA_OK;
-
-                    if has_caps {
-                        for j in 0..caps_entry.count {
-                            let cap = *caps_entry.data.u8_.offset(j as isize);
-                            if cap == acamera_metadata_enum_android_request_available_capabilities_t::ACAMERA_REQUEST_AVAILABLE_CAPABILITIES_RAW.0 as u8 {
-                                supports_raw = true;
-                                break;
-                            }
-                        }
+                        acamera_metadata_tag::ACAMERA_REQUEST_AVAILABLE_CAPABILITIES,
+                    ) {
+                        supports_raw = caps.contains(&raw_cap);
                     }
                 }
 
                 // Query Max Zoom
-                let mut max_zoom = 1.0f32;
-                let mut zoom_entry: ACameraMetadata_const_entry = std::mem::zeroed();
-                if ACameraMetadata_getConstEntry(
+                let max_zoom = metadata_f32(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO_RANGE.0 as u32,
-                    &mut zoom_entry,
-                ) == camera_status_t::ACAMERA_OK
-                    && zoom_entry.count >= 2
-                {
-                    max_zoom = *zoom_entry.data.f.offset(1);
-                } else if ACameraMetadata_getConstEntry(
-                    metadata,
-                    acamera_metadata_tag::ACAMERA_SCALER_AVAILABLE_MAX_DIGITAL_ZOOM.0 as u32,
-                    &mut zoom_entry,
-                ) == camera_status_t::ACAMERA_OK
-                    && zoom_entry.count >= 1
-                {
-                    max_zoom = *zoom_entry.data.f.offset(0);
-                }
+                    acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO_RANGE,
+                )
+                .and_then(|s| (s.len() >= 2).then_some(s[1]))
+                .or_else(|| {
+                    metadata_f32(
+                        metadata,
+                        acamera_metadata_tag::ACAMERA_SCALER_AVAILABLE_MAX_DIGITAL_ZOOM,
+                    )
+                    .map(|s| s[0])
+                })
+                .unwrap_or(1.0);
 
                 cameras.push(CameraInfo {
                     id: cam_id,
@@ -631,6 +677,8 @@ impl AndroidCamera {
         sensor_mode: Option<String>,
         zoom_ratio: Option<f32>,
     ) -> Result<AndroidCameraConfiguration, String> {
+        Self::clear_supported_hot_pixel_modes();
+
         unsafe {
             let manager = ACameraManager_create();
             if manager.is_null() {
@@ -657,8 +705,10 @@ impl AndroidCamera {
             let mut best_white_level = 1023;
             let mut best_black_level = 0.0;
             let mut best_supports_contrast_curve = false;
+
             let mut best_active_array = [0; 4];
             let mut best_supports_zoom = false;
+            let mut best_hot_pixel_modes: Vec<u8> = Vec::new();
             let mut exact_match_found = false;
 
             info!("Total unique cameras to evaluate: {}", c_strings.len());
@@ -671,22 +721,17 @@ impl AndroidCamera {
                 let mut metadata: *mut ACameraMetadata = ptr::null_mut();
                 if ACameraManager_getCameraCharacteristics(manager, cam_id_ptr, &mut metadata)
                     != camera_status_t::ACAMERA_OK
+                    || metadata.is_null()
                 {
                     info!("Camera {}: Skipped (Failed to get characteristics)", cam_id);
                     continue;
                 }
 
                 // Ensure back-facing lens
-                let mut entry: ACameraMetadata_const_entry = std::mem::zeroed();
-                ACameraMetadata_getConstEntry(
-                    metadata,
-                    acamera_metadata_tag::ACAMERA_LENS_FACING.0 as u32,
-                    &mut entry,
-                );
-                if entry.count == 0
-                    || *entry.data.u8_
-                        != acamera_metadata_enum_acamera_lens_facing::ACAMERA_LENS_FACING_BACK.0
-                            as u8
+                let back_facing =
+                    acamera_metadata_enum_acamera_lens_facing::ACAMERA_LENS_FACING_BACK.0 as u8;
+                if metadata_u8(metadata, acamera_metadata_tag::ACAMERA_LENS_FACING)
+                    .is_none_or(|facing| facing[0] != back_facing)
                 {
                     info!("Camera {}: Skipped (Not back-facing)", cam_id);
                     ACameraMetadata_free(metadata);
@@ -694,142 +739,99 @@ impl AndroidCamera {
                 }
 
                 // Physical size & focal length
-                ACameraMetadata_getConstEntry(
+                let Some(phys_width_mm) = metadata_f32(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_PHYSICAL_SIZE.0 as u32,
-                    &mut entry,
-                );
-                if entry.count < 2 {
+                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_PHYSICAL_SIZE,
+                )
+                .and_then(|s| (s.len() >= 2).then_some(s[0])) else {
                     info!(
                         "Camera {}: Skipped (Missing physical size metadata)",
                         cam_id
                     );
                     ACameraMetadata_free(metadata);
                     continue;
-                }
-                let phys_width_mm = *entry.data.f.offset(0);
+                };
 
-                ACameraMetadata_getConstEntry(
+                let Some(focal_length_mm) = metadata_f32(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_LENS_INFO_AVAILABLE_FOCAL_LENGTHS.0 as u32,
-                    &mut entry,
-                );
-                if entry.count == 0 {
+                    acamera_metadata_tag::ACAMERA_LENS_INFO_AVAILABLE_FOCAL_LENGTHS,
+                )
+                .map(|s| s[0]) else {
                     info!("Camera {}: Skipped (Missing focal length metadata)", cam_id);
                     ACameraMetadata_free(metadata);
                     continue;
-                }
-                let focal_length_mm = *entry.data.f.offset(0);
+                };
 
                 // Max analog and total sensitivity
-                ACameraMetadata_getConstEntry(
+                let sensor_max_total_gain = metadata_i32(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_SENSITIVITY_RANGE.0 as u32,
-                    &mut entry,
-                );
-                let sensor_max_total_gain = if entry.count >= 2 {
-                    *entry.data.i32_.offset(1)
-                } else {
-                    800
-                };
+                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_SENSITIVITY_RANGE,
+                )
+                .and_then(|s| (s.len() >= 2).then_some(s[1]))
+                .unwrap_or(800);
 
-                ACameraMetadata_getConstEntry(
+                let sensor_max_analog_gain = metadata_i32(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_SENSOR_MAX_ANALOG_SENSITIVITY.0 as u32,
-                    &mut entry,
-                );
-                let sensor_max_analog_gain = if entry.count >= 1 {
-                    *entry.data.i32_.offset(0)
-                } else {
-                    800
-                };
+                    acamera_metadata_tag::ACAMERA_SENSOR_MAX_ANALOG_SENSITIVITY,
+                )
+                .map(|s| s[0])
+                .unwrap_or(800);
 
                 // Query Hyperfocal Distance
-                ACameraMetadata_getConstEntry(
+                let sensor_hyperfocal = metadata_f32(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_LENS_INFO_HYPERFOCAL_DISTANCE.0 as u32,
-                    &mut entry,
-                );
-                let sensor_hyperfocal = if entry.count >= 1 {
-                    *entry.data.f.offset(0)
-                } else {
-                    0.0
-                };
-
-                ACameraMetadata_getConstEntry(
-                    metadata,
-                    acamera_metadata_tag::ACAMERA_HOT_PIXEL_AVAILABLE_HOT_PIXEL_MODES.0 as u32,
-                    &mut entry,
-                );
-                if entry.count > 0 {
-                    let modes = std::slice::from_raw_parts(entry.data.u8_, entry.count as usize);
-                    let mut global_modes = SUPPORTED_HOT_PIXEL_MODES
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner());
-                    global_modes.clear();
-                    global_modes.extend_from_slice(modes);
-                }
+                    acamera_metadata_tag::ACAMERA_LENS_INFO_HYPERFOCAL_DISTANCE,
+                )
+                .map(|s| s[0])
+                .unwrap_or(0.0);
 
                 // Query White Level
-                ACameraMetadata_getConstEntry(
+                let sensor_white_level = metadata_i32(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_WHITE_LEVEL.0 as u32,
-                    &mut entry,
-                );
-                let sensor_white_level = if entry.count >= 1 {
-                    *entry.data.i32_.offset(0)
-                } else {
-                    1023 // Default to 10-bit max if unknown
-                };
+                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_WHITE_LEVEL,
+                )
+                .map(|s| s[0])
+                .unwrap_or(1023); // Default to 10-bit max if unknown
 
                 // Query Black Level Pattern
-                ACameraMetadata_getConstEntry(
+                let sensor_black_level = metadata_i32(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_SENSOR_BLACK_LEVEL_PATTERN.0 as u32,
-                    &mut entry,
-                );
-                let sensor_black_level = if entry.count >= 4 {
-                    let b1 = *entry.data.i32_.offset(0) as f32;
-                    let b2 = *entry.data.i32_.offset(1) as f32;
-                    let b3 = *entry.data.i32_.offset(2) as f32;
-                    let b4 = *entry.data.i32_.offset(3) as f32;
-                    (b1 + b2 + b3 + b4) / 4.0
-                } else {
-                    0.0
-                };
+                    acamera_metadata_tag::ACAMERA_SENSOR_BLACK_LEVEL_PATTERN,
+                )
+                .and_then(|s| {
+                    (s.len() >= 4)
+                        .then_some((s[0] as f32 + s[1] as f32 + s[2] as f32 + s[3] as f32) / 4.0)
+                })
+                .unwrap_or(0.0);
 
                 // Calculate Horizontal FOV
                 let fov_rad = 2.0 * (phys_width_mm / (2.0 * focal_length_mm)).atan();
                 let fov_deg = fov_rad * (180.0 / std::f32::consts::PI);
 
                 // Query available stream configurations for RAW or YUV_420_888
-                let mut stream_configs_entry: ACameraMetadata_const_entry = std::mem::zeroed();
-                ACameraMetadata_getConstEntry(
-                    metadata,
-                    acamera_metadata_tag::ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS.0 as u32,
-                    &mut stream_configs_entry,
-                );
-
                 let mut valid_raw_sizes = Vec::new();
                 let mut raw_format_selected = AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32;
                 let mut valid_yuv_sizes = Vec::new();
-                let num_configs = stream_configs_entry.count / 4;
-                for j in 0..num_configs {
-                    let offset = (j * 4) as isize;
-                    let format = *stream_configs_entry.data.i32_.offset(offset);
-                    let width = *stream_configs_entry.data.i32_.offset(offset + 1);
-                    let height = *stream_configs_entry.data.i32_.offset(offset + 2);
-                    let is_input = *stream_configs_entry.data.i32_.offset(offset + 3);
+                if let Some(stream_configs) = metadata_i32(
+                    metadata,
+                    acamera_metadata_tag::ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS,
+                ) {
+                    for cfg in stream_configs.chunks_exact(4) {
+                        let format = cfg[0];
+                        let width = cfg[1];
+                        let height = cfg[2];
+                        let is_input = cfg[3];
 
-                    if is_input == 0 {
-                        if format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32
-                            || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32
-                            || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32
-                        {
-                            valid_raw_sizes.push((width as u32, height as u32));
-                            raw_format_selected = format;
-                        } else if format == AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32 {
-                            valid_yuv_sizes.push((width as u32, height as u32));
+                        if is_input == 0 {
+                            if format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32
+                                || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32
+                                || format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW12.0 as i32
+                            {
+                                valid_raw_sizes.push((width as u32, height as u32));
+                                raw_format_selected = format;
+                            } else if format == AIMAGE_FORMATS::AIMAGE_FORMAT_YUV_420_888.0 as i32 {
+                                valid_yuv_sizes.push((width as u32, height as u32));
+                            }
                         }
                     }
                 }
@@ -860,22 +862,14 @@ impl AndroidCamera {
                     continue;
                 }
 
-                let mut supports_contrast_curve = false;
-                let mut tonemap_modes_entry: ACameraMetadata_const_entry = std::mem::zeroed();
-                if ACameraMetadata_getConstEntry(
+                let contrast_curve_mode =
+                    acamera_metadata_enum_acamera_tonemap_mode::ACAMERA_TONEMAP_MODE_CONTRAST_CURVE
+                        .0 as u8;
+                let supports_contrast_curve = metadata_u8(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_TONEMAP_AVAILABLE_TONE_MAP_MODES.0 as u32,
-                    &mut tonemap_modes_entry,
-                ) == camera_status_t::ACAMERA_OK
-                {
-                    for j in 0..tonemap_modes_entry.count {
-                        let mode = *tonemap_modes_entry.data.u8_.offset(j as isize);
-                        if mode == acamera_metadata_enum_acamera_tonemap_mode::ACAMERA_TONEMAP_MODE_CONTRAST_CURVE.0 as u8 {
-                            supports_contrast_curve = true;
-                            break;
-                        }
-                    }
-                }
+                    acamera_metadata_tag::ACAMERA_TONEMAP_AVAILABLE_TONE_MAP_MODES,
+                )
+                .is_some_and(|modes| modes.contains(&contrast_curve_mode));
 
                 let max_binned_pixels: u32 = 13_000_000;
 
@@ -908,15 +902,12 @@ impl AndroidCamera {
                 );
 
                 // Query Exposure Range
-                let mut max_exposure_ns = 0i64;
-                ACameraMetadata_getConstEntry(
+                let max_exposure_ns = metadata_i64(
                     metadata,
-                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_EXPOSURE_TIME_RANGE.0 as u32,
-                    &mut entry,
-                );
-                if entry.count >= 2 {
-                    max_exposure_ns = *entry.data.i64_.offset(1);
-                }
+                    acamera_metadata_tag::ACAMERA_SENSOR_INFO_EXPOSURE_TIME_RANGE,
+                )
+                .and_then(|s| (s.len() >= 2).then_some(s[1]))
+                .unwrap_or(0);
 
                 // Robust selection logic
                 let is_exact_match = requested_id.as_deref() == Some(&cam_id);
@@ -945,31 +936,25 @@ impl AndroidCamera {
                     best_id = cam_id.clone();
                     best_logical_id = logical_id.clone();
 
-                    let mut active_array_size = [0; 4];
-                    if ACameraMetadata_getConstEntry(
+                    let active_array_size = metadata_i32(
                         metadata,
-                        acamera_metadata_tag::ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE.0 as u32,
-                        &mut entry,
-                    ) == camera_status_t::ACAMERA_OK
-                        && entry.count >= 4
-                    {
-                        active_array_size = [
-                            *entry.data.i32_.offset(0),
-                            *entry.data.i32_.offset(1),
-                            *entry.data.i32_.offset(2),
-                            *entry.data.i32_.offset(3),
-                        ];
-                    }
+                        acamera_metadata_tag::ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE,
+                    )
+                    .and_then(|s| (s.len() >= 4).then_some([s[0], s[1], s[2], s[3]]))
+                    .unwrap_or([0; 4]);
 
-                    let mut supports_zoom_ratio = false;
-                    if ACameraMetadata_getConstEntry(
+                    let supports_zoom_ratio = metadata_f32(
                         metadata,
-                        acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO_RANGE.0 as u32,
-                        &mut entry,
-                    ) == camera_status_t::ACAMERA_OK
-                    {
-                        supports_zoom_ratio = true;
-                    }
+                        acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO_RANGE,
+                    )
+                    .is_some_and(|s| s.len() >= 2);
+
+                    best_hot_pixel_modes = metadata_u8(
+                        metadata,
+                        acamera_metadata_tag::ACAMERA_HOT_PIXEL_AVAILABLE_HOT_PIXEL_MODES,
+                    )
+                    .map(|modes| modes.to_vec())
+                    .unwrap_or_default();
 
                     if selected_format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW16.0 as i32
                         || selected_format == AIMAGE_FORMATS::AIMAGE_FORMAT_RAW10.0 as i32
@@ -998,6 +983,14 @@ impl AndroidCamera {
 
             if best_id.is_empty() {
                 return Err("No suitable back-facing camera found!".to_string());
+            }
+
+            {
+                let mut global_modes = SUPPORTED_HOT_PIXEL_MODES
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                global_modes.clear();
+                global_modes.extend_from_slice(&best_hot_pixel_modes);
             }
 
             info!(
@@ -1166,60 +1159,34 @@ impl AndroidCamera {
             }
             let ctx = &*(context as *const ImageReaderContext);
 
-            let mut entry: ACameraMetadata_const_entry = std::mem::zeroed();
-            let mut timestamp: i64 = 0;
-            if ACameraMetadata_getConstEntry(
-                result,
-                acamera_metadata_tag::ACAMERA_SENSOR_TIMESTAMP.0 as u32,
-                &mut entry,
-            ) == camera_status_t::ACAMERA_OK
-                && entry.count > 0
-            {
-                timestamp = *entry.data.i64_.offset(0);
-            }
+            let timestamp = metadata_i64(result, acamera_metadata_tag::ACAMERA_SENSOR_TIMESTAMP)
+                .map(|s| s[0])
+                .unwrap_or(0);
 
-            let mut exposure_ns: i64 = 0;
-            if ACameraMetadata_getConstEntry(
-                result,
-                acamera_metadata_tag::ACAMERA_SENSOR_EXPOSURE_TIME.0 as u32,
-                &mut entry,
-            ) == camera_status_t::ACAMERA_OK
-                && entry.count > 0
-            {
-                exposure_ns = *entry.data.i64_.offset(0);
-            }
+            let exposure_ns =
+                metadata_i64(result, acamera_metadata_tag::ACAMERA_SENSOR_EXPOSURE_TIME)
+                    .map(|s| s[0])
+                    .unwrap_or(0);
 
-            let mut actual_gain: f32 = 100.0;
-            if ACameraMetadata_getConstEntry(
-                result,
-                acamera_metadata_tag::ACAMERA_SENSOR_SENSITIVITY.0 as u32,
-                &mut entry,
-            ) == camera_status_t::ACAMERA_OK
-                && entry.count > 0
-            {
-                actual_gain = *entry.data.i32_.offset(0) as f32;
-            }
+            let actual_gain =
+                metadata_i32(result, acamera_metadata_tag::ACAMERA_SENSOR_SENSITIVITY)
+                    .map(|s| s[0] as f32)
+                    .unwrap_or(100.0);
 
             let mut actual_zoom: f32 =
                 f32::from_bits(ctx.current_zoom.load(Ordering::Relaxed)).max(1.0);
-            if ACameraMetadata_getConstEntry(
-                result,
-                acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO.0 as u32,
-                &mut entry,
-            ) == camera_status_t::ACAMERA_OK
-                && entry.count > 0
+            if let Some(zoom) =
+                metadata_f32(result, acamera_metadata_tag::ACAMERA_CONTROL_ZOOM_RATIO)
             {
-                actual_zoom = *entry.data.f.offset(0);
-            } else if ACameraMetadata_getConstEntry(
-                result,
-                acamera_metadata_tag::ACAMERA_SCALER_CROP_REGION.0 as u32,
-                &mut entry,
-            ) == camera_status_t::ACAMERA_OK
-                && entry.count >= 4
+                actual_zoom = zoom[0];
+            } else if let Some(crop) =
+                metadata_i32(result, acamera_metadata_tag::ACAMERA_SCALER_CROP_REGION)
             {
-                let crop_w = *entry.data.i32_.offset(2) as f32;
-                if crop_w > 0.0 && ctx.active_array_width > 0 {
-                    actual_zoom = (ctx.active_array_width as f32 / crop_w).max(1.0);
+                if crop.len() >= 4 {
+                    let crop_w = crop[2] as f32;
+                    if crop_w > 0.0 && ctx.active_array_width > 0 {
+                        actual_zoom = (ctx.active_array_width as f32 / crop_w).max(1.0);
+                    }
                 }
             }
 

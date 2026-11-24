@@ -115,6 +115,7 @@ object OliveEngine : EngineBridge {
     external override fun updateUvcStacking(frames: Int)
     external fun processTelescopeData(data: ByteArray): ByteArray?
     external fun resetTelescopeServer()
+
     // Transfers ownership of a detached POSIX socket fd to the native Alpaca server (Rust closes it).
     external fun handleAlpacaConnection(fd: Int)
     external fun handleAlpacaConnectionV6(fd: Int)

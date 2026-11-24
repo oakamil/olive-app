@@ -609,7 +609,7 @@ fun SkyDateTimePickerDialog(
 
     val parsedYear = yearStr.toIntOrNull()
     val isOutOfRange = parsedYear != null &&
-            (parsedYear < MIN_SIMULATED_TIME_YEAR || parsedYear > MAX_SIMULATED_TIME_YEAR)
+            (parsedYear !in MIN_SIMULATED_TIME_YEAR..MAX_SIMULATED_TIME_YEAR)
     val parsedEpochMs: Long? = run {
         val y = parsedYear ?: return@run null
         val m = monthStr.toIntOrNull() ?: return@run null
@@ -646,11 +646,17 @@ fun SkyDateTimePickerDialog(
                             is24Hour,
                             tz
                         )
+                        @Suppress("AssignedValueIsNeverRead")
                         yearStr = nowParts.year
+                        @Suppress("AssignedValueIsNeverRead")
                         monthStr = nowParts.month
+                        @Suppress("AssignedValueIsNeverRead")
                         dayStr = nowParts.day
+                        @Suppress("AssignedValueIsNeverRead")
                         hourStr = nowParts.hour
+                        @Suppress("AssignedValueIsNeverRead")
                         minuteStr = nowParts.minute
+                        @Suppress("AssignedValueIsNeverRead")
                         isPm = nowParts.isPm
                         replaceOnNextDigit = true
                     }

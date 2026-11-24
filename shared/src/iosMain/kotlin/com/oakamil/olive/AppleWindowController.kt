@@ -32,11 +32,14 @@ class AppleWindowController : PlatformWindowController {
     override var isLandscape: Boolean by mutableStateOf(false)
     private var rotationDegrees: Int by mutableIntStateOf(0)
 
-    private var originalSystemBrightness: Double =
-        UIScreen.mainScreen.brightness.takeIf { it > 0.05 } ?: 0.5
+    private var originalSystemBrightness: Double? = null
     private var customAppBrightness: Double? = null
+    private var restoredOnResign: Boolean = false
     private var keepScreenOn: Boolean = false
     private val observerTokens = mutableListOf<NSObjectProtocol>()
+
+    private fun currentSystemBrightness(): Double? =
+        UIScreen.mainScreen.brightness.takeIf { !it.isNaN() && it in 0.0..1.0 }
 
     init {
         UIDevice.currentDevice.beginGeneratingDeviceOrientationNotifications()
@@ -60,8 +63,11 @@ class AppleWindowController : PlatformWindowController {
             queue = NSOperationQueue.mainQueue
         ) { _ ->
             UIApplication.sharedApplication.idleTimerDisabled = false
-            customAppBrightness?.let {
-                UIScreen.mainScreen.setBrightness(originalSystemBrightness)
+            if (customAppBrightness != null && !restoredOnResign) {
+                originalSystemBrightness?.let {
+                    UIScreen.mainScreen.setBrightness(it)
+                    restoredOnResign = true
+                }
             }
         }
 
@@ -71,13 +77,12 @@ class AppleWindowController : PlatformWindowController {
             `object` = null,
             queue = NSOperationQueue.mainQueue
         ) { _ ->
-            val current = UIScreen.mainScreen.brightness
-            if (customAppBrightness == null && current > 0.05) {
-                originalSystemBrightness = current
-            } else {
-                customAppBrightness?.let {
-                    UIScreen.mainScreen.setBrightness(it)
-                }
+            if (restoredOnResign) {
+                currentSystemBrightness()?.let { originalSystemBrightness = it }
+                restoredOnResign = false
+            }
+            customAppBrightness?.let {
+                UIScreen.mainScreen.setBrightness(it)
             }
             if (keepScreenOn) {
                 UIApplication.sharedApplication.idleTimerDisabled = true
@@ -91,8 +96,11 @@ class AppleWindowController : PlatformWindowController {
         observerTokens.clear()
         UIDevice.currentDevice.endGeneratingDeviceOrientationNotifications()
         UIApplication.sharedApplication.idleTimerDisabled = false
-        customAppBrightness?.let {
-            UIScreen.mainScreen.setBrightness(originalSystemBrightness)
+        if (customAppBrightness != null && !restoredOnResign) {
+            originalSystemBrightness?.let {
+                UIScreen.mainScreen.setBrightness(it)
+                restoredOnResign = true
+            }
         }
     }
 
@@ -139,16 +147,17 @@ class AppleWindowController : PlatformWindowController {
     }
 
     override fun getScreenBrightness(): Float {
-        return UIScreen.mainScreen.brightness.toFloat()
+        return (currentSystemBrightness() ?: customAppBrightness ?: 0.5).toFloat()
     }
 
     override fun setScreenBrightness(brightness: Float) {
-        val current = UIScreen.mainScreen.brightness
-        if (customAppBrightness == null && current > 0.05) {
-            originalSystemBrightness = current
+        if (brightness.isNaN()) return
+        if (customAppBrightness == null) {
+            originalSystemBrightness = currentSystemBrightness()
         }
         val target = brightness.toDouble().coerceIn(0.0, 1.0)
         customAppBrightness = target
+        restoredOnResign = false
         UIScreen.mainScreen.setBrightness(target)
     }
 

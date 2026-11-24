@@ -309,6 +309,7 @@ pub extern "system" fn Java_com_oakamil_olive_OliveEngine_startNativeCameraEngin
 
             let camera: Arc<dyn CameraTrait> = if internal_camera_id_str == "demo" {
                 use olive_engine::dummy_camera::DummyCamera;
+                AndroidCamera::clear_supported_hot_pixel_modes();
                 let mut cam = DummyCamera::new();
                 if let Err(e) = cam.start_capture() {
                     let msg = format!("Failed to start demo camera: {}", e);

@@ -5,7 +5,7 @@ package com.oakamil.olive
 
 import platform.Foundation.NSLog
 
-@Suppress("unused")
+@Suppress("unused", "EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 actual object Log {
     private fun log(level: String, tag: String, msg: String, tr: Throwable? = null) {
         val extra = tr?.let { "\n${it.stackTraceToString()}" } ?: ""

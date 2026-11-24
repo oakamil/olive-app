@@ -57,7 +57,7 @@ object CatalogObjectInfoFormatter {
     ): CatalogObjectMetadata {
         val allRows = listOf(primary) + coLocated
         val showDesignation = primary.designation.isNotBlank() &&
-            !primary.displayName.trim().equals(primary.designation.trim(), ignoreCase = true)
+                !primary.displayName.trim().equals(primary.designation.trim(), ignoreCase = true)
         val alsoKnownAs = coLocated
             .map { it.designation }
             .filter { it.isNotBlank() && it != primary.designation }
@@ -119,7 +119,13 @@ object CatalogObjectInfoFormatter {
                     ) {
                         hasSh2OrFullMessierProse = true
                     }
-                    primaryNotes.add(RankedNote(SOURCE_RANK[row.catalogLabel] ?: SOURCE_RANK.size, index, cleaned))
+                    primaryNotes.add(
+                        RankedNote(
+                            SOURCE_RANK[row.catalogLabel] ?: SOURCE_RANK.size,
+                            index,
+                            cleaned
+                        )
+                    )
                 }
             }
         }

@@ -59,6 +59,7 @@ class IosUserDatabase : UserDatabase {
 
     private val mutex = NativeMutex()
     private var db: CPointer<sqlite3>? = null
+
     // Guarded by mutex; prevents nested BEGIN IMMEDIATE when helper transactions run inside runInTransaction.
     private var inTransaction = false
 

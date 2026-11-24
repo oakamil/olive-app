@@ -3,6 +3,7 @@
 
 package com.oakamil.olive
 
+import com.oakamil.olive.HiPSHqIndex.Companion.EMPTY
 import kotlin.math.PI
 import kotlin.math.asin
 import kotlin.math.atan

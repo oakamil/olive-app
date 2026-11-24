@@ -3,6 +3,7 @@
 
 package com.oakamil.olive
 
+import com.oakamil.olive.HiPSDownloadManager.HQ_FLUSH_BATCH_SIZE
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -437,6 +438,7 @@ object HiPSDownloadManager {
                 }
                 val diskBytes = backend.hqStorageSizeBytes()
                 stateMutex.withLock {
+                    @Suppress("AssignedValueIsNeverRead")
                     committedIndex = prepared.updatedIndex
                     committedCount += prepared.payloadsToWrite.size
                 }

@@ -47,6 +47,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +61,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -69,6 +71,13 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
+
+private const val CATALOG_PAGE_SIZE = 300
+
+private data class CatalogPageResult(
+    val items: List<CatalogObject>,
+    val sqlCount: Int
+)
 
 /**
  * Full-screen astronomical catalog browser with category drawer, search/filter/sort controls,
@@ -157,6 +166,9 @@ fun SkyCatalogDialog(
 
     var hasMore by remember { mutableStateOf(true) }
     var isLoading by remember { mutableStateOf(false) }
+    var sqlOffset by remember { mutableIntStateOf(0) }
+    var fetchGeneration by remember { mutableIntStateOf(0) }
+    var loadMoreJob by remember { mutableStateOf<Job?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
     var activeListState by remember {
@@ -167,7 +179,7 @@ fun SkyCatalogDialog(
     val catalogDescriptions = remember { viewModel.catalogDb.getCatalogDescriptions() }
     var showInfoForCategory by remember { mutableStateOf<String?>(null) }
 
-    val performFetch: suspend (Int) -> List<CatalogObject> = { offset ->
+    val performFetch: suspend (Int) -> CatalogPageResult = { offset ->
         val query = searchQuery
         val category = selectedCategory
         val sort = sortBy
@@ -178,46 +190,7 @@ fun SkyCatalogDialog(
         val lon = viewModel.currentLon
         withContext(Dispatchers.IO) {
             val timeMs = viewModel.effectiveSkyTimeMs()
-            val checkVisibility =
-                activeVisibility == "Above Horizon" && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0
-            val horizontalFrame = if (checkVisibility) {
-                AstrometryUtils.horizontalFrame(lat, lon, timeMs)
-            } else {
-                null
-            }
-
             val isAllTypes = activeTypeFilters.size >= catalogTypeOptions.size
-            val allPlanets =
-                if (category == "Solar System" || category == "All Objects" || category == "Nearest Objects") {
-                    viewModel.getPlanets(lat, lon, timeMs)
-                } else emptyList()
-            val filteredPlanets = allPlanets.filter { p ->
-                var passes = true
-                if (horizontalFrame != null && !horizontalFrame.isAboveHorizon(p.ra, p.dec)) {
-                    passes = false
-                }
-                if (!isAllTypes && "Planet" !in activeTypeFilters && p.objectType !in activeTypeFilters) {
-                    passes = false
-                }
-                if (query.isNotBlank() && !p.displayName.contains(query, ignoreCase = true)) {
-                    passes = false
-                }
-                if (limitMag != null && (p.magnitude == null || p.magnitude > limitMag)) {
-                    passes = false
-                }
-                if (category == "Nearest Objects" && currentRa != null && currentDec != null) {
-                    if (AstrometryUtils.angularDistance(
-                            currentRa,
-                            currentDec,
-                            p.ra,
-                            p.dec
-                        ) > 10.0
-                    ) {
-                        passes = false
-                    }
-                }
-                passes
-            }
 
             val sqlResults =
                 if (category == "Solar System" || category == "Asteroids" || category == "Comets") {
@@ -239,13 +212,53 @@ fun SkyCatalogDialog(
                         lon = lon,
                         targetRa = currentRa,
                         targetDec = currentDec,
-                        limit = 300,
+                        limit = CATALOG_PAGE_SIZE,
                         offset = offset,
                         currentTimeMs = timeMs
                     )
                 }
 
             if (offset == 0 && (category == "Solar System" || category == "Asteroids" || category == "Comets" || category == "All Objects" || category == "Nearest Objects")) {
+                val checkVisibility =
+                    activeVisibility == "Above Horizon" && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0
+                val horizontalFrame = if (checkVisibility) {
+                    AstrometryUtils.horizontalFrame(lat, lon, timeMs)
+                } else {
+                    null
+                }
+
+                val allPlanets =
+                    if (category == "Solar System" || category == "All Objects" || category == "Nearest Objects") {
+                        viewModel.getPlanets(lat, lon, timeMs)
+                    } else emptyList()
+                val filteredPlanets = allPlanets.filter { p ->
+                    var passes = true
+                    if (horizontalFrame != null && !horizontalFrame.isAboveHorizon(p.ra, p.dec)) {
+                        passes = false
+                    }
+                    if (!isAllTypes && "Planet" !in activeTypeFilters && p.objectType !in activeTypeFilters) {
+                        passes = false
+                    }
+                    if (query.isNotBlank() && !p.displayName.contains(query, ignoreCase = true)) {
+                        passes = false
+                    }
+                    if (limitMag != null && (p.magnitude == null || p.magnitude > limitMag)) {
+                        passes = false
+                    }
+                    if (category == "Nearest Objects" && currentRa != null && currentDec != null) {
+                        if (AstrometryUtils.angularDistance(
+                                currentRa,
+                                currentDec,
+                                p.ra,
+                                p.dec
+                            ) > 10.0
+                        ) {
+                            passes = false
+                        }
+                    }
+                    passes
+                }
+
                 val allAsteroids =
                     if (category == "Asteroids" || category == "All Objects" || category == "Nearest Objects") {
                         viewModel.getAsteroids(lat, lon, timeMs)
@@ -346,9 +359,9 @@ fun SkyCatalogDialog(
                         combinedList.sortWith(compareBy<CatalogObject> { it.magnitude == null }.thenBy { it.magnitude })
                     }
                 }
-                combinedList
+                CatalogPageResult(items = combinedList, sqlCount = sqlResults.size)
             } else {
-                sqlResults
+                CatalogPageResult(items = sqlResults, sqlCount = sqlResults.size)
             }
         }
     }
@@ -391,25 +404,52 @@ fun SkyCatalogDialog(
         effectiveRa,
         effectiveDec
     ) {
+        val gen = ++fetchGeneration
+        loadMoreJob?.cancel()
+        @Suppress("AssignedValueIsNeverRead")
+        loadMoreJob = null
         isLoading = true
         searchResults = emptyList()
-        val results = performFetch(0)
-        searchResults = results
-        if (results.isNotEmpty()) {
-            activeListState?.scrollToItem(0)
+        sqlOffset = 0
+        hasMore = false
+        try {
+            val page = performFetch(0)
+            if (gen == fetchGeneration) {
+                searchResults = page.items
+                sqlOffset = page.sqlCount
+                hasMore = page.sqlCount == CATALOG_PAGE_SIZE
+                isLoading = false
+                if (page.items.isNotEmpty()) {
+                    activeListState?.scrollToItem(0)
+                }
+            }
+        } finally {
+            if (gen == fetchGeneration) {
+                isLoading = false
+            }
         }
-        hasMore = results.size == 300
-        isLoading = false
     }
 
     val loadMore = {
         if (!isLoading && hasMore) {
+            val gen = fetchGeneration
+            val offset = sqlOffset
             isLoading = true
-            coroutineScope.launch {
-                val results = performFetch(searchResults.size)
-                searchResults = searchResults + results
-                hasMore = results.size == 300
-                isLoading = false
+            loadMoreJob = coroutineScope.launch {
+                try {
+                    val page = performFetch(offset)
+                    if (gen == fetchGeneration) {
+                        searchResults = searchResults + page.items
+                        @Suppress("AssignedValueIsNeverRead")
+                        sqlOffset += page.sqlCount
+                        hasMore = page.sqlCount == CATALOG_PAGE_SIZE
+                    }
+                } finally {
+                    if (gen == fetchGeneration) {
+                        isLoading = false
+                        loadMoreJob = null
+                    }
+                }
             }
         }
     }
