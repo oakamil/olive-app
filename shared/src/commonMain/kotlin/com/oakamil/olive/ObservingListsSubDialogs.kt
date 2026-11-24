@@ -240,14 +240,16 @@ fun ListNameDialog(
             )
         }
 
-        NightVisionKeyboardDialogLayout(
-            showKeyboard = showKeyboard,
-            landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
-            maxCardWidth = 440.dp,
-            onScrimClick = handleDismissOrHideKeyboard,
-            cardContent = cardContent,
-            keyboardPanel = keyboardPanel
-        )
+        ProvideScaledText {
+            NightVisionKeyboardDialogLayout(
+                showKeyboard = showKeyboard,
+                landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
+                maxCardWidth = 440.dp,
+                onScrimClick = handleDismissOrHideKeyboard,
+                cardContent = cardContent,
+                keyboardPanel = keyboardPanel
+            )
+        }
     }
 
     VoicePermissionDeniedDialog(voiceController)

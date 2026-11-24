@@ -52,7 +52,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -551,117 +550,120 @@ fun NightVisionKeyboard(
         }
     )
 
-    Column(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(2.dp)
-            .pointerInput(Unit) {
-                detectTapGestures { }
-            }
-    ) {
-        val rowModifier = if (isLandscape) {
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 2.dp)
-                .weight(1f)
-        } else {
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 2.dp)
-        }
-        letterRows.forEach { row ->
-            Row(
-                modifier = rowModifier,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                val paddingWeight = (10 - row.size) / 2f
-                if (paddingWeight > 0f) {
-                    Spacer(modifier = Modifier.weight(paddingWeight))
+    ProvideUnscaledText {
+        Column(
+            modifier = modifier
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(2.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures { }
                 }
-
-                row.forEach { rawKey ->
-                    val displayKey = if (isShifted && rawKey.length == 1 && rawKey[0] in 'a'..'z') {
-                        rawKey.uppercase()
-                    } else {
-                        rawKey
+        ) {
+            val rowModifier = if (isLandscape) {
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+                    .weight(1f)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+            }
+            letterRows.forEach { row ->
+                Row(
+                    modifier = rowModifier,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    val paddingWeight = (10 - row.size) / 2f
+                    if (paddingWeight > 0f) {
+                        Spacer(modifier = Modifier.weight(paddingWeight))
                     }
-                    NightVisionKey(
-                        text = displayKey,
-                        isLandscape = isLandscape,
-                        highlighted = rawKey == "⇧" && isShifted,
-                        onClick = {
-                            when (rawKey) {
-                                "⇧" -> isShifted = !isShifted
-                                "␣" -> onSpace()
-                                "⌫" -> onBackspace()
-                                else -> {
-                                    val ch = displayKey[0]
-                                    onKeyClick(ch)
-                                    if (isShifted && rawKey[0] in 'a'..'z') {
-                                        isShifted = false
+
+                    row.forEach { rawKey ->
+                        val displayKey =
+                            if (isShifted && rawKey.length == 1 && rawKey[0] in 'a'..'z') {
+                                rawKey.uppercase()
+                            } else {
+                                rawKey
+                            }
+                        NightVisionKey(
+                            text = displayKey,
+                            isLandscape = isLandscape,
+                            highlighted = rawKey == "⇧" && isShifted,
+                            onClick = {
+                                when (rawKey) {
+                                    "⇧" -> isShifted = !isShifted
+                                    "␣" -> onSpace()
+                                    "⌫" -> onBackspace()
+                                    else -> {
+                                        val ch = displayKey[0]
+                                        onKeyClick(ch)
+                                        if (isShifted && rawKey[0] in 'a'..'z') {
+                                            isShifted = false
+                                        }
                                     }
                                 }
-                            }
-                        },
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 2.dp)
+                        )
+                    }
+
+                    if (paddingWeight > 0f) {
+                        Spacer(modifier = Modifier.weight(paddingWeight))
+                    }
+                }
+            }
+
+            if (showShiftAndPunctuation) {
+                Row(
+                    modifier = rowModifier,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    NightVisionKey(
+                        text = ",",
+                        isLandscape = isLandscape,
+                        onClick = { onKeyClick(',') },
                         modifier = Modifier
                             .weight(1f)
                             .padding(horizontal = 2.dp)
                     )
+                    NightVisionKey(
+                        text = "-",
+                        isLandscape = isLandscape,
+                        onClick = { onKeyClick('-') },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 2.dp)
+                    )
+                    NightVisionKey(
+                        text = "␣",
+                        isLandscape = isLandscape,
+                        onClick = onSpace,
+                        modifier = Modifier
+                            .weight(3.5f)
+                            .padding(horizontal = 2.dp)
+                    )
+                    NightVisionKey(
+                        text = ".",
+                        isLandscape = isLandscape,
+                        onClick = { onKeyClick('.') },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 2.dp)
+                    )
+                    NightVisionKey(
+                        text = if (showNewline) "↵" else "/",
+                        isLandscape = isLandscape,
+                        onClick = {
+                            onKeyClick(if (showNewline) '\n' else '/')
+                        },
+                        modifier = Modifier
+                            .weight(1.2f)
+                            .padding(horizontal = 2.dp)
+                    )
                 }
-
-                if (paddingWeight > 0f) {
-                    Spacer(modifier = Modifier.weight(paddingWeight))
-                }
-            }
-        }
-
-        if (showShiftAndPunctuation) {
-            Row(
-                modifier = rowModifier,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                NightVisionKey(
-                    text = ",",
-                    isLandscape = isLandscape,
-                    onClick = { onKeyClick(',') },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 2.dp)
-                )
-                NightVisionKey(
-                    text = "-",
-                    isLandscape = isLandscape,
-                    onClick = { onKeyClick('-') },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 2.dp)
-                )
-                NightVisionKey(
-                    text = "␣",
-                    isLandscape = isLandscape,
-                    onClick = onSpace,
-                    modifier = Modifier
-                        .weight(3.5f)
-                        .padding(horizontal = 2.dp)
-                )
-                NightVisionKey(
-                    text = ".",
-                    isLandscape = isLandscape,
-                    onClick = { onKeyClick('.') },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 2.dp)
-                )
-                NightVisionKey(
-                    text = if (showNewline) "↵" else "/",
-                    isLandscape = isLandscape,
-                    onClick = {
-                        onKeyClick(if (showNewline) '\n' else '/')
-                    },
-                    modifier = Modifier
-                        .weight(1.2f)
-                        .padding(horizontal = 2.dp)
-                )
             }
         }
     }
@@ -801,7 +803,7 @@ fun CatalogFilterSortDropdown(
     onObservedFilterChange: ((String) -> Unit)? = null
 ) {
     val extColors = LocalOliveExtendedColors.current
-    DropdownMenu(
+    OliveDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest
     ) {

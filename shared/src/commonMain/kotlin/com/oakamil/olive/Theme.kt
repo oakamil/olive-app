@@ -8,8 +8,11 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 
 val PureRed = Color(0xFFFF0000)
 val DarkRed = Color(0xFF8B0000)
@@ -257,7 +260,21 @@ private val DayVisionColorScheme = darkColorScheme(
     onErrorContainer = CoralStop
 )
 
+enum class OliveTextSize(val key: String, val scale: Float) {
+    SMALL("small", 0.85f),
+    NORMAL("normal", 1.0f),
+    LARGE("large", 1.15f),
+    EXTRA_LARGE("extra_large", 1.30f);
+
+    companion object {
+        fun fromKey(key: String?): OliveTextSize =
+            entries.firstOrNull { it.key == key } ?: NORMAL
+    }
+}
+
 val LocalOliveExtendedColors = staticCompositionLocalOf { NightVisionExtendedColors }
+val LocalOliveTextScale = staticCompositionLocalOf { OliveTextSize.NORMAL.scale }
+private val LocalBaseDensity = staticCompositionLocalOf<Density?> { null }
 
 /**
  * Application Material3 + [OliveExtendedColors] theme.
@@ -267,18 +284,51 @@ val LocalOliveExtendedColors = staticCompositionLocalOf { NightVisionExtendedCol
 @Composable
 fun OliveTheme(
     theme: String = "red",
+    textScale: Float = OliveTextSize.NORMAL.scale,
     content: @Composable () -> Unit
 ) {
     val isDayVision = theme == "blue"
     val colorScheme = if (isDayVision) DayVisionColorScheme else NightVisionColorScheme
     val extendedColors = if (isDayVision) DayVisionExtendedColors else NightVisionExtendedColors
+    val baseDensity = LocalDensity.current
     CompositionLocalProvider(
-        LocalOliveExtendedColors provides extendedColors
+        LocalOliveExtendedColors provides extendedColors,
+        LocalOliveTextScale provides textScale,
+        LocalBaseDensity provides baseDensity
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
             content = content
         )
     }
+}
+
+/**
+ * Applies [LocalOliveTextScale] relative to the root platform [Density] (idempotent across
+ * nested dialogs on iOS and new dialog windows on Android, preserving Android 14+ non-linear
+ * font scaling when `textScale == 1.0f`).
+ */
+@Composable
+fun ProvideScaledText(content: @Composable () -> Unit) {
+    val base = LocalBaseDensity.current ?: LocalDensity.current
+    val textScale = LocalOliveTextScale.current
+    val target = remember(base, textScale) {
+        if (textScale == 1.0f) {
+            base
+        } else {
+            Density(density = base.density, fontScale = base.fontScale * textScale)
+        }
+    }
+    CompositionLocalProvider(LocalDensity provides target, content = content)
+}
+
+/**
+ * Restores the root platform [Density] verbatim so compact chrome (icon-bar buttons,
+ * fixed-height keyboard/numpad keys) stays unscaled inside [ProvideScaledText] subtrees.
+ */
+@Composable
+fun ProvideUnscaledText(content: @Composable () -> Unit) {
+    val base = LocalBaseDensity.current ?: LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides base, content = content)
 }
 

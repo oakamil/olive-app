@@ -450,26 +450,27 @@ fun SkyMapView(
     }
 
     // Pre-measured static text layouts to avoid allocations during drawing
+    val textScale = LocalOliveTextScale.current
     val zenithText = stringResource(Res.string.label_zenith)
     val nadirText = stringResource(Res.string.label_nadir)
-    val zenithTextLayout = remember(textMeasurer, zenithText, extColors) {
+    val zenithTextLayout = remember(textMeasurer, zenithText, extColors, textScale) {
         textMeasurer.measure(
             text = zenithText,
             style = TextStyle(
                 color = extColors.zenithNadir,
-                fontSize = SkyMapTuning.ZENITH_NADIR_FONT_SIZE_SP.sp,
+                fontSize = (SkyMapTuning.ZENITH_NADIR_FONT_SIZE_SP * textScale).sp,
                 fontWeight = FontWeight.SemiBold,
                 shadow = Shadow.None,
                 textDecoration = TextDecoration.None
             )
         )
     }
-    val nadirTextLayout = remember(textMeasurer, nadirText, extColors) {
+    val nadirTextLayout = remember(textMeasurer, nadirText, extColors, textScale) {
         textMeasurer.measure(
             text = nadirText,
             style = TextStyle(
                 color = extColors.zenithNadir,
-                fontSize = SkyMapTuning.ZENITH_NADIR_FONT_SIZE_SP.sp,
+                fontSize = (SkyMapTuning.ZENITH_NADIR_FONT_SIZE_SP * textScale).sp,
                 fontWeight = FontWeight.SemiBold,
                 shadow = Shadow.None,
                 textDecoration = TextDecoration.None
@@ -486,13 +487,13 @@ fun SkyMapView(
         "W" to stringResource(Res.string.dir_west),
         "NW" to stringResource(Res.string.dir_northwest)
     )
-    val cardinalLayouts = remember(textMeasurer, extColors, cardinalLabels) {
+    val cardinalLayouts = remember(textMeasurer, extColors, cardinalLabels, textScale) {
         cardinalLabels.mapValues { (_, label) ->
             textMeasurer.measure(
                 label,
                 style = TextStyle(
                     color = extColors.cardinalLabel,
-                    fontSize = SkyMapTuning.CARDINAL_FONT_SIZE_SP.sp,
+                    fontSize = (SkyMapTuning.CARDINAL_FONT_SIZE_SP * textScale).sp,
                     fontWeight = FontWeight.Bold,
                     shadow = Shadow.None,
                     textDecoration = TextDecoration.None
@@ -500,13 +501,13 @@ fun SkyMapView(
             )
         }
     }
-    val constellationLayouts = remember(textMeasurer, extColors) {
+    val constellationLayouts = remember(textMeasurer, extColors, textScale) {
         ConstellationData.CONSTELLATIONS.associate { c ->
             c.name to textMeasurer.measure(
                 text = c.name,
                 style = TextStyle(
                     color = extColors.constellationLabel,
-                    fontSize = SkyMapTuning.CONSTELLATION_FONT_SIZE_SP.sp,
+                    fontSize = (SkyMapTuning.CONSTELLATION_FONT_SIZE_SP * textScale).sp,
                     fontWeight = FontWeight.Medium,
                     shadow = Shadow.None,
                     textDecoration = TextDecoration.None
@@ -1179,7 +1180,7 @@ fun SkyMapView(
                 fov < 45.0 -> SkyMapTuning.DSO_SCALE_MID
                 else -> SkyMapTuning.DSO_SCALE_WIDE
             }
-            val baseFontSize = SkyMapTuning.BASE_DSO_LABEL_FONT_SIZE_SP
+            val baseFontSize = SkyMapTuning.BASE_DSO_LABEL_FONT_SIZE_SP * textScale
             val iconSize = (SkyMapTuning.BASE_DSO_ICON_SIZE_DP * dsoScale).toPx()
 
             var boxPath: Path? = null
@@ -1295,6 +1296,7 @@ fun SkyMapView(
                 camBoxRect != null && matrix != null && cameraFrame != null && camCenterRa != null && camCenterDec != null
             val layoutKey = listOf(
                 extColors,
+                textScale,
                 centerAz,
                 centerAlt,
                 fov,

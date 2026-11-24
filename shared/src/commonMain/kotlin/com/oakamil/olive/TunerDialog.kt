@@ -218,108 +218,110 @@ fun TunerDialog(
                 .fillMaxHeight(0.90f)
         }
 
-        Surface(
-            shape = dialogShape,
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            modifier = dialogSizeModifier
-                .border(1.dp, extColors.subtleBorder, dialogShape)
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitPointerEvent(PointerEventPass.Initial)
-                            onUserInteraction()
+        ProvideScaledText {
+            Surface(
+                shape = dialogShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = dialogSizeModifier
+                    .border(1.dp, extColors.subtleBorder, dialogShape)
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitPointerEvent(PointerEventPass.Initial)
+                                onUserInteraction()
+                            }
                         }
                     }
-                }
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                OliveDialogHeader(
-                    title = stringResource(Res.string.btn_camera_align),
-                    onDismiss = onBack
-                )
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    OliveDialogHeader(
+                        title = stringResource(Res.string.btn_camera_align),
+                        onDismiss = onBack
+                    )
 
-                if (isLandscape) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        CameraFeed(
-                            Modifier
-                                .weight(1.15f)
-                                .fillMaxHeight()
-                        )
-                        Column(
+                    if (isLandscape) {
+                        Row(
                             modifier = Modifier
+                                .fillMaxWidth()
                                 .weight(1f)
-                                .fillMaxHeight()
-                        ) {
-                            TelemetryStrip(
-                                viewModel = viewModel,
-                                onShowHfrInfo = { activeInfoTopic = TunerInfoTopic.HFR }
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            AlignRow()
-                            HorizontalDivider(
-                                color = extColors.dialogDivider,
-                                modifier = Modifier.padding(vertical = 6.dp)
-                            )
-                            TuningControls(
-                                viewModel = viewModel,
-                                settingsManager = settingsManager,
-                                activeCameraSelection = activeCameraSelection,
-                                effectiveCameraId = effectiveCameraId,
-                                scrollState = controlsScrollState,
-                                onShowInfo = { activeInfoTopic = it },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                            )
-                        }
-                    }
-                } else {
-                    BoxWithConstraints(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(start = 12.dp, top = 12.dp, end = 4.dp, bottom = 12.dp)
-                    ) {
-                        val maxCameraHeight = (maxHeight - 88.dp).coerceAtLeast(80.dp)
-                        val cameraHeight =
-                            (maxHeight * 0.52f).coerceIn(80.dp, minOf(320.dp, maxCameraHeight))
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScrollWithScrollbar(controlsScrollState)
-                                .padding(end = 8.dp, bottom = 8.dp)
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             CameraFeed(
                                 Modifier
-                                    .fillMaxWidth()
-                                    .height(cameraHeight)
+                                    .weight(1.15f)
+                                    .fillMaxHeight()
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            AlignRow()
-                            Spacer(modifier = Modifier.height(6.dp))
-                            TelemetryStrip(
-                                viewModel = viewModel,
-                                onShowHfrInfo = { activeInfoTopic = TunerInfoTopic.HFR }
-                            )
-                            HorizontalDivider(
-                                color = extColors.dialogDivider,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                            TuningControls(
-                                viewModel = viewModel,
-                                settingsManager = settingsManager,
-                                activeCameraSelection = activeCameraSelection,
-                                effectiveCameraId = effectiveCameraId,
-                                onShowInfo = { activeInfoTopic = it },
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                            ) {
+                                TelemetryStrip(
+                                    viewModel = viewModel,
+                                    onShowHfrInfo = { activeInfoTopic = TunerInfoTopic.HFR }
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                AlignRow()
+                                HorizontalDivider(
+                                    color = extColors.dialogDivider,
+                                    modifier = Modifier.padding(vertical = 6.dp)
+                                )
+                                TuningControls(
+                                    viewModel = viewModel,
+                                    settingsManager = settingsManager,
+                                    activeCameraSelection = activeCameraSelection,
+                                    effectiveCameraId = effectiveCameraId,
+                                    scrollState = controlsScrollState,
+                                    onShowInfo = { activeInfoTopic = it },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                )
+                            }
+                        }
+                    } else {
+                        BoxWithConstraints(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .padding(start = 12.dp, top = 12.dp, end = 4.dp, bottom = 12.dp)
+                        ) {
+                            val maxCameraHeight = (maxHeight - 88.dp).coerceAtLeast(80.dp)
+                            val cameraHeight =
+                                (maxHeight * 0.52f).coerceIn(80.dp, minOf(320.dp, maxCameraHeight))
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScrollWithScrollbar(controlsScrollState)
+                                    .padding(end = 8.dp, bottom = 8.dp)
+                            ) {
+                                CameraFeed(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(cameraHeight)
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                AlignRow()
+                                Spacer(modifier = Modifier.height(6.dp))
+                                TelemetryStrip(
+                                    viewModel = viewModel,
+                                    onShowHfrInfo = { activeInfoTopic = TunerInfoTopic.HFR }
+                                )
+                                HorizontalDivider(
+                                    color = extColors.dialogDivider,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                                TuningControls(
+                                    viewModel = viewModel,
+                                    settingsManager = settingsManager,
+                                    activeCameraSelection = activeCameraSelection,
+                                    effectiveCameraId = effectiveCameraId,
+                                    onShowInfo = { activeInfoTopic = it },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                     }
                 }

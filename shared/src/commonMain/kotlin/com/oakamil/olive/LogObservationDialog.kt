@@ -438,15 +438,17 @@ fun LogObservationDialog(
             )
         }
 
-        NightVisionKeyboardDialogLayout(
-            showKeyboard = showKeyboard,
-            landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
-            maxCardWidth = 460.dp,
-            onScrimClick = handleDismissOrHideKeyboard,
-            fillCardHeightInLandscape = true,
-            cardContent = cardContent,
-            keyboardPanel = keyboardPanel
-        )
+        ProvideScaledText {
+            NightVisionKeyboardDialogLayout(
+                showKeyboard = showKeyboard,
+                landscapeKeyboardOnRight = viewModel.landscapeKeyboardOnRight,
+                maxCardWidth = 460.dp,
+                onScrimClick = handleDismissOrHideKeyboard,
+                fillCardHeightInLandscape = true,
+                cardContent = cardContent,
+                keyboardPanel = keyboardPanel
+            )
+        }
     }
 
     if (showMetadataEditor && !isEditing) {

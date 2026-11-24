@@ -467,7 +467,10 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
         LocalPlatformCapabilities provides capabilities,
         LocalPlatformWindowController provides windowController
     ) {
-        OliveTheme(theme = viewModel.currentTheme) {
+        OliveTheme(
+            theme = viewModel.currentTheme,
+            textScale = viewModel.textSize.scale
+        ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background

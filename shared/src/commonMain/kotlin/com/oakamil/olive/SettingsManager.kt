@@ -208,6 +208,10 @@ SettingsManager(
         get() = storage.getString("app_theme", "red") ?: "red"
         set(value) = storage.putString("app_theme", value)
 
+    var textSize: String
+        get() = storage.getString("text_size", OliveTextSize.NORMAL.key) ?: OliveTextSize.NORMAL.key
+        set(value) = storage.putString("text_size", value)
+
     var showLiveCamera: Boolean
         get() = storage.getBoolean("show_live_camera", true)
         set(value) = storage.putBoolean("show_live_camera", value)

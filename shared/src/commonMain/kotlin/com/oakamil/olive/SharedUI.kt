@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -148,26 +150,28 @@ fun IconBarItem(
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        val baseStyle = LocalTextStyle.current.merge(MaterialTheme.typography.labelSmall)
-        val forceSingleLine = !label.contains(" ")
+        ProvideUnscaledText {
+            val baseStyle = LocalTextStyle.current.merge(MaterialTheme.typography.labelSmall)
+            val forceSingleLine = !label.contains(" ")
 
-        BasicText(
-            text = label,
-            style = baseStyle.copy(
-                color = if (enabled) labelColor else MaterialTheme.colorScheme.onSurface.copy(
-                    alpha = 0.38f
+            BasicText(
+                text = label,
+                style = baseStyle.copy(
+                    color = if (enabled) labelColor else MaterialTheme.colorScheme.onSurface.copy(
+                        alpha = 0.38f
+                    ),
+                    textAlign = TextAlign.Center
                 ),
-                textAlign = TextAlign.Center
-            ),
-            minLines = if (forceSingleLine) 1 else 2,
-            maxLines = if (forceSingleLine) 1 else 2,
-            modifier = Modifier
-                .wrapContentHeight(Alignment.CenterVertically),
-            autoSize = TextAutoSize.StepBased(
-                minFontSize = 4.sp,
-                maxFontSize = baseStyle.fontSize
+                minLines = if (forceSingleLine) 1 else 2,
+                maxLines = if (forceSingleLine) 1 else 2,
+                modifier = Modifier
+                    .wrapContentHeight(Alignment.CenterVertically),
+                autoSize = TextAutoSize.StepBased(
+                    minFontSize = 4.sp,
+                    maxFontSize = baseStyle.fontSize
+                )
             )
-        )
+        }
     }
 }
 
@@ -181,18 +185,20 @@ fun FullScreenSurfaceDialog(
         onDismissRequest = onDismissRequest,
         properties = fullScreenDialogProperties(dismissOnClickOutside = false)
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .notifyUserInteraction(onUserInteraction),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            Box(
+        ProvideScaledText {
+            Surface(
                 modifier = Modifier
                     .fillMaxSize()
-                    .platformDialogSafeAreaPadding()
+                    .notifyUserInteraction(onUserInteraction),
+                color = MaterialTheme.colorScheme.background
             ) {
-                content()
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .platformDialogSafeAreaPadding()
+                ) {
+                    content()
+                }
             }
         }
     }
@@ -221,31 +227,55 @@ private fun OliveScrimCardDialog(
             dismissOnClickOutside = false
         )
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .notifyUserInteraction(onUserInteraction)
-                .then(
-                    if (dismissOnClickOutside) {
-                        Modifier.pointerInput(Unit) {
-                            detectTapGestures { currentOnDismiss() }
+        ProvideScaledText {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .notifyUserInteraction(onUserInteraction)
+                    .then(
+                        if (dismissOnClickOutside) {
+                            Modifier.pointerInput(Unit) {
+                                detectTapGestures { currentOnDismiss() }
+                            }
+                        } else {
+                            Modifier
                         }
-                    } else {
-                        Modifier
-                    }
+                    )
+                    .platformDialogSafeAreaPadding(),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = cardShape,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = surfaceModifier
+                        .border(1.dp, extColors.subtleBorder, cardShape)
+                        .pointerInput(Unit) { detectTapGestures { } },
+                    content = content
                 )
-                .platformDialogSafeAreaPadding(),
-            contentAlignment = Alignment.Center
-        ) {
-            Surface(
-                shape = cardShape,
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                modifier = surfaceModifier
-                    .border(1.dp, extColors.subtleBorder, cardShape)
-                    .pointerInput(Unit) { detectTapGestures { } },
-                content = content
-            )
+            }
+        }
+    }
+}
+
+/**
+ * [DropdownMenu] wrapper that reapplies [ProvideScaledText] inside the popup window, since
+ * Android's `PopupLayout` resets `LocalDensity` to the platform default.
+ */
+@Composable
+fun OliveDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = modifier
+    ) {
+        ProvideScaledText {
+            content()
         }
     }
 }
@@ -525,55 +555,57 @@ fun NightVisionNumpad(
         listOf("⌫", "0", "→")
     )
 
-    Column(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(2.dp)
-            .width(200.dp)
-    ) {
-        keys.forEach { row ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 2.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                row.forEach { key ->
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 2.dp)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainer,
-                                RoundedCornerShape(4.dp)
-                            )
-                            .border(
-                                1.dp,
-                                extColors.numpadKeyBorder,
-                                RoundedCornerShape(4.dp)
-                            )
-                            .clickable {
-                                when (key) {
-                                    "⌫" -> onBackspace()
-                                    "→" -> onNext()
-                                    else -> onKeyClick(key[0])
+    ProvideUnscaledText {
+        Column(
+            modifier = modifier
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(2.dp)
+                .width(200.dp)
+        ) {
+            keys.forEach { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    row.forEach { key ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 2.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainer,
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .border(
+                                    1.dp,
+                                    extColors.numpadKeyBorder,
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .clickable {
+                                    when (key) {
+                                        "⌫" -> onBackspace()
+                                        "→" -> onNext()
+                                        else -> onKeyClick(key[0])
+                                    }
                                 }
+                                .height(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (key == "→") {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = stringResource(Res.string.cd_next),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            } else {
+                                Text(
+                                    text = key,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.titleLarge
+                                )
                             }
-                            .height(48.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (key == "→") {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = stringResource(Res.string.cd_next),
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        } else {
-                            Text(
-                                text = key,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.titleLarge
-                            )
                         }
                     }
                 }

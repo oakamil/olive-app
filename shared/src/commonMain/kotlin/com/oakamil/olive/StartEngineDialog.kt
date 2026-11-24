@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -424,7 +423,7 @@ fun StartEngineDialog(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        DropdownMenu(
+                        OliveDropdownMenu(
                             expanded = expandedExternalCamera,
                             onDismissRequest = { expandedExternalCamera = false },
                             modifier = Modifier.border(
@@ -494,7 +493,7 @@ fun StartEngineDialog(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        DropdownMenu(
+                        OliveDropdownMenu(
                             expanded = expandedFormat,
                             onDismissRequest = { expandedFormat = false },
                             modifier = Modifier.border(
@@ -606,7 +605,7 @@ fun StartEngineDialog(
                                     ?: stringResource(Res.string.default_camera_label)
                             Text(currentText, color = MaterialTheme.colorScheme.primary)
                         }
-                        DropdownMenu(
+                        OliveDropdownMenu(
                             expanded = expanded,
                             onDismissRequest = { expanded = false },
                             modifier = Modifier.border(

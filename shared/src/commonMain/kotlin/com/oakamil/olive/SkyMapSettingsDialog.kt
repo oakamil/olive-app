@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -445,10 +446,43 @@ fun SkyMapSettingsDialog(
                 )
             }
 
-            // Sliders (Screen Brightness, Low Power Timeout, Zoom, Star Sensitivity, Exposure / Stacking)
+            // Sliders (Text Size, Screen Brightness, Low Power Timeout, Zoom, Star Sensitivity, Exposure / Stacking)
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 4.dp),
                 color = LocalOliveExtendedColors.current.dialogDivider
+            )
+
+            // Text Size
+            val textSizeOptions = OliveTextSize.entries
+            var textSizeSliderIndex by remember(viewModel.textSize) {
+                mutableIntStateOf(textSizeOptions.indexOf(viewModel.textSize).coerceAtLeast(0))
+            }
+            val textSizeLabelRes = when (textSizeOptions[textSizeSliderIndex]) {
+                OliveTextSize.SMALL -> Res.string.value_text_size_small
+                OliveTextSize.NORMAL -> Res.string.value_text_size_normal
+                OliveTextSize.LARGE -> Res.string.value_text_size_large
+                OliveTextSize.EXTRA_LARGE -> Res.string.value_text_size_extra_large
+            }
+            Text(
+                stringResource(
+                    Res.string.format_label_value_string,
+                    stringResource(Res.string.label_text_size),
+                    stringResource(textSizeLabelRes)
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Slider(
+                value = textSizeSliderIndex.toFloat(),
+                onValueChange = { raw ->
+                    textSizeSliderIndex = round(raw).toInt().coerceIn(0, textSizeOptions.lastIndex)
+                },
+                onValueChangeFinished = {
+                    viewModel.textSize = textSizeOptions[textSizeSliderIndex]
+                },
+                valueRange = 0f..textSizeOptions.lastIndex.toFloat(),
+                steps = textSizeOptions.size - 2,
+                modifier = Modifier.fillMaxWidth()
             )
 
             // Screen Brightness

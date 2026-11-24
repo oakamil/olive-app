@@ -207,6 +207,15 @@ open class MainViewModel(
             settingsManager.appTheme = value
         }
 
+    private val _textSize = mutableStateOf(OliveTextSize.fromKey(settingsManager.textSize))
+    var textSize: OliveTextSize
+        get() = _textSize.value
+        set(value) {
+            if (_textSize.value == value) return
+            _textSize.value = value
+            settingsManager.textSize = value.key
+        }
+
     private val _guidanceMode = mutableStateOf(settingsManager.guidanceMode)
     var guidanceMode: String
         get() = _guidanceMode.value

@@ -482,7 +482,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                OliveTheme(theme = viewModel.currentTheme) {
+                OliveTheme(
+                    theme = viewModel.currentTheme,
+                    textScale = viewModel.textSize.scale
+                ) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
