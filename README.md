@@ -113,7 +113,7 @@ xcodebuild \
 
 ## License, Attributions & Branding
 
-- **License:** Olive Finder (`olive-app`) is licensed under the **PolyForm Noncommercial License 1.0.0** (see [LICENSE](LICENSE)). Personal, educational, academic, and other non-commercial uses and modifications are permitted; commercial use requires separate written permission.
+- **License:** Olive Finder (`olive-app`) is licensed under the **PolyForm Noncommercial License 1.0.0** (see [LICENSE.md](LICENSE.md)). Personal, educational, academic, and other non-commercial uses and modifications are permitted; commercial use requires separate written permission.
 - **Branding:** The "Olive Finder" name and app icon are reserved for official releases. Non-commercial forks are welcome under the license, provided they use a distinct name and application/bundle identifier.
 - **Privacy:** See [PRIVACY.md](PRIVACY.md).
-- **Third-Party Credits:** Astronomical catalog, ephemeris (JPL DE421 / MPC), and DSS2 HiPS imagery attributions are listed in [LICENSE](LICENSE) and [catalog_descriptions.md](catalog_descriptions.md).
+- **Third-Party Credits:** Astronomical catalog, ephemeris (JPL DE421 / MPC), and DSS2 HiPS imagery attributions are listed in [LICENSE.md](LICENSE.md) and [catalog_descriptions.md](catalog_descriptions.md).
