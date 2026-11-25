@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FAQ — Olive Finder</title>
+  <meta name="description" content="Frequently asked questions for Olive Finder: Auto and Manual camera settings, focus and zoom, HFR focusing, calibration resets, external USB cameras, GoTo, and CSV import/export.">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a class="brand" href="./">
+        <img src="icon.png" alt="Olive Finder icon">
+        <span>Olive Finder</span>
+      </a>
+      <nav class="nav-links">
+        <a href="./">Overview</a>
+        <a class="active" href="faq.html">FAQ</a>
+        <a href="support.html">Support</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="https://github.com/oakamil/olive-app">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container prose">
+    <h1>Frequently Asked Questions</h1>
+    <p class="meta">Setup tips, camera tuning, focusing, calibration, and everyday use for Olive Finder on Android, iOS, and iPadOS.</p>
+
+    <nav class="faq-toc" aria-label="FAQ sections">
+      <a href="#camera-modes">Camera Modes</a>
+      <a href="#focus-calibration">Focusing &amp; Calibration</a>
+      <a href="#external-cameras">External USB Cameras</a>
+      <a href="#using-olive">Sky Map &amp; Logs</a>
+      <a href="#connectivity">Connectivity &amp; Offline</a>
+    </nav>
+
+    <h2 id="camera-modes">Getting Started &amp; Camera Modes</h2>
+
+    <article class="faq-item" id="auto-mode">
+      <h3>Should I use Auto or Manual camera settings?</h3>
+      <p>
+        Start with <strong>Auto</strong> (<strong>Start Engine &rarr; Camera Settings &rarr; Auto</strong>). In Auto mode, Olive dynamically adjusts exposure, ISO/gain, star sensitivity, and internal camera calibration so you can start plate-solving without manual tuning.
+      </p>
+      <p>
+        <strong>Note:</strong> Phone camera hardware and sky conditions vary widely. Heavy light pollution, haze, bright moonlight, edge obstructions, or quirks on specific phone models can occasionally prevent Auto mode from locking on. If Auto struggles, try adjusting <a href="#focus-and-zoom">Focus and Zoom</a>, <a href="#reset-auto">resetting Auto calibration</a> on a clear patch of sky, or switching to <a href="#manual-settings">Manual mode</a>.
+      </p>
+    </article>
+
+    <article class="faq-item" id="focus-and-zoom">
+      <h3>Can I adjust Focus and Zoom on my phone camera?</h3>
+      <p>
+        Yes. Both <strong>Focus</strong> and <strong>Zoom</strong> remain adjustable in <strong>Camera / Align</strong> even while running in <strong>Auto</strong> mode.
+      </p>
+      <ul>
+        <li>
+          <strong>Focus (especially important on iOS / iPadOS):</strong> In Auto mode on iOS and iPadOS, Olive attempts to auto-focus automatically when the engine starts (the Focus control is briefly locked during that initial calibration). Once finished, you can still fine-tune focus manually in <strong>Camera / Align</strong> using the Focus slider and fine <code>+</code> / <code>&minus;</code> nudge buttons. On many iPhones and iPads, true infinity sits slightly below <code>1.000</code> and can shift with temperature, so checking focus against real stars helps significantly.
+        </li>
+        <li>
+          <strong>Zoom (obstructions vs. stars):</strong> Increasing Zoom crops out obstructions near the edges of the camera frame—such as your telescope tube, focuser, dew shield, phone clamp, or nearby trees. The tradeoff is a narrower field of view with fewer visible stars for plate-solving, so use only as much zoom as needed to clear obstructions.
+        </li>
+      </ul>
+    </article>
+
+    <article class="faq-item" id="manual-settings">
+      <h3>How do I tune Manual camera settings if Auto isn't working?</h3>
+      <p>
+        Stop the engine, open <strong>Start Engine</strong>, select <strong>Manual</strong> under <strong>Camera Settings</strong>, and restart the engine while pointed at a clear patch of night sky. Then open <strong>Camera / Align</strong> (or <strong>Settings</strong> for quick sliders) to watch the live image, star detections, and HFR as you tune:
+      </p>
+      <ul>
+        <li>
+          <strong>Internal Phone Camera:</strong>
+          <ul>
+            <li><strong>Sensor Mode (Android):</strong> Start with <strong>Processed</strong>. Only try <strong>Raw</strong> (available on select phones) if Processed mode over-smooths faint stars.</li>
+            <li><strong>Downsampling:</strong> Set to <strong>2x2</strong> by default for cleaner, faster star detection—unless your camera's resolution is below 1080p, in which case leave it <strong>Off</strong>.</li>
+            <li><strong>Exposure:</strong> Start around <code>0.5 s</code> to <code>1.5 s</code>. Longer exposures reveal fainter stars under dark skies, while shorter exposures help avoid bright sky glow or star trailing.</li>
+            <li><strong>ISO:</strong> Keep near the top of the camera's analog ISO range; pushing higher adds noise without helping plate-solving.</li>
+            <li><strong>Star Sensitivity:</strong> Start near the middle. Raise it if too few real stars are detected; lower it if background noise or hot pixels are being picked up as false stars.</li>
+            <li><strong>Noise Reduction &amp; Hot Pixel Mode (Android):</strong> Try <strong>Off</strong> or <strong>Fast</strong> for Noise Reduction and <strong>Fast</strong> or <strong>HQ</strong> for Hot Pixel Mode if noise interferes with detection.</li>
+          </ul>
+        </li>
+        <li>
+          <strong>External USB Camera:</strong>
+          <ul>
+            <li><strong>Camera Frame Rate (in Start Engine):</strong> Frame rate governs per-frame exposure—choose a slower frame rate to give each frame longer exposure time to pull in faint stars.</li>
+            <li><strong>Downsampling:</strong> Recommended at <strong>2x2</strong> for 1080p+ cameras, or <strong>Off</strong> if the camera is below 1080p.</li>
+            <li><strong>Stacking Frames:</strong> Increase stacking (<code>1&ndash;10</code> frames) if single frames don't capture enough stars to solve.</li>
+            <li><strong>Gain, Brightness &amp; Star Sensitivity:</strong> Adjust in <strong>Camera / Align</strong> while watching detected stars and live HFR.</li>
+          </ul>
+        </li>
+      </ul>
+    </article>
+
+    <article class="faq-item" id="demo-mode">
+      <h3>Can I try Olive Finder indoors without clear skies or a mount?</h3>
+      <p>
+        Yes. You can browse the sky map, offline catalog, Sky Time simulation (1900&ndash;2050), and observing lists with no extra hardware. To test the plate-solving engine, alignment reticle, and GoTo guidance indoors, open <strong>Start Engine</strong> and select <strong>Demo Camera</strong>.
+      </p>
+    </article>
+
+    <h2 id="focus-calibration">Focusing, Alignment &amp; Calibration</h2>
+
+    <article class="faq-item" id="focusing-hfr">
+      <h3>How do I focus my camera accurately?</h3>
+      <p>
+        Point your telescope and camera at a starry region of sky with the engine running, then open <strong>Camera / Align</strong>:
+      </p>
+      <ol>
+        <li><strong>Pinch to zoom</strong> into the live camera preview (up to <code>10x</code>) around a few visible stars. You can tap the reset-view icon in the bottom-right corner of the preview to return to the full frame at any time.</li>
+        <li>Adjust the <strong>Focus</strong> slider and fine <code>+</code> / <code>&minus;</code> nudge buttons (for internal phone cameras) or gently turn the physical focus ring on your lens (for external USB cameras) until the stars look as small and tight as possible.</li>
+        <li>Watch the live <strong>HFR (Half-Flux Radius)</strong> readout at the top of <strong>Camera / Align</strong> as a guide—<strong>lower HFR values indicate tighter, sharper focus</strong>.</li>
+      </ol>
+      <p>
+        On manual CS/M12 lenses for external USB cameras, tighten the focus lock screw once you reach minimum HFR so focus doesn't drift during the night.
+      </p>
+    </article>
+
+    <article class="faq-item" id="alignment">
+      <h3>How do I align the camera with my telescope eyepiece?</h3>
+      <p>
+        Center a target in your telescope eyepiece, then set the boresight offset using any of these methods:
+      </p>
+      <ul>
+        <li><strong>From the Sky Map (recommended at night):</strong> While the engine is solving, center a bright star, planet, or catalog object in your eyepiece, tap that object directly on the <strong>Sky Map</strong> (it must lie within the camera's field of view), and tap <strong>Align</strong> in the object popup.</li>
+        <li><strong>From Camera / Align (works day or night):</strong> Open <strong>Camera / Align</strong>, pinch to zoom in on the live camera preview if helpful, tap the centered star—or a distant terrestrial landmark during the daytime (such as a treetop or tower)—in the live image, and tap <strong>Align</strong>.</li>
+        <li><strong>From a planetarium app:</strong> While the engine is solving, you can also send an <strong>Align / Sync</strong> command from SkySafari or Stellarium.</li>
+      </ul>
+      <p>
+        Boresight alignment only needs to be done once per mounting session and can be reset anytime from <strong>Camera / Align</strong>.
+      </p>
+    </article>
+
+    <article class="faq-item" id="reset-auto">
+      <h3>Auto mode stopped working on my phone camera—how do I reset it?</h3>
+      <p>
+        Olive automatically saves successful Auto camera profiles for your phone's internal camera. If Auto stops solving reliably—for example after moving to much brighter or darker skies, remounting your phone, or an interrupted initial run—stop the engine, open <strong>Start Engine &rarr; Camera Settings (Auto)</strong>, and tap <strong>Reset</strong> next to Auto.
+      </p>
+      <p>
+        When you restart the engine to recalibrate, point at a <strong>clear, unobstructed, moonless patch of sky</strong> (away from trees, buildings, streetlights, low horizons, and the Moon) so Auto calibration can lock onto stars cleanly.
+      </p>
+    </article>
+
+    <article class="faq-item" id="reset-imu">
+      <h3>My sky map drifts or moves the wrong way when slewing—how do I reset the motion sensor (IMU)?</h3>
+      <p>
+        When <strong>Motion Sensor</strong> is enabled with your phone's internal camera, Olive stores IMU calibration data to smoothly track telescope movement between camera plate solves.
+      </p>
+      <p>
+        If the sky map drifts, jumps, or slews in the wrong direction—or whenever you <strong>add or remove a mirror</strong> or change how your phone is mounted—stop the engine, open <strong>Start Engine &rarr; Motion Sensor</strong>, and tap <strong>Reset</strong> to clear the stored IMU calibration so it recalibrates fresh. You can also switch Motion Sensor <strong>Off</strong> to rely purely on camera plate-solving.
+      </p>
+    </article>
+
+    <h2 id="external-cameras">External USB Cameras</h2>
+
+    <article class="faq-item" id="recommended-cameras">
+      <h3>Which devices and external USB cameras are supported?</h3>
+      <p>
+        External USB (UVC) astronomy cameras are supported on <strong>Android</strong> (devices with USB Host / OTG) and <strong>iPad</strong> (iPadOS 17+ with USB-C external camera support). External UVC cameras are not supported on iPhone due to iOS system restrictions.
+      </p>
+      <p>Recommended camera and lens pairings:</p>
+      <ul>
+        <li><strong>ELP SC2210</strong> USB camera with a <strong>25mm lens</strong>, or an adjustable/varifocal lens set between <strong>12mm and 25mm</strong></li>
+        <li><strong>Innomaker IMX662</strong> USB camera with a <strong>16mm or 25mm lens</strong></li>
+        <li><strong>Innomaker U20CAM-1080P</strong> USB camera with a <strong>16mm lens</strong></li>
+      </ul>
+      <p>
+        Plug in your camera, open <strong>Start Engine</strong>, and select <strong>External (USB/UVC) Camera</strong>. If you have trouble picking up enough stars, try a slower <strong>Camera Frame Rate</strong> in <strong>Start Engine</strong>—a slower frame rate gives each frame a longer exposure window to pull in fainter stars (while faster frame rates trade exposure time for quicker updates).
+      </p>
+    </article>
+
+    <h2 id="using-olive">Sky Map, Targets &amp; Observing Logs</h2>
+
+    <article class="faq-item" id="stop-goto">
+      <h3>How do I stop an active GoTo target?</h3>
+      <p>
+        Tap the floating <strong>target bubble</strong> (guidance card) on the sky map to open the target details sheet, then tap <strong>Stop</strong> to clear the active target and guidance arrows. If you started the GoTo from SkySafari or Stellarium, you can also tap Stop there.
+      </p>
+    </article>
+
+    <article class="faq-item" id="export-import">
+      <h3>How do I export and import observing lists and observation logs?</h3>
+      <p>
+        Open <strong>Lists / Observations</strong> from the main bar:
+      </p>
+      <ul>
+        <li><strong>Export:</strong> Tap the export icon to save or share standard CSV files—you can export an individual observing list, export <strong>all observing lists</strong> at once, or export <strong>all observation logs</strong> for backup, spreadsheets, or moving data to another device.</li>
+        <li><strong>Import:</strong> Tap the import icon and select a CSV file. Olive automatically detects single observing lists, multi-list backups, and observation log CSVs, and skips duplicate entries automatically.</li>
+      </ul>
+    </article>
+
+    <article class="faq-item" id="display-settings">
+      <h3>Can I adjust text size, brightness, and screen layout for night use?</h3>
+      <p>
+        Yes. Open <strong>Settings</strong> to toggle <strong>Night Vision</strong> (red-on-black vs. day theme), adjust <strong>Text Size</strong> (<code>Small</code>, <code>Normal</code>, <code>Large</code>, <code>Extra Large</code>), lower <strong>Screen Brightness</strong>, configure a <strong>Low-Power Timeout</strong>, enable <strong>Reverse Layout</strong> to swap left/right sky map controls, or download the optional DSS2 <strong>Sky Background</strong>.
+      </p>
+    </article>
+
+    <h2 id="connectivity">Connectivity &amp; Offline Use</h2>
+
+    <article class="faq-item" id="planetarium">
+      <h3>How do I connect SkySafari or Stellarium?</h3>
+      <p>
+        While the engine is running, Olive Finder runs local WiFi telescope servers using <strong>Meade LX200</strong> (TCP port <code>4030</code>) and <strong>ASCOM Alpaca</strong> (TCP port <code>11111</code> + UDP discovery). Tap the stats badge on the sky map to see your device's local IP address and step-by-step SkySafari and Stellarium setup instructions (use <code>127.0.0.1</code> or <code>localhost</code> when running on the same device).
+      </p>
+    </article>
+
+    <article class="faq-item" id="offline">
+      <h3>Does Olive Finder require an internet connection?</h3>
+      <p>
+        No. Plate-solving, the star and deep-sky catalog, solar system ephemerides, Sky Time simulation, observing lists, and observation logs all run completely offline. Internet access is only needed if you choose to download optional DSS2 sky background imagery, high-resolution object previews, or updated comet orbital elements.
+      </p>
+    </article>
+
+    <div class="note">
+      <strong>Still have a question or found a bug?</strong> Visit the <a href="support.html">Support page</a> or open an issue on <a href="https://github.com/oakamil/olive-app/issues">GitHub Issues</a>.
+    </div>
+  </main>
+
+  <footer>
+    <div class="container footer-row">
+      <span>&copy; 2026 Omair Kamil &middot; PolyForm Noncommercial License 1.0.0</span>
+      <div class="footer-links">
+        <a href="./">Overview</a>
+        <a href="support.html">Support</a>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="https://github.com/oakamil/olive-app/blob/main/LICENSE.md">License</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
