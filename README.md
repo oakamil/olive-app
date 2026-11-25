@@ -3,8 +3,9 @@
 Olive Finder turns an Android phone, iPhone, or iPad into an electronic finder and sky atlas for your telescope. Mounted to a telescope—or paired with an external USB astronomy camera on Android or iPad—it captures night-sky images and uses on-device plate-solving to determine where the telescope is pointing.
 
 - **Website:** [oakamil.github.io/olive-app](https://oakamil.github.io/olive-app/)
+- **FAQ:** [Frequently Asked Questions](https://oakamil.github.io/olive-app/faq.html)
 - **Android:** [Google Play](https://play.google.com/store/apps/details?id=com.oakamil.olive)
-- **iOS / iPadOS (Beta):** [Apple TestFlight](https://testflight.apple.com/join/VZ6ZQzry)
+- **iOS / iPadOS:** [Apple App Store](https://apps.apple.com/us/app/olive-finder/id6828503632)
 
 ## Features
 
@@ -31,7 +32,7 @@ Olive Finder is a Kotlin Multiplatform + Compose Multiplatform app backed by Rus
 | `app/src/main/rust/` | Android Rust JNI library (`olive-jni`) bridging `olive-engine` with Android Camera2/NDK, UVC, and IMU |
 | `iosApp/` | Swift/SwiftUI iOS & iPadOS entry point, `AVFoundation` camera capture, `CoreMotion` IMU, and Xcode project |
 | `crates/olive-ios/` | iOS Rust static library (`olive-ios`) exposing the C FFI (`OliveBridge.h`) to Kotlin/Native and Swift |
-| `docs/` | Static GitHub Pages site (landing page, support, and privacy policy) |
+| `docs/` | Static GitHub Pages site (landing page, FAQ, support, and privacy policy) |
 | `generate_db.py` | Utility script to rebuild `app/src/main/assets/catalog.db` from source catalogs, `catalog_descriptions.md`, and `asteroids.dat` |
 
 Core solving and tracking crates live in separate repositories:
