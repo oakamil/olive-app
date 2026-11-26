@@ -294,7 +294,7 @@
 					"$(inherited)",
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/release",
 				);
-				MARKETING_VERSION = 0.9.6;
+				MARKETING_VERSION = 0.9.8;
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -362,7 +362,7 @@
 					"$(inherited)",
 					"$(SRCROOT)/../crates/olive-ios/target/aarch64-apple-ios-sim/release",
 				);
-				MARKETING_VERSION = 0.9.6;
+				MARKETING_VERSION = 0.9.8;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
