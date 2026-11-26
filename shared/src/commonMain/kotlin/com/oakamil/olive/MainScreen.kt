@@ -77,7 +77,8 @@ import kotlinx.datetime.toLocalDateTime
  *   recomposition per touch), updated via `PointerEventPass.Initial` and [LocalOnUserInteraction]
  *   across modal dialog windows. Entering low-power mode dismisses open dialogs and caps refresh
  *   rate to 30 Hz.
- * - [ActionButtons] consumes stray pointer events so taps/drags on the bar do not pan the sky map.
+ * - [ActionButtons] blocks sibling pointer hit-testing to the sky map behind it without consuming
+ *   child pointer events, so button taps and landscape rail scrolling tolerate finger movement.
  */
 @Composable
 fun MainScreen(
@@ -274,20 +275,18 @@ fun MainScreen(
             )
         }
 
-        val consumeStrayPointers = Modifier.pointerInput(Unit) {
-            awaitPointerEventScope {
-                while (true) {
-                    awaitPointerEvent().changes.forEach { it.consume() }
-                }
-            }
-        }
+        // Intentional empty pointerInput: blocks sibling SkyMapView behind the bar via hit-testing
+        // (sharePointerInputWithSiblings = false) without consuming PointerEvents in Main/Final
+        // passes, so child clickable/scroll gestures are not canceled by micro-movement between
+        // DOWN and UP on high-rate touchscreens.
+        val blockBackgroundPointers = Modifier.pointerInput(Unit) {}
 
         if (isVertical) {
             Row(
                 modifier = modifier
                     .fillMaxHeight()
                     .background(extColors.mapOverlaySurface)
-                    .then(consumeStrayPointers)
+                    .then(blockBackgroundPointers)
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.End))
             ) {
                 VerticalDivider(color = extColors.actionBarBorder)
@@ -308,7 +307,7 @@ fun MainScreen(
                 modifier = modifier
                     .fillMaxWidth()
                     .background(extColors.mapOverlaySurface)
-                    .then(consumeStrayPointers)
+                    .then(blockBackgroundPointers)
             ) {
                 HorizontalDivider(color = extColors.actionBarBorder)
                 Row(
